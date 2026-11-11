@@ -187,7 +187,7 @@ observability = [
     # Spans now travel over OTLP, so the SDK is only used for its documented
     # trace-id seeding; `tests/unit/test_telemetry_sdk_surface.py` fails loudly if a
     # future major moves either that or the OTel attribute keys.
-    "langfuse>=4,<5",
+    "langfuse>=4,<6",
     "opentelemetry-sdk>=1.24.0",
     "opentelemetry-exporter-otlp>=1.24.0",
     # obs.mlflow feature flag — MLflow trace trees per investigation (≥3.13 for
