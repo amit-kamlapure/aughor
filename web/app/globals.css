@@ -587,7 +587,7 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 /* ── Four universal states · error, partial — and the refusal ────────────────
    Error: three sentences in order — what failed, what it means, what to do — carrying the run
    id and the exact object so it pastes into a ticket; Retry is never the only door offered.
-   Partial: Aughor's most important state. A real answer with a named hole, the hole stated in
+   Partial: Pramanyx's most important state. A real answer with a named hole, the hole stated in
    the same breath as the figure. Refusal: the proudest state — confident, specific, and
    offering the nearest answerable question; never an apology, never a dead end. */
 /* The boxed states are Themes callouts since 2026-10-06 (components/ui/states.tsx); the type inside is still theirs. */
@@ -616,7 +616,7 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 /* Unknown-not-zero: the hatch is the one grammar for a magnitude nobody could attribute. */
 .aug-hatch { background: repeating-linear-gradient(90deg, var(--amb3) 0 4px, transparent 4px 8px); }
 
-/* ── The trust system — Aughor's signature ───────────────────────────────────
+/* ── The trust system — Pramanyx's signature ───────────────────────────────────
    Readable at 11px, never shouting, instantly told apart from ordinary chrome. */
 
 /* Guard verdict: three outcomes only — passed ✓, warned ◈, refused ✕. A 1px border and no fill,
@@ -630,7 +630,7 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 
 /* Confidence: a computed number, never a mood. The rule fills left to right and the figure is
    always printed beside it, because a bar alone cannot be cited. At or above 0.86 green, from
-   0.5 amber, below 0.5 red — and below 0.5 Aughor does not lead with it. */
+   0.5 amber, below 0.5 red — and below 0.5 Pramanyx does not lead with it. */
 .aug-confidence { display: inline-flex; align-items: center; gap: 9px; }
 .aug-confidence-value { min-width: 30px; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .aug-confidence-note { font-size: 11px; color: var(--t2); }

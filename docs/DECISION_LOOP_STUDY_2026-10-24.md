@@ -5,7 +5,7 @@ through to the decision, the authorised action, the observed outcome, and better
 caution: *recording decisions does not automatically produce learning* — it needs outcome attribution and honest
 evaluation.
 
-The finding that set this study's scope: **Aughor already has that decision record, nearly field for field** (the
+The finding that set this study's scope: **Pramanyx already has that decision record, nearly field for field** (the
 2027 study §K, built 2026-10-05 in #568). What it does not have is a loop that turns. This study measures why, and
 proposes the smallest changes that make it turn without crediting a decision with the business's own growth.
 Nothing below is built. No model was called; every number was read over HTTP from the live install on 2026-10-24,
@@ -29,7 +29,7 @@ reaching a verdict within six weeks — is read on 2026-12-05.
 
 ## 1 · What exists
 
-| The article asks for | Aughor's record (`aughor/record/decisions.py` unless named) |
+| The article asks for | Pramanyx's record (`aughor/record/decisions.py` unless named) |
 |---|---|
 | The decision and its context | `Decision.question`, `owner`, `approvers`, `objective` (a mission or metric), `source` (recommendation · approval · declared · autonomy), `connection_id` |
 | The options weighed | `Decision.options[Option{id, description, predictions, cost, reversibility, actor}]`, `amend_decision` |
@@ -43,7 +43,7 @@ reaching a verdict within six weeks — is read on 2026-12-05.
 Decisions are booked as by-products where they happen (`aughor/record/byproducts.py`): accepting or declining a
 recommendation, approving or rejecting a staged proposal, a decision declared in a person's words (Home's
 **Decide**, `POST /record/decisions`), and an autonomous action. The full view is `web/components/decisions/
-DecisionsPanel.tsx`; Home's "Between you and Aughor" reads `GET /record/you`.
+DecisionsPanel.tsx`; Home's "Between you and Pramanyx" reads `GET /record/you`.
 
 ## 2 · What is live
 
@@ -162,7 +162,7 @@ Written before the readings it judges:
    reads *cannot tell*; fails if either is credited the growth.
 2. **Use:** within six weeks of shipping, at least five decisions on live data reach their review with an
    expectation and a verdict other than *cannot tell*. If none do, the scoring was not the bottleneck — the doors
-   were: people do not decide inside Aughor, and the next step is to book decisions where they are made (a ✅ on a
+   were: people do not decide inside Pramanyx, and the next step is to book decisions where they are made (a ✅ on a
    Slack recommendation, a dashboard Question's answer), not more scoring.
 
 ## 6 · What not to do

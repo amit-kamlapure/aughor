@@ -188,7 +188,7 @@ Starting points in the code today:
 
 ## Company-brain idea set
 
-Every idea tagged *Company-brain idea set* under its title belongs to this set. **Planned 2026-09-22 as Arc CB — ROADMAP §3.21, eight waves in the user's order; the four shaping answers are §6 item 30.** The ideas came from reading about "company brain" products on 2026-09-22: an on-premise graph of people, projects, commitments and decisions, built by extracting small dated claims from what employees write and say (Slack, email, meeting notes, documents), which agents read over MCP. Aughor's context graph is similar machinery pointed at what the warehouse measures. Its node types are table, metric, glossary term, domain, finding and brief ([aughor/ontology/context_graph.py:35](aughor/ontology/context_graph.py:35)), and it allows no model-inferred source at all ([line 40](aughor/ontology/context_graph.py:40)), where a company brain is built from model extraction.
+Every idea tagged *Company-brain idea set* under its title belongs to this set. **Planned 2026-09-22 as Arc CB — ROADMAP §3.21, eight waves in the user's order; the four shaping answers are §6 item 30.** The ideas came from reading about "company brain" products on 2026-09-22: an on-premise graph of people, projects, commitments and decisions, built by extracting small dated claims from what employees write and say (Slack, email, meeting notes, documents), which agents read over MCP. Pramanyx's context graph is similar machinery pointed at what the warehouse measures. Its node types are table, metric, glossary term, domain, finding and brief ([aughor/ontology/context_graph.py:35](aughor/ontology/context_graph.py:35)), and it allows no model-inferred source at all ([line 40](aughor/ontology/context_graph.py:40)), where a company brain is built from model extraction.
 
 Two things were judged not worth copying. Crawling Slack history and email bodies goes against the hub's first law, that the hub owns meaning and not data ([ROADMAP.md:6344](ROADMAP.md:6344)). And a retrieval benchmark is not a race worth entering: in the published numbers the graph adds about 4.5 points over a strong model doing plain file search.
 
@@ -198,7 +198,7 @@ Two things were judged not worth copying. Crawling Slack history and email bodie
 
 A company-brain product puts one number in front of the executive: the share of the company's working context that AI can see. Their reasoning is that an agent with partial context is confidently wrong, people stop trusting it after the third mistake, and so a gap costs far more than its size. Their screen also names the single gap holding up the most work ("three pilots are stalled on the same gap, fix it once").
 
-Aughor computes pieces of this number and shows none of them. It would say what share of the connected tables are mapped to business objects, and which one missing definition is holding the most back. We have lived the second half. On 2026-09-18, on theLook, one missing approved `revenue` definition held the Slack send, floored confidence to LOW and put a warning on top of every revenue answer. Approving it cleared all three, and nothing on screen had said that this one definition was the most valuable thing to fix.
+Pramanyx computes pieces of this number and shows none of them. It would say what share of the connected tables are mapped to business objects, and which one missing definition is holding the most back. We have lived the second half. On 2026-09-18, on theLook, one missing approved `revenue` definition held the Slack send, floored confidence to LOW and put a warning on top of every revenue answer. Approving it cleared all three, and nothing on screen had said that this one definition was the most valuable thing to fix.
 
 Idea 10, the data shopping list, is the other half: this idea says how much is covered, idea 10 says what to connect to cover more.
 
@@ -215,7 +215,7 @@ Starting points in the code today:
 
 A company brain dates every claim and keeps each record's history. An old plan imported today keeps its original date and does not displace a newer decision. They also separate two events that look alike: "the date was wrong" corrects a claim, "the launch moved" records a real change.
 
-In Aughor's context graph a fact has a source and no date, and a node holds only its current state. History is whatever git kept. When a finding replaces an older one, the older one's id is kept and its text is dropped. The hub's provenance envelope, built for a different arc, already has the fields this needs. So the platform has two provenance carriers, and only one of them knows when.
+In Pramanyx's context graph a fact has a source and no date, and a node holds only its current state. History is whatever git kept. When a finding replaces an older one, the older one's id is kept and its text is dropped. The hub's provenance envelope, built for a different arc, already has the fields this needs. So the platform has two provenance carriers, and only one of them knows when.
 
 Idea 5 needs this too. To tell someone an answer is no longer true, the platform has to hold what the answer used to be.
 
@@ -232,7 +232,7 @@ Starting points in the code today:
 
 The strongest example in that reading was done by hand. In one client build they put each owner's reported status next to what the records showed, found that some targets and actuals were in different units, and turned each gap into a question the owner could answer.
 
-Aughor can do that by machine, because it can run the check against the warehouse. The claims people make (an OKR sheet, a board memo, a reply in a filed Slack thread) come in at the "said" tier. Each one that states a number is checked against the data. Agreement raises it to "measured". Disagreement becomes a question to its owner. "Can't be checked" stays visible as unknown. This would be Aughor's version of a company brain: not everything people said, only what they said that the data can confirm or contradict.
+Pramanyx can do that by machine, because it can run the check against the warehouse. The claims people make (an OKR sheet, a board memo, a reply in a filed Slack thread) come in at the "said" tier. Each one that states a number is checked against the data. Agreement raises it to "measured". Disagreement becomes a question to its owner. "Can't be checked" stays visible as unknown. This would be Pramanyx's version of a company brain: not everything people said, only what they said that the data can confirm or contradict.
 
 Idea 7 (fact-check a document) is the one-off version. This is the standing one. It depends on idea 18, because the question needs somewhere to go.
 
@@ -249,7 +249,7 @@ Starting points in the code today:
 
 *Company-brain idea set · suggested by Claude, 2026-09-22*
 
-A company brain resolves "Nora" in a transcript to a person, or leaves the match open until there is more evidence. In Aughor an owner is free text on a metric, a process and a business rule, and a glossary term has no owner at all. Routing understands `group:finance` and `user:a@b`, and leaves "Ana (logistics)" as the display text it always was, so a question for Ana has nowhere to go.
+A company brain resolves "Nora" in a transcript to a person, or leaves the match open until there is more evidence. In Pramanyx an owner is free text on a metric, a process and a business rule, and a glossary term has no owner at all. Routing understands `group:finance` and `user:a@b`, and leaves "Ana (logistics)" as the display text it always was, so a question for Ana has nowhere to go.
 
 Ideas 17, 20 and 22 all end in "ask the owner", so they depend on this. The existing rule stays: never link a person by matching a display name. Someone links "Ana (logistics)" to a user once. Until then the platform shows the owner as unresolved, and says so where it would have asked.
 
@@ -263,7 +263,7 @@ Starting points in the code today:
 
 *Company-brain idea set · suggested by Claude, 2026-09-22*
 
-When an operator of such a system splits two people who were merged by mistake, the system keeps the reason and uses it in later matching. Aughor suggests near-duplicate business objects (Customer and Client) from embedding similarity, recomputed on every read. Nothing records a "no, these are different", so a pair someone already rejected comes back every time.
+When an operator of such a system splits two people who were merged by mistake, the system keeps the reason and uses it in later matching. Pramanyx suggests near-duplicate business objects (Customer and Client) from embedding similarity, recomputed on every read. Nothing records a "no, these are different", so a pair someone already rejected comes back every time.
 
 The ontology already does this right in two other places, so this is a pattern to repeat, not a new design.
 
@@ -277,7 +277,7 @@ Starting points in the code today:
 
 *Company-brain idea set · suggested by Claude, 2026-09-22*
 
-The reference executive screen is a short feed. Each item is a finding in two sentences with one action under it ("Pause the other 3 pilots"). Aughor's Briefing ranks findings by business impact and stops there. Nothing in the Briefing code offers an action. Recommendations with an Execute button live in the Recommendation Inbox, one card per investigation, a screen away from where the finding is read.
+The reference executive screen is a short feed. Each item is a finding in two sentences with one action under it ("Pause the other 3 pilots"). Pramanyx's Briefing ranks findings by business impact and stops there. Nothing in the Briefing code offers an action. Recommendations with an Execute button live in the Recommendation Inbox, one card per investigation, a screen away from where the finding is read.
 
 Put the single best action under each Briefing item, sent through the same gated path the inbox uses. We have already recorded that features here stall at tested and never get used. This puts the action where the reader already is.
 
@@ -292,7 +292,7 @@ Starting points in the code today:
 
 *Company-brain idea set · suggested by Claude, 2026-09-22*
 
-A company brain keeps a third store beside stable facts and the operational record: working memory, holding synthesis and priorities. Aughor stores nothing about what the organisation is working on now. The nearest thing is the north-star metrics a model infers for each connection. So the Briefing ranks a finding by how big the move is and whether it touches a north-star metric, never by whether it bears on a goal leadership has set.
+A company brain keeps a third store beside stable facts and the operational record: working memory, holding synthesis and priorities. Pramanyx stores nothing about what the organisation is working on now. The nearest thing is the north-star metrics a model infers for each connection. So the Briefing ranks a finding by how big the move is and whether it touches a north-star metric, never by whether it bears on a goal leadership has set.
 
 A short list of priorities, written by people, each naming a metric and a target. Triage ranks findings against it, and the Briefing can say "this bears on the goal to cut returns". People write it and the platform never does, in keeping with the rule that people edit the organisation's ontology.
 
@@ -309,7 +309,7 @@ Starting points in the code today:
 
 An open question of ours: when is a person asked whether a recommendation worked? One published practice suggests an answer. They agree the baseline with finance before building anything, name an owner, and review every week. The outcome question is scheduled before the work starts.
 
-For Aughor: when someone marks a recommendation accepted, record the metric, its value now, and a review date. On that date the platform measures again and asks the person who accepted it. Today the outcome record has fields for the metric before and after, but they arrive only with the request that logs the outcome. Nothing schedules a second measurement and nothing prompts anyone, which may be why the loop runs and nobody has used it.
+For Pramanyx: when someone marks a recommendation accepted, record the metric, its value now, and a review date. On that date the platform measures again and asks the person who accepted it. Today the outcome record has fields for the metric before and after, but they arrive only with the request that logs the outcome. Nothing schedules a second measurement and nothing prompts anyone, which may be why the loop runs and nobody has used it.
 
 Idea 13 then says how to judge the second measurement.
 

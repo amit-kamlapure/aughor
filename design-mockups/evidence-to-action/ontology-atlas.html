@@ -251,7 +251,7 @@ tr.rowbtn.on td { background: #15253a; } tr.rowbtn.on td:first-child { box-shado
 </head>
 <body>
 <div class="app">
-  <div class="top"><span class="brand">AUGHOR</span><span class="crumb">Ontology &nbsp;/&nbsp; <b>Business Atlas</b></span><div class="search"><span class="kbd">⌘K</span><input id="q" type="search" placeholder="Search a stage, an object, a promise…" autocomplete="off" aria-label="Search the atlas"><div class="qres" id="qres" hidden></div></div></div>
+  <div class="top"><span class="brand">PRAMANYX</span><span class="crumb">Ontology &nbsp;/&nbsp; <b>Business Atlas</b></span><div class="search"><span class="kbd">⌘K</span><input id="q" type="search" placeholder="Search a stage, an object, a promise…" autocomplete="off" aria-label="Search the atlas"><div class="qres" id="qres" hidden></div></div></div>
   <div class="rail">
     <div class="i">Home</div><div class="i">Briefing</div><div class="i">Now</div>
     <div class="g">Define</div><div class="i">Semantic Layer</div><div class="i on">Ontology</div><div class="i">Actions</div><div class="i">Graph</div><div class="i">Memory</div><div class="i">Org</div>
@@ -550,7 +550,7 @@ function viewport() {
   if (view === "2d" && live) return `<div class="vp">${head}<div class="flat">${route()}</div></div>`;
   return `<div class="vp">${head}<div class="stagewrap ${flows === "flow" ? "hide-links" : flows === "links" ? "hide-flow" : ""}" id="stagewrap">
     <div class="world ${area && live ? "dim" : ""}" id="world" style="transform:translate(${pan[0]}px,${pan[1]}px) scale(${zoom})">${SCENE.svg}${SCENE.markers}</div>
-    <div class="vpnote"><span class="k">AUGHOR // BUSINESS ATLAS</span><span class="asof">${live ? `Counted ${when(P.measured_at)} · release ${D.release.number} · not live` : `Expected shape · ${esc(M.title)} package · nothing measured`}</span></div>
+    <div class="vpnote"><span class="k">PRAMANYX // BUSINESS ATLAS</span><span class="asof">${live ? `Counted ${when(P.measured_at)} · release ${D.release.number} · not live` : `Expected shape · ${esc(M.title)} package · nothing measured`}</span></div>
     <div class="zoom"><button data-zoom="-1" aria-label="Zoom out">−</button><span>${Math.round(zoom * 100)}%</span><button data-zoom="1" aria-label="Zoom in">+</button><button data-zoom="0" aria-label="Reset view" title="Reset view" style="border-left:1px solid #2c3a49">⟲</button></div></div>
     <div class="legend"><span><i style="width:7px;height:7px;border-radius:50%;background:var(--grn4)"></i>Measured stage</span><span><i style="width:7px;height:7px;background:var(--teal)"></i>Object type</span>
       <span><i style="width:18px;border-top:3px solid var(--blue3)"></i>Measured move</span><span><i style="width:18px;border-top:1px dotted #9fb2c6"></i>Link</span>

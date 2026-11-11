@@ -2,7 +2,7 @@
 
 A mode is a version-controlled declaration: the task context, which tools/docs it loads,
 and how it approaches the problem.
-Aughor's four routing modes (direct/investigate/explore/final_text) are structurally wired
+Pramanyx's four routing modes (direct/investigate/explore/final_text) are structurally wired
 to graph branches, so the STRUCTURE stays in code — but a mode's *tunable* config (how it's
 routed to, how lean its context is, which playbooks it pulls) becomes an editable manifest
 here, so behaviour can be tuned per-deployment without a code change. Mirrors the already-

@@ -1,5 +1,5 @@
 /**
- * The transport's one non-obvious job: Aughor's REPLACE-semantic partials
+ * The transport's one non-obvious job: Pramanyx's REPLACE-semantic partials
  * (each `*_delta` frame carries the full text-so-far) must fold into an
  * APPEND-semantic stream (every yield is added to the Slack message). Feeding
  * cumulative frames and asserting the joined output has no duplication is the

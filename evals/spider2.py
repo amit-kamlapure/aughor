@@ -8,7 +8,7 @@ study said it must):
   * the per-instance **external-knowledge doc is READ and injected** (the June pipeline
     never read them — a known scoring leak);
   * every instance runs the PRODUCT guard chain (``safety.preflight_repair``) before the
-    closed loop, so the campaign measures Aughor, not a bench fork;
+    closed loop, so the campaign measures Pramanyx, not a bench fork;
   * every instance emits a **submission-ready reasoning trace** (the leaderboard requires
     per-instance traces) with timestamps;
   * results materialize through ``closed_loop.rows_to_csv`` (the evaluator's exact CSV
@@ -140,7 +140,7 @@ def column_semantics_section(conn, max_tables: int = 40, max_distinct: int = 24)
     administrative `db_year` over the real `collision_date`, because it sees only DDL +
     3 sample rows — not which column actually holds the domain values. This surfaces, per
     low-cardinality text column, its full value set (so "cause categories" is identifiable),
-    and tags DATE/TIME columns explicitly. This is Aughor's data-portrait signal, harness-side.
+    and tags DATE/TIME columns explicitly. This is Pramanyx's data-portrait signal, harness-side.
     General (no per-question tuning); bounded so it can't blow the prompt.
     """
     lines = ["\nCOLUMN SEMANTICS (categorical value sets + date columns — pick the column whose "
@@ -273,7 +273,7 @@ def run_probe_repair(conn, question: str, seed_sql: str, alt_sqls: list[str],
                      ) -> tuple[str, dict]:
     """B1 — the probe-and-repair back half of SOMA-lite. Reached ONLY on candidate
     disagreement (the caller gates on n_signatures > 1). Deterministic AST-diff disagreement
-    extraction (I2) → deterministic-first probes over the value/grain guards Aughor already
+    extraction (I2) → deterministic-first probes over the value/grain guards Pramanyx already
     owns (I3) → evidence-gated minimal repair with the never-go-backwards acceptance gates
     (I7). Returns (sql, trace_info); sql is the seed unchanged unless a repair cleared all gates.
     Design: docs/SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md §2/B1."""

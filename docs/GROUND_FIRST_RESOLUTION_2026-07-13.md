@@ -7,7 +7,7 @@ handoff — a new session can resume from it.*
 ## Why (the problem)
 
 Repeated live-app failures on **"Show me month-wise sales for Mytheresa"** traced to one architectural
-cause: **Aughor answers first and validates later.** The quick chat path (`_stream_chat`) assembles
+cause: **Pramanyx answers first and validates later.** The quick chat path (`_stream_chat`) assembles
 grounding as prompt *context*, lets the LLM write SQL under only *soft* prose constraints (so it silently
 downgrades `monthly`→`fiscal_year`, or runs an empty `franchise='Mytheresa'` filter), then runs **~9
 deterministic guards + 2 LLM passes** (the `SqlWriter.fix` loop and the semantic `inspect`) that each

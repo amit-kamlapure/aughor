@@ -1,4 +1,4 @@
-# Unifying Aughor Intelligence — Briefing · Hub · Domains
+# Unifying Pramanyx Intelligence — Briefing · Hub · Domains
 
 *Architecture review + SOTA design. 2026-06-08.*
 
@@ -102,7 +102,7 @@ causes: novelty-decay short-circuits to very few insights; Briefing's narrative 
   **one** semantic object model (our Ontology); AI and humans act *through* it. Insights and
   briefings attach to **object types / object sets**, and you drill org → type → instance.
 
-Both lead to the same two ideas Aughor is missing: **(a) a single scoped surface, not parallel
+Both lead to the same two ideas Pramanyx is missing: **(a) a single scoped surface, not parallel
 tabs; (b) scope that follows a clear hierarchy and is consistent for every lens.**
 
 ## 5. The design — one Intelligence surface, two axes
@@ -142,7 +142,7 @@ beneath, the object model underneath.
 ### Axis 3 (the payoff) — make it ACTIONABLE, and PUSH it
 Heavy-duty intel earns its keep only if you can act on it and it comes to you:
 - Every finding → one-click **Investigate** (exists), **Create Monitor/Alert**, **Promote to Org**,
-  **Share/Assign**. (Aughor already has Action Hub + Monitors + Evidence Ledger — wire them in.)
+  **Share/Assign**. (Pramanyx already has Action Hub + Monitors + Evidence Ledger — wire them in.)
 - **Deliver the Brief, don't make users fetch it** — scheduled Monday-morning brief per scope
   (email/Slack via Action Hub). Intelligence is pushed, not fetched.
 - Every brief claim already can cite SQL + freshness + confidence via the **Evidence Ledger

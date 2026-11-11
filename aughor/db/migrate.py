@@ -317,7 +317,7 @@ def read_record(name: str) -> Optional[dict]:
         return None
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict) or int(data.get("format") or 0) > MOVED_RECORD_FORMAT:
-        raise ValueError(f"{path} is a format newer than this version of Aughor reads")
+        raise ValueError(f"{path} is a format newer than this version of Pramanyx reads")
     return data
 
 

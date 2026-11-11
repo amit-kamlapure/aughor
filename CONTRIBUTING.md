@@ -1,6 +1,6 @@
-# Contributing to Aughor
+# Contributing to Pramanyx
 
-Aughor is in active alpha. Issues, ideas, and pull requests are all welcome.
+Pramanyx is in active alpha. Issues, ideas, and pull requests are all welcome.
 
 By participating you agree to the [Code of Conduct](CODE_OF_CONDUCT.md).
 Contributions are accepted under the [Apache License 2.0](LICENSE).
@@ -15,14 +15,14 @@ Git. The installer brings everything else; for reference, this is what it sets u
 | Python | 3.11+ | `requires-python = ">=3.11"`. CI pins **3.11**, and a new `.venv` is created on 3.11 (an existing one keeps its version). |
 | Node.js | 20.9+ | `next@16` requires `>=20.9.0`. CI pins **20** (latest 20.x). The installer uses yours when it is new enough, and otherwise downloads the Node.js 24 LTS into `.aughor/node/`. The frontend uses npm and `web/package-lock.json`. |
 
-An LLM backend is only needed to *run* Aughor, not to develop against it — the
+An LLM backend is only needed to *run* Pramanyx, not to develop against it — the
 test suite is offline and hermetic, bar two tests that fetch a DuckDB extension
 (see **Running the checks**).
 
 ## Setup
 
 ```bash
-git clone https://github.com/amit-kamlapure/aughor.git
+git clone https://github.com/amit-kamlapure/pramanyx.git
 cd aughor
 ./install.sh --dev            # Windows: install.cmd --dev
 ```
@@ -162,7 +162,7 @@ These are load-bearing; a PR that ignores them will get review comments.
 ## Reporting bugs
 
 Open an issue with the reproduction, what you expected, and what happened. If it
-involves a wrong *number*, include the question you asked and the SQL Aughor
+involves a wrong *number*, include the question you asked and the SQL Pramanyx
 generated — both are in the Trust Receipt on the answer.
 
 For security vulnerabilities, do **not** open an issue — see [SECURITY.md](SECURITY.md).

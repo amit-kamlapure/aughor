@@ -1,6 +1,6 @@
 """OTel GenAI semantic conventions — the vocabulary an external backend already reads (VA-3).
 
-Aughor's spans have always carried Aughor's own attribute names, plus Langfuse's
+Pramanyx's spans have always carried Pramanyx's own attribute names, plus Langfuse's
 (``langfuse.observation.*``, hardcoded in ``telemetry.py`` for the same reason as
 here). Both are correct and neither is portable: point the exporter at Jaeger,
 Grafana Tempo or an otel-collector and the model calls arrive as spans

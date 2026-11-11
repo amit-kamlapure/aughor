@@ -21,7 +21,7 @@ from aughor.mcp.server import mcp
 
 # ── helpers ──────────────────────────────────────────────────────────────────────
 def _sse(events: list[dict]) -> str:
-    """Aughor's SSE framing — one `data: {json}` line per event, blank-line terminated."""
+    """Pramanyx's SSE framing — one `data: {json}` line per event, blank-line terminated."""
     return "".join(f"data: {json.dumps(e)}\n\n" for e in events)
 
 

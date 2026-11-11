@@ -35,12 +35,12 @@ describe("the look panel", () => {
   it("sets all six knobs from a preset, each written to the person's settings, and marks the preset in force", () => {
     panel();
     const presets = within(screen.getByRole("radiogroup", { name: "Preset" }));
-    expect(presets.getByRole("radio", { name: "Aughor" })).toHaveAttribute("aria-checked", "true");
+    expect(presets.getByRole("radio", { name: "Pramanyx" })).toHaveAttribute("aria-checked", "true");
     fireEvent.click(presets.getByRole("radio", { name: "Workbench" }));
     expect(getLook()).toEqual(PRESETS.workbench);
     expect(Object.fromEntries(putMyPreference.mock.calls)).toEqual(PRESETS.workbench);
     expect(presets.getByRole("radio", { name: "Workbench" })).toHaveAttribute("aria-checked", "true");
-    expect(presets.getByRole("radio", { name: "Aughor" })).toHaveAttribute("aria-checked", "false");
+    expect(presets.getByRole("radio", { name: "Pramanyx" })).toHaveAttribute("aria-checked", "false");
     // the page follows the two knobs the Theme does not know, under their own attributes
     expect(screen.getByRole("radio", { name: "On" })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByRole("radio", { name: "Source Sans" })).toHaveAttribute("aria-checked", "true");

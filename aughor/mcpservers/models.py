@@ -204,7 +204,7 @@ REFUSED_MUTATING = "refused_mutating"
 #: un-updated after the thing it deferred has shipped is how a working feature stays
 #: invisible to the person the refusal is talking to.
 _GRANT_INVITATION = (
-    "Aughor calls it only if a person grants this tool by name, and a grant covers the "
+    "Pramanyx calls it only if a person grants this tool by name, and a grant covers the "
     "declaration it was given for."
 )
 REFUSAL_UNDECLARED = (
@@ -264,7 +264,7 @@ def classify(read_only: Optional[bool], destructive: Optional[bool]) -> tuple[st
         # how a refusal turns into a write.
         if destructive is True:
             return REFUSED_MUTATING, (
-                "This server declares the tool both read-only and destructive. Aughor takes "
+                "This server declares the tool both read-only and destructive. Pramanyx takes "
                 "the restrictive reading of a contradiction rather than guessing which half "
                 "was meant.")
         return CALLABLE, ""

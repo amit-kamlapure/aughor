@@ -6,7 +6,7 @@ module names the *downward* half of that boundary — the capability surface the
 offers — as a single :class:`HostCapabilities` Protocol with a concrete
 :func:`default_host` bound to the live platform.
 
-Today the Aughor Agent reaches these services through their stable module functions
+Today the Pramanyx Agent reaches these services through their stable module functions
 directly (``open_connection_for``, ``vend_llm``, ``kernel().submit``, …) — that is the
 allowed direction, so nothing is forced through this object. Its value is to make the
 contract **explicit and substitutable**: a *different* agent (the "extensible boundary"

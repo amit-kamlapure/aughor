@@ -1,4 +1,4 @@
-"""Exasol connector for Aughor.
+"""Exasol connector for Pramanyx.
 
 DSN format:  exa://host:8563
 Meta fields: {"user": "...", "password": "...", "schema_name": "..."}

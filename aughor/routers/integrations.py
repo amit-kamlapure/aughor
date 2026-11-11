@@ -167,7 +167,7 @@ def _redirect_problem(provider, uri: str) -> str:
     host = urlparse(uri).netloc
     if _own_domain(host) in _provider_domains(provider):
         return (f"'{host}' is {provider.name}'s own address. The callback is where "
-                f"{provider.name} sends the browser BACK to Aughor, so it must be an "
+                f"{provider.name} sends the browser BACK to Pramanyx, so it must be an "
                 "address that reaches THIS API over HTTPS — a tunnel to it is enough.")
     return ""
 
@@ -261,7 +261,7 @@ def oauth_callback(state: str = "", code: str = "", error: str = ""):
         # choice, and the pending flow dies with its TTL — nothing to clean here.
         return _page("Not connected",
                      "Consent was declined — nothing was stored. You can close this "
-                     "tab and return to Aughor.")
+                     "tab and return to Pramanyx.")
     if not state or not code:
         return _page("Not connected", "The provider returned no authorization.")
     try:
@@ -275,10 +275,10 @@ def oauth_callback(state: str = "", code: str = "", error: str = ""):
         return _page("Connected, but not what was asked",
                      f"{provider.name if provider else conn.provider} did not grant {what}. Its consent page lists each "
                      "permission with its own box, and one was left unticked. Connect that card again and tick it. "
-                     "You can close this tab and return to Aughor.")
+                     "You can close this tab and return to Pramanyx.")
     return _page("Connected",
                  f"{conn.provider} is connected{f' as {conn.account}' if conn.account else ''}. "
-                 "You can close this tab and return to Aughor.")
+                 "You can close this tab and return to Pramanyx.")
 
 
 # ── my connections ───────────────────────────────────────────────────────────────

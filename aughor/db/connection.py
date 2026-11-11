@@ -1495,11 +1495,11 @@ class DuckDBConnection(DatabaseConnection):
             pass
 
 
-# ── Aughor-on-Aughor: the platform's own operational tables as a connection ────
+# ── Pramanyx-on-Pramanyx: the platform's own operational tables as a connection ────
 
 class AughorOpsConnection(DuckDBConnection):
-    """A read-only DuckDB view over Aughor's OWN operational tables — the
-    "Aughor investigates Aughor" connection (Rec 4 · leverage #2, flag
+    """A read-only DuckDB view over Pramanyx's OWN operational tables — the
+    "Pramanyx investigates Pramanyx" connection (Rec 4 · leverage #2, flag
     ``obs.task_table``).
 
     An in-memory DuckDB ATTACHes the curated operational tables as the read-only
@@ -1651,7 +1651,7 @@ class AughorOpsConnection(DuckDBConnection):
         """A curated grounding for the self-investigation surface: only the
         operationally-meaningful tables, with their columns, rather than the raw
         sqlite catalog (which includes kv/meta/lineage noise)."""
-        lines = ["-- Aughor operational tables (schema: aughor_ops, read-only) --"]
+        lines = ["-- Pramanyx operational tables (schema: aughor_ops, read-only) --"]
         for tbl in self._OPS_TABLES:
             try:
                 # duckdb_columns() (not information_schema) reflects ATTACHed sqlite
@@ -1717,7 +1717,7 @@ class PostgresConnection(DatabaseConnection):
         # becomes a traceback before a packet is sent. See aughor/db/dsn.py.
         base, params, _dropped = split_dsn(self._dsn)
 
-        # Enforce read-only at the SESSION level (SEC-02 / INV-2). Aughor is a
+        # Enforce read-only at the SESSION level (SEC-02 / INV-2). Pramanyx is a
         # read-only analyst over Postgres; the SQL safety gate is defence-in-depth,
         # but the connection itself must reject writes. `options=` applies BEFORE
         # any statement runs — even under autocommit each implicit txn inherits it,

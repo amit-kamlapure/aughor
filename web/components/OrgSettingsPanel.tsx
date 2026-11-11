@@ -6,7 +6,7 @@
  * Edits the app-wide OrgSettings singleton (identity + localization), and — when a
  * workspace is active — its per-workspace OVERRIDE (the hybrid scope: a workspace
  * value wins over the app default; a blank field inherits it). A set currency/industry
- * is in turn authoritative over what Aughor infers per connection (override-wins),
+ * is in turn authoritative over what Pramanyx infers per connection (override-wins),
  * which is why blank = "use the inferred value".
  *
  * Redone to `aughor-v2/CLARITY.md` (2026-10-12): four figures first — the industries read, this quarter's
@@ -203,7 +203,7 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
     </label>
   );
 
-  // ROADMAP §3.65 — the choices an organisation makes about what Aughor may do; everything else is the platform's.
+  // ROADMAP §3.65 — the choices an organisation makes about what Pramanyx may do; everything else is the platform's.
   const ALLOWS: { k: OrgAllowSetting; label: string; hint: string }[] = [
     { k: "share_aggregates", label: "Share summary statistics with other installs",
       hint: "How often packs' claims held here. Names, ids and values never leave." },
@@ -211,7 +211,7 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
       hint: "TypeSafe's Jev judges text rows before your own strong model. Row text leaves this install." },
     { k: "reason_to_read_runs", label: "Ask for a reason before anyone reads a run's details",
       hint: "The reason is kept with who read it. Exporting the ledger asks too." },
-    { k: "scheduled_model_work", label: "Let Aughor run model work on its own schedule",
+    { k: "scheduled_model_work", label: "Let Pramanyx run model work on its own schedule",
       hint: "Nightly runs of each custom agent's checked questions, and re-tests after reviews, within the Spend budget." },
     { k: "read_query_history", label: "Read each warehouse's own query history",
       hint: "The SQL people ran there, mined for joins, filters and formulas to propose. Statement text is read, never rows; nothing reaches a prompt until a person confirms it." },
@@ -310,7 +310,7 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
           {scope === "workspace" && (
             <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
               Overrides for <b>{workspaceName}</b>. Blank fields inherit the app default; a set value also
-              wins over what Aughor infers from the data.
+              wins over what Pramanyx infers from the data.
             </span>
           )}
         </div>
@@ -325,7 +325,7 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
             {TextField("hq_location", "HQ location")}
             {TextField("industry", "Industry")}
           </div>
-          <Note>Steers briefings, metric recipes and exploration. A set industry overrides what Aughor infers.</Note>
+          <Note>Steers briefings, metric recipes and exploration. A set industry overrides what Pramanyx infers.</Note>
         </Card>
         <Card label="Localization">
           <div style={FIELDS}>
@@ -401,11 +401,11 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
 
       {app && (
         <Pair>
-          <Card label="What Aughor may do">
+          <Card label="What Pramanyx may do">
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }} data-testid="org-allows">
               {ALLOWS.map(allowField)}
             </div>
-            <Note>Off unless chosen here. Everything else Aughor does is part of the platform, not a switch.</Note>
+            <Note>Off unless chosen here. Everything else Pramanyx does is part of the platform, not a switch.</Note>
           </Card>
         </Pair>
       )}

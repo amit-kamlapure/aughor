@@ -1,7 +1,7 @@
 """Post-processing operators — composable transforms over a SQL-shaped
-``(columns, rows)`` result, in Aughor's native data shape (no pandas).
+``(columns, rows)`` result, in Pramanyx's native data shape (no pandas).
 
-Compare / contribution / rolling / cumulative, written for Aughor's
+Compare / contribution / rolling / cumulative, written for Pramanyx's
 `list[str], list[list]` results so the
 deep-analysis, briefing, and stats surfaces can derive period-over-period deltas,
 share-of-total, moving averages, and running totals WITHOUT a second SQL query.

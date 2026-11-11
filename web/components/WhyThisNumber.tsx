@@ -232,7 +232,7 @@ function Drawer({ receiptId, preloaded, onClose, asPage = false }: {
             {rec?.question && <div style={{ fontSize: 12, color: "var(--t3)", marginTop: 4, lineHeight: 1.5 }}>{rec.question}</div>}
           </div>
           {asPage
-            ? <Button size="xs" variant="ghost" onClick={onClose}>Open Aughor →</Button>
+            ? <Button size="xs" variant="ghost" onClick={onClose}>Open Pramanyx →</Button>
             : <Button size="xs" variant="plain" onClick={onClose} aria-label="Close">✕</Button>}
         </div>
 

@@ -1,6 +1,6 @@
 """Request identity + object-level authorization (SEC-01 / SEC-05 / DATA-06).
 
-Aughor grew up as a trusted-localhost tool: the only front door is an optional
+Pramanyx grew up as a trusted-localhost tool: the only front door is an optional
 shared API key, ``current_org_id()`` is never set per-request, and by-id
 endpoints do no ownership check — any caller who knows a UUID can read/export/
 delete any investigation or canvas.

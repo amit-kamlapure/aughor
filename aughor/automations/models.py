@@ -83,7 +83,7 @@ class Condition(BaseModel):
 
     ⚠️ ``webhook`` is a trigger kind and also, unrelatedly, a declared-action kind
     (``ontology/models.py``) and a notification-destination kind (``notifications/models.py``).
-    Those two are OUTBOUND — a URL Aughor posts to; this one is INBOUND — a URL Aughor is
+    Those two are OUTBOUND — a URL Pramanyx posts to; this one is INBOUND — a URL Pramanyx is
     posted to. The three never meet because every lookup in this plane is family-scoped
     (``required_keys(kind, family=…)``); a flat kind→handler map added anywhere would start
     answering confidently and wrongly.

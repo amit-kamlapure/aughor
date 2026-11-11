@@ -145,7 +145,7 @@ def test_the_agent_card_lists_enabled_agents_as_skills_and_is_public(client):
     r = client.get("/.well-known/agent.json")
     assert r.status_code == 200, r.text
     card = r.json()
-    assert card["name"] == "Aughor" and card["authentication"]["schemes"] == ["bearer"]
+    assert card["name"] == "Pramanyx" and card["authentication"]["schemes"] == ["bearer"]
     skills = {s["id"]: s for s in card["skills"]}
     assert a.id in skills and b.id not in skills
     assert skills[a.id]["description"] == "Churn questions" and skills[a.id]["url"].endswith(f"/doors/a2a/{a.id}")
@@ -179,14 +179,14 @@ def _activity(**over):
     base = {"type": "message", "id": "act-1", "text": "How many orders yesterday?",
             "serviceUrl": "https://smba.trafficmanager.net/emea/",
             "conversation": {"id": "19:abc@thread.v2"},
-            "from": {"id": "29:user-1", "name": "Amit"}, "recipient": {"id": "28:bot", "name": "Aughor"}}
+            "from": {"id": "29:user-1", "name": "Amit"}, "recipient": {"id": "28:bot", "name": "Pramanyx"}}
     base.update(over)
     return base
 
 
 def test_a_teams_bot_binds_an_app_to_an_agent_and_names_its_endpoint(client, monkeypatch):
     a = create_agent("Teams", instructions="x")
-    r = client.post("/teams-bots", json={"name": "Aughor in Teams", "agent_id": a.id, "app_id": "app-1",
+    r = client.post("/teams-bots", json={"name": "Pramanyx in Teams", "agent_id": a.id, "app_id": "app-1",
                                          "app_password": "pw-secret"})
     assert r.status_code == 200, r.text
     bot = r.json()["bot"]

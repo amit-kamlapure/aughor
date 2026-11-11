@@ -2,7 +2,7 @@
 
 Motivation: Shkapenyuk, Srivastava, Johnson & Ghane, *Automatic Metadata Extraction for Text-to-SQL*
 (AT&T CDO; the system that repeatedly held #1 on the BIRD leaderboard). Their thesis — matching
-Aughor's own grounded direction — is that the hard part of NL2SQL is understanding the database, and
+Pramanyx's own grounded direction — is that the hard part of NL2SQL is understanding the database, and
 a large fraction of what you need is **undocumented in the schema but recoverable from the query
 log**. They measured ~25% MORE equality join constraints in the query log than in the declared FKs,
 plus filter predicates and named business formulas that exist only in how analysts actually query.
@@ -17,7 +17,7 @@ This module mines a list of historical SQL strings into DETERMINISTIC, reusable 
     what it IS, and a column nobody ever sums is not a measure whatever its type says.
 
 It is pure and backend-agnostic (in: ``list[str]``; out: :class:`QueryLogFacts`) — the SOURCE of the
-queries is pluggable: Aughor's own logged queries now (:func:`collect_logged_sql`), the warehouse
+queries is pluggable: Pramanyx's own logged queries now (:func:`collect_logged_sql`), the warehouse
 ``QUERY_HISTORY`` once credentials land. The facts are parsed from real SQL, not a model opinion —
 the grounding-beats-machinery lever that holds up on strong models — so the rendered block can be
 fed straight into the schema context the way value-verified join hints and profiles already are.
@@ -254,10 +254,10 @@ def mine_query_log(sqls: list[str], dialect: str = "duckdb", weights: Optional[l
 
 
 def collect_logged_sql(connection_id: str = "", limit: int = 5000) -> list[str]:
-    """Pull historical SQL strings Aughor has already logged for a connection (best-effort).
+    """Pull historical SQL strings Pramanyx has already logged for a connection (best-effort).
 
     Source = the SQL-examples vector store populated by ``prior_analyses.index_sql_examples`` (every
-    clean, non-empty query Aughor has run). Returns [] when the store is unavailable — the schema
+    clean, non-empty query Pramanyx has run). Returns [] when the store is unavailable — the schema
     context still builds without it. This is the runnable-now source; a warehouse ``QUERY_HISTORY``
     reader can feed the same :func:`mine_query_log` once credentials land."""
     try:

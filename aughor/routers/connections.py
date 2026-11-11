@@ -929,7 +929,7 @@ async def alter_table_column(conn_id: str, table: str, body: _AlterColumnRequest
                     "message": f"Column {safe_col} changed to {safe_type}.",
                 }
             # DE-1 (ROADMAP §3.51) — the door's answer is the answer. A refused statement comes back as a result
-            # with an error, not a raise, and this route read only the raise: every door refuses an ALTER (Aughor
+            # with an error, not a raise, and this route read only the raise: every door refuses an ALTER (Pramanyx
             # writes nothing to a warehouse), so it answered `applied: true` whatever the engine said — the
             # gate-map census row for this site, §3.49's leftover. A refusal takes the path a driver error took.
             refused = result.error
@@ -969,7 +969,7 @@ async def alter_table_column(conn_id: str, table: str, body: _AlterColumnRequest
                 "error": refused,
                 "message": (
                     f"Saved a display override: the catalog will show {safe_col} as {safe_type}, "
-                    f"but Aughor does not change a column's type in the database (the statement was "
+                    f"but Pramanyx does not change a column's type in the database (the statement was "
                     f"refused: {refused}), so the database column is unchanged and queries still use "
                     f"its real type."
                 ),

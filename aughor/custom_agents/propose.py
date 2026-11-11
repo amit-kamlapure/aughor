@@ -84,7 +84,7 @@ class AgentProposal:
 
 
 _SYS = """\
-You configure DATA AGENTS for Aughor. An agent is one record: a SCOPE (where it may look)
+You configure DATA AGENTS for Pramanyx. An agent is one record: a SCOPE (where it may look)
 and a STANCE (how it should answer). It is not a workflow and has no steps.
 
 You will be given this deployment's real catalogue, documents and packs. Draft using ONLY

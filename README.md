@@ -1,11 +1,16 @@
 <div align="center">
-  <img src="docs/assets/logo.png" width="110" alt="Aughor" />
-  <h1>Aughor</h1>
+  <h1>
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/pramanyx-lockup-white.png" />
+      <img src="docs/assets/brand/pramanyx-lockup-black.png" width="380" alt="Pramanyx" />
+    </picture>
+  </h1>
   <p><strong>The agentic data intelligence platform.</strong></p>
   <p><em>Connect to your data. Let insights find you.</em></p>
+  <p><sub>Formerly Aughor.</sub></p>
 
   <p>
-    <a href="https://github.com/amit-kamlapure/aughor/actions/workflows/ci.yml"><img src="https://github.com/amit-kamlapure/aughor/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+    <a href="https://github.com/amit-kamlapure/pramanyx/actions/workflows/ci.yml"><img src="https://github.com/amit-kamlapure/pramanyx/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-black" alt="License: Apache-2.0" /></a>
     <img src="https://img.shields.io/badge/status-alpha-orange" alt="Status: alpha" />
     <img src="https://img.shields.io/badge/python-3.11+-blue" alt="Python 3.11+" />
@@ -19,15 +24,15 @@
     <a href="FEATURES.md"><strong>Features</strong></a>
   </p>
 
-  <a href="#the-98-second-tour"><img src="docs/readme/hero.png" width="900" alt="Aughor — Connect to your data. Let insights find you. The Briefing, the Business Atlas and the Semantic Layer on LuxExperience, a synthetic dataset" /></a>
+  <a href="#the-98-second-tour"><img src="docs/readme/hero.png" width="900" alt="Pramanyx — Connect to your data. Let insights find you. The Briefing, the Business Atlas and the Semantic Layer on LuxExperience, a synthetic dataset" /></a>
   <p><a href="#the-98-second-tour"><strong>▶ Watch the 98-second tour</strong></a> — every screen live, on synthetic data</p>
 </div>
 
 ---
 
-Aughor connects to your warehouse and **keeps learning from it**. It explores the data on its own, learns what the business is, writes the metrics into a governed semantic layer for you to review and approve, and briefs you with every number cited. When you do ask — in plain English, in the SQL editor or as an analyst agent you built — the answer comes with **evidence, guards and a receipt**.
+Pramanyx connects to your warehouse and **keeps learning from it**. It explores the data on its own, learns what the business is, writes the metrics into a governed semantic layer for you to review and approve, and briefs you with every number cited. When you do ask — in plain English, in the SQL editor or as an analyst agent you built — the answer comes with **evidence, guards and a receipt**.
 
-> **The thesis:** most AI data tools are query wrappers — you ask, they translate. Aughor explores your data in the background, forms a business ontology, and is engineered so the numbers it reports are **trustworthy, not just plausible**: deterministic guards sit between the model and every figure you see.
+> **The thesis:** most AI data tools are query wrappers — you ask, they translate. Pramanyx explores your data in the background, forms a business ontology, and is engineered so the numbers it reports are **trustworthy, not just plausible**: deterministic guards sit between the model and every figure you see.
 
 - 🔭 **It explores on its own.** Connect a warehouse and it starts learning — no prompts — asking up to 300 questions of a dataset in a run, keeping a frontier of what it has already covered and re-exploring as schema and data move. An interrupted run says so and offers to continue.
 - 🧠 **It learns the business, then writes the metrics.** A business profile inferred from the data proposes the metrics that matter, drawn from a map of about a hundred metric patterns so every area of the business is covered. You customise one into a draft, see the checks before you decide (what it changes, whether it runs, what it declares, what could be compared), and approve it — or a whole set of proposals — through an approval gate. The ontology it learns is drawn as the business runs: the **Business Atlas**, one journey through the declared processes with the entities standing beside it.
@@ -41,7 +46,7 @@ Aughor connects to your warehouse and **keeps learning from it**. It explores th
 
 ### The 98-second tour
 
-<sub>Every screen is the running product, filmed live · <a href="docs/readme/aughor-launch.mp4?raw=true"><strong>▶ watch it (MP4, 21 MB)</strong></a></sub>
+<sub>Every screen is the running product, filmed live · <a href="docs/readme/pramanyx-tour.mp4?raw=true"><strong>▶ watch it (MP4, 21 MB)</strong></a></sub>
 
 > **Synthetic data.** The tour and the screenshots on this page run on **LuxExperience**, a synthetic dataset
 > generated for demonstrations. Every order, customer, metric and figure in it is made up. Where it names real
@@ -56,22 +61,22 @@ Aughor connects to your warehouse and **keeps learning from it**. It explores th
 **macOS / Linux**
 
 ```bash
-curl -LsSf https://raw.githubusercontent.com/amit-kamlapure/aughor/main/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/amit-kamlapure/pramanyx/main/install.sh | sh
 ```
 
 **Windows**
 
 ```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/amit-kamlapure/aughor/main/install.ps1 | iex"
+powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/amit-kamlapure/pramanyx/main/install.ps1 | iex"
 ```
 
-The installer asks once which industries Aughor is for (airline, food delivery, logistics,
+The installer asks once which industries Pramanyx is for (airline, food delivery, logistics,
 manufacturing, retail and e-commerce, SaaS). Press Enter to keep them all: each connection's industry
 is then detected from its data. To answer without being asked, add `--industries retail,saas` (or
 `all`, or `none`) — `curl … | sh -s -- --industries retail`, or set `AUGHOR_INDUSTRIES` — and change it
 later in **Settings → Organization** or with `aughor industries`.
 
-Next time, run `aughor`.
+Next time, run `aughor` — Pramanyx's command-line tool, which keeps its name.
 
 ### What it installs, and where
 
@@ -158,7 +163,7 @@ underlying reason.
 
 ## Pick your models
 
-Aughor **ships no default model** — nothing is assumed about another vendor's catalogue, so you name one before your first question. The one route to a model is **Settings → Models** in the web UI: pick a backend, and the picker lists what that backend actually serves (plus your custom entries). Backends: **Ollama · LM Studio · Groq · Together · Anthropic · Gemini · OpenRouter · OpenAI** (OpenRouter and Gemini both have free tiers) — and any OpenAI-compatible endpoint you add yourself (Azure OpenAI, Mistral, a keyed vLLM) with **Add a provider**: a name, a base URL and a key, encrypted where every key is and never returned. Removing one clears everything that named it, and says each clearing.
+Pramanyx **ships no default model** — nothing is assumed about another vendor's catalogue, so you name one before your first question. The one route to a model is **Settings → Models** in the web UI: pick a backend, and the picker lists what that backend actually serves (plus your custom entries). Backends: **Ollama · LM Studio · Groq · Together · Anthropic · Gemini · OpenRouter · OpenAI** (OpenRouter and Gemini both have free tiers) — and any OpenAI-compatible endpoint you add yourself (Azure OpenAI, Mistral, a keyed vLLM) with **Add a provider**: a name, a base URL and a key, encrypted where every key is and never returned. Removing one clears everything that named it, and says each clearing.
 
 - **Three roles, independently pluggable:** SQL generation (`coder`), report synthesis (`narrator`), and the fast interpret sub-tier (`fast`) each resolve on their own — run a fast structured model for SQL and a stronger one for prose.
 - **A fallback you choose and watch:** pick a fallback backend/model in Settings; when the primary fails, the chain fails over — and since the run narrates its hops in the chat stream, a failing primary can't hide behind a healthy fallback. A link with no model of its own is skipped, and says why — never sent the primary's. Pin the chain order with `AUGHOR_FALLBACK_BACKENDS` when you need to.
@@ -192,9 +197,9 @@ The left rail groups every page under seven destinations — **Home · Ask · Da
 - **Semantic layer & governed metrics** — metrics proposed from the business profile and a map of about a hundred metric patterns, so the proposals cover the business area by area; each proposal passes code gates before it is offered (a metric whose date cannot bound its rows is refused at approval). Customise one into a draft, review it against its checks and approve it through an approval gate — or adopt a set of proposals in one approval — each dated and marked measured. Money prints in the currency a person confirmed for its dataset. The metrics read as a register — state, grain, unit, owner, what each reads, its tests. When the organisation allows reading a warehouse's own query history, a formula people compute there is proposed here too, through the same gates; the platform signs the statements it sends, so its own are never proposed back. Questions that reached none of the business's declared terms are listed where a person adds the word they used. Every form that takes a metric — a mission, a decision's expectation, a monitor, an automation step — picks a governed one by name and says when it is retired or not governed here. One precedence-ranked contract that chat, deep analysis and the explorer all read.
 - **Ontology** — auto-built and human-editable with override-wins semantics: entities, relationships, lifecycles, and the processes and actions on them, versioned in releases and compiled into docs. A connection's ontology opens on its **Business Atlas**: the declared processes joined end to end as one journey with each stage's count and each move's median, the entities standing in zones beside it — each shaped by what a pack deployed on the connection says it does, or by the shape a person chose on its page — records of activity marked between the things they link, and an entity's parts folded under it; it zooms, draws raised or flat, and a click opens an entity's or a process's own page. The register's tables and one Review queue sit under it. Making and changing things goes one way: a **New** menu (entity, link, process, rule, action), every form a dialog, every save waiting in the draft, one question before a removal that says what stops working, and a **Refuse** beside every Confirm of an explorer's proposal. The builder marks a junction — an entity whose table only relates two others — and declares the one many-to-many link through it, and reads a text column's date notation from its values. Find any object by name from ⌘K, see what uses an entity, put an earlier version back or mark one retiring with its successor and a day; an automation can act on each object a segment newly admits; a pack's upgrade arrives as a diff of only what changed.
 - **Record** — five ledgers (Inquiries, Decisions, Missions, Claims, Corrections), editable: add a hypothesis, mark a claim wrong, reopen a decision. A decision comes in from a dashboard question, a Briefing figure, `decide:` in Slack, its own email address, a Google file's comments, or a meeting's notes (the model proposes, a person confirms). It reads from where it arose to what was learned, is reviewed on its date, and is scored against what would have happened anyway. Decisions opens on the **North Star**: the loops closed this quarter and the calibration error of the predictions that settled, with the rule each outcome failed when it did not close; a prediction's band is the interval for the next reading, never narrower than the method's own past misses.
-- **Trust guards** — the layer that separates Aughor from a plausible demo: grain/fan-out/numeral/premise/refutation guards, one shared SQL-safety pipeline across every mode, earned-confidence computed (never asserted), snapshot-pinned receipts. Before a statement runs, the checks also say a text date compared as text (naming its notation), a division of whole numbers the engine truncates, and a literal a hundred times off the column's scale. One row policy holds at every door — a question's own SQL, the object door, MCP — and every object read says how complete it is; tables carry expectations (never empty, never repeated, fresh enough, not drifting), measured by an automation.
+- **Trust guards** — the layer that separates Pramanyx from a plausible demo: grain/fan-out/numeral/premise/refutation guards, one shared SQL-safety pipeline across every mode, earned-confidence computed (never asserted), snapshot-pinned receipts. Before a statement runs, the checks also say a text date compared as text (naming its notation), a division of whole numbers the engine truncates, and a literal a hundred times off the column's scale. One row policy holds at every door — a question's own SQL, the object door, MCP — and every object read says how complete it is; tables carry expectations (never empty, never repeated, fresh enough, not drifting), measured by an automation.
 - **Graph, Evidence, Memory and Org** — the **Graph** draws a connection's knowledge: its tables, joins, metrics, findings and terms, each link marked by how it is known (measured, declared, inferred, a person's, derived). **Evidence** is the claim ledger: what the deep analyses claimed and the query behind each, reviewed as validated, disputed or needing context. **Memory** is what the closed loop has learned: the readings it remembers, the queries it trusts and what reviewers said. **Org** holds the signals promoted from one dataset to the whole organisation.
-- **Actions** — what Aughor may do on a connection, and which runs a person approves first; an edit layer of values set over the data by an action or a person, merged when read and never written to the source; and every call made to another system.
+- **Actions** — what Pramanyx may do on a connection, and which runs a person approves first; an edit layer of values set over the data by an action or a person, merged when read and never written to the source; and every call made to another system.
 - **Adaptive temporal scope** — four tiers from activity-anchored recency to a cost governor for TB-scale warehouses.
 
 **Data**
@@ -209,10 +214,10 @@ The left rail groups every page under seven destinations — **Home · Ask · Da
 - **Spend** — usage and model cost by run, caps that stop a run and open a budget editor, and a governance feed that pages by date and exports. Refused model-call attempts are counted apart, not billed.
 - **Security & Audit** — every query checked and recorded, by person or agent: what was blocked, what was flagged, what was masked, and the gate map. An organisation can require a reason before anyone reads a run's details, recorded once.
 - **Evals** — suites, runs and experiments in the app; golden-set, Spider 2 and ablation harnesses in `evals/`, and a nightly evaluation (`evals/nightly.py`) on a copy of the newest backup — golden answers, abstention, another organisation refused at the door, an instruction planted in a column ignored — each against a baseline of the same model, under a cost ceiling.
-- **MCP server** — Aughor's governed answers as [MCP](https://modelcontextprotocol.io) tools (`python -m aughor.mcp`): Claude Desktop / Claude Code / Cursor get a verified answer with a Trust Receipt, not raw SQL. An administrator can also open doors through which outside agents read the ontology and propose its actions; every outside caller is someone — a service principal whose grant names the areas, entities, actions and connections it may use.
+- **MCP server** — Pramanyx's governed answers as [MCP](https://modelcontextprotocol.io) tools (`python -m aughor.mcp`): Claude Desktop / Claude Code / Cursor get a verified answer with a Trust Receipt, not raw SQL. An administrator can also open doors through which outside agents read the ontology and propose its actions; every outside caller is someone — a service principal whose grant names the areas, entities, actions and connections it may use.
 - **Agent skill & catalog** — [`SKILL.md`](SKILL.md) teaches a coding agent the governed workflow; [`llms.txt`](llms.txt) and a machine-readable connector catalog ([`aughor/connectors/catalog.json`](aughor/connectors/catalog.json), secrets flagged) make the platform legible to tools.
 - **Security & RBAC** — fail-closed SQL safety gate (a statement held in a string, as `query()` or `query_table()`, is refused too), read-only Postgres, SSRF allowlist, prompt-injection fencing; org tenancy enforced on every read once `AUGHOR_REQUIRE_IDENTITY` is set — which needs an OIDC issuer, or a declared authenticating proxy, or every request is refused with what to set — with a viewer ⊂ analyst ⊂ owner ladder, row-level policy compiled into every connector's WHERE, and row and property security on the ontology. A verified ID token is exchanged for an HttpOnly session cookie; an owner check answers owned, shared, another organisation's, not found or unresolved, and only the first two pass; no access decision reads the plan tier. Every job records the authority it was started under, and a send made inside one re-checks that person's role as it leaves.
-- **Brain map** — every store behind what Aughor knows, with its live count, and the measured links between them; below it, the facts that changed since first seen and what each replaced.
+- **Brain map** — every store behind what Pramanyx knows, with its live count, and the measured links between them; below it, the facts that changed since first seen and what each replaced.
 - **Backups** — the platform's own state backed up every hour something changed, a checked copy before every migration, and `aughor restore` to put one back ([above](#running-it-again-updating-uninstalling)).
 
 ## Stack
@@ -273,13 +278,13 @@ aughor/
 | `AUGHOR_PUBLIC_API_URL` | — | This API's public HTTPS origin, when it has one. It turns a Slack install into a button (the OAuth callback), gives a Teams bot its messaging endpoint, and puts absolute URLs on an agent's doors and A2A card. Unset, those say what is missing instead of guessing. |
 | `AUGHOR_MODEL_PRICES` | — | Rates for a provider whose API publishes none, so spend tiles say a number instead of **unpriced**: `provider:model=input/output@date`, USD per 1M tokens, `;`-separated. Google publishes no price endpoint, so a Gemini model needs one: the list price the aggregators carried for `gemini-3.1-flash-lite` on 2026-09-15 was `gemini:gemini-3.1-flash-lite=0.25/1.50@2026-09-15` — re-check it, the date is part of the claim. A declared rate outranks the catalogue; the product itself ships no model id. |
 
-**No feature flags.** Everything Aughor does is part of the platform and on. The only switches are
-six choices an organisation's admin makes in **Settings ▸ Organization ▸ What Aughor may do** — share
+**No feature flags.** Everything Pramanyx does is part of the platform and on. The only switches are
+six choices an organisation's admin makes in **Settings ▸ Organization ▸ What Pramanyx may do** — share
 summary statistics with other installs, send row text to an outside model, ask for a reason before a
-run's details are read, let Aughor run model work on its own schedule, read each warehouse's own query
+run's details are read, let Pramanyx run model work on its own schedule, read each warehouse's own query
 history, copy a source's rows into the federation engine for a cross-source join — each off by default.
 
-**Before exposing Aughor beyond `localhost`,** read [SECURITY.md](SECURITY.md) — the defaults assume a trusted single-user machine (`AUGHOR_API_KEY` gates requests when set; `AUGHOR_CORS_ORIGINS` scopes browsers; `AUGHOR_SECRET_KEY` encrypts stored credentials).
+**Before exposing Pramanyx beyond `localhost`,** read [SECURITY.md](SECURITY.md) — the defaults assume a trusted single-user machine (`AUGHOR_API_KEY` gates requests when set; `AUGHOR_CORS_ORIGINS` scopes browsers; `AUGHOR_SECRET_KEY` encrypts stored credentials).
 
 ### Optional extras
 

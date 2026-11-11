@@ -1,7 +1,7 @@
 """Result-trust checks — deterministic critiques for the CIDR-2026 E1 "function-semantics" footguns.
 
 CIDR 2026 ("Text-to-SQL Benchmarks are Broken", Jin et al.) found 53–66% of gold SQL is wrong, under a
-taxonomy E1–E4. Most patterns Aughor already guards: **E2** (fan-out / missing DISTINCT) = `grain_guard`,
+taxonomy E1–E4. Most patterns Pramanyx already guards: **E2** (fan-out / missing DISTINCT) = `grain_guard`,
 **E3** (suspect join) = `join_guard` value-domain, **E4** (ambiguous column) = `tools.ambiguity`. The
 open gap is **E1 — function/operator semantics that silently return the WRONG rows**:
 

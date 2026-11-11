@@ -1,4 +1,4 @@
-# Ontology-first — the implementation roadmap, read against Aughor
+# Ontology-first — the implementation roadmap, read against Pramanyx
 
 **Status: STUDY, 2026-10-09 — ✅ ADOPTED the same day as Arc OC, ROADMAP §3.56 (§6 item 50); OC-0's D1–D3 built
 `742114d7`.** Written at the
@@ -26,15 +26,15 @@ platform."*
 
 ## The answer, on one page
 
-1. **Aughor already has most of what the document calls an ontology.** Object types with stable api names and
+1. **Pramanyx already has most of what the document calls an ontology.** Object types with stable api names and
    measured keys; links with measured cardinality and business verbs; static, timeseries and detail bindings, across
    connections; expression, computed, frame and rollup properties; segments; processes with promises and rules,
    measured through a compiler; declared actions with typed parameters, criteria, approval, standing grants,
    verification, undo and earned authority; zero-config object pages; a model that drafts and a person who confirms.
-   Two things the document has no word for are Aughor's own: **promises measured against the data**, and **a scored
+   Two things the document has no word for are Pramanyx's own: **promises measured against the data**, and **a scored
    record of what the organisation believed, decided and got**.
 
-2. **What Aughor does not have is the document's central idea — the ontology as the platform's contract.** Measured:
+2. **What Pramanyx does not have is the document's central idea — the ontology as the platform's contract.** Measured:
    - **No version, no release, no history.** A saved declaration overwrites its file, a withdrawal deletes it, and no
      event records either (§6.2) — the one place the repo's *supersede, do not delete* invariant does not hold.
      Nothing checks who depends on a definition before it changes; the delete door the wave text promised would
@@ -62,7 +62,7 @@ platform."*
    A generated SDK and a second domain come last, as the document itself orders them.
 
 4. **Three of the document's premises do not transfer, and should not be copied.**
-   - *Materialise objects first.* Aughor's law is that rows never move; the object door compiles to the source, and
+   - *Materialise objects first.* Pramanyx's law is that rows never move; the object door compiles to the source, and
      its measured cost was accepted (§3). The platforms that added objects over virtual tables in 2025 still
      re-index them into their own store (§7.1) — a federated object layer is a real difference, not a gap.
    - *Agents work through the ontology's own query language.* Measured here: a model writing object queries did
@@ -72,7 +72,7 @@ platform."*
      their agent door now gives agents **SQL over the ontology** (§7.1). The ontology is the agent's compiler and checker, not a new
      language for it.
    - *The ontology is the moat.* The 2027 study ranked "the ontology as such" tenth of eleven; the declared, measured,
-     relied-on part — terms, promises, owners — third; the record built on it first. **Ontology-first in Aughor means
+     relied-on part — terms, promises, owners — third; the record built on it first. **Ontology-first in Pramanyx means
      declaration-first and contract-first**, which is the 2027 thesis applied, not reversed.
 
 5. **Two calls are the user's before anything is built** (§10): whether apps may keep **state of their own** inside
@@ -153,7 +153,7 @@ The document says its APIs are illustrative.
 The user describes a business as **processes**, each made of **nodes** and **flows**, where a flow carries four
 things. Mapped onto what exists:
 
-| The user's word | What it means | In Aughor today | Gap |
+| The user's word | What it means | In Pramanyx today | Gap |
 |---|---|---|---|
 | **Node** | a thing the business runs on | an object of an object type (`OntologyEntity`, `aughor/ontology/models.py:327`) — federated, read live | types are tables by construction (§5) |
 | **Nature of the flow** | what kind of relation it is | a link: from, to, cardinality declared *and measured*, a business verb (`OntologyRelationship`, `models.py:484`) | 15 of 37 live links carry a verb |
@@ -167,7 +167,7 @@ Two consequences shape everything after this section.
 - **The process is where flows get their purpose.** A link that a stage reaches through *carries* that process; that
   can be read from declarations that already exist, with nothing new to author (§8.4).
 - **Impact is the one genuinely new primitive** the user is asking for, and it is also the one the field lacks:
-  elsewhere links are navigational and process mining documents no promise (§7.1); Aughor's promises already
+  elsewhere links are navigational and process mining documents no promise (§7.1); Pramanyx's promises already
   measure breaches. An impact is a declared expectation between two nodes — *a late dispatch on an order line raises that
   order's chance of a late delivery* — measured like a promise, and carried with its **method** on the 2027 study's
   scenario ladder (declared → history → intervention). Without a method it is an assumption, and the departure gate
@@ -176,14 +176,14 @@ Two consequences shape everything after this section.
 **"Organisational intelligence" is two layers, not one.** The business layer — what exists and how it flows — and
 the record layer — what the organisation believed about it, decided, did, and got (claims, decisions, actions,
 outcomes, missions, scenarios; the 2027 study §G: *"Objects and Events are what every Claim is about"*). The document
-describes only the first. The second is where the 2027 study put the moat. An ontology-first Aughor is the first layer
+describes only the first. The second is where the 2027 study put the moat. An ontology-first Pramanyx is the first layer
 made into a contract so that the second can attach to it — which, on the live install, it does not yet (§5).
 
 ---
 
 ## 3 · Premise checks — what transfers and what does not
 
-| The document's premise | Aughor's law or measurement | Verdict |
+| The document's premise | Pramanyx's law or measurement | Verdict |
 |---|---|---|
 | **Start with materialised objects** (the document's §6.1) | "No object store, no sync" — reopened only on a measured latency a cache cannot cover (ROADMAP §3.15 laws; ROADMAP §6 item 14). Rows never move (2027 §F). Measured: object pages read live; a cross-source answer took 1.4–5.2 s against 43–66 ms as one statement, and the posture held | **Does not transfer.** Keep source-backed objects federated. Store only what the platform owns. Show freshness as the source's own (§8.2) |
 | **The action engine changes operational state**, local transaction plus outbox (the document's §7) | 2027 §M: "The platform does not become a system of action. An action is a reference…". ROADMAP §4.7: nothing is written to a customer's warehouse. The only local state an action changes is the edits overlay, and an edit may only *add* a property the source lacks | **Transfers for the platform's own state only.** Apps need state of their own — decision (b) |
@@ -191,7 +191,7 @@ made into a contract so that the second can attach to it — which, on the live 
 | **AI proposals are reviewable, not silent** (the document's §5.3 and §12) | The explorer's proposals are measured and then *served at once* as `origin: model`, "proposed"; explore-on-connect is on by default (turned on 2026-09-24 over its unmet quality gate — precision 0.67, recall 0.89) | **Transfers through a release**: proposals live in the draft; the published release holds what a person confirmed — decision (f) |
 | **The ontology is the differentiator** | 2027 moat ranking: "the ontology as such" 10th of 11; "declared organisational context" 3rd; the decision-and-outcome history 1st | **Transfers as declaration-first.** The ontology matters as the place declarations live and the record attaches |
 | **The builder comes last** (the document's §0 and §11) | ROADMAP §7: "Features stall at TESTED, not at LEVERAGED." Live: one declared action; 35 of 35 types are tables | **Partly.** No builder early — but the first ontology-bound *consumer* must arrive early, or declarations stay unmade |
-| **Not a general agent platform** (the document's §15) | Aughor is agent-native; the roster is frozen (ROADMAP §4.9 #3) | No conflict |
+| **Not a general agent platform** (the document's §15) | Pramanyx is agent-native; the roster is frozen (ROADMAP §4.9 #3) | No conflict |
 | **Apps: a metadata runtime plus custom code on a generated SDK** (the document's §10) | 2027 §Q: "The platform's equivalent of an app is the pack… UI: cards only… No arbitrary interface code"; the same study's line 186: "no public SDK"; Arc CT refused "any action a spec defines" | **The visual path transfers** — actions by reference to declared ones is the existing law ("an action names an EXISTING governed door"). **The custom-code path reopens §Q** — decision (d) |
 
 ---
@@ -256,10 +256,10 @@ State as of `44dee14f`. BUILT means a door, a store and a consumer exist; PARTIA
 | Events | PARTIAL | ~60 kinds, ratcheted; seven automation triggers, all but the inbound webhook *polled* on a 60-second heartbeat | `promise_breached` and `finding_created` are triggers |
 | Packs as products | PARTIAL | ontology claims, metrics, function layer, templates; `kit.py:3-4` "the platform's equivalent of an app is the pack" | never ship declared actions or cockpits; no upgrade, migration or dependency resolution |
 
-### 4.3 Where Aughor is ahead of the document
+### 4.3 Where Pramanyx is ahead of the document
 
-The document is a good outline of an ontology platform's shape. It has no answer to six things Aughor already does, and an
-ontology-first Aughor keeps all six:
+The document is a good outline of an ontology platform's shape. It has no answer to six things Pramanyx already does, and an
+ontology-first Pramanyx keeps all six:
 
 - **Every declaration is measured against the data**, not only validated as a schema — a key is a key because
   124,987 rows have 124,987 distinct values, a link's cardinality is counted, a promise has a breach rate.
@@ -365,7 +365,7 @@ the source's own page for this study. The July survey is not repeated.
 ### 7.1 What the object-and-action platforms do, mid-2025 to October 2026
 
 - ✔ **Agents got SQL back — over the ontology.** An outside agent is given a SQL tool over every object type in the
-  application, **each action type as its own tool**, and query functions as tools [D]. The convergence with Aughor's
+  application, **each action type as its own tool**, and query functions as tools [D]. The convergence with Pramanyx's
   measurement is the most useful single fact in this study: models write SQL well, so give them SQL over *declared*
   meaning, and actions as typed tools.
 - ✔ **A breaking change cannot be saved without a migration.** Changing a property's type, a primary key or a source,
@@ -385,7 +385,7 @@ the source's own page for this study. The July survey is not repeated.
 - **Security moved onto the ontology.** Object and property policies (row, column, cell), independent of the source's
   permissions, with policy testing; a token is the intersection of the person, the app's restrictions and the
   requested scope; `NOT` conditions are warned against because a scoped token may lack the attribute they test [D].
-  A hidden value shows as `null` — which Aughor's *withheld is said* rule refuses.
+  A hidden value shows as `null` — which Pramanyx's *withheld is said* rule refuses.
 - **Actions in two lanes.** At most one writeback hook runs *before* the edits and its failure blocks them; side-effect
   hooks run *after*, best-effort, and their failures are not shown to the person [D]. Applying an action returns an
   operation id — a 200 is not "applied". An action log is written per successful submission and linked to every
@@ -394,7 +394,7 @@ the source's own page for this study. The July survey is not repeated.
   public-sector programmes project benefits below their lifetime cost [R]. The research found no published head-to-head
   accuracy numbers for ontology-grounded agents [I].
 
-### 7.2 The landscape — four poles, and where Aughor stands
+### 7.2 The landscape — four poles, and where Pramanyx stands
 
 | Pole | What it models | What it lacks |
 |---|---|---|
@@ -403,16 +403,16 @@ the source's own page for this study. The July survey is not repeated.
 | **Processes** — object-centric process mining (OCEL 2.0) | events, objects, qualified relations, conformance | the data is extracted; no promise |
 | **Inferred context** — context mined from usage | context mined from usage, dashboards, SQL | what governs the inferred part — "the whole game", in one practitioner's words [R] |
 
-Five signals from the poles, each one checked against Aughor:
+Five signals from the poles, each one checked against Pramanyx:
 
 - ✔ **Execution is leaving the ontology.** In one platform's newest ontology (page dated 2026-09-15) a business rule is
   a natural-language definition, and the ontology does not run the rule against data or execute actions; acting moved
-  to operations agents, which approve each action and run it under a delegated, recorded agent identity [D]. Aughor's
+  to operations agents, which approve each action and run it under a delegated, recorded agent identity [D]. Pramanyx's
   rules and promises are *measured*, not prose — and the lesson is where they run: compiled, receipted statements,
   never the definition store.
 - ✔ **Metrics now have a standard; ontologies do not.** Apache Ossie (ex-OSI; incubating since July 2026; draft
   0.2.0.dev0) defines datasets, fields, metrics, relationships, dialects, AI context and extensions — and nothing for
-  actions, processes, rules, state machines, identity or authorization [D]. Ossie *import* would let Aughor start from
+  actions, processes, rules, state machines, identity or authorization [D]. Ossie *import* would let Pramanyx start from
   the semantic models customers already trust; an *export* is ROADMAP §4.6's question, refused.
 - **Each big platform binds its ontology to its own storage** [D]. The neutral tools that federate across warehouses
   carry no processes, no actions and no agents [D, R]. **A neutral, federated, process-aware ontology with actions and a
@@ -422,12 +422,12 @@ Five signals from the poles, each one checked against Aughor:
   can raise agent accuracy by up to 80% by 2027, and expects 60% of agentic-analytics projects that rely on MCP alone
   to fail by 2028 [D, R].
 - **Authoring proposes before it applies.** Ontology agents plan, then act; generated semantic models are proposals,
-  not truth; an assistant drafts on a branch [D, R]. Aughor's explorer measures before it writes — and then serves
+  not truth; an assistant drafts on a branch [D, R]. Pramanyx's explorer measures before it writes — and then serves
   before a person confirms (§3).
 
 ### 7.3 The building blocks — and the evidence
 
-**The evidence on ontology-grounded agents supports all three of Aughor's findings** [R; vendor numbers flagged]:
+**The evidence on ontology-grounded agents supports all three of Pramanyx's findings** [R; vendor numbers flagged]:
 
 | Finding here | What the field measured |
 |---|---|
@@ -436,26 +436,26 @@ Five signals from the poles, each one checked against Aughor:
 | Resolving terms to declared definitions lifts | Ontology-based query checks with repair: 72% plus 8% "unknown"; binding intent to governed definitions and validating the SQL for join, grain and filter; a preprint ablation finds the *semantic content* drives the gain and that contract rules were used 98% of the time when retrieved against 4% when placed in the prompt |
 
 One more reading of that table matters for design: a semantic layer's failures are **loud** (it refuses a question it
-cannot compile), text-to-SQL's are **silent** (a wrong number). Aughor's guard battery and *withheld is said* are the
+cannot compile), text-to-SQL's are **silent** (a wrong number). Pramanyx's guard battery and *withheld is said* are the
 same choice.
 
 The rest, by problem, with the choice each points to:
 
-| Problem | State of the art | Fit for Aughor |
+| Problem | State of the art | Fit for Pramanyx |
 |---|---|---|
 | A definition language and compiler | LinkML (30+ generators), SHACL (closed-world validation; 1.2 still a W3C draft), OWL (open-world — a missing value is not an error), a model format with a lineage tag that keeps an element's identity across renames | **Keep YAML + Pydantic as the only source** (the `interchange.py` lesson: a second representation drifts); add a stable id per element; validate closed-world; *emit* artifacts |
-| Schema evolution | Schema-registry compatibility modes (BACKWARD by default, transitive variants); protobuf strictness tiers; oasdiff's ERR · WARN · INFO; GraphQL schema diffs' breaking · dangerous · safe, with breaking changes checked against 30 days of real usage; model contracts, versions and exposures | A rule catalogue for ontology changes, usage-aware, plus Aughor's own class — **meaning-changing** (§8.5) |
+| Schema evolution | Schema-registry compatibility modes (BACKWARD by default, transitive variants); protobuf strictness tiers; oasdiff's ERR · WARN · INFO; GraphQL schema diffs' breaking · dangerous · safe, with breaking changes checked against 30 days of real usage; model contracts, versions and exposures | A rule catalogue for ontology changes, usage-aware, plus Pramanyx's own class — **meaning-changing** (§8.5) |
 | Processes | OCEL 2.0: objects, events, *qualified* event-to-object and object-to-object relations, attribute values over time. Forcing one case notion inflates, collapses or loses events (convergence, divergence, deficiency). Performance per step: synchronisation, pooling, lagging, flow time. Declared lifecycles: statecharts (SCXML, XState, python-statemachine) | Compile object-centric events at read time from timestamp and status columns; pick each promise's lead object from measured cardinality and refuse convergence the way fan-out is refused today; declared transitions as statecharts; PM4Py is AGPL — never embedded |
 | Flows with impact | Metric trees separate *component* edges (an exact formula) from *influence* edges (correlated, not causal); DoWhy's graphical causal models attribute a change along a *declared* graph | An impact carries its mechanism — formula · influence · validated — and is promoted only with recorded evidence (§8.4) |
 | Identity across sources | Splink 5 (MIT; DuckDB and Postgres; 2026-09-28): deterministic rules, then probabilistic, with a review band; survivorship per attribute; chained merges are the classic failure | Exact keys now; a match is a supersedable decision record when a cross-source need is measured — the 2027 study's "a person confirms; a rejected pair is remembered" |
 | Authorization | Cedar (default deny, forbid beats permit, the determining policies returned as the explanation, policy-set analysis in CI; in-process Python bindings); OpenFGA and SpiceDB (relationship-based, a service); MCP's 2025-11 and 2026-07 authorization (OAuth 2.1, protected-resource metadata, resource indicators, no token pass-through); Entra Agent ID GA; RFC 8693 `act` for delegation | The 2027 study's call stands — the platform's own small policy engine until policies outgrow it; Cedar is this study's candidate successor, its schema generated from the release; an agent's access is its grant ∩ its person's |
 | Durable actions | Transactional outbox; idempotency keys in atomic phases; optimistic locking; `SKIP LOCKED` queue tables; DBOS, Procrastinate, pgmq as Postgres-native options; Temporal, Restate, Inngest, Hatchet as services | Arc SR decided the queue is a table in the store — so the outbox is rows in it, worked with `SKIP LOCKED` and a lease; a separate engine is refused |
 | Declarative UI | json-render (the Cockpit already uses it), Google's A2UI (flat specs, catalog negotiation, `checks`), MCP Apps (final 2026-01-26; HTML in a sandboxed frame), forms from JSON Schema (RJSF, JSON Forms), generated clients (openapi-typescript, Hey API, Orval, Kubb; thin types plus a generic client) | Keep json-render; add ontology-bound pieces to the catalog; action forms from each action's generated JSON Schema; MCP Apps outbound only — opaque HTML cannot be validated |
-| Graphs without a graph database | SQL/PGQ committed to PostgreSQL 19 and **reverted** on 2026-09-07; BigQuery Graph GA 2026-09-01 (DDL in the warehouse); BigQuery caps recursion at 500 iterations; DuckPGQ | Bounded traversal stays compiled joins and recursive CTEs with a depth bound and a cycle guard; nothing created in a customer's warehouse; a graph engine only for Aughor's own edges (the context graph, lineage) |
+| Graphs without a graph database | SQL/PGQ committed to PostgreSQL 19 and **reverted** on 2026-09-07; BigQuery Graph GA 2026-09-01 (DDL in the warehouse); BigQuery caps recursion at 500 iterations; DuckPGQ | Bounded traversal stays compiled joins and recursive CTEs with a depth bound and a cycle guard; nothing created in a customer's warehouse; a graph engine only for Pramanyx's own edges (the context graph, lineage) |
 
 ---
 
-## 8 · What ontology-first means for Aughor
+## 8 · What ontology-first means for Pramanyx
 
 ### 8.1 The shape
 
@@ -474,7 +474,7 @@ The rest, by problem, with the choice each points to:
  ACROSS        identity · groups · grants whose securables include ontology ids · the gate map · audit
 ```
 
-This is the document's layer diagram with Aughor's laws applied: the contract in the middle, everything above it
+This is the document's layer diagram with Pramanyx's laws applied: the contract in the middle, everything above it
 reading a release, everything below it never copied. Apart from decision (b), it adds nothing the 2027 architecture
 refused — the INTELLIGENCE
 band there already holds "types, links, processes, promises, rules · definitions · the object door (a compiler)". What
@@ -507,14 +507,14 @@ not one source row.
    platforms and the warehouse semantic views all landed. Here it is a **hypothesis to measure** on the ON-10 sets (raw ·
    framed · framed plus ontology SQL) before the agent gets it; `ACTION:` template tokens are a precedent for
    expansion inside SQL (`aughor/ontology/actions.py`).
-5. **Actions as typed tools.** One proposal tool per declared action, propose-only by default, under Aughor's
+5. **Actions as typed tools.** One proposal tool per declared action, propose-only by default, under Pramanyx's
    authority ladder.
 
 ### 8.4 Processes and flows — the user's framing as design
 
 - **A flow has two backings.** A *link* between two types (an order line belongs to an order) and a *transition*
   between two states of one type (an order goes from placed to shipped, caused by an action or observed in the data).
-  The object platforms model the first in the ontology and the second in a process layer; Aughor has the first and half of the second
+  The object platforms model the first in the ontology and the second in a process layer; Pramanyx has the first and half of the second
   (stages are measured, transitions are not declared).
 - **Purpose is derived, not authored.** A link a stage reaches through *carries* that process; a link with a promise
   on it carries that promise. Both can be read from today's declarations and shown on the link and the map.
@@ -549,7 +549,7 @@ not one source row.
   uses, narrowing a type, changing a key, a binding's source or a link from to-one to to-many is an ERR; tightening an
   action's criteria is a WARN. A key change or a type change on a property with edits needs an edit migration — drop,
   move or cast.
-- **Aughor's own class: meaning-changing.** Moving a promise from two days to three, changing a rule's values, a
+- **Pramanyx's own class: meaning-changing.** Moving a promise from two days to three, changing a rule's values, a
   segment's filter or a metric's statement changes what every claim computed under it *means*. Publishing one marks
   those claims as computed under the old version and sends them down the Record's existing restatement path — *"a
   restated number told to whoever was given the old one"* (ROADMAP §0). No platform in §7 versions *meaning* against a record
@@ -572,7 +572,7 @@ property says so; an agent's access is its grant intersected with its person's, 
 
 ### 8.7 Apps
 
-An app, in Aughor's terms, is **a published cockpit whose pieces bind to a release**:
+An app, in Pramanyx's terms, is **a published cockpit whose pieces bind to a release**:
 
 - **New pieces:** an object table (a type or segment, columns, sort, paging), an object detail (today's object page,
   embedded), a process board (stages, breach rates, the open-and-overdue list), a link explorer, and an action button
@@ -584,7 +584,7 @@ An app, in Aughor's terms, is **a published cockpit whose pieces bind to a relea
   serves), inside the Cockpit tab — the rail stays.
 - **No code inside the platform.** A custom-code path — generated TypeScript types and a thin client for the object
   door and actions, used by an application that lives *outside* — comes later and is decision (d). MCP Apps (Arc CT's
-  unscheduled CT-6) is the outbound door for showing an Aughor view inside someone else's host.
+  unscheduled CT-6) is the outbound door for showing a Pramanyx view inside someone else's host.
 
 ---
 
@@ -613,9 +613,9 @@ something on the day it lands: §5's finding is the ordering principle.
 organisation install arrives. OC-0 is small and is mostly a defect fix; it is worth doing whatever is decided about
 the rest.
 
-**The document's success metrics, read for Aughor** — today's values are the baseline:
+**The document's success metrics, read for Pramanyx** — today's values are the baseline:
 
-| Metric | Aughor's reading | Today |
+| Metric | Pramanyx's reading | Today |
 |---|---|---|
 | Time to create an object type | declared types, and hours from a connection to its first | 0 declared types live |
 | Time to map a source | onboarding hours (`docs/GLOSSARY.md`) | "not yet" — no decision booked |
@@ -625,8 +625,8 @@ the rest.
 | Action success and reconciliation backlog | executions verified · `unknown` deliveries | 1 declared action |
 | Breaking changes caught before publication | ERRs refused | no mechanism |
 | Authorization coverage | securables enforced | enforcement off |
-| *Aughor's own:* the record attached to the contract | claims about an object, segment or type · claims pinning a definition version | 0 of 192 · 0 of 192 |
-| *Aughor's own:* framing reach | questions resolved to a declared definition | 15 of 18 Olist questions (ON-10) |
+| *Pramanyx's own:* the record attached to the contract | claims about an object, segment or type · claims pinning a definition version | 0 of 192 · 0 of 192 |
+| *Pramanyx's own:* framing reach | questions resolved to a declared definition | 15 of 18 Olist questions (ON-10) |
 
 **What not to build** — the document's §15 and the plan of record, merged:
 
@@ -684,7 +684,7 @@ Each with a recommendation. None blocks OC-0.
 
 ## Appendix A · The document, section by section
 
-| § | The document | Aughor |
+| § | The document | Pramanyx |
 |---|---|---|
 | 1 | The mental model; the ontology as the contract | the INTELLIGENCE band of the 2027 architecture — not yet a contract (§4, §5) |
 | 2 | Five primitives | object types, links and actions built; properties and functions partial (§4.1) |

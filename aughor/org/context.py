@@ -1,6 +1,6 @@
 """The current-Org context — the tenant key that rides every persisted write.
 
-Aughor is single-org today but *tenant-shaped*: every persisted object carries an
+Pramanyx is single-org today but *tenant-shaped*: every persisted object carries an
 ``org_id`` from day one (PLATFORM_ARCHITECTURE.md, Invariant #1) so multi-tenant
 becomes a config flip, not a migration. The org for the running code is held in a
 contextvar — exactly like ``current_job_id()`` in ``kernel/jobs.py`` — so data-path,

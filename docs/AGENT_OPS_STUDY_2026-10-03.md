@@ -55,7 +55,7 @@ REPORTED = an audit's claim, cited but not re-read.
 
 | # | Finding | Evidence | How verified |
 |---|---|---|---|
-| A1 | **Twenty manual steps across four surfaces** to get one @mention answered from a fresh install: Aughor UI → api.slack.com (manifest paste, install, three separate pages for three secrets) → Aughor UI (paste three) → Aughor UI (mint a supervisor key, shown once) → terminal (`cp .env.local.example`, paste key, `npm install`, `npm run dev`) → Slack (`/invite`). Five hand-copied secrets/blobs. | Ledger in §8; `AgentSlackDoor.tsx:178-253`; `routers/slackbots.py:67-76`; `IntegrationsPanel.tsx:438-476`; `bots/slack/package.json` | LIVE + CODE |
+| A1 | **Twenty manual steps across four surfaces** to get one @mention answered from a fresh install: Pramanyx UI → api.slack.com (manifest paste, install, three separate pages for three secrets) → Pramanyx UI (paste three) → Pramanyx UI (mint a supervisor key, shown once) → terminal (`cp .env.local.example`, paste key, `npm install`, `npm run dev`) → Slack (`/invite`). Five hand-copied secrets/blobs. | Ledger in §8; `AgentSlackDoor.tsx:178-253`; `routers/slackbots.py:67-76`; `IntegrationsPanel.tsx:438-476`; `bots/slack/package.json` | LIVE + CODE |
 | A2 | **Nothing starts or watches the supervisor.** `start.sh` starts API and web only; no Dockerfile, no service unit, no launch entry, no installer step. On this machine it is **not running** (`ps` shows no `bots/slack` process) while the bot card reads enabled and "Answers as The Look Analyst". There is no heartbeat, `last_seen` or "listening" field anywhere in the store, the API or the UI — a dead bot is indistinguishable from a live one. | `start.sh:4-8`; grep of `heartbeat|last_seen|running` across `aughor/slackbots`, `routers/slackbots.py`, `IntegrationsPanel.tsx`, `AgentSlackDoor.tsx` = 0 hits | LIVE + CODE |
 | A3 | **The success message omits the process.** After "Create Slack bot" the UI says *invite it, then add a Post-to-Slack action* — not that a supervisor must run, nor that a key must be minted. The key control appears only once a bot exists, one screen away. | `AgentSlackDoor.tsx:221-226`; `IntegrationsPanel.tsx:438-476` | CODE |
 | A4 | **Every UI-made bot is in "legacy compat" mode.** `render_manifest(agent_view=True)` exists and adds `assistant:write` + the Agents & AI Apps feature, but neither the manifest call nor the create call from the UI ever sends `agent_view`; the live bot has `agent_view: false`. Progress cards and the native stop button are therefore "silently absent" — the README's own words. Slack announced on 2026-08-20 that `assistant_view` retires in February 2027, that **new apps can no longer use it**, and that the move to `agent_view` is one-way. | `slackbots/manifest.py:45-81`; `AgentSlackDoor.tsx:96-100,136-143`; `bots/slack/README.md:17-31`; `GET /slack-bots` live | LIVE + CODE + web |
@@ -126,7 +126,7 @@ REPORTED = an audit's claim, cited but not re-read.
 - `test_vocabulary_ratchet.py` holds "charter" at 4 with a comment that no longer describes
   the screen (E1).
 
-## 3 · Where Aughor is strong
+## 3 · Where Pramanyx is strong
 
 This is not a weak surface. Against trace consoles and agent builders in general, these are
 ahead or unusual:
@@ -150,7 +150,7 @@ ahead or unusual:
 The bar is what agent platforms commonly ship as of this writing; treat it as the bar, not as
 a spec to copy.
 
-| Capability | The bar | Aughor today |
+| Capability | The bar | Pramanyx today |
 |---|---|---|
 | Put an agent in a channel | Slack-native agents: one install, agent mode, suggested prompts, status while thinking; publishing to Teams in a click; one workspace install serves every assistant | 20 steps, 4 surfaces, a process a person keeps alive, legacy mode (A1–A4) |
 | Agent definition reaches the model | Instructions are the system prompt, everywhere the agent speaks | Reaches the SQL prompt and the deep report; not the default chat body (C1) |
@@ -219,7 +219,7 @@ code existed).**
 1. **C1 confirmed.** Capture window `arc-ao-0` (8 calls, 6 min); one question, *"How many
    orders were placed yesterday?"*, `POST /ask` with `agent_id=ua_aaeb9e07870a`,
    `connection_id=8233e4fd`, `depth=quick`; trace `99c4c32c`, 16.8 s, five model calls captured.
-   The three converse-body calls open *"You are Aughor's analyst — the conversation over the
+   The three converse-body calls open *"You are Pramanyx's analyst — the conversation over the
    whole platform…"*; the builder's recorded `extra` is history + prior answers + the origin
    line; the string *"Report yesterday's sales"* appears in none of the five captured prompts
    (the capture is capped at 2,000 characters, so the top of each prompt is what was read —
@@ -278,7 +278,7 @@ code existed).**
 - c. **Agent mode by default for new apps** — Slack no longer lets new apps use the legacy
   view; the manifest adds the events the README lists; the UI exposes the toggle for existing
   bots and warns it is one-way. README rewritten for RC-5.
-- d. **One token, not three.** A Slack *configuration token* lets Aughor call
+- d. **One token, not three.** A Slack *configuration token* lets Pramanyx call
   `apps.manifest.create` and `apps.manifest.update` itself; the person pastes one token and
   clicks Install. (On HTTPS deployments the OAuth "Connect" card can do the install.)
   Falsifier: if Slack's config-token flow still requires the app-level token to be generated

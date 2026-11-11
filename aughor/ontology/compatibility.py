@@ -5,7 +5,7 @@ Every change waiting in a draft is classed before it can be published, from what
 * **ERR** — breaks what reads it: a withdrawal something depends on, a type's key or source changed, a link's join
   changed or widened from to-one to to-many, a process moved to another type, an action's parameters changed, a
   declaration whose own measurement did not bind. Publishing is refused while one stands.
-* **MEANING** — Aughor's own class: the element still reads, but what it *means* moved — a promise from two days to
+* **MEANING** — Pramanyx's own class: the element still reads, but what it *means* moved — a promise from two days to
   three, a stage's anchor, how an object leaves a process, a rule's values, a segment's filter, a metric's statement. Publishing one restates every
   claim computed under the old meaning (`ontology.release.publish`), so nobody keeps a number whose definition changed
   under it without being told.

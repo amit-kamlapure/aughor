@@ -1,6 +1,6 @@
 """The Platform ↔ Agent boundary ratchet.
 
-Aughor is a *Data Intelligence Platform* (the home) with the *Aughor Agent* (the
+Pramanyx is a *Data Intelligence Platform* (the home) with the *Pramanyx Agent* (the
 intelligence) running inside it. For the platform to stay plug-and-play, the
 dependency direction must be one-way: the **Agent may import the Platform, but the
 Platform must never import the Agent**. (See ``docs/PLATFORM_ARCHITECTURE.md`` /

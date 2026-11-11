@@ -131,7 +131,7 @@ describe("supervisor", () => {
       },
     });
     expect((await s.reconcile()).running).toBe(0);
-    broken = false;                                  // the token is fixed in Aughor
+    broken = false;                                  // the token is fixed in Pramanyx
     expect((await s.reconcile()).running).toBe(1);   // and it recovers on its own
   });
 

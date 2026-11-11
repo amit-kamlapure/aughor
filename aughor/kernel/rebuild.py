@@ -1,6 +1,6 @@
 """Staleness-resolved rebuild — Wave V2.
 
-**An output is fresh iff its inputs AND its logic are unchanged.** Aughor rebuilds on a *timer* in ~10 places, and a timer is wrong in both
+**An output is fresh iff its inputs AND its logic are unchanged.** Pramanyx rebuilds on a *timer* in ~10 places, and a timer is wrong in both
 directions at once. Take the briefing's 2-hour TTL:
 
 * it **rebuilds a brief whose inputs never moved** — pure cost, and each rebuild is an

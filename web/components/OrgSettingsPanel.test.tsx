@@ -121,7 +121,7 @@ describe("Settings ▸ Organization", () => {
 
   // ROADMAP §3.65 — the choices an organisation makes (§3.68 added the fifth), off unless chosen; one the server's environment turns on
   // while nobody has chosen says so, rather than looking off.
-  it("shows what Aughor may do, says which one is on only through the environment, and saves a choice", async () => {
+  it("shows what Pramanyx may do, says which one is on only through the environment, and saves a choice", async () => {
     const off = { allowed: false, set: false };
     api.getOrgAllows.mockResolvedValue({ share_aggregates: off, reason_to_read_runs: off, scheduled_model_work: off,
                                          read_query_history: off, outside_row_model: { allowed: true, set: false } });

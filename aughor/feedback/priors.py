@@ -1,6 +1,6 @@
 """Plan-time priors — read the captured feedback loop BACK into the planner (P1).
 
-Aughor already *captures* feedback channels but never *reads them back* when
+Pramanyx already *captures* feedback channels but never *reads them back* when
 planning the next answer, so the loop is open: a mistake a human corrected last
 week gets made again this week. This module closes it. Given a question +
 connection it assembles a single prompt section from:

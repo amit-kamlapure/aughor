@@ -1,5 +1,5 @@
 /* ════════════════════════════════════════════════════════════════════════════
-   AUGHOR — INSTRUMENT · the active token set
+   PRAMANYX — INSTRUMENT · the active token set
    ────────────────────────────────────────────────────────────────────────────
    The design system the product runs on: the design file "Aughor Design
    System", adopted 2026-09-13 and re-skinned 2026-09-25 (the user asked for dark after Du Bois
@@ -9,7 +9,7 @@
    Tailwind and shadcn bridges read every primitive below through var(), so the values
    here restyle the whole app at once.
 
-   The thesis holds: Aughor's product is a claim about a number, and the interface's
+   The thesis holds: Pramanyx's product is a claim about a number, and the interface's
    job is to make that claim checkable at a glance. Hierarchy comes from lines and the
    honest weight of type. Colour is a data type. What changed is the ground each skin
    stands on:

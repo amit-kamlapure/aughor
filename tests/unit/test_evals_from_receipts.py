@@ -122,7 +122,7 @@ def test_seed_suite_refuses_to_create_an_empty_suite(_receipts):
 
 
 def test_the_suite_says_it_measures_consistency_not_correctness(_receipts, monkeypatch):
-    """A receipt records what Aughor PRODUCED, not what was true. If that caveat is
+    """A receipt records what Pramanyx PRODUCED, not what was true. If that caveat is
     not attached to the suite, someone will report its pass rate as accuracy."""
     _receipts([_rec("r1", "How many returns were there?",
                     "SELECT COUNT(*) FROM returns", "Returns: 30,949")])

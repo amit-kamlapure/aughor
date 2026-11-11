@@ -131,10 +131,10 @@ function askYielding(chunks: string[], artifacts?: Partial<TurnArtifacts>) {
 describe("buildBot — RC-2", () => {
   it("an answer is the answer — no link back to the platform", async () => {
     // The user's call, 2026-09-23: "dont keep deeplink". Every answer used to end with
-    // "<…|Open in Aughor →>". It reads as the same decision that took receipts off Slack
+    // "<…|Open in Pramanyx →>". It reads as the same decision that took receipts off Slack
     // messages a day earlier — the message is for the people in the channel, and a trail
     // back into the platform is not what they are there for. The record still exists in
-    // Aughor; the Slack message just stops advertising it.
+    // Pramanyx; the Slack message just stops advertising it.
     const adapter = mockAughorAdapter();
     const { ask } = askYielding(["East leads."]);
     const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState() });

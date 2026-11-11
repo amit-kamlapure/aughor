@@ -62,7 +62,7 @@ export function evalChip(
         label: `${score} · unverified`,
         hue: "muted",
         detail:
-          "Recorded before Aughor tracked which configuration a score belongs to, so it " +
+          "Recorded before Pramanyx tracked which configuration a score belongs to, so it " +
           "cannot be shown as current or stale. Re-run the golden suite to settle it.",
       };
     default:

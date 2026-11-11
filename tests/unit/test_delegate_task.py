@@ -187,4 +187,4 @@ def test_a_broken_roster_never_breaks_the_prompt(monkeypatch):
     monkeypatch.setattr("aughor.agent.delegate_tool.delegation_targets",
                         lambda: (_ for _ in ()).throw(RuntimeError("store down")))
     prompt = ct.converse_system_prompt("c1")
-    assert "Aughor's analyst" in prompt
+    assert "Pramanyx's analyst" in prompt

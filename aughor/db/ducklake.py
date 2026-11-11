@@ -2,7 +2,7 @@
 
 DuckLake (the DuckDB team's lakehouse format) keeps table data as immutable Parquet and
 table *metadata* in a SQL catalog, so every write is an immutable, time-travellable
-snapshot. Backing an Aughor connection with one makes snapshot-pinned receipts EXACT: a
+snapshot. Backing a Pramanyx connection with one makes snapshot-pinned receipts EXACT: a
 finding gets a real ``dl:<catalog>:<id>`` data version (not just a fingerprint) and can be
 reproduced ``AT (VERSION => n)`` — which is what lets re-validate *prove* a finding was
 correct-as-computed vs mis-derived, instead of inferring it.

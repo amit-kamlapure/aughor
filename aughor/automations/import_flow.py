@@ -34,7 +34,7 @@ DROPPED = "dropped"      # structural in their model, meaningless in ours (ChatI
 REFUSED = "refused"      # carries or IS code, or names a capability we refuse to fake
 
 _NO_CODE_LAW = (
-    "Aughor refuses code injection by design: a node is a reference to a governed "
+    "Pramanyx refuses code injection by design: a node is a reference to a governed "
     "capability, never an implementation. "
 )
 
@@ -219,7 +219,7 @@ def import_flow(doc: Any) -> ImportResult:
         if n.cls in _STRUCTURAL:
             report.append(NodeReport(
                 node_id=n.id, component=n.display, disposition=DROPPED,
-                detail="conversation plumbing — an Aughor chain is TRIGGERED (the "
+                detail="conversation plumbing — a Pramanyx chain is TRIGGERED (the "
                        "schedule stands where ChatInput stood), and every step's output "
                        "lands in the run history rather than a chat window."))
             continue

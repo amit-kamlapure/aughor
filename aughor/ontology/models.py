@@ -1031,13 +1031,13 @@ class SideEffect(BaseModel):
     """A declared consequence of a KineticAction, dispatched by the executor (K2) through an
     existing primitive: ``notify`` with a ``destination`` → a destination saved in Notifications, through
     ``notifications.fire_action`` (its delivery log is the platform's record of it); ``notify`` with a ``url``, and
-    ``webhook`` → AUGHOR's envelope posted to that URL; ``trigger_investigation`` → ``runners.investigation`` (H5),
+    ``webhook`` → PRAMANYX's envelope posted to that URL; ``trigger_investigation`` → ``runners.investigation`` (H5),
     which submits it as a supervised kernel job. ``config`` is
     opaque here; the executor validates it per kind — for ``trigger_investigation`` it carries the
     ``question`` (``{param}`` placeholders filled from the action's declared parameters) and
     optionally ``connection_id`` / ``schema_name`` / ``agent_id``."""
     #: DS-13 — ``http`` is the declarative custom component: a real call to a vendor's own
-    #: API, described rather than coded. ``webhook`` posts AUGHOR's envelope
+    #: API, described rather than coded. ``webhook`` posts PRAMANYX's envelope
     #: (``{action, kind, params, config}``) to a URL, which is right for a receiver written
     #: for us and useless for one that was not — PagerDuty wants PagerDuty's body. ``http``
     #: carries method, headers, an encrypted auth header and a body TEMPLATE, so the same

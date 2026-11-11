@@ -1,7 +1,7 @@
-# Aughor — Feature Reference
+# Pramanyx — Feature Reference
 
-**Product:** Aughor — an autonomous, grounded data-warehouse intelligence platform.
-**This document:** a tight, current map of what Aughor does, organized by capability area. The full
+**Product:** Pramanyx — an autonomous, grounded data-warehouse intelligence platform.
+**This document:** a tight, current map of what Pramanyx does, organized by capability area. The full
 chronological build log (171 numbered features, sprint by sprint) is preserved verbatim in
 [`docs/archive/FEATURES_full_2026-06-29.md`](docs/archive/FEATURES_full_2026-06-29.md) — consult it for
 per-feature detail, history, and the technology behind each increment.
@@ -409,7 +409,7 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
 - **The Agent Workspace** (`web/components/AgentWorkspace.tsx`) — one perspective-switched surface
   (an instance of the `<Workspace>` shell) that folds the formerly-scattered agent surfaces into
   **Overview / Manage / Fleet**: the Agents and Fleet rail items are now two deep-links into one
-  workspace. **Overview** renders Aughor's own "native cards" over
+  workspace. **Overview** renders Pramanyx's own "native cards" over
   `GET /agents/custom/{id}/observability` — per-agent run count + recent runs (from the history
   store, joinable now that the run row carries `agent_id`) and, when `obs.mlflow` is on, MLflow
   trace stats (traces, errored, tokens, cost, latency p50/p90 — `telemetry.agent_trace_stats`,
@@ -608,7 +608,7 @@ folded onto — Intelligence, **Operations** (Monitors / Action Hub / Security &
 (Catalog / Query Builder / Semantic Layer) each render as one perspective-switched surface instead of a row
 of separate full-screen tabs (deep-links preserved). A **turn renderer registry** (`TURN_RENDERERS` +
 `registerTurnRenderer`) lets a pack contribute an answer surface without editing the chat god-component.
-A **report presentation + Du Bois design uplift** (2026-07-18, PR [#177](https://github.com/amit-kamlapure/aughor/pull/177)):
+A **report presentation + Du Bois design uplift** (2026-07-18, PR [#177](https://github.com/amit-kamlapure/pramanyx/pull/177)):
 the deep-analysis report reads as one clean argument (compact chrome, no methodology disclosure, one-font/one-color
 prose, a "Bottom line" close before the recommendations, per-exhibit **named** source drawers, the agent trace
 inspectable in history); the dark theme is lifted off near-black to a **Du Bois soft-dark** (calmer contrast, surfaces

@@ -1,5 +1,5 @@
 /**
- * The transport half of RC-1/RC-2: one Aughor `/ask` turn, folded into an
+ * The transport half of RC-1/RC-2: one Pramanyx `/ask` turn, folded into an
  * `AsyncIterable` that `thread.post` can stream into Slack.
  *
  * Deliberately thin. The question goes to the `/ask` door at `depth: "auto"` —
@@ -8,7 +8,7 @@
  * path — and the Slack thread id rides as `session_id`, so the turn files under
  * a conversation (FL-6) exactly as a web turn does.
  *
- * Frame → text mapping is REPLACE-aware: Aughor's `*_delta` partials carry the
+ * Frame → text mapping is REPLACE-aware: Pramanyx's `*_delta` partials carry the
  * FULL text-so-far per frame (the resume hub's snapshot contract), while a
  * `thread.post` iterable APPENDS every yield. So this tracks what it already
  * yielded per channel and emits only suffixes — the one non-obvious piece of
@@ -82,7 +82,7 @@ export interface AskOptions {
   /**
    * RC-4 — who is asking, as `slack:<user id>`. The bot authenticates as itself and
    * reports the human on whose behalf it asks, so a turn is attributed to a person
-   * rather than to nobody. Aughor honours it only when no authenticated identity is
+   * rather than to nobody. Pramanyx honours it only when no authenticated identity is
    * already in scope, so this can never be used to claim to BE someone else.
    */
   principalRef?: string;
@@ -165,7 +165,7 @@ export function createAskStream(
       }),
     });
     if (!res.ok || !res.body) {
-      yield `⚠️ Aughor did not answer (HTTP ${res.status}) — is the API running at ${base}?`;
+      yield `⚠️ Pramanyx did not answer (HTTP ${res.status}) — is the API running at ${base}?`;
       return;
     }
 
@@ -272,14 +272,14 @@ export function createAskStream(
             case "report":
             case "explore_report": {
               // A deep or wide turn lands as a report. The full artifact lives in
-              // Aughor; the thread gets the report's own words, never a summary
+              // Pramanyx; the thread gets the report's own words, never a summary
               // this transport invented.
               const rep = (frame.answer_report ?? frame.report ?? frame.explore_report ?? {}) as Record<string, unknown>;
               const head = asText(rep.headline) || asText(rep.answer) || asText(rep.summary);
               const body = asText(rep.summary) !== head ? asText(rep.summary) : "";
               // P6 — the figures the answer rests on and what it could not answer, as the canvas shows them.
               const text = [head, figuresLine(rep.figures), body, asText(rep.gaps)].filter(Boolean).join("\n\n")
-                || "Deep analysis complete — open Aughor for the full report.";
+                || "Deep analysis complete — open Pramanyx for the full report.";
               yield (sawText ? "\n\n" : "") + text;
               sawText = true;
               break;

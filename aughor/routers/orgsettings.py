@@ -28,7 +28,7 @@ def get_org_settings():
 
 @router.get("/org-settings/allows")
 def get_org_allows():
-    """What the organisation allows Aughor to do (ROADMAP §3.65): each of the four settings' answer, and whether an
+    """What the organisation allows Pramanyx to do (ROADMAP §3.65): each of the four settings' answer, and whether an
     admin set it — one never set answers from the variable of the flag it replaced, and the screen says so."""
     from aughor.orgsettings.allows import FORMER_ENV, allows
     stored = load_org_settings()

@@ -1,10 +1,10 @@
 /**
- * The Aughor-SSE → AI SDK stream adapter — CI-1d (was the C1 spike, 2026-08-01).
+ * The Pramanyx-SSE → AI SDK stream adapter — CI-1d (was the C1 spike, 2026-08-01).
  *
  * Track C's thesis: vercel/chatbot is a SHELL — the brain stays Python, a route
  * handler proxies `/ask`, and everything the shell renders arrives as AI SDK
  * chunks. This module is the seam that makes that true: a PURE translator from
- * Aughor's SSE frame vocabulary (see `investigationStream.ts`, the authority on
+ * Pramanyx's SSE frame vocabulary (see `investigationStream.ts`, the authority on
  * frame shapes) to the SDK's stream protocol. No I/O.
  *
  * ── What changed when the spike met the real package ────────────────────────
@@ -32,7 +32,7 @@
  *
  * ── The trap this module exists to solve: REPLACE vs APPEND ─────────────────
  *
- * Aughor's `*_delta` frames carry the WHOLE partial so far (`narrative_delta` =
+ * Pramanyx's `*_delta` frames carry the WHOLE partial so far (`narrative_delta` =
  * the full narrative rewritten every frame; the terminal frame then replaces the
  * partial outright). The SDK's `text-delta` chunks APPEND. Feeding
  * replace-frames to an append-consumer duplicates the prefix on every frame —
@@ -63,7 +63,7 @@ import {
   type AughorUIDataTypes,
 } from "./aughorUIDataTypes";
 
-/** The chunk type this adapter emits, bound to Aughor's data-part vocabulary. */
+/** The chunk type this adapter emits, bound to Pramanyx's data-part vocabulary. */
 export type AughorChunk = UIMessageChunk<unknown, AughorUIDataTypes>;
 
 export type AughorFrame = { event: string; data: Record<string, unknown> };

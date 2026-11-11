@@ -33,7 +33,7 @@ already right. The naïveté is narrower but real:
 | **Sufficiency** | How much history does *this statistic at this grain* need to be meaningful? |
 
 One magic number answers none well. **Decouple them and make each data-driven.** This is the USP:
-*every BI tool makes you pick a date range (or defaults to a dumb one); Aughor discovers the
+*every BI tool makes you pick a date range (or defaults to a dumb one); Pramanyx discovers the
 analytically-correct window from the data's own shape and tells you why — at a cost bounded by
 sampling + partition pruning + incremental deltas, not by warehouse size.* **"We don't ask you
 *when*; we discover *when matters*."**

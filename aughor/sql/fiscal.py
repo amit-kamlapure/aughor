@@ -8,7 +8,7 @@ fiscal-period start.
 
 It is a strict NO-OP at the default (month 1 = January → plain `date_trunc`), so existing
 calendar-year orgs are byte-for-byte unchanged. DAY/WEEK/MONTH grains are never shifted (a
-month is a month regardless of fiscal start). Currently emits DuckDB syntax (Aughor's primary
+month is a month regardless of fiscal start). Currently emits DuckDB syntax (Pramanyx's primary
 engine); other dialects fall back to plain calendar `date_trunc` rather than risk wrong SQL.
 """
 from __future__ import annotations

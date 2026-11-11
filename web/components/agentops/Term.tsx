@@ -10,7 +10,7 @@
 import type React from "react";
 
 export const TERMS = {
-  "built-in": "An agent that ships with Aughor and runs the platform's own jobs (profiling, "
+  "built-in": "An agent that ships with Pramanyx and runs the platform's own jobs (profiling, "
     + "briefings, watching). You can pause or budget it; you cannot rewrite it.",
   runner: "A background process that is not an agent — automation ticks, eval experiments. "
     + "Counted apart so a heartbeat never reads as an agent's work.",

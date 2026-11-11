@@ -948,7 +948,7 @@ function AgentBenchmark({ agent, onChanged, onError }: {
               ) : " · not yet evaluated"}
             </>
           ) : (
-            <>The learning loop is off (Settings ▸ Organization ▸ What Aughor may do): verdicts on this
+            <>The learning loop is off (Settings ▸ Organization ▸ What Pramanyx may do): verdicts on this
             agent&apos;s answers are recorded but teach it nothing as itself — {formatCount(learning.verdicts)} so far.</>
           )}
         </div>
@@ -1020,7 +1020,7 @@ function AgentBenchmark({ agent, onChanged, onError }: {
           <span style={{ marginLeft: "auto", display: "inline-flex", gap: 6 }}>
             <Button size="xs" variant="ghost" onClick={draft} disabled={drafting}
               title={learning && !learning.centre_on
-                ? "Refused while the organisation has not let Aughor run model work on its own schedule (Settings ▸ Organization)"
+                ? "Refused while the organisation has not let Pramanyx run model work on its own schedule (Settings ▸ Organization)"
                 : "One model call: up to six questions from the governed metrics and this agent's purpose, as candidates"}>
               {drafting ? "Drafting…" : "Draft questions"}
             </Button>

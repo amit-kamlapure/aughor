@@ -1,7 +1,7 @@
 # Milestone 12 — The Organisation Intelligence Layer
 
-**Proposal for: `sidhasadhak/hypothesis-engine` (Aughor / `hermes/`)**
-**Author intent:** turn Aughor from an **autonomous analyst** into an **organisation intelligence engine** — a continuously-running, queryable model of how the business actually operates as told by its data.
+**Proposal for: `sidhasadhak/hypothesis-engine` (Pramanyx / `hermes/`)**
+**Author intent:** turn Pramanyx from an **autonomous analyst** into an **organisation intelligence engine** — a continuously-running, queryable model of how the business actually operates as told by its data.
 
 This document has two parts:
 
@@ -14,7 +14,7 @@ This document has two parts:
 
 ### 1.1 Why this milestone exists
 
-Aughor today is a brilliant **per-question** analytical engine. You ask "why did revenue drop 8%?", it forms hypotheses, writes SQL, scores evidence, synthesises a report. It has a rich semantic layer (glossary + dbt + metrics catalog + 252 KB patterns) and a schema-intelligence layer (join inference + fingerprinting + ER diagram).
+Pramanyx today is a brilliant **per-question** analytical engine. You ask "why did revenue drop 8%?", it forms hypotheses, writes SQL, scores evidence, synthesises a report. It has a rich semantic layer (glossary + dbt + metrics catalog + 252 KB patterns) and a schema-intelligence layer (join inference + fingerprinting + ER diagram).
 
 What it does **not** have yet is a persistent, continuously-updated **map of the organisation itself**. The kind of map that lets you ask:
 
@@ -105,7 +105,7 @@ Each layer is shippable independently and provides value on its own.
 - The `compiled_sql` (or `raw_sql` as fallback) of every model → run through **SQLGlot's lineage API** (`sqlglot.lineage.lineage`) to produce `LineageEdge(parent_table.column → child_table.column, edge_type="sql_derive", transform_expr=…)`
 - Source nodes (`source.x.y`) → `LineageEdge(source_table → model, edge_type="dbt_source")`
 
-**M12a-ii — Query-history lineage.** Every SQL Aughor itself executes (already logged in `query_history` per investigation) goes through the same SQLGlot lineage extractor. This means even without dbt, the graph populates organically as the agent runs. Hand-written analytical SQL that doesn't live in dbt still contributes lineage edges.
+**M12a-ii — Query-history lineage.** Every SQL Pramanyx itself executes (already logged in `query_history` per investigation) goes through the same SQLGlot lineage extractor. This means even without dbt, the graph populates organically as the agent runs. Hand-written analytical SQL that doesn't live in dbt still contributes lineage edges.
 
 **M12a-iii — Multi-source federation.** Today a `DatabaseConnection` is per-investigation. Introduce a `DataSource` abstraction one level up:
 
@@ -342,7 +342,7 @@ After M12 ships, the user sees three new things in the UI:
 2. **Structural answers in the existing chat/investigate flow.** Asking "what breaks if `vendor_invoices` stops loading?" no longer returns "I don't have enough information" or a fabricated SQL attempt — it returns a real, traversed impact map.
 3. **Drift digests.** Every Monday morning (via the org agent or a plain cron), a "What changed in the warehouse this week, and what depends on those changes" report lands in Slack.
 
-And one thing they don't see but matters more than any of the above: **every investigation Aughor runs from week six onward is informed by an actual model of how their data flows.**
+And one thing they don't see but matters more than any of the above: **every investigation Pramanyx runs from week six onward is informed by an actual model of how their data flows.**
 
 ---
 
@@ -359,9 +359,9 @@ Copy from the line below all the way through the end of the file.
 
 ## 1. Who you are, what this is
 
-You are a senior staff engineer working on Aughor (`sidhasadhak/hypothesis-engine`, internal codename `hermes/`). The product is an autonomous data analyst that investigates business questions over a connected data warehouse. The current state of the system is documented in `ROADMAP.md` (the canonical "what shipped, what's next") and `FEATURES.md` (per-feature reference). You have both in your context. **Read them before you write any code.** When in doubt about an interaction, prefer the patterns already used in the codebase over inventing new ones.
+You are a senior staff engineer working on Pramanyx (`sidhasadhak/hypothesis-engine`, internal codename `hermes/`). The product is an autonomous data analyst that investigates business questions over a connected data warehouse. The current state of the system is documented in `ROADMAP.md` (the canonical "what shipped, what's next") and `FEATURES.md` (per-feature reference). You have both in your context. **Read them before you write any code.** When in doubt about an interaction, prefer the patterns already used in the codebase over inventing new ones.
 
-Your task is to ship **Milestone 12 — The Organisation Intelligence Layer (M12)** as specified in the roadmap document `M12_ORG_INTELLIGENCE_ROADMAP.md` (which you also have). M12 turns Aughor from a per-question analytical engine into a continuously-running model of how the organisation's data systems work, queryable via five new structural agent tools and a new routing mode (`structural`) alongside the existing `direct` and `investigate` modes.
+Your task is to ship **Milestone 12 — The Organisation Intelligence Layer (M12)** as specified in the roadmap document `M12_ORG_INTELLIGENCE_ROADMAP.md` (which you also have). M12 turns Pramanyx from a per-question analytical engine into a continuously-running model of how the organisation's data systems work, queryable via five new structural agent tools and a new routing mode (`structural`) alongside the existing `direct` and `investigate` modes.
 
 M12 has five layers (M12a through M12e) and is sequenced across six sprints (S1–S6). **You execute one sprint per work session.** At the start of each session, identify the current sprint from `data/m12_state.json` (a small ledger file you maintain). At the end of each session, update it.
 

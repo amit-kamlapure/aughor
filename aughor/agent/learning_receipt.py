@@ -6,7 +6,7 @@ the **Learning Receipt** (Wave 1 · E4, below) and the **Activation Receipt** (W
 
 Learning Receipt (Wave 1 · E4) — make the closed loop's per-answer work visible.
 
-Aughor's closed loop is captured and read back into prompts, but per answer the only visible learning
+Pramanyx's closed loop is captured and read back into prompts, but per answer the only visible learning
 signal was the single ``◆ resolved reading`` badge. This builds a compact summary of what the loop DID on
 one run, combining two sources:
 

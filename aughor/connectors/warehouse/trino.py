@@ -1,4 +1,4 @@
-"""Trino connector for Aughor — DE-3b's proving engine (ROADMAP §3.51; §6 item 37(d)).
+"""Trino connector for Pramanyx — DE-3b's proving engine (ROADMAP §3.51; §6 item 37(d)).
 
 DSN format:  trino://host:8080
 Meta fields: {"user": "...", "password": "...", "catalog": "...", "schema_name": "..."}

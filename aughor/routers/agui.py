@@ -1,9 +1,9 @@
 """AG-UI protocol seam — POST /agui/run (CK-1.1 of the AG-UI adoption).
 
 An ADDITIVE translator: it consumes the SAME composed `/ask` event generator the legacy
-endpoint uses (`investigations.build_ask_stream`) and re-frames each Aughor SSE frame as a
+endpoint uses (`investigations.build_ask_stream`) and re-frames each Pramanyx SSE frame as a
 standard AG-UI protocol event (via the `ag-ui-protocol` SDK), so any AG-UI client — the
-`@ag-ui/client` transport (CK-1.2) or any other AG-UI host — can drive Aughor.
+`@ag-ui/client` transport (CK-1.2) or any other AG-UI host — can drive Pramanyx.
 
 The legacy `/ask`, `/chat`, `/investigate` emission is untouched and byte-identical: this is a
 separate endpoint, gated OFF by default behind the `agui.endpoint` flag (⇒ 404 when off). The
@@ -56,7 +56,7 @@ from aughor.routers.investigations import (
 
 router = APIRouter()
 
-# Aughor "figure" frames → one render_answer ToolCall payload. Maps each event type to the data
+# Pramanyx "figure" frames → one render_answer ToolCall payload. Maps each event type to the data
 # key ON that event — note the `tables_used` event carries its list under `tables`, not `tables_used`.
 _FIGURE_FIELDS = {
     "sql": "sql", "columns": "columns", "rows": "rows",
@@ -82,7 +82,7 @@ def _latest_user_question(inp: RunAgentInput) -> str:
 
 
 def _forwarded(inp: RunAgentInput, key: str, default: Any = None) -> Any:
-    """Aughor specifics travel in AG-UI `forwardedProps` (dict or object)."""
+    """Pramanyx specifics travel in AG-UI `forwardedProps` (dict or object)."""
     fp = inp.forwarded_props
     if isinstance(fp, dict):
         return fp.get(key, default)
@@ -90,7 +90,7 @@ def _forwarded(inp: RunAgentInput, key: str, default: Any = None) -> Any:
 
 
 def ask_request_from(inp: RunAgentInput) -> AskRequest:
-    """Build the AskRequest from AG-UI input: the latest user message is the question, Aughor
+    """Build the AskRequest from AG-UI input: the latest user message is the question, Pramanyx
     specifics ride in forwardedProps, threadId is the session_id. Pure — unit-testable."""
     raw_hist = _forwarded(inp, "history") or []
     history: list[ChatHistoryTurn] = []
@@ -150,7 +150,7 @@ def ask_request_from(inp: RunAgentInput) -> AskRequest:
 async def translate_ask_stream(
     stream: AsyncGenerator[str, None], encoder: EventEncoder, *, thread_id: str, run_id: str,
 ) -> AsyncGenerator[str, None]:
-    """Re-frame Aughor's `/ask` SSE stream as AG-UI events. Pure over the input stream (no I/O,
+    """Re-frame Pramanyx's `/ask` SSE stream as AG-UI events. Pure over the input stream (no I/O,
     no LLM) so it is fully unit-testable by feeding a recorded frame list. See module §6 map."""
     hl_id = f"{run_id}-headline"
     ins_id = f"{run_id}-insight"
@@ -158,7 +158,7 @@ async def translate_ask_stream(
     figure: dict[str, Any] = {}
     ins_open = False
     figure_flushed = False
-    done_payload: dict | None = None   # the Aughor `done` event → carried into RunFinished.result
+    done_payload: dict | None = None   # the Pramanyx `done` event → carried into RunFinished.result
 
     def custom(name: str, ev: dict) -> str:
         return encoder.encode(CustomEvent(type=EventType.CUSTOM, name=f"aughor.{name}", value=ev))

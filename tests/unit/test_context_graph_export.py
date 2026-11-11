@@ -1,9 +1,9 @@
 """Wave C6 — distribution: the committed artifact + the skills pack.
 
 The decision gate is the two tests named ``test_decision_gate_*``: an agent in a
-separate repo, **with Aughor not running**, answers "what feeds net_revenue?" correctly
+separate repo, **with Pramanyx not running**, answers "what feeds net_revenue?" correctly
 and with table citations from the exported pack alone, and is warned when the pack is
-stale. Those two parse ``graph.json`` with nothing but ``json`` + ``re`` — no Aughor
+stale. Those two parse ``graph.json`` with nothing but ``json`` + ``re`` — no Pramanyx
 import — because that is precisely the claim the pack makes.
 """
 from __future__ import annotations
@@ -208,12 +208,12 @@ def test_install_sh_is_executable_and_registers_no_hook(tmp_path):
         assert forbidden not in text, f"install.sh must not touch {forbidden}"
 
 
-# ── the decision gate: consumption with Aughor not running ────────────────────
+# ── the decision gate: consumption with Pramanyx not running ────────────────────
 
 def _answer_what_feeds(graph_json_path, metric_name: str) -> dict:
     """A stand-in for the agent reading the pack in a separate repo.
 
-    Deliberately uses ONLY ``json``/``re`` — no Aughor import, no DB, no LLM — because
+    Deliberately uses ONLY ``json``/``re`` — no Pramanyx import, no DB, no LLM — because
     that is exactly the pack's claim. Mirrors the skill's protocol: check freshness →
     grep for a seed → pull the 1-hop subgraph → answer from it, citing tables.
     """

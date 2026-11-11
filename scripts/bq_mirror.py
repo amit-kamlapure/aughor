@@ -1,9 +1,9 @@
 """Mirror a BigQuery dataset into your own project with free copy jobs.
 
-The live-data pilot needs an externally-updated database that Aughor's catalog
+The live-data pilot needs an externally-updated database that Pramanyx's catalog
 can actually see. Public datasets live in projects we cannot run jobs in, so the
 catalog is blind to them; this script is the daily ETL that lands a copy in a
-project Aughor is connected to. It is deliberately NOT part of the platform —
+project Pramanyx is connected to. It is deliberately NOT part of the platform —
 it plays the role of the customer's pipeline.
 
 Copy jobs move tables without scanning bytes, so a run costs nothing against

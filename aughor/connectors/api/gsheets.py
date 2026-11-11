@@ -1,4 +1,4 @@
-"""Google Sheets connector for Aughor.
+"""Google Sheets connector for Pramanyx.
 
 Reads one or more worksheets from a Google Spreadsheet into a local DuckDB
 session so they can be queried like any other table.
@@ -15,7 +15,7 @@ httpfs extension. No credentials are used; private sheets require OAuth, which
 this connector intentionally does not claim to support.
 
 Optional dep:
-  uv pip install 'duckdb>=0.10.0'   (already a core Aughor dependency)
+  uv pip install 'duckdb>=0.10.0'   (already a core Pramanyx dependency)
 """
 from __future__ import annotations
 
@@ -223,7 +223,7 @@ class GoogleSheetsConnector(Connector):
             return False, str(e)
 
     def get_schema(self) -> str:
-        # Canonical Aughor schema format: `TABLE: name  (N rows)` followed by
+        # Canonical Pramanyx schema format: `TABLE: name  (N rows)` followed by
         # 2-space-indented `  col  TYPE` lines. This is what build_rich_schema,
         # the schema-linker and the data catalog all parse — emitting the older
         # bracketed one-liner would hide every column from those layers.

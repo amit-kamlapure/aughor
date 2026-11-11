@@ -4,7 +4,7 @@
  * SAME shared primitives (classifyColumns, inferChartType) so a Phase 1 comparison shows
  * the difference between two ENGINES and not between two chart-selection systems.
  *
- * Scope is the six types the ledger says are ~99% of everything Aughor has ever charted:
+ * Scope is the six types the ledger says are ~99% of everything Pramanyx has ever charted:
  * bar, bar_horizontal, line, multi_line, counter, pie — plus the `auto` deferral, which is
  * 27.7% of persisted answers on its own.
  *

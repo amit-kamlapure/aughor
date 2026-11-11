@@ -38,7 +38,7 @@ connection: orders, customers, payments and reviews. They were read with the rea
 
 ## 1. The premise, measured
 
-**What Aughor already has:**
+**What Pramanyx already has:**
 - **A file becomes a table.** The upload door reads CSV, TSV, Parquet, XLSX, XLS and JSON
   (`connectors/file/local_upload.py:84-96`). The Olist orders file reads as 99,441 rows in 8 typed columns, and every
   value in its five date columns reads back exactly as written.
@@ -52,14 +52,14 @@ connection: orders, customers, payments and reviews. They were read with the rea
   assistant for every screen is parked (ROADMAP §3.61).
 - **A model over rows, capped.** The semantic operators (`semops/operators.py:31-32`) refuse above 200 rows unless
   overridden, and fill 25 rows per model call.
-- **Dashboards, with an App builder (Arc AP).** This is the Aughor answer to "custom apps"; apps that run generated
+- **Dashboards, with an App builder (Arc AP).** This is the Pramanyx answer to "custom apps"; apps that run generated
   code on hosted servers were refused here (§6 item 50(d)).
 
 **What it does not have:**
-- **A table Aughor owns and people change.** An upload is rebuilt in memory from its files whenever they change
+- **A table Pramanyx owns and people change.** An upload is rebuilt in memory from its files whenever they change
   (`_materialize`), so an edit written into it would vanish.
 - **A backup of anything.** 46 SQLite stores and no scheduled copy (measured 2026-10-26). Today every store holds
-  something Aughor could re-derive or re-read. A sheet changes that: what people type exists nowhere else.
+  something Pramanyx could re-derive or re-read. A sheet changes that: what people type exists nowhere else.
 - **Adding rows and columns, typed editing in a grid, column totals.**
 - **Saved views:** grouped, board or calendar.
 - **Opening a row as a record.**
@@ -95,7 +95,7 @@ like with like; SH-1's kinds keep a Date apart from a Date & time for exactly th
   or in doubt. An oracle tests it: the materialized table must equal a fresh rebuild.
 - **A link is a declaration, not a copy.** A column that reads another sheet by a key, or a total of the other sheet's
   rows for each key, is computed in the projection. Change the other sheet and the linked column follows.
-- **To the rest of Aughor, the sheets are one connection,** *Sheets*. The Catalog, the chat, the ontology explorer,
+- **To the rest of Pramanyx, the sheets are one connection,** *Sheets*. The Catalog, the chat, the ontology explorer,
   dashboards and the Briefing read them as they read any table.
 
 ---
@@ -112,7 +112,7 @@ the hour stops SH-1's release.
 
 | # | Builds | Flag (off) · size | Falsifier |
 |---|---|---|---|
-| **SH-1** | **Sheets Aughor keeps, and their home.** <br>• *Spreadsheets* lists the workspace's sheets: rows, columns, where each came from, who changed it last. <br>• *New sheet* takes a file (CSV, TSV, Parquet, JSON; an Excel workbook becomes one sheet per tab, each named), starts blank, or keeps a query's or a chat answer's rows. <br>• The files already uploaded are offered as the place to start. <br>• Kinds are set at import (the list below), each checked. <br>• Removing a sheet writes its tombstone first. <br>• A glossary row: *Sheet* (Google's stay *Google Sheet*). | `sheets.core` · M–L | The materialized table differs from a fresh rebuild → stop |
+| **SH-1** | **Sheets Pramanyx keeps, and their home.** <br>• *Spreadsheets* lists the workspace's sheets: rows, columns, where each came from, who changed it last. <br>• *New sheet* takes a file (CSV, TSV, Parquet, JSON; an Excel workbook becomes one sheet per tab, each named), starts blank, or keeps a query's or a chat answer's rows. <br>• The files already uploaded are offered as the place to start. <br>• Kinds are set at import (the list below), each checked. <br>• Removing a sheet writes its tombstone first. <br>• A glossary row: *Sheet* (Google's stay *Google Sheet*). | `sheets.core` · M–L | The materialized table differs from a fresh rebuild → stop |
 | **SH-2** | **The grid.** <br>• Edit a typed cell in place; add a row or a column; hide, sort, filter, group and search. <br>• Each cell has its history: imported from file row *N*, or set by whom and when. <br>• Undo and redo are the changes' own history; a stale edit is refused. <br>• **Totals at the foot**: count, sum, average, earliest and latest, per column, over the rows the view shows. <br>• **A description on each column**, shown on its header. <br>• **Open a row as a record**: a drawer with every field and its source, its linked rows, its history, and comments. <br>• Rows are 30 px; Copy and CSV. | `sheets.grid` · L | An edit made in the grid is not what the chat's next read of the same cell returns → stop |
 | **SH-4** | **The chat beside the sheet.** <br>• It is grounded server-side in the sheet and view on screen, and answers through a query on the Sheets connection, with its receipt. <br>• **It makes a sheet from a file dropped into it**: it proposes the name, the kinds, a few views and a rule for rows that need attention, as one card. <br>• It **proposes** changes to a sheet: a view, a computed column, a yes/no column, a rule, a link. <br>• A person applies all or part; each change is recorded as proposed by the assistant and applied by the person. | `sheets.chat` · M | A chat answer about a sheet differs from the grid's own count of the same rows → stop |
 | **SH-7** | **Combining.** <br>• *Link* a column to another sheet by a key: every match and every miss counted before it is kept. <br>• *Total* the other sheet's rows per key (sum, count, latest), e.g. an order's payments. <br>• *Add a newer file* to a sheet: a keyed merge, shown first as every row added and every cell changed, then applied as one change that can be undone. <br>• *Keep a query's rows as a sheet*, from the SQL editor or a chat answer. | `sheets.combine` · M–L | A linked total differs from the same total computed by SQL over the two sheets → stop |
@@ -156,7 +156,7 @@ column's kind.
 
 ## 5. Decisions for you
 
-1. **Aughor writes its own sheets.** A sheet is the workspace's data, never a customer's warehouse. *Recommended:* yes.
+1. **Pramanyx writes its own sheets.** A sheet is the workspace's data, never a customer's warehouse. *Recommended:* yes.
 2. **Where a sheet's table lives.** *Recommended:* a DuckDB projection per workspace, rebuilt from source plus changes.
 3. **Where changes live.** *Recommended:* the edit layer, gaining row grain: one store for "a person's change to a
    value". The alternative is a sheet change log of its own.

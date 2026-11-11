@@ -2,7 +2,7 @@
 
 The compounding-accuracy loop: what the platform already learned becomes a *proposal* a
 human accepts or rejects, and accepting it makes the next answer better. Snowflake's
-capture → verify → generalize → suggest, with Aughor's binding rigor bolted on.
+capture → verify → generalize → suggest, with Pramanyx's binding rigor bolted on.
 
 **Three rules, and the wave stands or falls on them.**
 
@@ -242,7 +242,7 @@ def mine_from_query_log(connection_id: str, sqls: Iterable[str], *, dialect: str
             origin="query_log", source_rank="mined",
             evidence=f"filtered on these values in {sum(counter.values())} runs in the query history"))
     # A formula the platform itself named (`_n`, `_first`, `_v`: the Briefing's checks and the metric probes) is how
-    # Aughor queries, not how the business does; a reviewer gains nothing from being offered it back.
+    # Pramanyx queries, not how the business does; a reviewer gains nothing from being offered it back.
     formulas = [(k, n) for k, n in facts.named_formulas.most_common()
                 if n >= min_support and not str(k[0]).startswith("_")]
     for (name, expr), n in formulas[:max_per_kind]:

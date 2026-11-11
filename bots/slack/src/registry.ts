@@ -1,13 +1,13 @@
 /**
- * RC-5 — the bot registry: what Aughor says this process should be running.
+ * RC-5 — the bot registry: what Pramanyx says this process should be running.
  *
- * The supervisor reads records over HTTP and never opens Aughor's databases. That is
+ * The supervisor reads records over HTTP and never opens Pramanyx's databases. That is
  * not a style preference: `data/system.db` has been corrupted by a second process
  * mapping the same SQLite WAL index, and a long-lived bot host is exactly the kind of
  * second process that would do it.
  *
  * Records arrive with PLAINTEXT tokens — this endpoint is the one place that hands them
- * out, because a socket cannot be opened with a mask. Everything else in Aughor masks
+ * out, because a socket cannot be opened with a mask. Everything else in Pramanyx masks
  * them. Treat what comes back as a credential: never log it, never echo it.
  */
 
@@ -31,7 +31,7 @@ export type FetchBots = () => Promise<BotRecord[]>;
 /**
  * A fingerprint of everything that, if changed, means the running socket is wrong.
  *
- * Name is deliberately EXCLUDED: renaming a bot in Aughor should not drop a live
+ * Name is deliberately EXCLUDED: renaming a bot in Pramanyx should not drop a live
  * WebSocket and interrupt whoever is mid-thread. Credentials, bindings, agent_view and
  * rehearse are all included — each one changes what the socket IS or how it answers.
  */
@@ -93,7 +93,7 @@ export interface Heartbeat {
 export type PostHeartbeat = (beat: Heartbeat) => Promise<boolean>;
 
 /**
- * The supervisor tells Aughor it is alive after every reconcile.
+ * The supervisor tells Pramanyx it is alive after every reconcile.
  *
  * Measured 2026-10-03 (docs/AGENT_OPS_STUDY_2026-10-03.md A1–A2): nothing starts this
  * process, nothing watches it, and the bot card read "enabled" on a machine where it was

@@ -1,6 +1,6 @@
 """IP-2 — the industries this deployment chose: one small file every industry read goes through.
 
-The install asks which industries Aughor is for (ROADMAP §3.17 "Chosen at install"; §6 item 21, answers 1
+The install asks which industries Pramanyx is for (ROADMAP §3.17 "Chosen at install"; §6 item 21, answers 1
 and 2) and writes the answer here, in the state directory:
 
     data/industries.json   {"industries": ["retail", "saas"], "source": "installer", "updated_at": "…"}

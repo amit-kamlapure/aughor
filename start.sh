@@ -1,5 +1,5 @@
 #!/bin/bash
-# Starts Aughor. The same as ./install.sh, which installs anything missing first and takes a few
+# Starts Pramanyx. The same as ./install.sh, which installs anything missing first and takes a few
 # seconds when nothing is — kept for muscle memory.
 # Usage: ./start.sh                    — API (:8000) + web app (:3000), opened in your browser; Ctrl-C stops both
 #        ./start.sh --api-only         — API only

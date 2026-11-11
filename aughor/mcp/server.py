@@ -1,16 +1,16 @@
-"""The Aughor MCP server — Aughor's GOVERNED intelligence as Model Context Protocol
+"""The Pramanyx MCP server — Pramanyx's GOVERNED intelligence as Model Context Protocol
 tools, for any MCP client (Claude Desktop / Claude Code / Cursor).
 
 Design principle: expose governed *intelligence*
 tools, **not a raw ``query`` tool**. A generic text-to-SQL MCP hands the model a SQL
 runner and hopes the model writes a correct, fan-out-safe, metric-consistent query.
-Aughor instead exposes ``ask`` / ``deep_analysis`` / ``get_metric`` / ``get_briefing`` —
-tools that run Aughor's full governed path (write SQL → ground every number in real
+Pramanyx instead exposes ``ask`` / ``deep_analysis`` / ``get_metric`` / ``get_briefing`` —
+tools that run Pramanyx's full governed path (write SQL → ground every number in real
 rows → enforce registered metric definitions → attach the guards that fired) and return
 a verified answer **with a Trust Receipt**. The intelligence lives in the tool, not in
 the client.
 
-Each tool is a thin wrapper over the running Aughor REST API (see client.AughorClient),
+Each tool is a thin wrapper over the running Pramanyx REST API (see client.AughorClient),
 so the governed path, cost metering, agent budgets, and capability gating all execute in
 the API process exactly as they do for the web app.
 """
@@ -28,8 +28,8 @@ from pydantic import ConfigDict, Field
 from aughor.mcp.client import AughorClient
 
 _INSTRUCTIONS = """\
-Aughor is an autonomous, governed data-intelligence platform over a connected warehouse.
-These tools return VERIFIED answers, not raw SQL — Aughor writes and runs the SQL, grounds
+Pramanyx is an autonomous, governed data-intelligence platform over a connected warehouse.
+These tools return VERIFIED answers, not raw SQL — Pramanyx writes and runs the SQL, grounds
 every number in real rows, and enforces governed metric definitions.
 
 How to use this server:
@@ -39,7 +39,7 @@ How to use this server:
 3. For a "why / root-cause / driver" question that needs multi-step evidence, use
    `deep_analysis` (slower; runs the autonomous deep analysis and returns a report).
 4. `get_metric` returns the EXACT governed value of a registered metric — use it instead of
-   re-deriving a formula. `list_findings` / `get_briefing` surface what Aughor already
+   re-deriving a formula. `list_findings` / `get_briefing` surface what Pramanyx already
    discovered in the background. `explore` kicks off background discovery.
 5. `list_jobs` / `get_job` / `cancel_job` are the agent fleet — running and finished work.
 6. When an answer was slow or wrong, debug it: `list_runs` → `inspect_run` (where the time
@@ -193,12 +193,12 @@ def forget_policy() -> None:
     _policy_cache.clear()
 
 
-mcp = PolicedFastMCP("Aughor", instructions=_INSTRUCTIONS)
+mcp = PolicedFastMCP("Pramanyx", instructions=_INSTRUCTIONS)
 
 
 @mcp.tool()
 async def list_connections() -> list[dict]:
-    """List the data warehouses/connections Aughor can analyze. CALL THIS FIRST — every
+    """List the data warehouses/connections Pramanyx can analyze. CALL THIS FIRST — every
     other tool needs a `connection` id from here. Returns each connection's id, name,
     dialect, and (for multi-schema connections) its schema names."""
     return await _client.list_connections()
@@ -208,7 +208,7 @@ async def list_connections() -> list[dict]:
 
 @mcp.tool()
 async def read_contract() -> dict:
-    """Read the agent contract Aughor holds every agent to — its own and yours: the seven duties
+    """Read the agent contract Pramanyx holds every agent to — its own and yours: the seven duties
     and what each may book, the typed verdicts a run ends in, what an entry must carry (kinds,
     tiers, warrants and the laws at the ledger's door), who may book, the levels, the doors, how
     an agent is scored (by what became of its entries, never by a judge) and every refusal code.
@@ -224,7 +224,7 @@ async def read_claims(
     as_of: Annotated[Optional[str], Field(description="An ISO date: each claim as it stood on that day (belief as a view).")] = None,
     limit: Annotated[int, Field(description="At most this many claims.")] = 50,
 ) -> list[dict]:
-    """Read what the organisation holds true from Aughor's ledger: current claims, or — with
+    """Read what the organisation holds true from Pramanyx's ledger: current claims, or — with
     `as_of` — each claim as it was recorded on that date. Every claim carries its warrant, its
     tier, its author and, where counted, how often claims of its class have been right (a hit rate
     with its n, or nothing — never a model's confidence)."""
@@ -257,7 +257,7 @@ async def post_claim(
     natural_key: Annotated[str, Field(description="Your own key for this claim, to restate it later under the same key.")] = "",
     state: Annotated[str, Field(description="hypothesis: open · supported · refuted; prediction: open.")] = "",
 ) -> dict:
-    """Post a claim into Aughor's ledger with its warrant, as yourself (your service principal is the
+    """Post a claim into Pramanyx's ledger with its warrant, as yourself (your service principal is the
     author; every entry carries it and is scored by what becomes of it). The ledger's laws are
     enforced at the door: no fact without a warrant, no model-authored fact above tier `said`, no
     stated confidence. A refusal says why, with its code. Read `read_contract` first."""
@@ -274,7 +274,7 @@ async def ask(
     canvas: Annotated[Optional[str], Field(description="Optional canvas id to scope the question to a curated set of tables.")] = None,
 ) -> dict:
     """Ask a natural-language analytical question and get a GOVERNED answer with a Trust
-    Receipt. Aughor writes the SQL, runs it against the warehouse, grounds every number in
+    Receipt. Pramanyx writes the SQL, runs it against the warehouse, grounds every number in
     real result rows, enforces any governed metric definitions involved, and returns the
     headline answer + the exact SQL + a sample of result rows + the receipt (the guards
     that fired and the governed metrics used).
@@ -296,7 +296,7 @@ async def deep_analysis(
     deep: Annotated[bool, Field(description="True (default) runs the full deep analysis; False serves a pre-computed finding dossier when the question maps to one.")] = True,
     fresh: Annotated[bool, Field(description="Skip the similar-investigation cache and force a new run.")] = False,
 ) -> dict:
-    """Run Aughor's autonomous deep analysis — a multi-step, evidence-gathering
+    """Run Pramanyx's autonomous deep analysis — a multi-step, evidence-gathering
     run for "why / root-cause / driver" questions that one query can't answer. The
     agent forms hypotheses, runs and verifies queries (fan-out- and grain-safe), and
     synthesizes a report with findings and recommendations, plus a Trust Receipt.
@@ -325,10 +325,10 @@ async def get_metric(
     name: Annotated[Optional[str], Field(description="A governed metric name. Omit to list all registered metrics.")] = None,
     connection: Annotated[Optional[str], Field(description="A connection id — when given with `name`, also computes the metric's current value against that connection.")] = None,
 ) -> dict:
-    """Read Aughor's GOVERNED metrics. With no `name`, lists every registered metric (name,
+    """Read Pramanyx's GOVERNED metrics. With no `name`, lists every registered metric (name,
     label, formula, governance status). With a `name` and a `connection`, also computes the
     metric's CURRENT value by running its registered SQL — the exact governed number, so you
-    bind to the same definition Aughor enforces everywhere instead of improvising a formula.
+    bind to the same definition Pramanyx enforces everywhere instead of improvising a formula.
 
     Returns: {metrics:[…]} when listing, or {name, definition, value, unit, sql} for one metric.
     """
@@ -341,9 +341,9 @@ async def list_findings(
     schema: Annotated[Optional[str], Field(description="Optional schema name to scope a multi-schema connection.")] = None,
     limit: Annotated[int, Field(description="Max findings to return (default 25).", ge=1, le=100)] = 25,
 ) -> dict:
-    """List the insights Aughor's background explorer has already discovered for a connection
+    """List the insights Pramanyx's background explorer has already discovered for a connection
     — each a verified finding with its confidence, novelty, domain, and the SQL behind it.
-    These are pre-computed (a $0 read), so prefer this before asking Aughor to re-derive what
+    These are pre-computed (a $0 read), so prefer this before asking Pramanyx to re-derive what
     it already found. If `count` is 0, the connection hasn't been explored yet — call `explore`.
     """
     return await _client.list_findings(connection, schema=schema, limit=limit)
@@ -355,7 +355,7 @@ async def get_briefing(
     schema: Annotated[Optional[str], Field(description="Optional schema name to scope a multi-schema connection.")] = None,
     refresh: Annotated[bool, Field(description="Rebuild the briefing from the latest findings (re-validates against live data) instead of returning the cached narrative.")] = False,
 ) -> dict:
-    """Get Aughor's executive Briefing for a connection — the synthesized, impact-ranked
+    """Get Pramanyx's executive Briefing for a connection — the synthesized, impact-ranked
     narrative of what matters right now (the lead verdict, supporting signals, citations),
     built from the explorer's findings and the governed north-star metrics. The fastest way
     to understand a business's current state. `available=false` means there's nothing to brief
@@ -368,7 +368,7 @@ async def explore(
     connection: Annotated[str, Field(description="A connection id from list_connections.")],
     schema: Annotated[Optional[str], Field(description="Optional schema name; omit to explore every schema of a multi-schema connection.")] = None,
 ) -> dict:
-    """Kick off Aughor's autonomous background exploration of a connection — it profiles the
+    """Kick off Pramanyx's autonomous background exploration of a connection — it profiles the
     data, maps entities and lifecycles, and surfaces findings with no prompting. Returns
     immediately (the work runs in the background as a fleet job); poll `list_findings` /
     `get_briefing` for results, or `list_jobs` to watch progress. Subject to the connection's
@@ -382,10 +382,10 @@ async def list_jobs(
     connection: Annotated[Optional[str], Field(description="Filter to one connection id.")] = None,
     limit: Annotated[int, Field(description="Max jobs to return (default 50).", ge=1, le=500)] = 50,
 ) -> list:
-    """List Aughor's agent fleet — recent and in-flight background jobs (explorations =
+    """List Pramanyx's agent fleet — recent and in-flight background jobs (explorations =
     Scout, investigations = Analyst), each tagged with its agent, status, the compute it
     spent (tokens · queries · rows · time), and duration. The legible view of the autonomy
-    Aughor runs."""
+    Pramanyx runs."""
     return await _client.list_jobs(state=state, connection=connection, limit=limit)
 
 
@@ -421,10 +421,10 @@ async def search_graph(
     query: Annotated[str, Field(description="What to look for — a table, metric, term or topic.")],
     limit: Annotated[int, Field(description="Max nodes to return (default 10).", ge=1, le=50)] = 10,
 ) -> dict:
-    """Search Aughor's connection knowledge graph — the tables, governed metrics, glossary
+    """Search Pramanyx's connection knowledge graph — the tables, governed metrics, glossary
     terms and past findings it has already established for a connection, with the measured
-    join overlap between tables. This is a $0 read of what Aughor already knows: prefer it
-    before asking Aughor to re-derive anything. `available=false` means no graph has been
+    join overlap between tables. This is a $0 read of what Pramanyx already knows: prefer it
+    before asking Pramanyx to re-derive anything. `available=false` means no graph has been
     built yet. A `notice` means some results were withheld by data governance — the data
     exists, your credentials do not reach it."""
     return await _client.search_graph(connection, query, limit=limit)
@@ -435,11 +435,11 @@ async def describe_entity(
     connection: Annotated[str, Field(description="A connection id from list_connections.")],
     entity: Annotated[str, Field(description="An object type or table name, e.g. 'shipment' or 'orders'.")],
 ) -> dict:
-    """What one business object TYPE is — an order, a customer, a shipment — as Aughor's ontology
+    """What one business object TYPE is — an order, a customer, a shipment — as Pramanyx's ontology
     measured it: its key and whether the data proves it unique, the property that names one, every
     property with its role, type and SOURCE (the table and column it is read from), its links to other
     types by name with measured cardinality and whether each can be followed (or why not), the declared
-    actions that take it, and its verified metrics. The slice Aughor's entity-type map renders, so an
+    actions that take it, and its verified metrics. The slice Pramanyx's entity-type map renders, so an
     agent and a person asking what a Shipment is get one answer. `kind` says where it came from: the
     ontology (`object_type`), or — where none is built — the knowledge graph's table node (`table`).
     `available=false` with a `notice` means it exists but is withheld by data governance."""
@@ -503,7 +503,7 @@ async def list_runs(
     investigation: Annotated[Optional[str], Field(description="Only runs that touched this investigation id.")] = None,
     agent: Annotated[Optional[str], Field(description="Only runs by this agent id.")] = None,
 ) -> dict:
-    """Recent Aughor runs, newest first — the index into the trace surface.
+    """Recent Pramanyx runs, newest first — the index into the trace surface.
 
     One summary per run: its question, when it started, how many events, tool calls and
     model calls it made, and how many errored. Use it to FIND the run you care about, then
@@ -541,14 +541,14 @@ async def read_run_span(
     Returns that span's call payload (e.g. the SQL that ran, or the tool's arguments) and
     its result, with any credential in them masked.
 
-    This read is AUDITED: Aughor journals who read whose run, because payload access is
+    This read is AUDITED: Pramanyx journals who read whose run, because payload access is
     governed rather than merely permitted."""
     return await _client.run_span(trace_id, span_id)
 
 
 # ── DS-14: an enabled automation, exposed as a tool ──────────────────────────────
 #
-# The eighteen tools above are STATIC — they are what this version of Aughor can do, and
+# The eighteen tools above are STATIC — they are what this version of Pramanyx can do, and
 # they are the same on every install. An automation is the opposite: it is what THIS
 # deployment's people built, it appears and disappears at runtime, and no decorator can
 # know its name. So these are registered dynamically at server start from the one route
@@ -762,7 +762,7 @@ _GROUNDING_DESCRIPTION = (
     "What a custom agent would READ for a question, without asking any model: each grounding block its answer is "
     "built from — its brief, the schema slice, governed metrics, the glossary, trusted queries, corrections, its own "
     "documents — with the content, cut to what you may see, and every absent block with why. Use it to ground your "
-    "own model on what Aughor knows, or to see what an agent would be handed before trusting its answer. It says "
+    "own model on what Pramanyx knows, or to see what an agent would be handed before trusting its answer. It says "
     "whether the embedder was called and which (a hosted one may charge), and that no chat model was; it may read "
     "the warehouse once for a measure's grain. Each read is recorded, never its content.")
 
@@ -1165,7 +1165,7 @@ def _automation_description(row: dict) -> str:
     parts = [described or f"Run the '{row.get('name')}' automation."]
     if steps:
         parts.append(f"Steps: {steps}.")
-    parts.append("Runs through Aughor's governed path — the run appears in Activity, and a "
+    parts.append("Runs through Pramanyx's governed path — the run appears in Activity, and a "
                  "governed write inside it stops for human approval rather than firing.")
     return " ".join(parts)
 

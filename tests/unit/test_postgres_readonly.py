@@ -1,6 +1,6 @@
 """REC-02 / SEC-02 / INV-2 — Postgres connections must open READ-ONLY.
 
-Aughor is a read-only analyst; the connection layer must reject writes rather
+Pramanyx is a read-only analyst; the connection layer must reject writes rather
 than relying solely on the (defence-in-depth) SQL safety gate. We assert the
 session is opened with ``default_transaction_read_only=on`` via libpq
 ``options``, which applies before any statement even under autocommit. No live

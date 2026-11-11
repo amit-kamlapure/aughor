@@ -157,7 +157,7 @@ def _anomaly_chain(channel="#general", bot_id="sb_look") -> ProposedChain:
 def two_bots(monkeypatch):
     monkeypatch.setattr("aughor.slackbots.store.list_bots", lambda *a, **k: [
         SimpleNamespace(id="sb_look", name="TheLook Analyst", enabled=True),
-        SimpleNamespace(id="sb_aughor", name="Aughor", enabled=True)])
+        SimpleNamespace(id="sb_aughor", name="Pramanyx", enabled=True)])
 
 
 @pytest.fixture(autouse=True)
@@ -208,7 +208,7 @@ def test_a_channel_and_sender_the_request_did_not_name_stay_open(two_bots):
 
 
 def test_what_the_request_names_is_kept(two_bots):
-    out = propose_chain("post anomalies to #anomalies as Aughor every morning at 9am",
+    out = propose_chain("post anomalies to #anomalies as Pramanyx every morning at 9am",
                         conn_id=AUTO_CONN,
                         provider=_Provider(_anomaly_chain("#anomalies", "sb_aughor")))
     post = out.draft["effects"][1]["config"]
@@ -217,14 +217,14 @@ def test_what_the_request_names_is_kept(two_bots):
 
 
 def test_a_channel_named_only_inside_another_word_is_not_named(two_bots):
-    out = propose_chain("generally, send anomalies to slack as Aughor", conn_id=AUTO_CONN,
+    out = propose_chain("generally, send anomalies to slack as Pramanyx", conn_id=AUTO_CONN,
                         provider=_Provider(_anomaly_chain("#general", "sb_aughor")))
     assert out.draft["effects"][1]["config"]["channel"] == ""
 
 
 def test_the_one_bot_there_is_needs_no_choosing(monkeypatch):
     monkeypatch.setattr("aughor.slackbots.store.list_bots", lambda *a, **k: [
-        SimpleNamespace(id="sb_only", name="Aughor", enabled=True)])
+        SimpleNamespace(id="sb_only", name="Pramanyx", enabled=True)])
     out = propose_chain("post anomalies to #ops every morning", conn_id=AUTO_CONN,
                         provider=_Provider(_anomaly_chain("#ops", "")))
     assert out.draft["effects"][1]["config"]["bot_id"] == "sb_only"
@@ -236,7 +236,7 @@ def test_any_other_missing_key_still_refuses(two_bots):
     is the model's failure, and refuses exactly as it did before."""
     chain = _anomaly_chain("#anomalies", "sb_aughor")
     chain.effects[0].config["question"] = ""
-    out = propose_chain("post anomalies to #anomalies as Aughor", conn_id=AUTO_CONN,
+    out = propose_chain("post anomalies to #anomalies as Pramanyx", conn_id=AUTO_CONN,
                         provider=_Provider(chain))
     assert out.verdict == "refused" and "question" in out.reason
 

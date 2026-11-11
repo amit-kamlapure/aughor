@@ -6,13 +6,13 @@ spine. Mirrors the [Wave K arc](WAVE_K_KINETIC_PLANE_ARC.md) format: each PR car
 off), a test estimate, and a **pre-registered decision gate**.
 
 **Wave A depends on Wave K** — "effects execute declared actions" is the joint, and K1–K5 merged in
-[#201](https://github.com/amit-kamlapure/aughor/pull/201).
+[#201](https://github.com/amit-kamlapure/pramanyx/pull/201).
 
 ---
 
 ## 0. What this is, and what it is NOT
 
-Aughor already *reacts* — it just does so three separate times, in three modules that cannot see each
+Pramanyx already *reacts* — it just does so three separate times, in three modules that cannot see each
 other. Wave A makes **condition → effect** one declared, governed, inspectable thing.
 
 **IS:**
@@ -74,7 +74,7 @@ agree**, plus one that is not a trigger at all.
    effect is that dispatcher — so A2 makes an existing declared-action kind executable rather than
    adding a parallel one. This is the concrete form of "A depends on K."
 
-**Naming.** Aughor now has *four* "action"-adjacent concepts (`OntologyAction` read-templates,
+**Naming.** Pramanyx now has *four* "action"-adjacent concepts (`OntologyAction` read-templates,
 ActionHub `ActionTrigger` webhooks, Wave K `KineticAction`, and now Wave A `Effect`). An **Effect is
 not a new action type** — it is a *reference to* one of the first three plus the arguments to invoke
 it with. Docs and UI must never call an Effect an "action" unqualified.

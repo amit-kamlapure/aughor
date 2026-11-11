@@ -145,7 +145,7 @@ def draft_synthetic_goldens(agent, *, n: int = DRAFT_BATCH) -> list[dict]:
     Raises RuntimeError when the centre's flag is off."""
     if not _allowed():
         from aughor.orgsettings.allows import WHERE
-        raise RuntimeError(f"the testing centre is off: the organisation has not let Aughor run model work on its own "
+        raise RuntimeError(f"the testing centre is off: the organisation has not let Pramanyx run model work on its own "
                            f"schedule ({WHERE})")
     from pydantic import BaseModel, Field
     from aughor.llm.provider import get_provider

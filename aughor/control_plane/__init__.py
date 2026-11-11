@@ -1,6 +1,6 @@
 """The control plane (PLATFORM_ARCHITECTURE.md §4).
 
-Aughor is designed as a *platform*: the operator owns the infrastructure, tenants
+Pramanyx is designed as a *platform*: the operator owns the infrastructure, tenants
 are provisioned within it, and the classic split keeps single-org-now and
 multi-tenant-later the same codebase —
 

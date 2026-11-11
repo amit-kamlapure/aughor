@@ -203,9 +203,9 @@ evals = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/amit-kamlapure/aughor"
-Repository = "https://github.com/amit-kamlapure/aughor"
-Issues = "https://github.com/amit-kamlapure/aughor/issues"
+Homepage = "https://github.com/amit-kamlapure/pramanyx"
+Repository = "https://github.com/amit-kamlapure/pramanyx"
+Issues = "https://github.com/amit-kamlapure/pramanyx/issues"
 
 [project.scripts]
 aughor = "aughor.cli:cli"

@@ -1,4 +1,4 @@
-"""Every name the golden-set harness imports from Aughor exists (PENDING item 19).
+"""Every name the golden-set harness imports from Pramanyx exists (PENDING item 19).
 
 `evals/run_golden.py` builds each question's context the way the chat path does, inside `try: … except: pass`, so a
 name that moved does not fail the run — it removes that step from it. `_parse_schema_tables` left `aughor.tools.schema`

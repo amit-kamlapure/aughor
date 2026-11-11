@@ -11,7 +11,7 @@ Three rules, inherited rather than invented:
 * **One body, two callers.** Where an MCP knowledge tool already reads a surface
   (:mod:`aughor.mcp.knowledge_tools`, Wave S6), the converse tool calls the SAME body, so
   an external agent over MCP and the platform's own conversation cannot disagree about
-  what Aughor knows. The MCP docstrings are the routing policy here too — same names,
+  what Pramanyx knows. The MCP docstrings are the routing policy here too — same names,
   same claims, compressed to the wire.
 * **Read-only means read-only.** `get_briefing` reads the cached narrative via
   ``peek_briefing`` and NEVER synthesizes — a read tool that could spend an LLM call plus
@@ -562,11 +562,11 @@ def list_packs(connection_id: str, args: dict) -> dict:
 
 _HELP_TOPICS: dict[str, str] = {
     "overview": (
-        "Aughor is a governed data-intelligence platform over your connected "
+        "Pramanyx is a governed data-intelligence platform over your connected "
         "warehouse. It writes and runs the SQL itself, grounds every number in real "
         "rows, enforces registered metric definitions, and attaches a Trust Receipt "
         "(the guards that fired) to each answer. In this chat you can ask analytical "
-        "questions, run specific SQL, look up what Aughor has already discovered "
+        "questions, run specific SQL, look up what Pramanyx has already discovered "
         "(findings, the briefing, the knowledge graph), and check monitors, data "
         "health, packs and saved query patterns."
     ),
@@ -575,11 +575,11 @@ _HELP_TOPICS: dict[str, str] = {
         "choose the engine — for example Snowflake, Postgres, BigQuery or DuckDB — "
         "and supply its credentials or connection string. Registering requires the "
         "server's secret key to be configured; a connection registered without it "
-        "fails. After connecting, run an exploration so Aughor can profile the data "
+        "fails. After connecting, run an exploration so Pramanyx can profile the data "
         "and start discovering findings."
     ),
     "explore": (
-        "Exploration is Aughor's autonomous background discovery: it profiles the "
+        "Exploration is Pramanyx's autonomous background discovery: it profiles the "
         "data, maps entities and lifecycles, and surfaces verified findings with no "
         "prompting. Start it from a connection's page. Findings accumulate in the "
         "store and are pre-computed — asking about them costs nothing."
@@ -805,7 +805,7 @@ for _alias, _topic in {**_GLOSSARY_ALIASES, **_ARC_ALIASES}.items():
 
 
 def platform_help(connection_id: str, args: dict) -> dict:
-    """What Aughor is and how to use it — curated text, no model, no network."""
+    """What Pramanyx is and how to use it — curated text, no model, no network."""
     topic = str(args.get("topic") or "").strip().lower()
     resolved = _HELP_ALIASES.get(topic, topic) or "overview"
     if resolved in _HELP_TOPICS:
@@ -942,7 +942,7 @@ def platform_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpec
         ToolSpec(
             name="search_graph",
             description=(
-                "Search what Aughor has already established about this connection — "
+                "Search what Pramanyx has already established about this connection — "
                 "tables, governed metrics, glossary terms and past findings, with "
                 "graph staleness. A $0 read: prefer it before re-deriving anything "
                 "with SQL. Use describe_entity for full detail on one result."
@@ -969,7 +969,7 @@ def platform_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpec
         ToolSpec(
             name="list_findings",
             description=(
-                "The findings Aughor's background exploration already discovered — "
+                "The findings Pramanyx's background exploration already discovered — "
                 "each verified, with confidence and the SQL behind it. Pre-computed: "
                 "check here before running new analysis on a broad question like "
                 "'what's interesting in this data'."
@@ -1034,7 +1034,7 @@ def platform_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpec
             name="search_documents",
             description=(
                 "Semantic search over documents indexed for this workspace — schema "
-                "documentation Aughor generated, and any files a person uploaded. Use it "
+                "documentation Pramanyx generated, and any files a person uploaded. Use it "
                 "for what something MEANS ('how is recognised revenue defined here', "
                 "'what does this table actually record'), never for a number. Returns passages "
                 "with their source, which you may quote; figures still come from `run_sql`."
@@ -1060,7 +1060,7 @@ def platform_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpec
         ToolSpec(
             name="platform_help",
             description=(
-                "What Aughor's pieces ARE — connecting a warehouse, exploration, "
+                "What Pramanyx's pieces ARE — connecting a warehouse, exploration, "
                 "briefings, analysis modes, monitors, packs, governance, and the "
                 "departure gate with each of its laws by guard name (re-measure, "
                 "definition, claim type, trust…: the law's sentence, what a hold "

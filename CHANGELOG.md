@@ -5,13 +5,13 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-Aughor has not cut a tagged release yet. The sections below describe the state of
+Pramanyx has not cut a tagged release yet. The sections below describe the state of
 `main`; the first tagged release will become `0.1.0`.
 
 ## [Unreleased]
 
 ### Added
-- **The install asks which industries Aughor is for.** Once, before anything slow, through the
+- **The install asks which industries Pramanyx is for.** Once, before anything slow, through the
   terminal even under `curl … | sh`: airline, food delivery, logistics, manufacturing, retail and
   e-commerce, SaaS — or Enter for all of them, with each connection's industry detected from its
   data. A choice narrows everything that reads an industry (metric recipes, playbook plays, the
@@ -21,19 +21,19 @@ Aughor has not cut a tagged release yet. The sections below describe the state o
 - **Deep reports list what to rule out first.** When a deep analysis reports a metric rising or
   falling, it lists the known ways that metric reads high (or low), each with its fix, marked as not
   checked against your data. Existing playbooks receive the 486 data-quality checks these come from.
-- **One-command install on macOS, Linux and Windows.** On a computer without Aughor, one
-  `curl … | sh` (or `irm … | iex`) line is the whole install. It downloads Aughor into the home
+- **One-command install on macOS, Linux and Windows.** On a computer without Pramanyx, one
+  `curl … | sh` (or `irm … | iex`) line is the whole install. It downloads Pramanyx into the home
   folder — a clone when Git is there, a snapshot when it is not, so nothing has to be installed
   first — then installs uv, Python, every Python and web dependency and, on a computer with no
   Node.js 20.9 or newer, an official Node.js build verified against nodejs.org's checksums;
-  builds the web app; starts Aughor and opens it in the browser. Inside a checkout,
+  builds the web app; starts Pramanyx and opens it in the browser. Inside a checkout,
   `./install.sh` (or `install.cmd`) does the same. One line per step: what the tools print goes
   to `.aughor/logs/`, and only a failed step shows its log's tail, with what to do next. Running
   it again redoes only what changed, and the installer leaves an `aughor` command behind, so
-  starting Aughor later is one word in any terminal. `aughor up` now serves a production build
+  starting Pramanyx later is one word in any terminal. `aughor up` now serves a production build
   (rebuilt when its inputs change), keeps server logs in files (`--dev` and `--verbose` show
   them), opens the browser (`--no-browser` to skip), carries a moved API or web port through to
-  CORS and the chat proxy, and says when Aughor is already running. A new CI workflow runs the
+  CORS and the chat proxy, and says when Pramanyx is already running. A new CI workflow runs the
   installer on all three operating systems, once with the runner's Node.js and once with a
   downloaded one.
 - **An automation can act as a connected account (DS-11, first half).** A new
@@ -277,9 +277,9 @@ Aughor has not cut a tagged release yet. The sections below describe the state o
 
 ## Before the changelog
 
-Aughor's development history predates this file. The engineering record lives in:
+Pramanyx's development history predates this file. The engineering record lives in:
 
-- the [git history](https://github.com/amit-kamlapure/aughor/commits/main) — ~930
+- the [git history](https://github.com/amit-kamlapure/pramanyx/commits/main) — ~930
   commits on `main`, each tied to a pull request;
 - [`ROADMAP.md`](ROADMAP.md) — what shipped, and what is next;
 - [`FEATURES.md`](FEATURES.md) — a reference for each major capability and the

@@ -6,7 +6,7 @@ thread anyone can reply into. A scheduled run therefore dead-ends the moment it 
 
 Posting with the bot's `chat:write` token instead arrives AS the bot — mentionable,
 repliable, and threaded. That is what closes the loop: the reply lands in a thread whose
-`ts` the bot already uses as the Aughor `session_id`, so a follow-up composes on the same
+`ts` the bot already uses as the Pramanyx `session_id`, so a follow-up composes on the same
 conversation, with the same agent, over the same connection. The difference between a bot
 that notifies and one that behaves like a colleague is this function.
 """
@@ -46,7 +46,7 @@ def post_as_bot(bot_token: str, channel: str, text: str,
     """``(ok, info)``. Never raises; the caller turns this into an EffectOutcome.
 
     ``info`` carries ``ts`` on success — the thread root a reply will land in, and the id
-    that becomes the Aughor conversation for everything that follows.
+    that becomes the Pramanyx conversation for everything that follows.
 
     ``delivery_key`` (Track C3): one delivery's key, stable across its retries. Slack keeps no
     key of its own for chat.postMessage, so this side does (`notifications/sent_once.py`): a key

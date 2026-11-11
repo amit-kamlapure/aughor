@@ -1,4 +1,4 @@
-"""Schema-linking pre-filter for Aughor.
+"""Schema-linking pre-filter for Pramanyx.
 
 Given a natural-language question and a full schema context string, returns a
 filtered schema containing only the tables and columns most likely to be relevant.

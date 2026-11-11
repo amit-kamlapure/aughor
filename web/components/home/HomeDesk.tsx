@@ -8,7 +8,7 @@
  *
  * Laid out as the approved mockup lays it out (design-mockups/home.html, 2026-10-10; the law is
  * `aughor-v2/CLARITY.md`): the lead figure and what needs the person side by side, then the standing
- * questions, then the week ahead beside what is between them and Aughor. Figures first, facts as chips,
+ * questions, then the week ahead beside what is between them and Pramanyx. Figures first, facts as chips,
  * one muted line for an empty section, and no paragraph under any title — 1,076 words on theLook became
  * about 250.
  */
@@ -476,8 +476,8 @@ function YouCard({ you }: { you: YourRecord | null }) {
     </div>
   );
   return (
-    <section aria-label="Between you and Aughor" data-testid="home-you" style={card}>
-      <Label>Between you and Aughor</Label>
+    <section aria-label="Between you and Pramanyx" data-testid="home-you" style={card}>
+      <Label>Between you and Pramanyx</Label>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
         {stat("you told it", String(told))}
         {stat("your forecasts", String(forecasts))}

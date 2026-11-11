@@ -6,10 +6,10 @@
 
 Report it privately through GitHub:
 
-1. Go to the [Security Advisories page](https://github.com/amit-kamlapure/aughor/security/advisories/new).
+1. Go to the [Security Advisories page](https://github.com/amit-kamlapure/pramanyx/security/advisories/new).
 2. Describe the issue, the impact, and the steps to reproduce it.
 
-You should get an acknowledgement within **7 days**. Aughor is an alpha project
+You should get an acknowledgement within **7 days**. Pramanyx is an alpha project
 maintained in someone's spare time, so please be patient with the fix timeline —
 but the acknowledgement will be prompt.
 
@@ -18,7 +18,7 @@ If you do not get a response within 7 days, open a public issue that says only
 
 ## Supported versions
 
-Aughor is pre-1.0 (`0.1.0`) and has no tagged releases yet. Only the `main`
+Pramanyx is pre-1.0 (`0.1.0`) and has no tagged releases yet. Only the `main`
 branch receives fixes. There is no long-term-support branch, and no backports.
 
 | Version | Supported |
@@ -28,7 +28,7 @@ branch receives fixes. There is no long-term-support branch, and no backports.
 
 ## Scope
 
-Aughor connects a large language model to a SQL warehouse. That shape carries
+Pramanyx connects a large language model to a SQL warehouse. That shape carries
 inherent risk. The following are **in scope** and worth reporting:
 
 - Bypassing the read-only SQL gate (`aughor/sql/readonly.py`, `aughor/sql/executor.py`)
@@ -46,22 +46,22 @@ inherent risk. The following are **in scope** and worth reporting:
 ## Out of scope
 
 - **The API is unauthenticated by default.** `AUGHOR_API_KEY` is unset out of
-  the box, because Aughor is designed as a local single-user tool bound to
+  the box, because Pramanyx is designed as a local single-user tool bound to
   `localhost`. Reporting "the API has no auth" is not a vulnerability — but
   *bypassing the key when one is set* is.
 - CORS is restricted to `http://localhost:3000,http://localhost:3001` by default
   and is configurable via `AUGHOR_CORS_ORIGINS`. Widening it yourself and then
   reporting it is not a finding.
-- Vulnerabilities in third-party dependencies that Aughor does not reach. Report
-  those upstream. If you can show a reachable path through Aughor, that *is* in
+- Vulnerabilities in third-party dependencies that Pramanyx does not reach. Report
+  those upstream. If you can show a reachable path through Pramanyx, that *is* in
   scope.
-- The LLM producing a wrong answer. Aughor has guards for this, but a wrong
+- The LLM producing a wrong answer. Pramanyx has guards for this, but a wrong
   number is a correctness bug, not a security vulnerability — please file it as
   a normal issue.
 
-## Deploying Aughor beyond localhost
+## Deploying Pramanyx beyond localhost
 
-Aughor's defaults assume a trusted, single-user, local environment. Before
+Pramanyx's defaults assume a trusted, single-user, local environment. Before
 exposing it to a network:
 
 - Set `AUGHOR_API_KEY` to a strong random value. Every request must then carry
@@ -78,7 +78,7 @@ exposing it to a network:
   never touch that route.
 - Set `AUGHOR_CORS_ORIGINS` to the exact origins you serve. A browser sign-in needs this: the session
   cookie rides only to named origins, and a wildcard keeps the API cookie-less (it says so at boot).
-- Terminate TLS in front of the app; Aughor speaks plain HTTP.
+- Terminate TLS in front of the app; Pramanyx speaks plain HTTP.
 - **Requiring identity needs something that can verify it.** With `AUGHOR_REQUIRE_IDENTITY=1`
   and no `AUGHOR_OIDC_ISSUER`, the API refuses every request but `/health` and `/auth/config`
   (which say why) — before 2026-11-05 it trusted whatever `X-Aughor-Org` a client sent, and

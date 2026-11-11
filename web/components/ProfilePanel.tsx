@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * ProfilePanel — what Aughor knows about this business, redone to `aughor-v2/CLARITY.md` (2026-10-13).
+ * ProfilePanel — what Pramanyx knows about this business, redone to `aughor-v2/CLARITY.md` (2026-10-13).
  *
  * A profile reads like a page, not a dashboard: it opens on what the business is — its name, the summary in prose and
- * a column of facts beside it (the business model, the currency, a fiscal year a person set), with why Aughor thinks
+ * a column of facts beside it (the business model, the currency, a fiscal year a person set), with why Pramanyx thinks
  * so one click away — then the tables as profiled, what a column's statuses and blanks mean, and the governed metrics.
  * No figure row and no "Needs you": nothing on a profile waits on a person.
  *
@@ -206,7 +206,7 @@ export function ProfilePanel({ connectionId, canvasId, schema, workspaceId }: {
                 <p className="aug-fs-ui" style={{ margin: "8px 0 0", lineHeight: 1.7, color: "var(--t1)" }}>{p.summary}</p>
                 {p.evidence && (
                   <>
-                    <FoldLine open={why} onToggle={() => setWhy(o => !o)} testId="profile-why">Why Aughor thinks so</FoldLine>
+                    <FoldLine open={why} onToggle={() => setWhy(o => !o)} testId="profile-why">Why Pramanyx thinks so</FoldLine>
                     {why && (
                       <p className="aug-fs-sm" style={{ margin: "6px 0 0", lineHeight: 1.6, color: "var(--t2)" }}>
                         {Array.isArray(p.evidence) ? p.evidence.join(" ") : p.evidence}
@@ -414,7 +414,7 @@ function IndustryLine({ inferred, confidence, human }: { inferred: string; confi
   if (human) {
     const corrected = !!inferred && inferred !== human;
     chip = (
-      <Chip title={corrected ? `Aughor inferred ${inferred}; the org setting wins` : inferred ? "Set in org settings, and the inference agrees" : "Set in org settings"}>
+      <Chip title={corrected ? `Pramanyx inferred ${inferred}; the org setting wins` : inferred ? "Set in org settings, and the inference agrees" : "Set in org settings"}>
         {corrected ? "org setting · corrected" : "org setting"}
       </Chip>
     );

@@ -5,7 +5,7 @@ ambiguity-detection eval (``evals/ambiguity_eval.py``) proved the deterministic 
 *structural* ambiguity (0/6). This run asks the next question: when a structural question's INTENDED
 reading diverges from the model's DEFAULT reading, does a clarifying question actually fix the answer?
 
-Method — a real run against Aughor's actual SQL model (no toy generator):
+Method — a real run against Pramanyx's actual SQL model (no toy generator):
   * Seed a small DuckDB where each structural question's two readings give DIFFERENT answers
     (top product by units vs by revenue; biggest customer by order-count vs by spend; …).
   * For each task, ask the real model to write SQL for (a) the bare question [default] and
@@ -70,7 +70,7 @@ class _Gen(BaseModel):
 
 
 def _real_generate(ctx: str) -> str:
-    """Aughor's real SQL model (the `coder` role + the chat system prompt) over the schema."""
+    """Pramanyx's real SQL model (the `coder` role + the chat system prompt) over the schema."""
     from aughor.llm.provider import get_provider
     from aughor.agent.prompts import CHAT_SQL_SYSTEM
     llm = get_provider("coder")

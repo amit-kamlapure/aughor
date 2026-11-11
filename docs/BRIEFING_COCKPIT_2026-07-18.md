@@ -32,7 +32,7 @@ Three observations make this cheap to *start*:
    finding→finding edges (`share / tension / concentration / confound / chain`, plus `drill_of`)
    and never reads them back — they die in the state blob. Un-orphaning them is mostly wiring.
 2. **A user "card" is the inverse of a finding** — a standing question the user declares and asks
-   Aughor to keep answering. We already answer, ground, guard, chart, and monitor questions; the
+   Pramanyx to keep answering. We already answer, ground, guard, chart, and monitor questions; the
    card points that machinery at a human-chosen question.
 3. **The three "create a chart/KPI" features you asked for are one primitive with three doors** —
    from an insight, from Query Builder, and authored inline. Build the primitive once; the "mega"
@@ -49,7 +49,7 @@ is a dumb tile with no link to *why*, we've built one more dashboard tool. That 
 Leadership wants two things a plain dashboard and a plain briefing each half-serve: **trends / grip
 over time** (how is the business doing?) and **the narrative** (what changed this cycle and why?).
 A BI dashboard gives dead numbers with no explanation; a narrative briefing gives explanation with
-no standing scorecard. Aughor's differentiator — grounded, trust-guarded, *explained* numbers —
+no standing scorecard. Pramanyx's differentiator — grounded, trust-guarded, *explained* numbers —
 lets us do the thing neither category does: a scorecard where every tile is backed by evidence and
 wired to the analysis that explains its delta.
 
@@ -223,7 +223,7 @@ use an LLM only to densify where structure is genuinely latent in prose.
 ## 5. Feature A — the argument-graph lens
 
 **Engine: React Flow (`@xyflow/react`, MIT).** It is purpose-built for node+edge graphs, MIT
-(no tldraw watermark / per-deployment license / telemetry that would break Aughor's Apache-2.0,
+(no tldraw watermark / per-deployment license / telemetry that would break Pramanyx's Apache-2.0,
 fully-local, self-hostable posture), and lets a node hold arbitrary React (a chart/table inside a
 node). Greenfield — no graph lib present today.
 
@@ -260,7 +260,7 @@ reuse the existing drill/evidence/monitor handlers (`FindingActions` via the `re
 1. **Re-answer each cycle.** The card holds a grounded query; each brief cycle re-runs it and shows
    current value + delta + a one-line read, carrying the same receipt a finding does. Reuses the
    `ask`/resolve grounding + saved-query rerun. **Needs the new `refresh` field** (§3.3 gap 1).
-2. **Steer the explorer.** A declared topic becomes a prior that biases what Aughor explores —
+2. **Steer the explorer.** A declared topic becomes a prior that biases what Pramanyx explores —
    exactly the closed loop at `overview/drills.py` + `build_overview(priors=)`; a watch is a louder
    signal than a click. Now the card also catches things the user did not ask for precisely.
 3. **Graduate to a monitor.** With a metric + threshold, POST the card's `custom_sql` + thresholds

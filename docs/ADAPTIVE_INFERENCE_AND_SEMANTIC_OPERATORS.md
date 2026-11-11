@@ -1,6 +1,6 @@
 # Adaptive Inference & Semantic Operators — Design & Integration Plan
 
-*Three techniques from the LLM-data-processing literature that Aughor should adopt, and a grounded
+*Three techniques from the LLM-data-processing literature that Pramanyx should adopt, and a grounded
 plan for where each plugs in. 2026-06-14.*
 
 ---
@@ -8,11 +8,11 @@ plan for where each plugs in. 2026-06-14.*
 ## TL;DR
 
 There is a body of work on running LLM operations over data as **declarative, relational-style
-operators** with a query optimizer. Studied in depth, the architecture is **complementary to Aughor,
+operators** with a query optimizer. Studied in depth, the architecture is **complementary to Pramanyx,
 not a competitor — and it will _not_ directly improve our NL2SQL.** Those systems do not generate
 SQL; they `SELECT *` a table into memory and run an LLM call _per row_ client-side. On the thing we
-care about most — **grounded, push-down, deterministically-guarded analytics** — Aughor is the
-stronger design. So the transfer is **one-directional (into Aughor)** and it is about three reusable
+care about most — **grounded, push-down, deterministically-guarded analytics** — Pramanyx is the
+stronger design. So the transfer is **one-directional (into Pramanyx)** and it is about three reusable
 _ideas_, not adopting any framework:
 
 1. **Model cascades with a statistical accuracy guarantee** — a cheap proxy model answers the easy
@@ -31,7 +31,7 @@ _ideas_, not adopting any framework:
 
 **Meta-lesson (per the product call):** the systems that productize these techniques win largely on
 **packaging** — they consolidate a pile of LLM-data operations under _one crisp abstraction_ with
-great naming, which makes powerful machinery legible and sellable. Aughor has _more_ powerful
+great naming, which makes powerful machinery legible and sellable. Pramanyx has _more_ powerful
 machinery but it is scattered and under-named. §3 proposes how to consolidate.
 
 **Recommended first step (original):** a cascade pilot on hypothesis evaluation. _Outcome: built then
@@ -140,9 +140,9 @@ candidate).
 
 ---
 
-## Part II — Fit with Aughor (honest positioning)
+## Part II — Fit with Pramanyx (honest positioning)
 
-| Dimension | Aughor | These row-wise LLM-operator systems |
+| Dimension | Pramanyx | These row-wise LLM-operator systems |
 |---|---|---|
 | Core competence | **NL → grounded SQL** over a warehouse | LLM operators **over rows** in a dataframe |
 | Execution | **push-down** to DuckDB/Postgres | pull-into-memory, **LLM per row** client-side |

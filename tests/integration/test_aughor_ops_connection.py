@@ -1,6 +1,6 @@
 """Rec 4 · leverage #2 — the `aughor_ops` self-investigation connection.
 
-"Aughor investigates Aughor": the platform's own span/job/event tables become a
+"Pramanyx investigates Pramanyx": the platform's own span/job/event tables become a
 queryable connection so Deep Analysis can ask "why were yesterday's briefings
 slow?" as an ordinary investigation. Hermetic — the ledger is the test-isolated
 temp system.db; spans are emitted through the real telemetry seam.

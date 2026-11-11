@@ -70,7 +70,7 @@ WARRANT_MEANING: dict[Warrant, str] = {
     "measured": "A number read off your data.",
     "human": "A person asserted this.",
     "declared": "Your schema, dbt, or a written definition states this.",
-    "derived": "Computed by Aughor from SQL it ran.",
+    "derived": "Computed by Pramanyx from SQL it ran.",
     "inferred": "A name or shape match — nothing probed it.",
 }
 

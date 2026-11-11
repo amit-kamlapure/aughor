@@ -8,7 +8,7 @@ guesses. This harness fixes that with a **function-driven user simulator** that 
 the system actually asks, and an **episode runner** that scores the system's *submitted* SQL against
 executable gold — so good clarification is rewarded and blind guessing is penalized.
 
-It is the measurement substrate for Aughor's interactive axis — Phase 2 of the unified-answer-path arc
+It is the measurement substrate for Pramanyx's interactive axis — Phase 2 of the unified-answer-path arc
 (``docs/UNIFIED_ANSWER_PATH.md``), built **before** the ask-vs-guess clarification feature (Phase 3)
 per the discipline proven across the Spider2 work (*let evidence pick the lever*): the harness exists
 first so the clarification feature is measurable from day one, and the never-asks baseline tells us how
@@ -21,10 +21,10 @@ Design (following BIRD-INTERACT's function-driven simulator):
     prevents ground-truth leakage (the UNA guard + a scrub that never echoes the gold SQL).
   * Clarification is BUDGET-constrained (τ = m_amb + patience); a system that won't commit fails.
 
-Connecting to Aughor's *real* pipeline — the leverage seam Phase 3 plugs into:
+Connecting to Pramanyx's *real* pipeline — the leverage seam Phase 3 plugs into:
   * ``single_shot_system(generate_fn)`` baselines the current never-asks behaviour.
   * ``clarifying_system(generate_fn, should_ask_fn)`` is the ask-vs-guess system; ``should_ask_fn``
-    is the decision Phase 3 owns. ``complexity_should_ask`` backs it with Aughor's own deterministic
+    is the decision Phase 3 owns. ``complexity_should_ask`` backs it with Pramanyx's own deterministic
     ``assess_complexity(...).ambiguous`` signal, so the harness exercises the real router decision.
 
 Pure except for injected callables (``system_fn``, ``execute_fn``), so the core is fully unit-testable
@@ -209,7 +209,7 @@ def _ctx_with_clarifications(question: str, history: list) -> str:
 
 
 def single_shot_system(generate_fn: Callable[[str], str]) -> SystemFn:
-    """Wrap a single-shot NL→SQL generator (e.g. Aughor's current pipeline) as a never-asks system,
+    """Wrap a single-shot NL→SQL generator (e.g. Pramanyx's current pipeline) as a never-asks system,
     to baseline how much ambiguity costs when the system never clarifies. Received clarifications (if
     any) are appended as context, but a single-shot system characteristically does not seek them."""
     def system_fn(question: str, history: list, budget: int) -> tuple:
@@ -235,7 +235,7 @@ def clarifying_system(generate_fn: Callable[[str], str], should_ask_fn: ShouldAs
 
 
 def complexity_should_ask(question: str, history: list) -> bool:
-    """A ``should_ask_fn`` backed by Aughor's deterministic *under-specification* signal alone — ask
+    """A ``should_ask_fn`` backed by Pramanyx's deterministic *under-specification* signal alone — ask
     once when the question is under-specified and no clarification has landed yet. Kept as the
     one-source baseline; it MISSES value/term ambiguity (the Phase-2 finding)."""
     from aughor.agent.complexity import assess_complexity

@@ -46,7 +46,7 @@ class AlertSummary(BaseModel):
 
     def to_markdown(self) -> str:
         lines = [
-            f"# Aughor Intelligence Digest — {period_adjective(self.period)}",
+            f"# Pramanyx Intelligence Digest — {period_adjective(self.period)}",
             f"*Generated {self.generated_at[:16].replace('T', ' ')} UTC*",
             "",
         ]

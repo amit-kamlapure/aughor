@@ -1,6 +1,6 @@
 """The proxy-inversion audit (Wave E4 loose end).
 
-An eval axis is either the END-TASK metric or a PROXY for it. Aughor's end task is
+An eval axis is either the END-TASK metric or a PROXY for it. Pramanyx's end task is
 ``accuracy`` — execution-grounded exact-match (``user_agents.quality.results_match``) on the
 answer's result set, the thing a user actually cares about. ``pass_rate`` (guard-clean stable
 passes) and ``robustness`` (agreement under meaning-preserving perturbation) are PROXIES: cheaper
@@ -10,7 +10,7 @@ A proxy is dangerous precisely when it can **invert** — improve while the end-
 worsens. This is not hypothetical. The case study the five-repo study cites: gemma-4 quantized KV
 scores 7-42% *better* corpus perplexity than fp16 while KL divergence says it drifted *most* —
 optimising the proxy (PPL) moved the true metric the wrong way, because an absolute proxy has no
-anchor to the task. Aughor has already measured its own version of the same trap: E2's evaluator
+anchor to the task. Pramanyx has already measured its own version of the same trap: E2's evaluator
 sweep found guards firing on KNOWN-CORRECT golden SQL — true positives in our own reference SQL
 (the CIDR "benchmarks are broken" pattern), plus false positives on safe 1:N aggregation — so a
 rising ``pass_rate`` (fewer guards firing) does not imply rising ``accuracy``, and can move

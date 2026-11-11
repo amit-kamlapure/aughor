@@ -1,4 +1,4 @@
-"""Multi-source connector platform for Aughor.
+"""Multi-source connector platform for Pramanyx.
 
 Connector taxonomy:
   warehouse  — cloud SQL warehouses (BigQuery, Snowflake, MySQL, …)

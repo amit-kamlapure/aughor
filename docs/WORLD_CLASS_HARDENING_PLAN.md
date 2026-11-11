@@ -1,6 +1,6 @@
 # 🚨 World-Class Hardening — Execution Plan
 
-> **✅ STATUS (2026-06-13, code-verified):** the bulk of this plan **shipped via the Aughor Kernel**.
+> **✅ STATUS (2026-06-13, code-verified):** the bulk of this plan **shipped via the Pramanyx Kernel**.
 > Done: WCH-3–8 (orphan/resume/crash-recovery — kernel K1 properties), WCH-11 (poll storm — K2 SSE),
 > WCH-12 (schema-introspection TTL cache), WCH-15/16/17 (motion foundation + rollout, ontology
 > legends-at-top, canvas History-tab), plus the sample-data fix. **Still pending:** WCH-13 hypothesis-
@@ -11,7 +11,7 @@
 > truth lives in `ROADMAP.md` → "VERIFIED PENDING STATUS — 2026-06-13".
 
 > **⚠️ SUPERSTRUCTURE UPDATE (2026-06-10, same day):** the user escalated this arc from bug-fixing to
-> an architectural rebase — see **`docs/KERNEL_ARCHITECTURE.md`** (the Aughor Kernel: Ledger + Job
+> an architectural rebase — see **`docs/KERNEL_ARCHITECTURE.md`** (the Pramanyx Kernel: Ledger + Job
 > Kernel + Event Spine + Contracts, with measured proof of the gap). That doc's §4 reconciles the two
 > plans: **WCH-1 and WCH-2a–c execute now as written; WCH-3–8, 10(contract test), 11, and B-1 are
 > ABSORBED by kernel stages K0–K4** (implemented as kernel properties, not patches); WCH-9, 12–17
@@ -389,7 +389,7 @@ reduced-motion verified.
 
 ## Phase 5 — Business / USP Roadmap (what data teams actually buy)
 
-Positioning: Aughor's defensible wedge is **trustworthy autonomy** — competitors demo autonomous
+Positioning: Pramanyx's defensible wedge is **trustworthy autonomy** — competitors demo autonomous
 insights; almost nobody can show *why a number is right*. Everything below sharpens that wedge.
 
 | # | Item | Why it sells | Builds on |

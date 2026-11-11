@@ -264,7 +264,7 @@ Verified live on theLook, all the way down to `orders` and back up.
 |---|---|
 | Seven destination rows; the one holding the open page unfolded its sections, the others folded (with their sections' counts rolled up) | Every destination open: its name a small muted label, every section under it with its own icon and its own count. Home's sections head the rail with no label |
 | A destination's row reopened the section last used there | Gone with the row: every section is one click from anywhere, which that row approximated |
-| The rail's collapse toggle in a row of its own at the rail's head | Left of the AUGHOR wordmark in the top bar, still with ⌘\ and its hover line; the rail is one row shorter |
+| The rail's collapse toggle in a row of its own at the rail's head | Left of the PRAMANYX wordmark in the top bar, still with ⌘\ and its hover line; the rail is one row shorter |
 | Collapsed: the seven destination icons and the open destination's sections | Every section's icon, the destinations ruled off from one another, each named on hover |
 | Sections sharing an icon (Health/Monitors, Evidence/Evals, Profile/Semantic Layer, Actions/Notifications) | Each its own: Health, Monitors, Agent Ops, Notifications, Evals, Catalog, Profile, SQL Editor, Actions and Agent runs took distinct icons |
 

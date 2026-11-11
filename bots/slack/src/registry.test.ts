@@ -1,6 +1,6 @@
 /**
  * The registry read and the heartbeat (Arc AO-2a) — the two things this process says to
- * Aughor, driven with a fake fetch so the headers and the body are read, not assumed.
+ * Pramanyx, driven with a fake fetch so the headers and the body are read, not assumed.
  */
 import { describe, expect, it } from "vitest";
 

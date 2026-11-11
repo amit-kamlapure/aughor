@@ -378,7 +378,7 @@ def _format_for_decompose(hits: list[dict]) -> str:
             parts.append("Diagnostic questions:\n" + "\n".join(f"  - {q}" for q in dqs))
 
         # Structured causal chains — two shapes:
-        #   Aughor: {symptom, check_in_order, detection_sql}
+        #   Pramanyx: {symptom, check_in_order, detection_sql}
         #   Talonsight: {if, then}
         causal = h.get("causal_relationships", [])[:4]
         if causal:

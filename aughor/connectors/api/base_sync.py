@@ -1,7 +1,7 @@
 """RestApiSync — base class for all REST API connectors.
 
 Pattern: sync REST API data → materialize into local DuckDB mirror → serve queries.
-The rest of the Aughor pipeline (SQL generation, ontology, profiling, domain intel)
+The rest of the Pramanyx pipeline (SQL generation, ontology, profiling, domain intel)
 works completely unchanged — it just sees a DuckDB connection.
 
 Subclasses implement:

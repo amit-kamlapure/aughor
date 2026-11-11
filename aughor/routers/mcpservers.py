@@ -220,7 +220,7 @@ def oauth_callback(state: str = "", code: str = "", error: str = "", error_descr
     except LookupError as exc:
         return HTMLResponse(f"<h1>Sign-in not completed</h1><p>{exc}</p>", status_code=404)
     if out["signed_in"]:
-        return HTMLResponse("<h1>Signed in</h1><p>Aughor can reach this server now. You can close this tab.</p>")
+        return HTMLResponse("<h1>Signed in</h1><p>Pramanyx can reach this server now. You can close this tab.</p>")
     return HTMLResponse(f"<h1>Sign-in failed</h1><p>{out['error'] or 'no token set was stored'}</p>", status_code=400)
 
 

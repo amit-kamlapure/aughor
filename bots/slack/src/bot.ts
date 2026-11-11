@@ -370,7 +370,7 @@ export function buildBot({
 
     let turn: TurnArtifacts | null = null;
     // The thread IS the conversation: its id rides as session_id, so follow-up
-    // mentions in the same thread compose on the same Aughor conversation.
+    // mentions in the same thread compose on the same Pramanyx conversation.
     //
     // `thread.signal` is the platform's stop button. Passed here it does two
     // things: the SDK stops consuming the stream, and the transport cancels the
@@ -385,7 +385,7 @@ export function buildBot({
       // nobody. Absent, the turn is honestly unattributed rather than falsely attributed.
       //
       // Not `message.userKey`: the SDK's cross-platform key needs a `ChatConfig.identity`
-      // resolver, which would put identity resolution in the transport. Aughor resolves
+      // resolver, which would put identity resolution in the transport. Pramanyx resolves
       // `slack:<id>` server-side against its own link table — the Python API stays the
       // only brain, and one scheme serves every door rather than one per SDK.
       principalRef: message.author?.userId ? `slack:${message.author.userId}` : undefined,

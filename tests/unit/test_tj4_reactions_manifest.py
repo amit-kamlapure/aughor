@@ -11,6 +11,6 @@ from aughor.slackbots.manifest import BOT_EVENTS, BOT_SCOPES, render_manifest
 def test_the_manifest_asks_for_reactions():
     assert "reactions:read" in BOT_SCOPES
     assert "reaction_added" in BOT_EVENTS and "reaction_removed" not in BOT_EVENTS
-    m = render_manifest(name="Aughor")
+    m = render_manifest(name="Pramanyx")
     assert "reactions:read" in m["oauth_config"]["scopes"]["bot"]
     assert "reaction_added" in m["settings"]["event_subscriptions"]["bot_events"]

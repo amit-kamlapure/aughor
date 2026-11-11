@@ -259,7 +259,7 @@ def test_no_usable_node_means_aughor_downloads_its_own(tmp_path, monkeypatch, ca
     monkeypatch.setattr(installer, "find_node", lambda root: (None, (18, 0, 0)))
     monkeypatch.setattr(installer, "download_node", lambda root, steps: fetched)
     assert installer.ensure_node(tmp_path, installer.Steps()) is fetched
-    assert "Node.js 18.0.0 is older than Aughor needs" in capsys.readouterr().out
+    assert "Node.js 18.0.0 is older than Pramanyx needs" in capsys.readouterr().out
 
 
 def test_forcing_the_download_ignores_every_installed_node(tmp_path, monkeypatch):
@@ -426,7 +426,7 @@ def test_the_next_time_hint_names_what_this_terminal_is_missing(monkeypatch):
     in a new terminal."""
     monkeypatch.delenv("AUGHOR_UV_INSTALLED", raising=False)
     monkeypatch.delenv("AUGHOR_CHECKOUT_DIR", raising=False)
-    assert installer.start_command_hint() == "Next time, start Aughor with:  uv run aughor up"
+    assert installer.start_command_hint() == "Next time, start Pramanyx with:  uv run aughor up"
     monkeypatch.setenv("AUGHOR_CHECKOUT_DIR", "/home/me/aughor")
     assert installer.start_command_hint() == "Next time, go to /home/me/aughor and run:  uv run aughor up"
     monkeypatch.setenv("AUGHOR_UV_INSTALLED", "1")
@@ -449,7 +449,7 @@ def test_install_only_does_every_step_and_does_not_start(tmp_path, monkeypatch, 
     monkeypatch.setattr(installer, "_hand_off", lambda root, args: pytest.fail("--no-start must not start"))
     assert installer.main(["--no-start", "--api-port", "8010"]) == 0
     assert order == ["python", ("web", {"api_port": 8010, "build": True})]
-    assert "Aughor is installed" in capsys.readouterr().out
+    assert "Pramanyx is installed" in capsys.readouterr().out
 
 
 def test_the_installer_hands_its_options_to_aughor_up(tmp_path, monkeypatch):
@@ -488,7 +488,7 @@ def test_a_failed_step_stops_the_install_with_its_message(tmp_path, monkeypatch,
 def test_outside_a_checkout_the_installer_says_where_to_run_it(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     assert installer.main(["--no-start"]) == 1
-    assert "is not an Aughor checkout" in capsys.readouterr().out
+    assert "is not a Pramanyx checkout" in capsys.readouterr().out
 
 
 # ── The `aughor` command ─────────────────────────────────────────────────────────
@@ -522,7 +522,7 @@ def test_the_aughor_command_starts_aughor_from_any_folder(tmp_path, monkeypatch)
 
     where, _, asked = aughor().stdout.strip().partition("|")
     assert Path(where).resolve() == root.resolve(), "runs from the checkout, not the terminal's folder"
-    assert asked == "run --quiet aughor up", "no arguments starts Aughor"
+    assert asked == "run --quiet aughor up", "no arguments starts Pramanyx"
     assert aughor("seed").stdout.strip().endswith("|run --quiet aughor seed")
 
     shutil.rmtree(root)
@@ -571,7 +571,7 @@ def test_the_windows_command_is_a_plain_cmd_script():
 def test_next_time_is_one_command_where_the_launcher_reaches(monkeypatch):
     monkeypatch.setenv("AUGHOR_CHECKOUT_DIR", "/home/me/aughor")
     monkeypatch.setenv("AUGHOR_LAUNCHER", "ready")
-    assert installer.start_command_hint() == "Next time, start Aughor with:  aughor"
+    assert installer.start_command_hint() == "Next time, start Pramanyx with:  aughor"
     monkeypatch.setenv("AUGHOR_LAUNCHER", "new-terminal")
     assert installer.start_command_hint() == "Next time, open a new terminal and run:  aughor"
     monkeypatch.setenv("AUGHOR_LAUNCHER", "")
@@ -586,7 +586,7 @@ def test_the_installer_leaves_the_aughor_command_behind(tmp_path, monkeypatch, c
     monkeypatch.setattr(installer, "install_launcher", lambda root, uv: placed.append(root) or "ready")
     assert installer.main(["--no-start"]) == 0
     assert placed == [tmp_path]
-    assert "Next time, start Aughor with:  aughor" in capsys.readouterr().out
+    assert "Next time, start Pramanyx with:  aughor" in capsys.readouterr().out
 
 
 # ── Which industries (IP-2) ──────────────────────────────────────────────────────
@@ -709,7 +709,7 @@ def test_the_question_comes_before_the_slow_steps_and_is_recorded(two_industries
     monkeypatch.setattr(installer, "prepare_web", lambda root, steps, **kw: order.append("web"))
     assert installer.main(["--no-start"]) == 0
     assert order == [("python", ["retail"]), "web"]
-    assert "Which industries is Aughor for?" in transcript[0] and "2  Retail and e-commerce" in transcript[0]
+    assert "Which industries is Pramanyx for?" in transcript[0] and "2  Retail and e-commerce" in transcript[0]
     assert "Industries: Retail and e-commerce" in capsys.readouterr().out
 
 

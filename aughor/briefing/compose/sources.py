@@ -37,7 +37,7 @@ class Source(BaseModel):
     label: str
     #: check · breakdown · query · drill · answer are measured for the edition; finding · analysis · decision are the
     #: platform's own work it reads — an explorer finding, a deep analysis and its verdict, a decision in the record — and
-    #: discussion: words people said outside Aughor (Slack, email, a document's comments), kept as said claims.
+    #: discussion: words people said outside Pramanyx (Slack, email, a document's comments), kept as said claims.
     kind: Literal["check", "breakdown", "query", "drill", "answer", "finding", "analysis", "decision", "discussion"]
     columns: list[str] = Field(default_factory=list)
     rows: list[list[Any]] = Field(default_factory=list)
@@ -464,7 +464,7 @@ _CHANNEL = {"slack": "Slack", "email": "Email", "gdrive": "A document's comments
 
 
 def known_discussions(conn_id: str, spec, *, limit: int = 8, claims_fn=None, decisions_fn=None) -> list[Source]:
-    """What people said outside Aughor about the dataset, around the range — in Slack, by email, in a document's
+    """What people said outside Pramanyx about the dataset, around the range — in Slack, by email, in a document's
     comments — as the record keeps it: said claims (`record/claims`, warranted by the thread, the mail or the
     comment) and the words a decision was taken on. Each its own source, newest first, with who said it, where and
     when. One store: nothing new is kept here, only read."""
@@ -510,7 +510,7 @@ def known_discussions(conn_id: str, spec, *, limit: int = 8, claims_fn=None, dec
                           columns=["said", "who", "where", "when"], rows=[[s["said"], who, where, s["when"]]],
                           facts={"said": s["said"], "who": who, "where": where, "when": s["when"],
                                  "ref": s["ref"], "decision_id": s["decision_id"]},
-                          note="words a person said outside Aughor, kept with who said them, where and when"))
+                          note="words a person said outside Pramanyx, kept with who said them, where and when"))
     return out
 
 

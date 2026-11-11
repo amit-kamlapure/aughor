@@ -168,7 +168,7 @@ def org_context(workspace_id: Optional[str] = None, *, reading: str = "this brie
     the user has EXPLICITLY declared. Returns '' when nothing is set, so callers can
     prepend it unconditionally without polluting prompts for unconfigured orgs.
 
-    These settings are WORKSPACE-GLOBAL, so this describes the organization *using* Aughor —
+    These settings are WORKSPACE-GLOBAL, so this describes the organization *using* Pramanyx —
     never the data being analysed. One workspace can hold several unrelated datasets as
     schemas, and stating this as the subject made a schema-scoped brief open "LuxExperience
     has aggressively scaled content production…" over a Netflix title catalog. Callers that

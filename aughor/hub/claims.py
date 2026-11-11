@@ -1,7 +1,7 @@
 """CB-8 (2026-09-23) — said versus measured.
 
 A person's claim arrives at the hub's ``said`` tier (HB-5: a reply in a filed Slack thread becomes
-a staged note). Aughor can CHECK such a claim rather than keep it as it is, because the thread was
+a staged note). Pramanyx can CHECK such a claim rather than keep it as it is, because the thread was
 filed on an object the platform measures. This module is that check: the numbers the note states
 against the measures the thread was filed with (``links.metrics_at_filing`` — the promise's breach
 rate and counts at filing). Agreement raises the note to ``measured``; disagreement makes it

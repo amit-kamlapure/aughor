@@ -10,7 +10,7 @@
 ## 0. What this is, and what it is not
 
 **Not** a new staleness system. The survey below found **thirteen** existing dialects of "this is out
-of date" in this codebase. The last thing Aughor needs is a fourteenth.
+of date" in this codebase. The last thing Pramanyx needs is a fourteenth.
 
 Wave V is **consolidation** — the same shape Wave E took for evals (five mutually-unaware eval
 surfaces → one), applied to the lifecycle axis. Wave C's #1 stated risk was *"building a parallel
@@ -157,7 +157,7 @@ C3's existing test corpus — a differential test, not a rewrite that "looks equ
 ## PR-V2 — Staleness-resolved rebuild: inputs AND logic, not wall-clock
 
 **Why.** The rule: *an output is fresh iff its inputs and its logic-hash are
-unchanged.* Aughor rebuilds on a **timer** in 9 places. A 2-hour brief TTL
+unchanged.* Pramanyx rebuilds on a **timer** in 9 places. A 2-hour brief TTL
 (`knowledge/briefing.py:25`) is wrong in both directions: it rebuilds a brief whose inputs never
 moved (pure cost, and each rebuild is LLM spend), and it serves a brief for up to two hours after
 its source table changed (a wrong number, which is the expensive failure).

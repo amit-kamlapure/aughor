@@ -99,7 +99,7 @@ def _send(action: KineticAction, params: dict) -> dict:
 # ── the described call ────────────────────────────────────────────────────────
 
 def test_a_declared_component_calls_the_vendors_own_api(sent):
-    """The whole point. `webhook` posts AUGHOR's envelope; PagerDuty wants PagerDuty's."""
+    """The whole point. `webhook` posts PRAMANYX's envelope; PagerDuty wants PagerDuty's."""
     out = ex.default_dispatch(_pagerduty(), {"summary": "disk full", "severity": "critical"})
     call = sent[0]
     assert call["method"] == "POST"

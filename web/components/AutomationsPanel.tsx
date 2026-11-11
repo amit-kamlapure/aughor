@@ -780,7 +780,7 @@ function InboxView({ conn, proposals, grants, onReload, flash, onOpenInEditor }:
   onOpenInEditor: (p: StagedProposal) => void;
 }) {
   // DS-11's completion — the accounts, so an integration proposal can say WHOSE consent
-  // it spends in the words a person picked it by ("slack · Aughor HQ"), not as the id the
+  // it spends in the words a person picked it by ("slack · Pramanyx HQ"), not as the id the
   // step happens to store. A grant that is gone falls back to the id: unlovely, and still
   // the honest answer to "which account was this?".
   const accounts = useIntegrationGrants();

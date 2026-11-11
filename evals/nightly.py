@@ -1198,7 +1198,7 @@ def _run_args(p: argparse.ArgumentParser) -> None:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    ap = argparse.ArgumentParser(description="Aughor's nightly evaluation (Track F1)")
+    ap = argparse.ArgumentParser(description="Pramanyx's nightly evaluation (Track F1)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p_run = sub.add_parser("run", help="run the night on a home no live process serves")
     p_run.add_argument("--home", required=True)

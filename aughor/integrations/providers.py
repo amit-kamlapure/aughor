@@ -70,7 +70,7 @@ class Provider(BaseModel):
     https_only: bool = False
     #: A door this provider offers that needs NO public callback, when it has one.
     #:
-    #: Slack's app+Socket-Mode path is the case: an outbound WebSocket from Aughor, no
+    #: Slack's app+Socket-Mode path is the case: an outbound WebSocket from Pramanyx, no
     #: redirect URL, no HTTPS, no tunnel — which is the only Slack integration a laptop
     #: install can complete. It already exists here (RC-5's bot factory); what was
     #: missing is that the catalog pointed a fresh installer at OAuth, the one door

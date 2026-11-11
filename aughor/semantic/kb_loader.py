@@ -59,7 +59,7 @@ def _build_embed_text(entry: dict, tier: int) -> str:
             parts.append(mn.get("common_misconception", ""))
         parts.append(_join(entry.get("diagnostic_questions", [])))
         # causal_relationships: two shapes supported
-        #   {symptom, check_in_order, detection_sql}  — Aughor native
+        #   {symptom, check_in_order, detection_sql}  — Pramanyx native
         #   {if, then}                                 — talonsight shape
         for cr in entry.get("causal_relationships", []):
             if isinstance(cr, dict):

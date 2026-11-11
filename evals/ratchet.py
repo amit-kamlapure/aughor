@@ -368,7 +368,7 @@ def _print_summary(s: RunSummary) -> None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Aughor delta ratchet (P0 measurement substrate)")
+    ap = argparse.ArgumentParser(description="Pramanyx delta ratchet (P0 measurement substrate)")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     def _common(p):

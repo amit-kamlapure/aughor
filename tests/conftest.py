@@ -1,4 +1,4 @@
-"""Shared fixtures for Aughor test suite."""
+"""Shared fixtures for Pramanyx test suite."""
 from __future__ import annotations
 
 import os

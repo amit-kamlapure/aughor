@@ -254,7 +254,7 @@ export function McpServersSection() {
           <Input style={inputStyle} spellCheck={false}
             placeholder="https://example.com/mcp" aria-label="Server URL"
             value={url} onChange={e => setUrl(e.target.value)} />
-          <div role="group" aria-label="How Aughor gets in"
+          <div role="group" aria-label="How Pramanyx gets in"
             style={{ display: "inline-flex", gap: 2, padding: 2, alignSelf: "flex-start",
               border: "1px solid var(--b1)", borderRadius: "var(--r-chip)" }}>
             {([["signin", "Sign in"], ["key", "API key"], ["none", "None"]] as const).map(([m, label]) => (
@@ -268,7 +268,7 @@ export function McpServersSection() {
           {access === "signin" && (
             <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>
               After adding it, press Sign in: the server&apos;s own page asks you to approve
-              Aughor. There is no key to copy, and what it hands back is stored encrypted.
+              Pramanyx. There is no key to copy, and what it hands back is stored encrypted.
             </div>
           )}
           {access === "key" && (

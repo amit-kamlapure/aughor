@@ -34,7 +34,7 @@ const workspace = () => entry("workspace", "Workspace", "local_upload", [
   { name: "uber_ncr", tables: [{ name: "ncr_ride_bookings", row_count: null }] },
 ], true);
 const duckdb = () => entry("baef6c3e", "DuckDB", "duckdb", [{ name: "main", tables: [{ name: "superstore", row_count: 9994 }] }]);
-const ops = () => entry("aughor_ops", "Aughor Ops", "aughor_ops", [], true);
+const ops = () => entry("aughor_ops", "Pramanyx Ops", "aughor_ops", [], true);
 
 const bar = (share: number | null, note: string) => ({ share, note });
 const maturity = (over: Partial<Maturity> = {}): Maturity => ({
@@ -249,7 +249,7 @@ describe("every catalog", () => {
 
   it("counts each table once, and the listing a second connection repeats beside it", () => {
     const f = homeFigures(entries, dups, views);
-    expect(f.catalogs).toEqual(["Workspace", "Aughor Ops", "DuckDB", "BigQuery", "theLook"]);
+    expect(f.catalogs).toEqual(["Workspace", "Pramanyx Ops", "DuckDB", "BigQuery", "theLook"]);
     expect(f.tables).toBe(3 + 1 + 7);
     expect(f.twice).toBe(7);
     expect(f.rows).toBe(THELOOK_TABLES.reduce((a, [, n]) => a + n, 0) + 9994);

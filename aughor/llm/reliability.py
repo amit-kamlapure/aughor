@@ -1,6 +1,6 @@
 """The shared reliability layer for structured LLM calls (Wave R1).
 
-Every structured call in Aughor goes through ``instructor`` with a Pydantic
+Every structured call in Pramanyx goes through ``instructor`` with a Pydantic
 ``response_model``. Instructor is configured with its default single attempt, so
 the moment a response does not parse or does not validate it raises — and
 ``LLMProvider.complete`` treats that raise like any other failure: it walks the

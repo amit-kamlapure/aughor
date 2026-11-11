@@ -1,11 +1,11 @@
-"""Aughor talks to Slack's app-management API itself (Arc AO-2d).
+"""Pramanyx talks to Slack's app-management API itself (Arc AO-2d).
 
 Measured 2026-10-03 (docs/AGENT_OPS_STUDY_2026-10-03.md §8): giving an agent a Slack door
 took twenty manual steps across four surfaces and five hand-copied secrets — the manifest
 pasted at api.slack.com, the app installed by hand, three tokens copied back. Slack's
 ``apps.manifest.create`` lets a CONFIGURATION TOKEN (one paste, from
 api.slack.com/apps → "Your App Configuration Tokens") create the app from the manifest
-Aughor already renders, and hands back the signing secret and an OAuth client — so the
+Pramanyx already renders, and hands back the signing secret and an OAuth client — so the
 install can be a button on an HTTPS deployment (``oauth.v2.access`` returns the bot
 token). What Slack offers no API for is the app-level token (``xapp-``, Socket Mode), so
 that one paste remains, and this module's callers say so instead of pretending.

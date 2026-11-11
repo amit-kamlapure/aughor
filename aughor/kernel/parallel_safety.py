@@ -1,6 +1,6 @@
 """Declared parallel-safety (Wave R5) — one property, one checkpoint.
 
-Aughor fans work out in four places today: ADA's per-phase query batch, the explore
+Pramanyx fans work out in four places today: ADA's per-phase query batch, the explore
 wave's sub-questions, the phase waves, and the health check's per-model probes. All four
 dispatch **reads**, and the SQL gate proves each one read-only — so the property holds,
 but it holds by *coincidence of what is currently fanned out*, not by declaration. Nothing

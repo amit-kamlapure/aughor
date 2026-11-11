@@ -2444,7 +2444,7 @@ def _answer_core(
         # Deterministic complexity assessment (cost-tiered routing, Part 2). We assess
         # every question and surface the tier on the Trust Receipt, but the user-facing
         # SQL answer deliberately stays on the frontier "coder" model: a deceptively
-        # "simple" question can be grain-tricky (e.g. "items per order"), and Aughor's
+        # "simple" question can be grain-tricky (e.g. "items per order"), and Pramanyx's
         # proven combination is the frontier model + deterministic guards — routing the
         # answer to a cheaper model would just shift work onto the guards. The cost lever
         # is applied to the robust routing *decision* instead (classify_question). See

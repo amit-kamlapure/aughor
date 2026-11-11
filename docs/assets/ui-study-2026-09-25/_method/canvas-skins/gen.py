@@ -172,7 +172,7 @@ def topbar(t, tray):
              f'border-radius:{t["r"]}px;background:{t["amb3"]};color:#1F1F1F;font-size:11px;font-weight:600;display:flex;'
              f'align-items:center;justify-content:center;line-height:1">{tray}</span>')
     return f'''<div style="position:relative;height:48px;flex-shrink:0;box-sizing:border-box;display:flex;align-items:center;gap:12px;padding:0 16px;background:{t['chrome']};border-bottom:1px solid {t['b1']}">
-  <div style="font-family:{MONO};font-weight:600;font-size:13px;letter-spacing:0.08em;color:{t['t1']}">AUGHOR</div>
+  <div style="font-family:{MONO};font-weight:600;font-size:13px;letter-spacing:0.08em;color:{t['t1']}">PRAMANYX</div>
   {btn(t, 'Default ' + svg('chev', 12))}
   <div style="width:1px;height:20px;background:{t['b2']}"></div>
   <span style="font-size:12px;color:{t['t3']}">Connection</span>

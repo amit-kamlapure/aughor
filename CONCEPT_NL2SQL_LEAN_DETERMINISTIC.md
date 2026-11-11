@@ -1,11 +1,11 @@
-# Aughor NL2SQL & Agentic Synthesis: Thrashing Baggage for 10x Leaner, Faster, Deterministic Investigations
+# Pramanyx NL2SQL & Agentic Synthesis: Thrashing Baggage for 10x Leaner, Faster, Deterministic Investigations
 
 > **Status:** Conceptual design document — not yet implemented  
 > **Goal:** Reduce token burn, latency, and hallucination surface by replacing LLM-based SQL generation and narrative synthesis with ontology-driven, grammar-bound, deterministic pipelines. LLMs become ambiguity resolvers, not query writers.
 
 ---
 
-## 1. The Current Landscape: What Aughor Does Today
+## 1. The Current Landscape: What Pramanyx Does Today
 
 ### 1.1 The Graph (14+ LLM calls per investigation)
 
@@ -77,7 +77,7 @@ Most of this is **re-deriving what the SQL already proved**. The queries returne
 
 ### 2.2 The Architecture Families
 
-#### Family A: Prompt Engineering (Aughor's current approach)
+#### Family A: Prompt Engineering (Pramanyx's current approach)
 - **Method:** Schema-as-text + few-shot examples → LLM writes SQL
 - **Representatives:** GPT-4 + CoT, DIN-SQL, Self-Debugging
 - **Pros:** Flexible, no training data needed
@@ -107,7 +107,7 @@ Most of this is **re-deriving what the SQL already proved**. The queries returne
 
 #### Family E: Retrieval-Augmented Generation (RAG-SQL)
 - **Method:** Retrieve similar past queries / query fragments → inject into prompt
-- **Representatives:** Aughor's KB retriever, SQL-PaLM with exemplar retrieval
+- **Representatives:** Pramanyx's KB retriever, SQL-PaLM with exemplar retrieval
 - **Pros:** Reuses proven patterns; reduces hallucination on common queries
 - **Cons:** Cold-start problem; retrieval quality determines everything
 - **Determinism:** LOW-MEDIUM — depends on vector similarity scores
@@ -132,7 +132,7 @@ Most of this is **re-deriving what the SQL already proved**. The queries returne
 | Complex multi-hop joins | ⚠️ | ⚠️ | ✅ |
 | Business logic (status filters, etc.) | ❌ | ❌ | ✅ (if encoded) |
 
-**The insight:** No single family solves everything. But Aughor already has something unique: a **living ontology** (entities, relationships, metrics, actions) that is essentially a **symbolic schema graph** (Family F). We are not using it for SQL generation. We should.
+**The insight:** No single family solves everything. But Pramanyx already has something unique: a **living ontology** (entities, relationships, metrics, actions) that is essentially a **symbolic schema graph** (Family F). We are not using it for SQL generation. We should.
 
 ---
 
@@ -193,7 +193,7 @@ The phases also duplicate work: baseline computes period-over-period changes, th
 
 ### 3.7 Baggage Item: Vector Search for Schema Retrieval
 
-**Current:** For large schemas (>12 tables), Aughor embeds table/column descriptions into Qdrant and retrieves the top-k most relevant tables per hypothesis.
+**Current:** For large schemas (>12 tables), Pramanyx embeds table/column descriptions into Qdrant and retrieves the top-k most relevant tables per hypothesis.
 
 **Why it's baggage:** This is a **heuristic approximation** of what the ontology graph already knows. The ontology explicitly maps entities to tables, relationships to join paths, and metrics to formulas. Vector search is a fuzzy workaround for not using the ontology.
 
@@ -365,7 +365,7 @@ def synthesize_sql(intent: QueryIntent, ontology: OntologyGraph, dialect: str) -
 **New:** Maintain a **Materialised Metric Cache** — a set of pre-computed tables refreshed nightly (or on-demand):
 
 ```sql
--- kpi_daily (already exists in Aughor!)
+-- kpi_daily (already exists in Pramanyx!)
 -- Extend to:
 -- kpi_weekly, kpi_monthly, kpi_quarterly
 -- Each has: metric_id, period_start, period_end, value, prior_period_value, yoy_value, z_score

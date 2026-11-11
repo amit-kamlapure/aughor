@@ -1,7 +1,7 @@
-# Aughor Platform Architecture — Org Tenancy, Catalog & Storage
+# Pramanyx Platform Architecture — Org Tenancy, Catalog & Storage
 
 > **Status:** design / decision record (2026-06-22). Records the target structure for
-> Aughor *as a platform* — the org/tenant model, the catalog & storage layer, and the
+> Pramanyx *as a platform* — the org/tenant model, the catalog & storage layer, and the
 > control-plane / data-plane split — and the phased path from where the code is today.
 >
 > **One-line thesis:** build the single-org product now, but **tenant-key everything from
@@ -24,7 +24,7 @@ implementation spec for any single phase.
 
 ## 1. Framing: a platform, not a single app
 
-Aughor is — or will be — a **platform provider**: deployed on a mega-server (or a regionally
+Pramanyx is — or will be — a **platform provider**: deployed on a mega-server (or a regionally
 federated cluster of them) that the platform operator owns and runs. Tenants (customer
 organizations) are *provisioned within* that infrastructure. This is the lens for every
 decision below — we design from the **operator's** seat, not a single customer's.
@@ -49,7 +49,7 @@ get that for free is the classic split:
 
 We align to the model the lakehouse field has converged on: a governed, three-level catalog
 with storage credentials held at the top. It is the battle-tested shape for exactly this
-problem, it is open and multi-engine, and DuckDB — Aughor's compute engine — already speaks
+problem, it is open and multi-engine, and DuckDB — Pramanyx's compute engine — already speaks
 it.
 
 The hierarchy:
@@ -80,17 +80,17 @@ Three properties matter for us:
    catalogs/schemas — that is how a workspace gets "storage views, rights, and access"
    without ever owning storage.
 3. **It is multimodal.** *Volumes* govern unstructured objects (the "upload any object —
-   including video" requirement); *Functions* govern callables (Aughor's `prompt()` /
+   including video" requirement); *Functions* govern callables (Pramanyx's `prompt()` /
    `embedding()` semantic operators are a natural fit). Tables, files, and AI operators all
    live under one namespace and one access model.
 
 ---
 
-## 3. The Aughor object model
+## 3. The Pramanyx object model
 
-We adopt this object model as Aughor-native objects. Mapping current → target:
+We adopt this object model as Pramanyx-native objects. Mapping current → target:
 
-| Reference model | Aughor today | Aughor target |
+| Reference model | Pramanyx today | Pramanyx target |
 |---|---|---|
 | **Account** | — (flat; no tenant) | **Org** — new top level, the tenant boundary |
 | **Metastore** (per region) | — | **Org metastore** — catalogs + storage creds + external locations, regional |
@@ -102,7 +102,7 @@ We adopt this object model as Aughor-native objects. Mapping current → target:
 | **Function** | — | **Function** — governed callables (AI operators, UDFs) |
 | **Workspace** (grants, no storage) | `workspaces` table = list of connection IDs, **no storage** | **Workspace** — grant-scoped views into org catalogs + a compute lane |
 
-Aughor is **closer to this model than it looks**: a workspace is already "a named list of
+Pramanyx is **closer to this model than it looks**: a workspace is already "a named list of
 connection IDs that owns no storage" (`aughor/workspace/store.py`). The work is to insert an
 **Org/metastore above** the workspace and turn *connections* into *catalogs reachable via
 grants* — not to invent a new structure.
@@ -178,7 +178,7 @@ credentials). Today's `data/uploads/{conn_id}/...` becomes `…/{org_id}/{catalo
 
 ### 5.3 Storage format strategy
 
-There are two coherent lanes, and Aughor's snapshot seam already abstracts both:
+There are two coherent lanes, and Pramanyx's snapshot seam already abstracts both:
 
 | Lane | Format | Catalog | When |
 |---|---|---|---|
@@ -341,8 +341,8 @@ Isolation is enforced in layers; each must be tenant-aware from the start:
 
 - metastore backing store: SQLite/registry → **Postgres** (concurrent, multi-client);
 - storage root: local FS → **S3/GCS** with real credential vending;
-- catalog service: Aughor-native → optionally an **open-source catalog server** (or expose the
-  Aughor catalog *via* the Iceberg-REST API for external-engine interop);
+- catalog service: Pramanyx-native → optionally an **open-source catalog server** (or expose the
+  Pramanyx catalog *via* the Iceberg-REST API for external-engine interop);
 - identity: local users → **external IdP / SSO**;
 - regional: a single region → **per-region metastores** (see §8).
 
@@ -353,20 +353,20 @@ stable interface — not a migration.
 
 ## 7. Governance: two layers, cleanly separated
 
-A core principle: **Aughor does not reinvent data governance.** Two distinct, complementary
+A core principle: **Pramanyx does not reinvent data governance.** Two distinct, complementary
 layers:
 
 - **Data governance (the catalog model)** — *who may read this table*, credential vending, lineage,
-  the namespace, grants. Owned by the metastore/control plane (Aughor-native now,
+  the namespace, grants. Owned by the metastore/control plane (Pramanyx-native now,
   UC-OSS-compatible, optionally UC-OSS later).
-- **Intelligence governance (Aughor's edge)** — *is this metric defined correctly, is this
+- **Intelligence governance (Pramanyx's edge)** — *is this metric defined correctly, is this
   finding trustworthy, is this SQL safe, what did it cost, is the answer reproducible.* The
   ontology, metrics catalog, trust receipts, snapshot reproduction, the security/audit gate,
   metering/budgets, and the agent fleet.
 
 They **layer**: a query first passes the data-governance check (does this workspace's grant
-permit this catalog?), then Aughor's intelligence governance (safety gate → execution →
-trust gate → metered receipt). Aughor's position is **"the governed-intelligence layer on an
+permit this catalog?), then Pramanyx's intelligence governance (safety gate → execution →
+trust gate → metered receipt). Pramanyx's position is **"the governed-intelligence layer on an
 open governed lakehouse"** — a sharper, more defensible position than owning the whole stack.
 
 ### 7.1 Trust & reproducibility become native
@@ -458,7 +458,7 @@ Each phase ships value and is independently stoppable.
   #2) — these are the groundwork that makes multi-tenant a config flip.
 - **Two storage lanes** behind one seam: DuckLake (embedded) now, Delta+UC (governed) later;
   the format bet is reversible via `db/snapshot.py`.
-- **Aughor differentiates at the intelligence layer**, not by reinventing data governance.
+- **Pramanyx differentiates at the intelligence layer**, not by reinventing data governance.
 - **Inference is a vended resource alongside storage and compute** (§5b): bring-your-own-model
   (local · API · private endpoint) bound Org → Workspace → Agent (inherited, last-most-specific
   wins). Per-provider caching/tooling quirks stay behind a capability profile; a canonical
@@ -482,7 +482,7 @@ Each phase ships value and is independently stoppable.
   governed at scale, behind the `db/snapshot.py` seam — reversible, simpler local), not
   Delta-everywhere.
 - **Identity:** which IdP/SSO standard for the multi-tenant flip; how org-level RBAC composes
-  with Aughor's existing capability gates.
+  with Pramanyx's existing capability gates.
 - **Billing model:** the metering spine (R1) exists; the pricing/packaging on top does not.
 
 ---
@@ -494,7 +494,7 @@ Each phase ships value and is independently stoppable.
 3. **Control plane ≠ data plane** — governance/identity/scheduling separate from storage/compute.
 4. **Open formats, UC-compatible** — no proprietary lock-in; the catalog speaks an open API.
 5. **Format-agnostic trust** — the snapshot/reproduction seam works on any version-aware backend.
-6. **Two governance layers, cleanly separated** — UC owns data access; Aughor owns intelligence.
+6. **Two governance layers, cleanly separated** — UC owns data access; Pramanyx owns intelligence.
 7. **Inference is vended, never ambient** — a model binding (endpoint + credential) is a scoped
    capability resolved Org → Workspace → Agent (§5b), not global process env.
 8. **Platform ≠ Agent** — the Agent may import the Platform; the **Platform never imports the

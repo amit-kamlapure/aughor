@@ -1347,7 +1347,7 @@ async def get_metric_value(name: str, conn_id: str):
     """Compute a governed metric's CURRENT value by running its registered SQL
     against a connection — the exact governed number, not an LLM re-derivation.
     This is what the MCP `get_metric` tool returns so an external agent binds to
-    the same definition the rest of Aughor enforces (vs improvising a formula).
+    the same definition the rest of Pramanyx enforces (vs improvising a formula).
 
     🔴 Resolved SCOPED. Until 2026-09-20 this read `get_metric(name)` with no connection, and
     the resolver's no-connection branch returns the FIRST row matching the name, whatever

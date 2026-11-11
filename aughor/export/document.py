@@ -60,7 +60,7 @@ class ExportDoc:
         install knows its web address, the receipt's id when it does not."""
         if not self.source_id:
             return ""
-        return f"Source: {self.source_url}" if self.source_url else f"Source: Aughor receipt {self.source_id}"
+        return f"Source: {self.source_url}" if self.source_url else f"Source: Pramanyx receipt {self.source_id}"
 
 
 def receipt_link(receipt_id: str) -> str:

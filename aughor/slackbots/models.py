@@ -3,7 +3,7 @@
 RC-1 put `@aughor` in a Slack thread and RC-2 gave its answers charts and cards, but
 both ran against ONE bot whose credentials lived in a `.env.local` on a laptop. Nothing
 about that is a platform object, so nothing about it is user-creatable — and the ask was
-for users to make as many bots as they want, from inside Aughor.
+for users to make as many bots as they want, from inside Pramanyx.
 
 The whole feature is this tuple::
 
@@ -39,12 +39,12 @@ NAME_MAX = 80
 
 #: The Slack secrets. Named once so the encrypt / decrypt / mask paths cannot drift
 #: apart — a field added to one and missed by another is how a token leaks.
-#: `client_secret` (AO-2d) joins the three when Aughor created the app itself.
+#: `client_secret` (AO-2d) joins the three when Pramanyx created the app itself.
 SECRET_FIELDS = ("bot_token", "app_token", "signing_secret", "client_secret")
 
 
 class SlackBot(BaseModel):
-    """One Slack app bound to one Aughor agent."""
+    """One Slack app bound to one Pramanyx agent."""
     id: str = ""
     name: str = ""
     enabled: bool = True
@@ -79,10 +79,10 @@ class SlackBot(BaseModel):
     slack_app_id: str = ""
     bot_user_id: str = ""       # the bot's own Slack user id, from auth.test
     #: Must match the app's manifest mode. See the module docstring. AO-2c: True for an
-    #: app Aughor renders now (Slack closed the legacy view to new apps on 2026-08-20),
+    #: app Pramanyx renders now (Slack closed the legacy view to new apps on 2026-08-20),
     #: and one-way — an app switched to agent mode cannot be switched back.
     agent_view: bool = False
-    #: AO-2d — set when Aughor created the app from a configuration token: the OAuth
+    #: AO-2d — set when Pramanyx created the app from a configuration token: the OAuth
     #: client that installs it to a workspace. `client_secret` is encrypted like the rest.
     client_id: str = ""
     client_secret: str = ""

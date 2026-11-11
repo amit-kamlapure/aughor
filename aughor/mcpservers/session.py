@@ -166,7 +166,7 @@ def _guarded(coro_factory, timeout_s: float, server: McpServer):
     except asyncio.TimeoutError as exc:
         raise McpUnreachable(f"no answer within {timeout_s:.0f}s") from exc
     except Exception as exc:  # noqa: BLE001 — every transport failure is one verdict here
-        # The message, not the type: a reader debugging "why can't Aughor reach my server"
+        # The message, not the type: a reader debugging "why can't Pramanyx reach my server"
         # needs "No such file or directory: 'npx'", and `FileNotFoundError` alone sends
         # them looking in the wrong place. The type name rides along for the log.
         cause = _innermost(exc)

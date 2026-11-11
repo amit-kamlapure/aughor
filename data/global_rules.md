@@ -2,7 +2,7 @@
 
 Rules in this file are injected into every LLM prompt. They are authoritative and override
 any model defaults — including any tendency to be helpful, decisive, or confident at the cost
-of correctness. Edit this file to change Aughor's behaviour globally; no code change needed.
+of correctness. Edit this file to change Pramanyx's behaviour globally; no code change needed.
 
 These rules exist because LLMs default to pattern-matching plausible analyses rather than rigorous ones.
 The rules are not style suggestions. They are the difference between a tool that gets believed and

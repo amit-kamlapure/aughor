@@ -1,4 +1,4 @@
-# Aughor 10× Program — the enterprise foundation under the intelligence loop (2026-11-05)
+# Pramanyx 10× Program — the enterprise foundation under the intelligence loop (2026-11-05)
 
 **What this is.** The plan that puts an enterprise foundation under the 2027 study's phases
 without letting the foundation become the product. It sits *under*
@@ -10,7 +10,7 @@ is the program for one slice of it, the way `PLATFORM_PROGRAM_2026-07-26.md` was
 **Scope authority.** Three sources, each measured against `main` at `11aa35b0` before a line of
 this was written:
 
-1. *Aughor Enterprise Architecture, Security and Engineering Assessment* (outside review,
+1. *Pramanyx Enterprise Architecture, Security and Engineering Assessment* (outside review,
    2026-11-04, from public files, no clone, no tests run). Sixteen findings; most of the
    OBSERVED ones hold, four are stale, and it missed the two holes that matter most (§1).
 2. The four architecture decisions the user set beside it (§2.1).
@@ -135,7 +135,7 @@ whole (§6).
 
 | Design | The heavy way | Ours |
 |---|---|---|
-| **Fail-closed per-node access**: hierarchy + inheritance + grants; open / strict / restricted; an unrecognised rule hides; "unknown is not empty"; an access check raises on error, never returns empty or full | a graph DB | `authorize_resource` returns one of OWNED · SHARED · FOREIGN · NOT_FOUND · UNRESOLVED; only the first two allow; a resolver exception is UNRESOLVED and denies. A week for Aughor's handful of kinds |
+| **Fail-closed per-node access**: hierarchy + inheritance + grants; open / strict / restricted; an unrecognised rule hides; "unknown is not empty"; an access check raises on error, never returns empty or full | a graph DB | `authorize_resource` returns one of OWNED · SHARED · FOREIGN · NOT_FOUND · UNRESOLVED; only the first two allow; a resolver exception is UNRESOLVED and denies. A week for Pramanyx's handful of kinds |
 | **One image, many entry points** (one entry point per role; a local stream broker, a cluster broker at scale, by one env var) | six stateful services | `aughor worker` beside `aughor serve`, same package, the ledger as the queue; a broker only when measured |
 | **A production chart** (replicas 2, PDB, HPA, NetworkPolicy, External Secrets, 300 s grace) | | the shape of the assessment's F-10 manifest, written when Track E ships |
 | Connector docs written for coding agents first, "ask for the test account before the first record" | | already ours (`AGENTS.md`); its sibling rule is our *withheld is said* |
@@ -143,8 +143,8 @@ whole (§6).
 **Not taken:** a document store + a graph database + a vector server + a message broker and its
 coordinators (decision 2 covers the need with one store); index-everything-at-rest (decision 4 is
 its deliberate opposite for figures); an edition switch that gates access on a tier.
-**Possible later tie-in, not asked for:** Aughor is an MCP client (`aughor/mcpservers/`); a
-customer's document-context service could be one MCP server Aughor reads discussion context from
+**Possible later tie-in, not asked for:** Pramanyx is an MCP client (`aughor/mcpservers/`); a
+customer's document-context service could be one MCP server Pramanyx reads discussion context from
 under its own organisation check — the 10-30 "Slack/Gmail as context" wish without ingesting a mailbox.
 
 ---
@@ -212,7 +212,7 @@ one week; C1 alone is most of the value.
 
 | # | Change | Receipt |
 |---|---|---|
-| D1 | **Built 2026-11-06.** `copy_rows_across_sources` in `orgsettings/allows.py` (born without a flag, off by default, in Settings ▸ Organization ▸ What Aughor may do). Where the federation engine cannot read a member in place (an upload, an API mirror, a bucket — anything ATTACH cannot reach), it used to copy the member's rows into DuckDB at init; now it copies only when the organisation allows it, and otherwise every answer over that federation refuses with the sentence naming the setting and where to turn it on — never a missing-view error from the engine. Postgres and DuckDB members ATTACH read-only and are read in place; a live read is not a copy. The batched cross-source join reads its right rows through the right connection's own door and joins in the platform; it moves no rows into a second engine, so it is not gated | `test_track_d_data_stays_home.py`: setting off → no tables, refusal names setting and place; setting on → copied, and said |
+| D1 | **Built 2026-11-06.** `copy_rows_across_sources` in `orgsettings/allows.py` (born without a flag, off by default, in Settings ▸ Organization ▸ What Pramanyx may do). Where the federation engine cannot read a member in place (an upload, an API mirror, a bucket — anything ATTACH cannot reach), it used to copy the member's rows into DuckDB at init; now it copies only when the organisation allows it, and otherwise every answer over that federation refuses with the sentence naming the setting and where to turn it on — never a missing-view error from the engine. Postgres and DuckDB members ATTACH read-only and are read in place; a live read is not a copy. The batched cross-source join reads its right rows through the right connection's own door and joins in the platform; it moves no rows into a second engine, so it is not gated | `test_track_d_data_stays_home.py`: setting off → no tables, refusal names setting and place; setting on → copied, and said |
 | D2 | **Built 2026-11-06.** Two door words in `db/doors.WORDS`: `copied:duckdb` on every answer a federation gives while a member's rows sit copied in it ("run over rows COPIED out of their source … the organisation allows it"), and `cross-source:<connection>` on a join made in the platform, after the left read's own doors — so the receipt says whose rows were joined. `docs/SQL_DOORS.json` is the census of door CALL SITES, not words, and gains nothing; the exit as written was imprecise | the two tests above; `test_de5d_count_and_more` holds every word seen to `WORDS` |
 | D3 | **Measured 2026-11-06: already true, no code.** A removed connection takes its cache rows (`db/purge.py`, `test_connection_purge.py`); expired rows are evicted on the monitors' clock (`monitors/scheduler.py:47`, `test_matcache_evict.py`); `cache_stats()` says the retention (`ttl_default_s`, one hour, TTL on read); keys carry the tenancy. The program's row was written from the assessment's reading, not the code's — the repo's own rule, applied to the repo's own plan | the tests named |
 
@@ -326,5 +326,5 @@ From the assessment, adopted whole, and from the record:
    it with one.
 4. **Postgres as the default for a new install**, or SQLite stays the default and Postgres is the
    enterprise choice. Decision 2 says the latter; B's exit is the evidence either way.
-5. **A document-context service as a context source**: a customer's one, as an MCP server Aughor
+5. **A document-context service as a context source**: a customer's one, as an MCP server Pramanyx
    reads discussions from (G4), or not. Nobody has asked; it is written down so it is not rediscovered.

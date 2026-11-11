@@ -1,6 +1,6 @@
 """How complete an object read is (Arc ED, ED-6; ROADMAP §3.58).
 
-An answer owes its reader whether it holds everything it was asked for, and what it left out. Aughor's object
+An answer owes its reader whether it holds everything it was asked for, and what it left out. Pramanyx's object
 doors carried one boolean, and on the query door it could not be true: every connection hands back at most
 ``db.connection.MAX_ROWS`` (500) rows, and the door said ``truncated`` only past 1,000 (measured 2026-10-24) — a cut
 read reached its reader as complete. Here every object door says one typed thing, the same way:

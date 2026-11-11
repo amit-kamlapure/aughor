@@ -419,7 +419,7 @@ def _sheet_edit(sheet_id: str, e: SheetEdit, *, org_id: str, actor: str, origin:
     return edit
 
 
-#: The one connection the sheets are, to the rest of Aughor (`aughor.sheets.model.SHEETS_CONNECTION`).
+#: The one connection the sheets are, to the rest of Pramanyx (`aughor.sheets.model.SHEETS_CONNECTION`).
 SHEETS_CONNECTION = "sheets"
 
 

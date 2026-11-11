@@ -2,17 +2,17 @@
 
 > **Status:** implemented (2026-06-30, branch `2026-06-29-platform-agent-separation`).
 > Records *why* and *how* the **Data Intelligence Platform** (the home) is separated
-> from the **Aughor Agent** (the intelligence), and the invariant that keeps them so.
+> from the **Pramanyx Agent** (the intelligence), and the invariant that keeps them so.
 
 ## Thesis
 
-Aughor is two things in one codebase:
+Pramanyx is two things in one codebase:
 
 - **The Data Intelligence Platform (DIP)** — the *home*: tenancy (org/workspace),
   the catalog/metastore, connectors, storage, compute lanes, the security/audit gate,
   the job kernel + ledger + metering, LLM/inference vending, the HTTP/MCP surfaces,
   licensing, secrets. It has independent, plug-and-play mechanics.
-- **The Aughor Agent** — the *intelligence* that runs **within** that home: the
+- **The Pramanyx Agent** — the *intelligence* that runs **within** that home: the
   explorer, ADA/investigate, insight modes, the ontology + semantic compiler +
   metrics, knowledge & briefings, playbook, packs, profile, verify, evidence.
 

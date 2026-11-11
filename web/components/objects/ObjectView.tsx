@@ -179,7 +179,7 @@ export function ObjectView({ objectType, pk, connectionId, schemaName }: {
   }, [objectType, pk, connectionId, schemaName, attempt]);
 
   useEffect(() => {
-    if (loaded?.path === "object") document.title = `${loaded.type_name} ${loaded.title ?? loaded.pk} · Aughor`;
+    if (loaded?.path === "object") document.title = `${loaded.type_name} ${loaded.title ?? loaded.pk} · Pramanyx`;
   }, [loaded]);
 
   const reload = useCallback(() => setAttempt((n) => n + 1), []);

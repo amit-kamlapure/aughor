@@ -13,7 +13,7 @@
 
 ## 1 · Why this, and why now
 
-Aughor today is a single generalist analyst. It is very good, but every team sees the same
+Pramanyx today is a single generalist analyst. It is very good, but every team sees the same
 generic lens. A Customer Analytics team wants cohorts, churn, NRR and RFM as first-class
 citizens; a Supply Chain team wants fill-rate, lead-time variance and stockout risk; Finance
 wants close-cycle, variance-to-plan and margin bridges. These are not different *engines* —
@@ -24,7 +24,7 @@ The trap (the "Eve trap") is to let each team hand-roll an agent: write the SQL,
 tables, maintain the prompts. That does not scale and it throws away aughor's single biggest
 asset — **grounded correctness**. The resolution:
 
-> **The folder declares intent. Aughor is the compiler that grounds it.**
+> **The folder declares intent. Pramanyx is the compiler that grounds it.**
 
 A specialist author declares *what metrics matter, what questions this expert owns, what the
 entity model is*. They never write SQL or hardcode a table name. Binding to a specific
@@ -316,7 +316,7 @@ reason packs are portable.
 **At deploy/activation**, for a `(pack, connection)`:
 
 1. **Propose.** Run the pack's `entities.yaml` roles against the connection's profile +
-   ontology. Aughor already profiles every table (`aughor/business_profile/`, `aughor/tools/profiler.py`)
+   ontology. Pramanyx already profiles every table (`aughor/business_profile/`, `aughor/tools/profiler.py`)
    and builds an entity graph. The resolver scores candidate tables/columns per role:
    - `customer` → the entity with a stable identity that other tables reference most.
    - `event` → a dated fact referencing `customer`.
@@ -362,7 +362,7 @@ Under the hood this writes the folder and runs the same validator.
 ### 6.3 AI-authored (the killer path)
 > *"Build me a Supply Chain Analytics expert for this warehouse."*
 
-Aughor introspects the connection (it already profiles it), retrieves relevant KB + industry
+Pramanyx introspects the connection (it already profiles it), retrieves relevant KB + industry
 recipes, and **drafts the entire pack** — persona, metrics, role bindings, questions, playbooks,
 surface — then drops the user into the §6.2 review flow to edit and confirm. This is only
 possible *because* of aughor's grounding: it can propose a *correct* expert, not a plausible one.

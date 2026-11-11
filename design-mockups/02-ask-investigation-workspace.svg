@@ -9,11 +9,11 @@
   <rect width="1440" height="900" class="bg"/>
   <rect x="0" y="0" width="244" height="900" class="side"/><rect x="244" y="0" width="1196" height="56" class="top"/>
   <line x1="244" y1="0" x2="244" y2="900" class="line"/><line x1="244" y1="56" x2="1440" y2="56" class="line"/>
-  <text x="30" y="39" class="text h2">Aughor</text>
+  <text x="30" y="39" class="text h2">Pramanyx</text>
   <rect x="20" y="92" width="204" height="34" rx="6" fill="#152238" stroke="#29415e"/><text x="42" y="114" class="blue body">Ask</text>
   <text x="42" y="164" class="muted body">Investigations</text><text x="42" y="206" class="muted body">Intelligence</text><text x="42" y="248" class="muted body">Data Map</text><text x="42" y="290" class="muted body">Governance</text>
 
-  <text x="286" y="116" class="text h1">Ask Aughor</text>
+  <text x="286" y="116" class="text h1">Ask Pramanyx</text>
   <text x="286" y="144" class="muted body">Fast answers, agentic investigations, and cited evidence in one workspace.</text>
   <rect x="286" y="176" width="760" height="74" rx="10" class="input"/>
   <text x="312" y="207" class="soft body">Why did payment failures increase last month, and which segment should we fix first?</text>

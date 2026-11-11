@@ -1,7 +1,7 @@
 """CB-5 (2026-09-23) — show how much of the business the platform can see.
 
 One number belongs in front of the executive: the share of the company's working context that
-AI can see, and the single gap holding up the most work. Aughor computed pieces of this and showed
+AI can see, and the single gap holding up the most work. Pramanyx computed pieces of this and showed
 none of them: `declarations.Coverage` (the share of tables mapped to business objects, declared
 exclusions out of the denominator, banded) was imported only by its own test, and the departure
 gate held sends for a missing approved definition without anyone counting which definition held the

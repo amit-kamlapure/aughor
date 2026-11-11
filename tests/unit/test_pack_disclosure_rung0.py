@@ -184,4 +184,4 @@ def test_a_broken_disclosure_never_breaks_the_conversation(monkeypatch):
 
     prompt = converse_tools.converse_system_prompt("c1", question="anything")
 
-    assert "Aughor's analyst" in prompt
+    assert "Pramanyx's analyst" in prompt

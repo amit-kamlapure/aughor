@@ -1,4 +1,4 @@
-# Aughor — UI Backlog (surfacing shipped-but-invisible features)
+# Pramanyx — UI Backlog (surfacing shipped-but-invisible features)
 
 > **Why this exists.** A platform-heavy two days shipped a cluster of capabilities
 > that are wired and tested on the backend but have **no UI surface** — a user can't

@@ -1,5 +1,5 @@
 /**
- * SSE byte stream → Aughor frames — CI-1d.
+ * SSE byte stream → Pramanyx frames — CI-1d.
  *
  * Lives outside the route handler for two reasons: Next validates a
  * `route.ts`'s exports, so a helper exported for testing is a build risk there;
@@ -21,7 +21,7 @@ export type AughorFrame = { event: string; data: Record<string, unknown> };
 /**
  * Parse one SSE record (the text between blank lines) into a frame.
  *
- * THE FRAME NAME LIVES IN THE PAYLOAD, NOT IN AN `event:` LINE. Aughor's
+ * THE FRAME NAME LIVES IN THE PAYLOAD, NOT IN AN `event:` LINE. Pramanyx's
  * backend emits bare `data: {"type":"route",…}` records — it does not use the
  * SSE event field at all, and the reducer this seam replaced always read
  * `p.type` from the parsed JSON for exactly this reason.

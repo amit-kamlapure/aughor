@@ -67,7 +67,7 @@ def load_findings(connection_id: str) -> list[dict]:
 
 
 #: Answer-receipt kinds `_write_answer_receipt` lands (investigations.py). An ADA run
-#: and a chat answer are both "Aughor looked and found something" — the graph treats
+#: and a chat answer are both "Pramanyx looked and found something" — the graph treats
 #: them as one finding kind and keeps the receipt kind in the node's data.
 #:
 #: Public because a second reader arrived (`semantic.answer_divergence`): two hand-kept
@@ -97,7 +97,7 @@ def load_investigation_findings(
 
     The gap this closes: :func:`load_findings` enumerates the *explorer* store, while
     an investigation or a chat answer writes a Ledger receipt under ``ada:``/``chat:``
-    keys. So every investigation Aughor has ever run was structurally invisible to the
+    keys. So every investigation Pramanyx has ever run was structurally invisible to the
     graph — no trigger could have fixed that, because the source was never read. The
     receipt already carries the two things a `finding` node needs (the headline and
     the tables its SQL touched, extracted at write time), so this is a read, not a

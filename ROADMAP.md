@@ -1,6 +1,6 @@
-# Aughor — Roadmap and Plan of Record
+# Pramanyx — Roadmap and Plan of Record
 
-**Product:** Aughor — Autonomous Intelligence Platform ("your warehouse, always thinking")
+**Product:** Pramanyx — Autonomous Intelligence Platform ("your warehouse, always thinking")
 **Stack:** LangGraph · FastAPI (SSE) · Next.js (App Router) · DuckDB + PostgreSQL · SQLGlot ·
 Qdrant · instructor over 5 LLM backends · uv
 
@@ -29,7 +29,7 @@ this project more than building. §6 is the short list of things only the user c
 
 ## 0 · Thesis — one platform, three planes
 
-Aughor's shape is a governed catalog, business semantics, a Postgres system store, sync and a
+Pramanyx's shape is a governed catalog, business semantics, a Postgres system store, sync and a
 first-class SQL editor — **plus an agent that answers with the semantics, not just governs
 them.** The moat is the ontology→agent loop.
 
@@ -236,7 +236,7 @@ Phase 1; also fixed there and worth naming: `PUT /automations/{id}` was erasing
 
 ### 3.1 · VA-9d — the MCP consumer (FIRST SLICE SHIPPED 2026-09-02)
 
-~~`aughor/mcp/` today is a **server** exposing Aughor's tools, plus an HTTP client to Aughor's own
+~~`aughor/mcp/` today is a **server** exposing Pramanyx's tools, plus an HTTP client to Pramanyx's own
 API. A generic consumer — stdio + SSE, registry, discovery, health — does not exist.~~
 
 > **The premise was re-measured before building, and for once it held exactly.** The
@@ -244,7 +244,7 @@ API. A generic consumer — stdio + SSE, registry, discovery, health — does no
 > `_mcp_tool_components()` reads `aughor.mcp.server`'s OWN tool manager, so it re-reports
 > what we serve, never a foreign roster. A repo-wide sweep for `stdio_client`, `sse_client`,
 > `streamablehttp_client` and `ClientSession` found **zero** first-party hits, and
-> `client.py`'s `_stream_sse` is Aughor's own SSE framing, not the protocol's. Two things
+> `client.py`'s `_stream_sse` is Pramanyx's own SSE framing, not the protocol's. Two things
 > were better prepared than the paragraph admitted: the SDK client is already a dependency
 > (`mcp>=1.28.0`, its `stdio`/`sse`/`streamable_http` transports installed and unused), and
 > `govern/outbound.py`'s docstring already names the counterparty — *"later an MCP server
@@ -520,7 +520,7 @@ Neither needs a new canvas: VA-12's authoring rail edits whatever the model can 
 > system caps its series at six ("never a seventh hue"), so it takes the documented fallback
 > rather than an invented token — extending the ramp is the user's call.
 
-**Decision behind it (§6.1, user-approved 2026-08-30): Aughor owns the vault.** A connection
+**Decision behind it (§6.1, user-approved 2026-08-30): Pramanyx owns the vault.** A connection
 is a *securable object*: the platform stores the credentials and handles OAuth flows and token
 refresh, so the agent never sees them — the governed catalog of §0. Every hosted vault measured
 fails the local-AND-scale test: one self-hosted needs ~9 CPU / ~19GB across 8 services, another
@@ -557,7 +557,7 @@ Slack, Microsoft) and the ask is covered; forty is a catalogue, not a milestone.
    `+ Custom MCP` as its last entry (where VA-9d surfaces to a user).
    🔑 **Decided 2026-08-30, from a live install failure: a card must offer the door THIS
    deployment can open.** Slack's OAuth needs an HTTPS callback; a laptop has none; so a
-   freshly-cloned Aughor was being pointed at the one door it cannot open — to reach a
+   freshly-cloned Pramanyx was being pointed at the one door it cannot open — to reach a
    token **nothing consumed yet** (`broker.fresh_access_token()` had zero callers then;
    DS-11 gave it one on 2026-09-01, which does not change this card's argument — the door
    a deployment cannot open is still the wrong door to offer). Meanwhile RC-5's Slack app path — manifest + three tokens + Socket
@@ -1299,7 +1299,7 @@ a form, never writes Python, and the approval gate still owns its writes.
 >
 > **So DS-13 is a fourth side-effect kind, `http`** — method, url, headers, an encrypted
 > auth header and a body TEMPLATE, filled and never evaluated. The existing `webhook` kind
-> posts AUGHOR's envelope (`{action, kind, params, config}`) to a URL, which is right for a
+> posts PRAMANYX's envelope (`{action, kind, params, config}`) to a URL, which is right for a
 > receiver written for us and useless for one that was not: PagerDuty wants PagerDuty's
 > body. A custom component's writes are governed the day it is authored, because it
 > inherits the plane it was added to.
@@ -1788,7 +1788,7 @@ Counted from **their repo**, because their docs site renders client-side and ret
 body to a fetch — a page that looks present and answers nothing is the measurement trap this
 document keeps paying for.
 
-| | The outside editor | Aughor |
+| | The outside editor | Pramanyx |
 |---|---|---|
 | Core component pages | **43** (34 real + 9 index pages) | — |
 | Vendor **bundles** | **76** | — |
@@ -5991,7 +5991,7 @@ for ON-8, was taken as recommended when ON-8 began, 2026-09-14.)
 > and light, the four universal states, the trust system, motion, icons and density). The spec in this codebase's
 > names, with everything adoption decided, is **`web/aughor-v2/INSTRUMENT.md`** — read that, not this summary.
 
-**The thesis.** Aughor's product is a claim about a number, and the interface's whole job is to make that claim
+**The thesis.** Pramanyx's product is a claim about a number, and the interface's whole job is to make that claim
 checkable at a glance: one warm monochrome plane, hairlines for structure, colour as a data type, three things
 that float (popover, toast, dialog), no spinners, and motion only where it explains a state change.
 
@@ -6351,7 +6351,7 @@ available and detects the industry per connection** (answer 1); a pick narrows w
 changes later in Settings → Organization or with `aughor industries`. **Packages live in the repo** (answer 2).
 
 **How a package is made — six gates, in order.** (1) A cited dossier. (2) A drafted package: authoring tokens, no
-Aughor model. (3) The static gate, in CI: schema, a source per sane range, roles not tables, no alias collision, every
+Pramanyx model. (3) The static gate, in CI: schema, a source per sane range, roles not tables, no alias collision, every
 play bound. (4) Measured on public data, no model: every recipe inside its sane range, every claim tiered, every
 detection query run; where no realistic public data exists, reproduce the regulator's published figures from the
 regulator's own data and test lifecycles on a synthetic generator. (5) Ablation with and without the package — model
@@ -6881,7 +6881,7 @@ shell commands — a portable Git Bash under the user's local app data, no admin
 home directory, the data and config in another (with an env override). Then a setup wizard (skippable), a model
 command, an update command and a doctor.
 
-**Where Aughor's install already holds its own — keep these.** The Node.js download is SHA-256-verified against
+**Where Pramanyx's install already holds its own — keep these.** The Node.js download is SHA-256-verified against
 nodejs.org; the reference Windows installer verifies none of its downloads. One line per step, the tools' output in
 `.aughor/logs/`, and a failed step shows its log's tail and the next action. A re-run skips what did not change (`npm ci`
 per lockfile, `next build` per fingerprint). The installer is standard-library only, held by tests, and CI runs it on
@@ -6889,20 +6889,20 @@ three operating systems. It ends in the running app with the browser open, where
 file is edited: the `aughor` command sits in uv's own command folder. A download cut off halfway runs nothing, and
 `install.sh` is POSIX `sh`.
 
-**What it teaches — measured against Aughor on main `1c150b05`:**
-- **Code and data apart.** The reference keeps its checkout and its data in different places. Aughor's state is `data/`
+**What it teaches — measured against Pramanyx on main `1c150b05`:**
+- **Code and data apart.** The reference keeps its checkout and its data in different places. Pramanyx's state is `data/`
   inside the checkout, relative to the folder the API starts in (`aughor/db/paths.py`: `AUGHOR_STATE_DIR`, else
   `Path("data")`). Deleting or re-cloning `~/aughor` deletes the connections, history and receipts with it, and a
   process started from another folder reads another `data/` — the shape behind the one-writer rule §7 records.
 - **Update is a command.** Its update fetches and fast-forwards, backs up a broken checkout and pins a commit
   (`--commit`, refusing a rollback without `--force-commit`); re-running the installer on an existing clone updates it.
-  Aughor's `find_checkout` reuses an existing `~/aughor` as it is: a re-run re-syncs dependencies and never pulls, and
+  Pramanyx's `find_checkout` reuses an existing `~/aughor` as it is: a re-run re-syncs dependencies and never pulls, and
   there is no `aughor update` and no pin.
-- **A doctor.** Its doctor names missing dependencies, storage problems and PATH. Aughor's CLI (`seed`, `up`,
+- **A doctor.** Its doctor names missing dependencies, storage problems and PATH. Pramanyx's CLI (`seed`, `up`,
   `ask`, `ontology-docs`, `graph-export`, `packs`, `industries`, `skills`) has none; `aughor up`'s boot summary is the
   nearest thing.
 - **The README says what the install does:** the platforms, what gets installed and where, "no admin", and the known
-  Windows Defender false positive on `uv.exe` with the exclusion command. Aughor's Quick start is two commands and
+  Windows Defender false positive on `uv.exe` with the exclusion command. Pramanyx's Quick start is two commands and
   "Next time, run `aughor`".
 - **Questions stay off the unattended path.** The reference Windows installer asks nothing (no `Read-Host`); its shell
   installer reads stdin, else `/dev/tty`, else takes the default, and `--non-interactive` skips every prompt. IP-2's
@@ -6911,8 +6911,8 @@ file is edited: the `aughor` command sits in uv's own command folder. A download
 - **Hostile networks.** The reference probes the network before the heavy steps, retries the clone and falls back to a
   blobless clone when GitHub throttles, degrades its Python dependencies in tiers (all, all minus the broken, core
   only), explains corporate-proxy certificate errors (`NODE_EXTRA_CA_CERTS`) and normalises long Windows profile paths.
-  Aughor says "check your internet connection".
-- **A short address.** Its own domain keeps the one-liner short and independent of the repository's layout. Aughor's
+  Pramanyx says "check your internet connection".
+- **A short address.** Its own domain keeps the one-liner short and independent of the repository's layout. Pramanyx's
   Windows line wraps `irm | iex` in `powershell -ExecutionPolicy ByPass -c "…"` on purpose, so it runs from Command
   Prompt too (#501).
 
@@ -6927,11 +6927,11 @@ file is edited: the `aughor` command sits in uv's own command folder. A download
   (Defender on `uv.exe`, a corporate proxy).
 - **IN-3 hostile networks:** a preflight before the slow steps, retries on the clone and the downloads, the
   proxy-certificate hint.
-- **IN-4 a data home.** Aughor's state outside the checkout — per user (`~/.aughor`, `%LOCALAPPDATA%\aughor`), one
+- **IN-4 a data home.** Pramanyx's state outside the checkout — per user (`~/.aughor`, `%LOCALAPPDATA%\aughor`), one
   env override — and a one-time move of an existing `data/`, verified before anything is removed. The largest wave: it
   touches every store path and the test isolation behind them, so it gets its own plan before it starts.
 
-**Recommended not to copy** (the builder's view; item 25 (f) is open): a portable Git Bash — Aughor runs no shell
+**Recommended not to copy** (the builder's view; item 25 (f) is open): a portable Git Bash — Pramanyx runs no shell
 commands, and a Windows machine without Git already installs from a zip snapshot; Termux — a Next.js build does not
 belong on a phone; a root, multi-user install; a machine-readable stage protocol (`--manifest`, `--stage`, `--json`)
 until there is a desktop app to drive it; shell rc edits — uv's command folder already reaches PATH.
@@ -7261,8 +7261,8 @@ the vendor's pages were blocked by egress, and the survey said which numbers are
 
 ### 3.21 · Arc CB — the company brain: what people SAY, checked against what the data SHOWS (drafted 2026-09-22 at the user's *"Once done, lets consider & plan for [the company-brain] roadmap items"* — §6 item 30, four answers; **REORDERED 2026-09-22 at the user's *"reorder it that way.. and lets build the foundation first.."*: the two waves that record what cannot be backfilled come first, then owners, then the rest; CB-1 STARTED the same day**; source: the **company-brain idea set**, `IDEAS.md` 15–22, whose 36 cited starting points were re-verified on `1a8a3a88` the same day)
 
-**Thesis.** A "company brain" is usually built from what employees write and say; Aughor's context graph is the same
-machinery over what the warehouse measures, and admits no model-inferred source. Aughor's company brain is therefore
+**Thesis.** A "company brain" is usually built from what employees write and say; Pramanyx's context graph is the same
+machinery over what the warehouse measures, and admits no model-inferred source. Pramanyx's company brain is therefore
 **said versus measured**: a claim a person makes comes in at the hub's `said` tier, the platform checks it against the
 data, agreement raises it to `measured`, disagreement becomes a question to its owner, and what cannot be checked stays
 visibly unknown. Everything else in the set is what that needs — owners a question can reach, a date on every fact, a
@@ -7409,7 +7409,7 @@ person is never linked by matching a display name (`identity/resolver.py`) · no
   linked (CB-3's inventory already said so). ⚠️ Adjacent, not fixed: a note is ONE record per object (`_stage` keys by
   target), so the latest reply's check overwrites the earlier one's — the claims count is per object, not per reply.
 
-**The map — what Aughor offers in place of the usual "deploy the company brain" diagram (the user, 2026-09-22: *"lets keep this
+**The map — what Pramanyx offers in place of the usual "deploy the company brain" diagram (the user, 2026-09-22: *"lets keep this
 diagram in mind and build one that aughor would offer.. a real, provable one"*).** Theirs: sources → raw data → four
 observers (people, product, operations, market) → a merge-judge (dedup, resolve, write plan) → three vaults (company:
 stable facts · engagement: operational record · working memory: synthesis and priorities). Ours has the same four layers
@@ -8427,7 +8427,7 @@ ones on the value path.
    the cheap model, and let its own rule decide keep or delete"*). The run found first that neither earlier run had
    measured the block: `evals/run_golden.py` imported `_parse_schema_tables`, gone from `aughor.tools.schema` since
    2026-06-30, inside `try: … except: pass`, so no table was linked and the block rendered for none — both arms got one
-   prompt (fixed in `df151f9b`, with a test that resolves every Aughor import in the harness). The first clean run, in
+   prompt (fixed in `df151f9b`, with a test that resolves every Pramanyx import in the harness). The first clean run, in
    its own state on claude-haiku-5-5, 65 questions × 3 runs, the block in all 195 "on" prompts and none of the "off":
    0.661 → 0.651 (paired t −1.01; 11 better, 17 worse), lower on both sets; execution success 0.995 → 1.000 (one
    question); 407 calls, about $0.71 (`evals/data_profiles_ab_2026-10-28.json`). No gain, so the block and the flag
@@ -8820,7 +8820,7 @@ one) or through a set operation — silent, not guessed.
 > query and a warehouse analysis with a chart, which is this platform's work.
 >
 > **The census came first, and it is this arc's premise.** Four read-only surveys on 2026-09-24/25 against `main`
-> `39e8cfb4` (#548) and the serving instance, no model call, every count a floor. The reading: **Aughor is a complete
+> `39e8cfb4` (#548) and the serving instance, no model call, every count a floor. The reading: **Pramanyx is a complete
 > Phase 2 serving environment standing on a Phase 1 learning ledger that is built and starved, with no training engine
 > on either side; the loop at the top of the diagram has never turned once.** What stands between here and it is
 > volume, labels and one store — not code. §3.9 (Arc MI) already holds the training half, MI-4 to MI-6, and its laws
@@ -9705,7 +9705,7 @@ its cost stated first; a click on anything already built — nothing. The narrat
 receipt; until then no figure here is in tokens.
 
 **Non-goals for the whole arc:** a model judge of Briefings (dropped 2026-09-06) · forecasts and future ranges ·
-writing into the customer's warehouse (the ledger, if built, lives in Aughor) · a new alert engine (monitors and the
+writing into the customer's warehouse (the ledger, if built, lives in Pramanyx) · a new alert engine (monitors and the
 Watcher exist) · a second range control · replacing Ask — a question about a range stays Ask's; the Briefing is the
 collective view · re-running every finding's SQL each day (BR-0: it would not work, and it is not needed).
 
@@ -10371,17 +10371,17 @@ the board was not wanted — counted from the session log the way AV-M counts up
 
 > **Origin.** The user, on an open-source database manager claiming "100+ databases" — *"I think there is a lot we
 > can learn from it. Let's scan it, Deep, and check what's there for us?"*, then, on a screenshot of its data grid,
-> *"Do we have a better SQL editor? Especially the result table part"*. The survey: Aughor on `main` at `f02c8f22`,
-> four areas compared by four readers plus a comparison of the two result grids, and every claim about Aughor that a
+> *"Do we have a better SQL editor? Especially the result table part"*. The survey: Pramanyx on `main` at `f02c8f22`,
+> four areas compared by four readers plus a comparison of the two result grids, and every claim about Pramanyx that a
 > wave rests on re-checked by hand.
 
 > **What the survey found.** The "100+" is 108 product names over 85 declared connection types: 33 native drivers
 > and 47 behind one sidecar protocol. It is a tool for administering databases, and most of its bulk is the write
-> side, which Aughor refuses. What it does better on the read side: one classifier that knows the reads that can
+> side, which Pramanyx refuses. What it does better on the read side: one classifier that knows the reads that can
 > write; a central policy for outside agents; an engine declared once, with its dialect bound separately; metadata
 > that says what it knows; typed connection errors; and a result grid with types in the header, row numbers,
 > right-click filters, distinct-value lists, and paging through the whole result.
-> **What the comparison showed about Aughor.** (1) Native engines' doors skip the parse step, and the safety checker
+> **What the comparison showed about Pramanyx.** (1) Native engines' doors skip the parse step, and the safety checker
 > alone lets write-capable statements through: run in-process, `/*!50000 DROP TABLE users */` is rated SUSPICIOUS,
 > which is logged and allowed, and MySQL executes an executable comment on a session that is not read-only;
 > `INTO OUTFILE` and `LOCK IN SHARE MODE` are rated SAFE. The gate-map study named the skipped step on 2026-09-26
@@ -10392,7 +10392,7 @@ the board was not wanted — counted from the session log the way AV-M counts up
 > health check as healthy (all but Postgres and SQLite). (5) CSV export lets formulas through; upload suggestions
 > turn `02134` into 2134. Exasol declared as `postgres` and ALTER COLUMN answering `applied: true` were already
 > §3.49's "left, named, not fixed"; DE-3a and DE-1 take them.
-> **Where Aughor stays ahead:** schema context for the model, join inference (the tool's ER match and field lineage
+> **Where Pramanyx stays ahead:** schema context for the model, join inference (the tool's ER match and field lineage
 > produced measured false positives), audit and PII, provenance, value search, and the results pane beyond the
 > grid (multi-statement results, chart tabs, pin, schedule, share, a signed record per run, NULL distinct from
 > empty). The editors are level.
@@ -10898,7 +10898,7 @@ the board was not wanted — counted from the session log the way AV-M counts up
   DE-2b (medium): one policy per organisation — `read`, `run` (explorations and analyses, which spend model calls),
   `act` — with connection and tool allowlists, kept with the organisation's settings, enforced in the API, disallowed
   tools hidden and refused by name with stable codes, the environment only able to narrow it, every call audited
-  with its principal; Aughor's tools carry `readOnlyHint` / `destructiveHint`. DE-2c (small): the knowledge tools go
+  with its principal; Pramanyx's tools carry `readOnlyHint` / `destructiveHint`. DE-2c (small): the knowledge tools go
   through the API. VA-10 (§3.5) keeps identity; DE-2 adds the outside agent as a kind of principal.
 - **DE-3 · An engine is one declaration.** DE-3a (small): Exasol declares `exasol`. DE-3b (medium): each engine
   declared once — identity, secret fields, install extra, sqlglot dialect, native or transpiled, parameter style,
@@ -10969,7 +10969,7 @@ loading more costs the warehouse more than re-running with a higher limit (bytes
 > (4) No learning store carries `agent_id` — the platform learns per connection, an agent learns nothing as itself;
 > the autonomy ladder reads keys nothing writes; six verdicts in two months; the few-shot memory is the one autonomous
 > closed loop. (5) No external-agent identity, no MCP door to a named agent, no Teams, no email, no embed.
-> **Where Aughor stays ahead:** goldens with reference SQL rather than a judge, departures and probation, provenance
+> **Where Pramanyx stays ahead:** goldens with reference SQL rather than a judge, departures and probation, provenance
 > on every tile, configuration revisions, grants that only propose, the Map, spend by call site and role.
 
 > **Status 2026-10-03 — ADOPTED** (§6 item 38; the user: *"adopt all as recommended and commit locally"*). AO-1, AO-3 and
@@ -11061,7 +11061,7 @@ loading more costs the warehouse more than re-running with a higher limit (bytes
   the one command. AO-2b (medium, flag `slack.managed_supervisor`): the API spawns, watches and restarts the Slack
   process, or runs Socket Mode in-process — a one-day spike decides (§6 item 38(d)); the installer provisions it.
   AO-2c (small): agent mode by default for new apps, the manifest's events reconciled with the README, a one-way
-  toggle for existing bots, the README rewritten for RC-5. AO-2d (medium): a Slack configuration token lets Aughor
+  toggle for existing bots, the README rewritten for RC-5. AO-2d (medium): a Slack configuration token lets Pramanyx
   call `apps.manifest.create` and `update` itself — one token pasted, then Install; on HTTPS deployments the OAuth
   card can do the install. AO-2e (small, no flag): key regeneration with a grace window; `POST
   /slack-bots/supervisor-key` enters `POLICY` as `ADMIN_MANAGE_ORG`; a test asserts who may mint. AO-2f (small):
@@ -11695,7 +11695,7 @@ existing door (3 and 4 are the two sections the user named as liked);
 5 · **Your standing questions** — repeated questions re-answered each morning by re-running their stored SQL with no
 model, with how often the answers agreed;
 6 · **The week ahead** — what lands in the coming days; what is due stays on Now;
-7 · **Between you and Aughor** — what the person told it and how it held up
+7 · **Between you and Pramanyx** — what the person told it and how it held up
 (`GET /principals/{principal}/record`).
 
 The copies leave. The study also carries the live figures behind it:
@@ -11726,7 +11726,7 @@ from records — no model fills the page.
 
 ### 3.56 · Arc OC — the ontology as the contract (DRAFTED 2026-10-09 as §9 of `docs/ONTOLOGY_FIRST_STUDY_2026-10-09.md`, at the user's *"Study it hard"* on an outside implementation roadmap for an ontology-first platform · ✅ ADOPTED the same day — §6 item 50, the user: *"Lets adopt ARC OC into roadmap and contninue building"*; ten calls asked with options, two decided against the recommendation · **OC-0, OC-1 and OC-2 BUILT** the same day, on one branch for one PR (#586) · **OC-3 and OC-4 BUILT** the same day, merged #587–#597 and live; what OC-0 to OC-4 still owe is OC-0's live run, with OC-6, and OC-4's falsifier, read from the census journal kept since 2026-10-09 22:15 UTC · **OC-5 to OC-9 BUILT and receipted 2026-10-10**, #599–#603; closed the same day: OC-0's undo live, OC-8's propose step live, the board counted per reader, five flags graduated — what remains is OC-4's falsifier, armed for 2026-11-07, and OC-7 live, which waits for sign-in)
 
-> **The fact it answers.** Aughor holds most of an operational ontology's parts. It also holds two that the outside
+> **The fact it answers.** Pramanyx holds most of an operational ontology's parts. It also holds two that the outside
 > document lacks: promises measured against the data, and the scored Record. What it lacks is the ontology as a
 > **versioned contract** that every consumer reads and pins.
 >
@@ -11849,7 +11849,7 @@ from records — no model fills the page.
 
 ### 3.58 · Arc ED — a rule holds at every door (DRAFTED 2026-10-24 as arc 1 of three from the 2026-10-24 platform review · ✅ ADOPTED the same day — §6 item 52, the user: *"rebase and adopt the arcs into the roadmap"*; first of the three, in the order proposed · **ED-0 to ED-5 BUILT 2026-10-24 and ED-6 on 2026-10-25** on the session branch — the arc is built)
 
-**The premise, measured at `f7af0167`.** Aughor has already built most of an ontology platform's shape. What does
+**The premise, measured at `f7af0167`.** Pramanyx has already built most of an ontology platform's shape. What does
 not yet hold is that shape's own rules, at every door:
 
 - OC-7's row policies and sensitive properties apply at the object door only (`semantic/object_query.py:693`). Quick answers
@@ -12128,7 +12128,7 @@ dashboard piece says a cut read beside its caveats (`answerSays`).
 
 ### 3.59 · Arc TC — every change says what made it (DRAFTED 2026-10-24 as arc 2 of three from the 2026-10-24 platform review · ✅ ADOPTED the same day — §6 item 52; second of the three · ✅ TC-1…TC-5 BUILT 2026-10-26/27, each behind its flag, off; PENDING lists each wave's premise corrections)
 
-**The premise, measured.** Provenance is Aughor's first law, and these places do not yet keep it:
+**The premise, measured.** Provenance is Pramanyx's first law, and these places do not yet keep it:
 
 - An answer does not say which revision of the agent gave it: `config_rev` is read by the agents router (`routers/agents.py:442`)
   and the evals, not stamped on turns or receipts.
@@ -12156,7 +12156,7 @@ dashboard piece says a cut read beside its caveats (`answerSays`).
 cannot be found without knowing its entity; a selection cannot leave the piece it was made in; an ontology element cannot be
 put back to an earlier version, retired with a successor, or seen in use; a dashboard set lives only inside its dashboard; a
 rule defines a population but nothing acts on each object as it enters; a pack binding stores whatever version the caller sends
-(`routers/packs.py:296-297`) and has no upgrade; programs built with any agent SDK reach Aughor only through MCP.
+(`routers/packs.py:296-297`) and has no upgrade; programs built with any agent SDK reach Pramanyx only through MCP.
 
 | # | Builds | Flag (off) · size | Falsifier |
 |---|---|---|---|
@@ -12166,7 +12166,7 @@ rule defines a population but nothing acts on each object as it enters; a pack b
 | **FA-4** | **A set becomes a segment**: "Keep as a segment" declares a dashboard set through the draft; the builder shows each set as its chain with a count at each step | `ontology.set_segments` · M + S | — |
 | **FA-5** | **Act on each object a rule admits**: a condition that fires for objects a rule or segment newly admits, keys only and capped, the count said when the list is withheld | `automations.objects_admitted` · M | — |
 | **FA-6** | **Packs as products**: the installed version and the inputs a person declined, "upgrade to vN" showing the input diff; a pack may carry a dashboard template a person keeps | `packs.installed_versions`, `packs.dashboard_templates` · M + M | — |
-| **FA-7** | **Any SDK can call an agent**: a grounding read returning what an agent would read without calling the model. The chat-compatible endpoint (the model is an Aughor agent, the receipt rides in metadata) waits until a customer asks | `agents.grounding_read` · S; `doors.chat_completions` · M, not scheduled | ✅ §6 item 52(b): the endpoint waits for a customer |
+| **FA-7** | **Any SDK can call an agent**: a grounding read returning what an agent would read without calling the model. The chat-compatible endpoint (the model is a Pramanyx agent, the receipt rides in metadata) waits until a customer asks | `agents.grounding_read` · S; `doors.chat_completions` · M, not scheduled | ✅ §6 item 52(b): the endpoint waits for a customer |
 
 **Next, not yet waves:** an App takes values from its address or an embedding host (module interfaces, M–L,
 mockup first) · MCP tool search, and `platform_help` on MCP (S) · a neighbourhood view on the object page (M) · interfaces
@@ -12293,7 +12293,7 @@ recognise a source, so theLook reads `moving` until two are read, and a new sour
 
 ### 3.63 · Arc SV — the platform's own state survives (DRAFTED 2026-10-26 from a survey of an open-source spreadsheet's substrate (§4.12), at the user's *"We have to get the most out of this"* · ✅ **SV-1 and SV-2 ADOPTED 2026-10-27** as Arc SH's precondition — §6 item 56; their three calls decided the same day; SV-3 drafted, not adopted — **SV-3 BUILT 2026-10-28** at the user's *"proceed with the rest"* · **SV-1 BUILT 2026-10-27**, committed `a72d82d5` · **SV-2 BUILT 2026-10-27** behind `state.backups`, off · both local, not pushed)
 
-**The premise, measured.** Aughor keeps its own state in 46 SQLite stores (1,109 MB on the live install). Four of them
+**The premise, measured.** Pramanyx keeps its own state in 46 SQLite stores (1,109 MB on the live install). Four of them
 make up 1,085 MB: system, audit, checkpoints and automations. None is backed up on a schedule. The recovery recipe is
 `sqlite3 .recover` from the damaged file (`kernel/ledger.py:647-668`), because no good copy exists to return to.
 
@@ -12430,11 +12430,11 @@ them per workspace, rebuilt whenever it is missing or in doubt (an equals-rebuil
 - **people's changes,** in the edit layer, which gains row grain;
 - **a definition** on the lifecycle substrate.
 
-To the rest of Aughor the sheets are one connection, *Sheets*.
+To the rest of Pramanyx the sheets are one connection, *Sheets*.
 
 | # | Builds | Flag (off) · size |
 |---|---|---|
-| **SH-1** | Sheets Aughor keeps, and the Spreadsheets home. A sheet comes from a file (an Excel workbook gives one sheet per tab), blank, or a query's or a chat answer's rows. Kinds are checked at import (Date kept apart from Date & time). Removal writes its tombstone first. A glossary row for *Sheet*. | `sheets.core` · M–L |
+| **SH-1** | Sheets Pramanyx keeps, and the Spreadsheets home. A sheet comes from a file (an Excel workbook gives one sheet per tab), blank, or a query's or a chat answer's rows. Kinds are checked at import (Date kept apart from Date & time). Removal writes its tombstone first. A glossary row for *Sheet*. | `sheets.core` · M–L |
 | **SH-2** | The grid: typed editing, rows and columns, hide, sort, filter, group and search, cell history, undo and redo; totals at the foot; column descriptions; a row opened as a record | `sheets.grid` · L |
 | **SH-4** | The chat beside the sheet: it answers by query with its receipt, makes a sheet from a dropped file, and **proposes** changes a person applies | `sheets.chat` · M |
 | **SH-7** | Combining: link by a key with every miss counted; totals of linked rows; a newer file as a keyed merge previewed cell by cell; a query's rows kept as a sheet | `sheets.combine` · M–L |
@@ -12465,7 +12465,7 @@ nothing is written.
   `sheet_cell` and `sheet_row`, migration 5 adds the change a history row belongs to); the file a person brought kept
   beside its typed rows (`source.parquet`, every row with its file row as `_row`); the table people read a DuckDB
   projection per organisation (`projection.py`), stamped with the versions it was built at and rebuilt when missing or in
-  doubt. To the rest of Aughor, one built-in connection, *Sheets* (`connection.py`), a cursor of that projection.
+  doubt. To the rest of Pramanyx, one built-in connection, *Sheets* (`connection.py`), a cursor of that projection.
 - **SH-1.** Kinds read from the file as written and taken only where every value reads back (`kinds.py`) — a zip
   written `01037` stays Text; a column all at midnight is offered as a Date and says so. The kinds are checked again
   where the typed rows are written, so no import loses a value to its kind. One sheet per Excel tab, named. A query's
@@ -12874,7 +12874,7 @@ SH-6's rest as much as to Arc SV's survey.
   override says, never listed in Settings, and the flags door answers a change with 409 and a sentence; an operator's
   env var set to an explicit falsy value still turns one off until stage 2 deletes its off path (the suite runs them
   off that way, as it ran Arc OC's five). Five flags became four organisation settings (`aughor/orgsettings/allows.py`,
-  Settings ▸ Organization ▸ *What Aughor may do*); one never set reads the former flag's variable and the screen says
+  Settings ▸ Organization ▸ *What Pramanyx may do*); one never set reads the former flag's variable and the screen says
   so. `federation.planner` kept, through its own doors only — `/ask` no longer sends a fresh turn to it.
   `grounding.data_profiles` deleted by its own falsifier (§3.38). `AGENTS.md`'s flag invariant replaced.
 - **Stage 2, built 2026-10-28** (the user: *"go on to stage 2 first and put it all live together"*) — every flag is
@@ -13050,7 +13050,7 @@ specific places. Those three are this arc, in order of value over cost, each thr
   nothing. The read is a connection admin's choice, off by default, born a setting and never a flag (§3.65); while
   off the door refuses with 409 and says where to turn it on. **Receipt, live on theLook:** the refusal while off
   (`"Reading the warehouse's query history is off for this organisation. An admin turns it on under Settings ▸
-  Organization ▸ What Aughor may do …"`); then, the user having turned it on (*"Yes, turn it on"*), the read reached
+  Organization ▸ What Pramanyx may do …"`); then, the user having turned it on (*"Yes, turn it on"*), the read reached
   BigQuery in 4 s and the engine refused — the service account lacks `bigquery.jobs.list` on the project, for the
   project view and the caller's own alike — and the door handed back the engine's words as a value, nothing mined,
   nothing written. The first live call had raised instead: the four readers declared the engine's dialect where the
@@ -13060,7 +13060,7 @@ specific places. Those three are this arc, in order of value over cost, each thr
   over it the same hour): 165 statements and 546 calls read, 25 candidates mined, **19 bound and offerable** — the
   business's own formulas, `gmv_eur`, `aov_eur`, `contribution_margin_eur`, `gross_margin_pct`, the return rate — 6
   refused with the engine's words; **0 join candidates, every join in the history already in the graph**, on a
-  history that is so far Aughor's own SQL. **The next morning, the ETL's statements in (1,247 statements, 28,286
+  history that is so far Pramanyx's own SQL. **The next morning, the ETL's statements in (1,247 statements, 28,286
   calls): 0 join candidates again — every one of the 22 joins the history uses is in the graph. On the one connection
   with a readable history the falsifier holds; the reader stays a connector method and the door proposes measures.**
   theLook's binding is still the second connection the clause asks for (PENDING item 76). Three live runs found what no fixture had: the unqualified read of a view in `public`,
@@ -13304,7 +13304,7 @@ projection, and Decisions' Bring a meeting's notes (held open while its one mode
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
 
-An Aughor agent is **one record** — a scope and a stance — with no producer/consumer relation
+A Pramanyx agent is **one record** — a scope and a stance — with no producer/consumer relation
 between its parts, so there is no second node for an edge to terminate on. Evidence from the
 field, as read in 2026-08: agent-builder canvases were shut down or sunset, one citing that rigid
 low-code workflow quickly hits its limit; others keep a **form** for the agent and reserve a canvas
@@ -13361,7 +13361,7 @@ seams) added, beyond the 2026-08-30 findings:
   standalone canvas is the most disposable layer of the agent stack.
 - **The ceiling stands**: If-Else×Loop incompatibility and no-branch-merge are still in the
   1.11 docs verbatim, seven releases after we first cited them.
-- **The structural law, re-derived from our own seam map**: the REST API is Aughor's only
+- **The structural law, re-derived from our own seam map**: the REST API is Pramanyx's only
   complete governance choke point — token caps live in the LLM funnel, PII at
   `security_post`, approval/audit/identity in the one executor, spans in the engine loop.
   A foreign engine bypasses all of it, or is routed through the API and reduced to a picture
@@ -13378,7 +13378,7 @@ non-functional rather than as telemetry someone is reading.
 
 ### 4.4 · A TypeScript agent runtime — REFUSED
 
-An outside agent runtime written in TypeScript was measured. Aughor's is Python and holds the
+An outside agent runtime written in TypeScript was measured. Pramanyx's is Python and holds the
 ontology, the guards and the governance plane. Adopting the runtime would mean two answer paths.
 What was imported from that survey is the *feature inventory*, not the stack — Arc VA is the result.
 
@@ -13411,7 +13411,7 @@ fine-tuning — then the factory question reopens, against established workflow 
 
 ### 4.6 · An ontology export to an outside ontology product — REFUSED (2026-09-21)
 
-The 2026-09-11 amendment to §3.15 found that an outside ontology product wants exactly what Aughor measures —
+The 2026-09-11 amendment to §3.15 found that an outside ontology product wants exactly what Pramanyx measures —
 object types with a verified key and a display property, properties bound to their source columns,
 relationships with a cardinality, ids stable across exports — and asked in §6 item 16 whether to build an
 export door. The recommendation was to defer until a customer asked. **The user refused it outright
@@ -13420,14 +13420,14 @@ own agents is the moat, and an export hands it to another vendor's. An RDF/OWL e
 the same answer. Re-propose only with new facts: a customer asking, and the target's published item-definition
 format verified against its vendor's documentation (a community implementation is not a contract).
 
-### 4.7 · What a database administration tool does that Aughor will not — REFUSED (2026-10-02)
+### 4.7 · What a database administration tool does that Pramanyx will not — REFUSED (2026-10-02)
 
 The database-edge survey (§3.51) compared a tool for administering databases with a platform that answers from
 them, and Arc DE took what serves the read side. Four features of such tools contradict an invariant here;
 §6 item 37(g) records them as refused, at the user's *"adopt all as recommended and commit locally"*:
 - **Its write side** — inline row editing, DDL generated across engines, schema-diff deploy, data transfer, and
-  clean-up rules that set overflowing values to NULL. Aughor writes nothing to a customer's warehouse.
-- **MCP tools that take raw SQL, and a read/write default** when no policy is saved. Aughor's MCP tools ask
+  clean-up rules that set overflowing values to NULL. Pramanyx writes nothing to a customer's warehouse.
+- **MCP tools that take raw SQL, and a read/write default** when no policy is saved. Pramanyx's MCP tools ask
   questions; an outside agent's reach is a policy a person sets (DE-2), and its default is `run`, never `act`.
 - **A localhost bridge with no token** for opening a table in the app, guarded only by a content type and a
   loopback Host header. A link does the same job without a listening port.
@@ -13436,7 +13436,7 @@ them, and Arc DE took what serves the read side. Four features of such tools con
   the person enters the secret.
 
 **Amended 2026-10-27 (§6 item 56, call 1).** The refusal of the write side stands for a customer's warehouse.
-Sheets (§3.64) are different: they are the workspace's own tables, made by its people. Aughor writes them, every change
+Sheets (§3.64) are different: they are the workspace's own tables, made by its people. Pramanyx writes them, every change
 with its source, who and when, superseded never deleted. Nothing in a sheet is ever written back to a warehouse.
 
 ### 4.8 · What Agent Ops will not become — REFUSED (2026-10-03)
@@ -13524,12 +13524,12 @@ What was measured, 2026-10-26:
   prebuilt images with no source and no licence file.
 - **Its open half is AGPL-3.0**, 1.57M lines of TypeScript, and its brand assets may not be removed. Putting our
   chat inside it means publishing a fork.
-- **The first owns its data and runs user Python in a sandbox.** Aughor runs no user code (§6 item 50(d)).
+- **The first owns its data and runs user Python in a sandbox.** Pramanyx runs no user code (§6 item 50(d)).
 
 The user, 2026-10-27: *"chuck it.. within our platform users should be able to work with spreadsheets"*.
 
 **What stands:**
-- Sheets are built in Aughor (§3.64).
+- Sheets are built in Pramanyx (§3.64).
 - The substrate ideas are taken as Arc SV (§3.63) and the breakdown idea as a Dashboards piece (§3.64).
 - An MIT-licensed canvas grid stays an option for SH-2 if the house grid cannot carry 100,000 rows.
 
@@ -14412,7 +14412,7 @@ the browser** · **measure the premise before building.**
 > PENDING.md"*; all eight as recommended, the freeze recorded as §4.9, §4.8 narrowed on a condition, §0 restated. The
 > register stays at zero open.
 
-1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
+1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Pramanyx owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
    provider registry and (b) the vault, and only (a) is worth having from outside. A governed
    catalog does not outsource (b): the credential is a securable catalog object; every vendor
@@ -14574,10 +14574,10 @@ the browser** · **measure the premise before building.**
     own measured change, not a side effect of cancelling a wave.
 16. ✅ **DECIDED 2026-09-21 (the user) — REFUSED: no export of the measured ontology to an outside ontology product (§4.6).**
     Arrived with §3.15's "Amended 2026-09-11". The outside product's ontology item wants what
-    Aughor measures and a community export drops: object types with a verified key and a
+    Pramanyx measures and a community export drops: object types with a verified key and a
     display property, properties bound to their source columns, relationships with a cardinality, and ids
     that stay stable across exports (ON-1's api names). For a customer already on that product it is a door — an
-    ontology Aughor built and measured, landing where their data agents read it — and it is also a
+    ontology Pramanyx built and measured, landing where their data agents read it — and it is also a
     question of what leaves the platform, against §0's thesis that the ontology→agent loop is the moat. It
     is not a second ontology store (§3.15's not-ported list): an export writes a definition and keeps
     nothing. An RDF/OWL export is the same question at lower demand.
@@ -15171,7 +15171,7 @@ the browser** · **measure the premise before building.**
     contradicts an invariant (read-only, governed, credentials as governed objects). The rest of §3.51's "Not this"
     stays in the arc as "not now".
     **(h) ✅ DECIDED as recommended — ideas, not code.** The surveyed tool's root licence is Apache-2.0 and one folder says AGPL-3.0. *Recommended:*
-    none of its code is copied into Aughor until that is resolved; the arc's waves re-implement from the idea.
+    none of its code is copied into Pramanyx until that is resolved; the arc's waves re-implement from the idea.
 38. ✅ **DECIDED 2026-10-03 — Arc AO, the agent estate as a product, adopted with every clause as recommended** (the
     user: *"adopt all as recommended and commit locally"*; the arc arrived the same day at their *"brutally test our
     Agent workflow… I want it to be a gold standard… Easy to Setup., quick and efficient on delivery with self
@@ -15594,7 +15594,7 @@ the browser** · **measure the premise before building.**
       elegance"*).
 52. ✅ **DECIDED 2026-10-24 — Arcs ED, TC and FA adopted, from the 2026-10-24 platform review** (§3.58–§3.60).
     - The path: a survey of a reference platform's documentation (4,132 pages, 329 API operations), then the gaps
-      in Aughor's own shape → *"rebase and adopt the arcs into the roadmap"*.
+      in Pramanyx's own shape → *"rebase and adopt the arcs into the roadmap"*.
     - Adopted: the three arcs, in the order the review proposed (ED → TC → FA). The order stands: the user was offered
       a different order on 2026-10-24 and chose *"Start ED-0 here"*.
     - Decided by the user 2026-10-24, from options (each took the recommended choice):
@@ -15627,7 +15627,7 @@ the browser** · **measure the premise before building.**
     default** (the user: *"Product look, preset with all six, build the chrome screenshot"*).
     - Measured from a reference design system's tokens and design rules and nine screenshots against the live
       instance: the distance is surface — corners, the tint of the greys, the accent, card edges, scale, the face —
-      and four of the six were already the Look panel's knobs. Aughor's shape already held where it counts (the
+      and four of the six were already the Look panel's knobs. Pramanyx's shape already held where it counts (the
       Ontology tab, the cockpit-from-object pieces, the icon rail, straight graph edges).
     - **(1)** A workbench look: a cool slate, one blue, 4px, a 1px edge on every card, Source Sans at 14px. A
       marketing black and a licensed face are left.
@@ -15637,7 +15637,7 @@ the browser** · **measure the premise before building.**
     - **(3)** The preset holds **all six**: two knobs of our own join Radix's four — **edges** (a card in the dark
       skin boxed by the hairline the light skin draws) and **typeface** (Source Sans 3, OFL, self-hosted by
       next/font) — each still its own knob afterwards. Named for what it does, as the vocabulary ratchet requires:
-      **Workbench** (blue · slate · small · 95% · edges on · Source Sans); the default preset is **Aughor**.
+      **Workbench** (blue · slate · small · 95% · edges on · Source Sans); the default preset is **Pramanyx**.
     - **(4)** The dark-rail-on-light chrome is a **screenshot first**, built by hand on the live page
       and shown; no code until it is seen (§4.10, the rail stays).
     - Not taken now, recommended for later: 30px rows beyond scaling; Dependents and Usage sections on an
@@ -15691,7 +15691,7 @@ the browser** · **measure the premise before building.**
       dependent (said), twelve months of reads with one in October 2026 after one audited statement through the SQL
       editor; the builder's own schema reads are not audited and do not count, which the count says by its source.
 
-54. ✅ **DECIDED 2026-10-25 — Aughor as the centre piece of an organisation's decision intelligence: the
+54. ✅ **DECIDED 2026-10-25 — Pramanyx as the centre piece of an organisation's decision intelligence: the
     framework before the build; B + C + A** (the user: *"how making Aughor truly a center piece of an organisation's
     decision intelligence"* · *"an advanced decision flow — forwards & backwards with loops where every decision and
     their 'why' is readable if the user wishes to"* · *"let's not haste into building something.. invest much time
@@ -15751,7 +15751,7 @@ the browser** · **measure the premise before building.**
       5. *"Is something missing?"* → ten gaps folded in, ten screens.
       6. *"looks right — take the ten calls as recommended and adopt Arc SH (with SV-1/SV-2 first)"*.
     - **The ten calls, each as recommended:**
-      - **(1) Aughor writes its own sheets.** Never a warehouse; §4.7 amended.
+      - **(1) Pramanyx writes its own sheets.** Never a warehouse; §4.7 amended.
       - **(2) Where a sheet's table lives:** a DuckDB projection per workspace, rebuilt from source plus changes.
       - **(3) Where changes live:** the edit layer, gaining row grain. No sheet change log of its own.
       - **(4) The grid:** the house's TanStack grid, extended for editing.

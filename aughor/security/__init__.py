@@ -1,4 +1,4 @@
-"""Security baseline for Aughor — safety checks, PII redaction, audit logging, query budgets."""
+"""Security baseline for Pramanyx — safety checks, PII redaction, audit logging, query budgets."""
 
 from aughor.security.safety  import SafetyChecker, SafetyVerdict, SafetyResult
 from aughor.security.pii     import PiiScanner, PiiScanResult

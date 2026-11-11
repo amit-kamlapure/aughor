@@ -2,7 +2,7 @@
 
 /**
  * PENDING item 9 — the company-brain map, redone to `aughor-v2/CLARITY.md` (2026-10-13). A map leads with its picture:
- * every store behind what Aughor knows is a box in its vault's column, with its live count and one line, and every
+ * every store behind what Pramanyx knows is a box in its vault's column, with its live count and one line, and every
  * measured link is an arrow between two boxes carrying its count — never a drawn relationship. Below the picture, the
  * one list only this screen shows: the facts that changed since first seen, and what each replaced (CB-1).
  *
@@ -65,7 +65,7 @@ export function BrainMapPanel({ connectionId, workspaceId, contextReady = true }
       <section aria-label="Stores and measured links">
         <Label right={<span title="Nothing here is estimated: every box is a store read now, every arrow a count.">
           read live · an arrow is a measured count · a dash, a store not read</span>}>
-          Where Aughor&apos;s knowledge lives
+          Where Pramanyx&apos;s knowledge lives
         </Label>
         <Picture layout={layout} />
         {layout.unplaced.length > 0 && (

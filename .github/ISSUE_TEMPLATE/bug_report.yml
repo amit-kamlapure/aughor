@@ -8,7 +8,7 @@ body:
         Thanks for filing a bug.
 
         **If this is a security vulnerability, stop** and report it privately
-        instead: https://github.com/amit-kamlapure/aughor/security/advisories/new
+        instead: https://github.com/amit-kamlapure/pramanyx/security/advisories/new
 
   - type: textarea
     id: what-happened
@@ -32,9 +32,9 @@ body:
   - type: textarea
     id: wrong-number
     attributes:
-      label: If Aughor reported a wrong number
+      label: If Pramanyx reported a wrong number
       description: >
-        Paste the question you asked and the SQL Aughor generated. Both appear
+        Paste the question you asked and the SQL Pramanyx generated. Both appear
         in the Trust Receipt on the answer. This is the single most useful thing
         you can include.
       render: sql

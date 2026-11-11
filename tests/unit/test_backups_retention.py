@@ -2,7 +2,7 @@
 
 The first half is the original's own test file (grist-core ``test/server/lib/DocSnapshots.ts``, Apache-2.0), ported case
 for case under the original's caps: if the port drifted from the original, these are the strings that would say so. The second
-half holds Aughor's caps — newest 5, 24 hours, 14 days, 8 weeks, nothing older, a labelled backup kept 30 days.
+half holds Pramanyx's caps — newest 5, 24 hours, 14 days, 8 weeks, nothing older, a labelled backup kept 30 days.
 """
 from __future__ import annotations
 
@@ -157,7 +157,7 @@ def test_grist_enforces_the_window():
                   window=timedelta(days=31)))
 
 
-# ── Aughor's caps ─────────────────────────────────────────────────────────────────
+# ── Pramanyx's caps ─────────────────────────────────────────────────────────────────
 
 def test_aughor_keeps_the_newest_five_then_one_an_hour_day_and_week():
     # 2026-10-27 is a Tuesday; its ISO week began on Monday 2026-10-26.

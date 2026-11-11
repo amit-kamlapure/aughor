@@ -1,4 +1,4 @@
-/* ── Aughor Design Tokens ───────────────────────────────────────────────────
+/* ── Pramanyx Design Tokens ───────────────────────────────────────────────────
    Single source of truth for all CSS custom properties.
    Imported by app/globals.css — do not use directly in components.
 
@@ -139,7 +139,7 @@
   --color-zinc-100: #f0f5fc;
 
   /* ── Accent palette bridge ────────────────────────────────────────────────
-     Maps Tailwind's built-in accent palettes → Aughor token ramps so that
+     Maps Tailwind's built-in accent palettes → Pramanyx token ramps so that
      `text-emerald-400`, `bg-amber-900`, etc. become theme-aware automatically.
      Each alias points at a --grnN/--ambN/… token that itself flips in light
      mode, so no per-theme duplication is needed. Shade→ramp is inverted:

@@ -144,7 +144,7 @@ function NoteComposer({ busy, onPlace, onClose }: { busy: boolean; onPlace: (tex
     <div data-testid="dashboard-note-composer" style={{ border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: 14, marginBottom: 16, display: "flex", flexDirection: "column", gap: 8 }}>
       <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>
         Your words, as a reminder to yourself or your readers: bold, italics, lists and links, up to {MAX_NOTE} characters.
-        Aughor never reads a note, cites it or learns from it; a model may move it, never write it.
+        Pramanyx never reads a note, cites it or learns from it; a model may move it, never write it.
       </div>
       <Textarea aria-label="The note's words" placeholder="Target for Q4: return rate under **10%**…" value={text} maxLength={MAX_NOTE}
         autoFocus disabled={busy} onChange={e => setText(e.target.value)} style={{ minHeight: 96 }} />

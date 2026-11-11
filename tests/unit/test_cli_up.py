@@ -106,7 +106,7 @@ def test_up_busy_web_port_reports_web_flag(monkeypatch, tmp_path):
 
 
 def test_a_second_up_says_aughor_is_already_running(monkeypatch, tmp_path):
-    """Running the installer again while Aughor runs is the common case, and 'port 8000 is in
+    """Running the installer again while Pramanyx runs is the common case, and 'port 8000 is in
     use' reads like a clash with something else. Say what it is, and where to find it."""
     monkeypatch.chdir(_checkout(tmp_path))
     monkeypatch.setattr(cli_mod, "_port_in_use", lambda port: port == 8000)
@@ -117,7 +117,7 @@ def test_a_second_up_says_aughor_is_already_running(monkeypatch, tmp_path):
 
     r = CliRunner().invoke(cli_mod.cli, ["up"])
     assert r.exit_code == 1
-    assert "Aughor is already running" in r.output
+    assert "Pramanyx is already running" in r.output
     assert "http://localhost:3000" in r.output
     assert "--api-port" in r.output
 
@@ -197,9 +197,9 @@ def test_up_serves_a_production_build_with_logs_in_files(started):
     assert api["cmd"][api["cmd"].index("--timeout-graceful-shutdown") + 1] == "3", (
         "measured live: with a browser tab open, an unbounded shutdown waited on its event "
         "stream until Ctrl+C fell through to a kill")
-    assert "Aughor started" in r.output
+    assert "Pramanyx started" in r.output
     assert "http://localhost:3000" in r.output
-    assert "Aughor stopped" in r.output
+    assert "Pramanyx stopped" in r.output
     assert started.opened == ["http://localhost:3000"]
 
 
@@ -468,7 +468,7 @@ def test_boot_summary_reports_ready_llm(capsys):
 
 def test_boot_summary_says_where_the_logs_are_and_how_to_start_again(capsys, tmp_path):
     cli_mod._print_boot_summary({"status": "ok"}, 8000, 3000, logs=tmp_path / "logs",
-                                next_time="Next time, start Aughor with:  uv run aughor up")
+                                next_time="Next time, start Pramanyx with:  uv run aughor up")
     out = capsys.readouterr().out
     assert str(tmp_path / "logs") in out
     assert "uv run aughor up" in out

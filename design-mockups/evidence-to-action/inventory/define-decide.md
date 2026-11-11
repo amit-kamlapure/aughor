@@ -568,10 +568,10 @@ Entry: rail row "Ontology" → `?tab=ontology` resolves to tab `intelligence`, l
 - [ ] Source mapping: column type squares, "not read", property marks (key, display), "= expression / a rollup / a frame / edits / via {binding} / not read here", footer "{N} of {M} properties are read from {table}…" (components/ontology/SourceMapping.tsx:118)
 
 #### 4. Keyboard shortcuts
-- [ ] None registered by Aughor code on this page (no Escape-to-close on drawers, no global keys) (components/OntologyPanel.tsx:546)
+- [ ] None registered by Pramanyx code on this page (no Escape-to-close on drawers, no global keys) (components/OntologyPanel.tsx:546)
 - [ ] Source mapping rows: Enter / Space select a column or property (components/ontology/SourceMapping.tsx:83)
 - [ ] Tools menu: Radix DropdownMenu arrow keys / Enter / Esc (library default) (components/OntologyPanel.tsx:673)
-- [ ] Map canvas (React Flow 12 defaults, not handled by Aughor): Backspace removes a selected card from the canvas view locally (no server write; returns on next read); Shift-drag box-select; ⌘/Ctrl-click multi-select; arrow keys nudge a selected card (not saved — only drag-stop saves) (components/ontology/EntityTypeMap.tsx:956)
+- [ ] Map canvas (React Flow 12 defaults, not handled by Pramanyx): Backspace removes a selected card from the canvas view locally (no server write; returns on next read); Shift-drag box-select; ⌘/Ctrl-click multi-select; arrow keys nudge a selected card (not saved — only drag-stop saves) (components/ontology/EntityTypeMap.tsx:956)
 - [ ] Org board: ⌘/Ctrl + wheel and trackpad pinch zoom (lib/useWheelZoom.ts:29)
 
 #### 5. URL params / deep links
@@ -803,7 +803,7 @@ Entry:
 **EntityTypePanel**
 - [ ] Header tags: domain, role (reference/business object/event/standalone), declared/proposed (hover: provenance) (components/ontology/EntityTypePanel.tsx:332, :333, :335)
 - [ ] "read from {connection}" (org ontology) (components/ontology/EntityTypePanel.tsx:355)
-- [ ] Four figures: objects (count / "in Aughor" / "—, not counted"), key (✓ unique / not unique / not counted), properties, links · parts (components/ontology/TypeOverview.tsx:89, :90, :92, :94)
+- [ ] Four figures: objects (count / "in Pramanyx" / "—, not counted"), key (✓ unique / not unique / not counted), properties, links · parts (components/ontology/TypeOverview.tsx:89, :90, :92, :94)
 - [ ] Tab counts and Overview needs badge (components/ontology/EntityTypePanel.tsx:241-247)
 - [ ] "part of" / "was a part of" tag + note (components/ontology/EntityTypePanel.tsx:881, :891)
 - [ ] "retiring" / "past its retiring date" tag, "retiring on {day} — use X instead", mark note (components/ontology/EntityTypePanel.tsx:2197, :2199, :2215)
@@ -1058,7 +1058,7 @@ Entry: rail row "Actions" → `?tab=declared-actions` (resolves to Intelligence 
 ### 5. URL params / deep links
 - [ ] Reads/writes none of its own; reached by `?tab=declared-actions` or `?tab=intelligence&layer=kinetic`; `?conn=` picks the connection (app/page.tsx:957)
 ### 6. Empty / error / loading / withheld states (quote the gist)
-- [ ] No connection: "Choose a connection to see what Aughor may do on it." (components/DeclaredActionsPanel.tsx:232)
+- [ ] No connection: "Choose a connection to see what Pramanyx may do on it." (components/DeclaredActionsPanel.tsx:232)
 - [ ] 404 on declared actions: "No ontology is built on this connection yet — an action is declared on one." (components/DeclaredActionsPanel.tsx:282)
 - [ ] "No action is declared yet." (components/DeclaredActionsPanel.tsx:290)
 - [ ] "Loading the declared actions…" / "Could not read the declared actions — … Retry" (components/DeclaredActionsPanel.tsx:283)
@@ -1269,7 +1269,7 @@ Entry: rail row "Memory" → `?tab=memory` (Intelligence layer `memory`, app/pag
 ### 5. URL params / deep links
 - [ ] None of its own; reached by `?tab=memory` or `?tab=intelligence&layer=memory` (app/page.tsx:954)
 ### 6. Empty / error / loading / withheld states (quote the gist)
-- [ ] Lead line: "What Aughor has learned across every connection: how it reads ambiguous terms, the queries it trusts, and what reviewers said." (components/MemoryPanel.tsx:248)
+- [ ] Lead line: "What Pramanyx has learned across every connection: how it reads ambiguous terms, the queries it trusts, and what reviewers said." (components/MemoryPanel.tsx:248)
 - [ ] "No trusted query waits for approval." (components/MemoryPanel.tsx:257)
 - [ ] "Nothing remembered yet — a reading is kept when a probe, a person or a reviewer settles an ambiguous question." (components/MemoryPanel.tsx:307)
 - [ ] "Not revoked — <reason>" (row stays) (components/MemoryPanel.tsx:321)

@@ -1,7 +1,7 @@
 """Ask-vs-guess clarification — decide when to ask one targeted question instead of guessing.
 
 Phase 3 of the unified-answer-path arc (``docs/UNIFIED_ANSWER_PATH.md``); the #1 unsolved NL2SQL skill
-per BIRD-INTERACT (arXiv 2510.05318). Aughor *detects* ambiguity but, until now, never *asks* — it
+per BIRD-INTERACT (arXiv 2510.05318). Pramanyx *detects* ambiguity but, until now, never *asks* — it
 guesses. This module is the deterministic decision of whether the ambiguity is material enough to spend
 one clarifying question on.
 

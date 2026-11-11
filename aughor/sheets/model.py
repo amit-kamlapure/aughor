@@ -21,7 +21,7 @@ from aughor.kernel import lifecycle
 #: The ledger's artifact kind for a sheet's definition.
 KIND = "sheet"
 
-#: The id of the one connection the sheets are, to the rest of Aughor.
+#: The id of the one connection the sheets are, to the rest of Pramanyx.
 SHEETS_CONNECTION = "sheets"
 
 Role = Literal["stored", "computed", "lookup", "total"]

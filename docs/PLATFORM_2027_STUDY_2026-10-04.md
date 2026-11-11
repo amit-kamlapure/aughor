@@ -1,4 +1,4 @@
-# Aughor in 2027 — what the platform should become
+# Pramanyx in 2027 — what the platform should become
 
 *A study, written 2026-10-04 at the user's request and **adopted the same day** — `ROADMAP.md` §6 item 39,
 every call as recommended; §3.53 points here. Its phases 0 to 7 (section W) are the plan for 2027 and
@@ -45,7 +45,7 @@ them is intelligence:
 6. **Earned trust.** How often this kind of claim, from this source, has turned out right — which can
    only be counted after 1–5 exist and time has passed.
 
-**What Aughor is today.** A technically deep platform whose real asset is a discipline, not a feature:
+**What Pramanyx is today.** A technically deep platform whose real asset is a discipline, not a feature:
 no fact without a source, no model-authored fact, every figure with its as-of, a number said only once
 its days have settled, a restated number told to whoever was given the old one, a send held when its
 definition is not approved, a superseded fact kept with what replaced it. That discipline is the
@@ -75,7 +75,7 @@ architectural. It is that the next unit of value comes from the next capability.
 
 **The thesis.** By 2027 the organisation's problem is not getting intelligence; it is knowing which of
 an unlimited supply of confident claims to rely on, deciding, and finding out whether it was right.
-Aughor should stop being the place analysis is *produced* and become the place it is *held to
+Pramanyx should stop being the place analysis is *produced* and become the place it is *held to
 account*: the organisation's record of what it holds true, what it expected, what it decided, what it
 did and what happened — every entry warranted, dated, owned and scored — which people and every
 vendor's agents read from and write to.
@@ -116,7 +116,7 @@ pass (§4.8). The same rule holds for vendors.
 general ledger is the system of record for money. The comparison is exact rather than decorative, and
 the platform's vocabulary already carries it:
 
-| The books | Aughor today |
+| The books | Pramanyx today |
 |---|---|
 | No entry without a source document | provenance is required; there is no `llm_inferred` |
 | Entries are never erased, only reversed | supersede, do not delete |
@@ -126,11 +126,11 @@ the platform's vocabulary already carries it:
 | Controls sit before money leaves | the departure gate; approvals; the gate map |
 | An auditor can re-perform any figure | the signed Trust Receipt at `/receipt/<id>` |
 
-What the books have that Aughor lacks is the other half of double entry: the *expectation* booked
+What the books have that Pramanyx lacks is the other half of double entry: the *expectation* booked
 beside the *actual*. A ledger of money records the budget and then the spend. A ledger of judgment
 records what was predicted and decided, and then what happened. That half is missing (sections K and L).
 
-**Why Aughor has the right to own it.** Not because of its agents, its ontology or its SQL — because of
+**Why Pramanyx has the right to own it.** Not because of its agents, its ontology or its SQL — because of
 its laws. The invariants in `AGENTS.md` (provenance required; withheld is said, never implied; supersede,
 do not delete; reversing durable intent clears the durable record first; flags graduate on receipts) are
 the operating rules of a ledger, written down and enforced by ratchets, before the category had a name.
@@ -141,7 +141,7 @@ is a culture, and it is the part that takes years.
 claims are booked in. The defining number is calibration: of everything this system said with 80%
 confidence, was 80% right?
 
-> **Aughor owns the track record** — what the organisation believed, what it decided, and whether it was right.
+> **Pramanyx owns the track record** — what the organisation believed, what it decided, and whether it was right.
 
 **Names considered and refused.** *Decision intelligence* — an existing label that means dashboards with
 recommendations. *Agent platform* — the layer most certain to be given away by model vendors. *Enterprise
@@ -1274,7 +1274,7 @@ Settings pages: about fifty places a person can land, which is the "thirty-odd t
 counted properly. The `NavTab` union carries thirty-six ids, seven of them legacy deep links kept so a
 saved link still opens. Home is a first-run funnel with an ask box, four stat tiles and a run list.
 
-**What the arrangement says.** Every group is named for a *store* or a *plane* — what Aughor knows,
+**What the arrangement says.** Every group is named for a *store* or a *plane* — what Pramanyx knows,
 what it queries, what it runs — and the layers inside are the modules behind them. Evidence, Memory, Org
 and Brain map are four screens over the nine stores the Brain map was built to expose. A person who
 arrives with a question ("what needs me?", "why did returns move?", "what did we decide in March?") has
@@ -1871,7 +1871,7 @@ change. The redesigns are not new sections; each names where in F–Y it was alr
 
 **1 · The best AI-native startup.** *The attack:* faster and lighter — connect a warehouse, ask, get
 investigated answers in an hour, nothing to declare, no ontology, no approvals, a product that feels
-like a frontier model because it is one. *Why it is strong:* it is what Aughor was on 2026-08-26 (chat
+like a frontier model because it is one. *Why it is strong:* it is what Pramanyx was on 2026-08-26 (chat
 first, Agent the default), and it wins every demo. Most of what section A's table calls "built and
 starved" is exactly the surface it would ship. *What it cannot do:* it has no reason to refuse to show a
 number before the days have settled, no reason to hold a send, and no record — speed is its whole
@@ -1879,7 +1879,7 @@ product, and warrant is slow by nature. In month six its customer has a thousand
 no way to know which were right. *What survives:* day-one value with nothing declared — the Watcher's
 proposed alerts, explore-on-connect, the shopping list, the Briefing on a fresh connection (phase 6's
 hours gate is the measure, and it is a release gate, not a hope); six destinations instead of fifty; and
-the open door — let its agent cite this ledger over MCP, because a startup whose answers carry Aughor's
+the open door — let its agent cite this ledger over MCP, because a startup whose answers carry Pramanyx's
 receipts has become a client, not a competitor. *What it forced:* confirm, do not configure (section P);
 Ask as a bar everywhere (U); the agent contract as the way in (Q).
 
@@ -1915,7 +1915,7 @@ verification statement and an undo (G, M); the authority table that cites receip
 **4 · The best model vendor.** *The attack:* it owns the intelligence, the default surface — the chat
 every employee already has open — and "memory": it remembers what the company told it, across every
 conversation, and improves with every model release. Its agents will take every duty in section H
-better than Aughor's built-ins. *Why it is strong:* everything in the reassessment table marked E
+better than Pramanyx's built-ins. *Why it is strong:* everything in the reassessment table marked E
 depreciates toward it, and class D's agent architecture is a 2025 picture of what it ships for free.
 *What it cannot do:* its memory lives inside one vendor's model, which a company will not accept as the
 record of its own history; it cannot be model-neutral about its own outputs; it grades its own answers

@@ -2,7 +2,7 @@ name: Install
 
 # The installer on all three operating systems. ci.yml tests the code; this tests the first
 # thing a new user runs, which nothing else exercises on Windows or macOS at all: uv, Python,
-# every dependency and the web build from nothing, then Aughor started and both servers
+# every dependency and the web build from nothing, then Pramanyx started and both servers
 # answering.
 on:
   pull_request:
@@ -75,7 +75,7 @@ jobs:
         run: install.cmd --no-start
 
       # The one-liner's path on a computer with no Git: from an empty folder, the script alone,
-      # Aughor fetched as a snapshot. A repository that cannot be cloned sends it down that
+      # Pramanyx fetched as a snapshot. A repository that cannot be cloned sends it down that
       # path, and the snapshot is this commit, so the run tests this change rather than main.
       - name: Fresh install from an empty folder, as a snapshot (macOS, Linux)
         if: runner.os != 'Windows' && matrix.node == 'installed'
@@ -88,7 +88,7 @@ jobs:
           AUGHOR_ARCHIVE_URL="file://$RUNNER_TEMP/aughor-main.tar.gz" \
             sh -s -- --no-start < "$GITHUB_WORKSPACE/install.sh"
           test -f "$HOME/aughor/web/.next/BUILD_ID"
-          # ...and left one command behind that starts Aughor's CLI from any folder.
+          # ...and left one command behind that starts Pramanyx's CLI from any folder.
           "$HOME/.local/bin/aughor" --help
 
       - name: Fresh install from an empty folder, as a snapshot (Windows)

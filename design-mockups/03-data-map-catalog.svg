@@ -9,7 +9,7 @@
   <rect width="1440" height="900" class="bg"/>
   <rect x="0" y="0" width="244" height="900" class="side"/><rect x="244" y="0" width="1196" height="56" class="top"/>
   <line x1="244" y1="0" x2="244" y2="900" class="line"/><line x1="244" y1="56" x2="1440" y2="56" class="line"/>
-  <text x="30" y="39" class="text h2">Aughor</text>
+  <text x="30" y="39" class="text h2">Pramanyx</text>
   <text x="42" y="114" class="muted body">Overview</text><text x="42" y="156" class="muted body">Ask</text><text x="42" y="198" class="muted body">Investigations</text><text x="42" y="240" class="muted body">Intelligence</text>
   <rect x="20" y="262" width="204" height="34" rx="6" class="sel"/><text x="42" y="284" class="blue body">Data Map</text>
   <text x="42" y="334" class="muted body">Governance</text>

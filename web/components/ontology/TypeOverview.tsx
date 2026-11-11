@@ -74,7 +74,7 @@ export function TypeFigures({ detail }: { detail: ObjectTypeDetail }) {
   const { key, counts } = detail;
   const parts = counts.parts ?? detail.parts?.length ?? 0;
   const objects = detail.platform
-    ? { value: "in Aughor", label: "kept by actions", title: "Its objects live in Aughor's edit layer — nothing is counted on a warehouse" }
+    ? { value: "in Pramanyx", label: "kept by actions", title: "Its objects live in Pramanyx's edit layer — nothing is counted on a warehouse" }
     : key.rows == null
       ? { value: "—", label: `${pluralOf(detail.display_name)}, not counted`, title: "its rows are not counted yet" }
       : { value: formatCount(key.rows), label: pluralOf(detail.display_name), title: `${formatCount(key.rows)} rows` };

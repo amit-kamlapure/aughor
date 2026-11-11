@@ -329,7 +329,7 @@ _EXTRACT_SYS = (
 # ── Guarded extraction: deterministic value validation + gleaning re-extract ──────
 # Pulling a structured value out of free text is where data agents are most fragile: benchmarks show
 # frontier models fall back to regex and *never check the result*, so text-heavy extractions collapse
-# (DataAgentBench's patent-date tasks score 0% across every model). Aughor's answer is its usual one —
+# (DataAgentBench's patent-date tasks score 0% across every model). Pramanyx's answer is its usual one —
 # a deterministic guard over the LLM's output. When ``validate=True`` each extracted value is checked
 # against a type inferred from the field's name/description; cells that fail are RE-EXTRACTED with
 # targeted feedback in a bounded "gleaning" loop. Values are only ever re-asked and kept,

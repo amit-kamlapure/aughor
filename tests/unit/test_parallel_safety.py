@@ -1,6 +1,6 @@
 """Wave R5 — declared parallel-safety.
 
-The property Aughor had was real but accidental: every fan-out happens to dispatch reads,
+The property Pramanyx had was real but accidental: every fan-out happens to dispatch reads,
 and the SQL gate proves reads safe. Nothing *declared* it, so nothing could notice when
 something unsafe was fanned out — and the K-plane, the growing surface, is invisible to
 the SQL gate because no SQL is involved. Two refunds or a twice-delivered webhook is not a

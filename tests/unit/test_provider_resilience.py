@@ -1,7 +1,7 @@
 """Tests for the LLM provider resilience layer (aughor/llm/provider.py):
 per-endpoint concurrency semaphore + transient-error retry/backoff/deadline.
 
-This is platform robustness — every Aughor LLM call goes through _run_resilient — so the contract
+This is platform robustness — every Pramanyx LLM call goes through _run_resilient — so the contract
 matters: retry throttle/transient, surface real failures immediately, never hold a slot while sleeping.
 """
 from __future__ import annotations

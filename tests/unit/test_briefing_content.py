@@ -1,4 +1,4 @@
-"""Wave S4 — the weekly digest over Aughor's own exhaust.
+"""Wave S4 — the weekly digest over Pramanyx's own exhaust.
 
 The carrying test is :func:`test_abstentions_are_reported_as_not_countable`. The scoping
 doc listed abstentions as a section; the pre-check found only 3 of 795 receipts carry an

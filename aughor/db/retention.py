@@ -11,7 +11,7 @@ hour, day, ISO week (Monday first), month and year until that range has kept its
 ``label_days``; drop anything further back than ``window``. One backup can use several ranges at once — the original's
 comment says other variations "have results that feel counter-intuitive". The newest is always kept.
 
-Aughor's caps (decided 2026-10-27, §3.63): the newest 5, 24 hours, 14 days, 8 weeks, no months, no years, nothing
+Pramanyx's caps (decided 2026-10-27, §3.63): the newest 5, 24 hours, 14 days, 8 weeks, no months, no years, nothing
 older than 8 weeks, and a labelled backup — a copy taken before a migration (SV-1) or before a restore — kept 30 days.
 So a removal is gone from every backup within eight weeks. The original's caps keep monthly backups for 8 years and
 yearly ones for 1,000, because there a document's history is the product; here a backup outliving a removal is the cost.
@@ -47,7 +47,7 @@ class Policy:
 #: The original's defaults (its keep and time-cap settings unset), for the ported tests.
 GRIST = Policy(keep=5, hour=25, day=32, iso_week=12, month=96, year=1000, label_days=32, window=None)
 
-#: Aughor's, decided 2026-10-27.
+#: Pramanyx's, decided 2026-10-27.
 AUGHOR = Policy()
 
 #: SV-1's copies before a migration: kept for their label's 30 days and nothing else.

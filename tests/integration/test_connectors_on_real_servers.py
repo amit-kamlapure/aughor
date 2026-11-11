@@ -248,7 +248,7 @@ def test_the_door_refuses_a_write(server):
 
 
 def test_the_server_refuses_a_write_where_the_declaration_says_so(server):
-    """Past the door, on the session itself: `engine_read_only` is a claim about the server, not about Aughor's checks."""
+    """Past the door, on the session itself: `engine_read_only` is a claim about the server, not about Pramanyx's checks."""
     s, conn = server
     if conn.engine_read_only is not True:
         pytest.skip(f"{s.type} declares that the door is the boundary")

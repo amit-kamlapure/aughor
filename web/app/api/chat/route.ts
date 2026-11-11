@@ -9,7 +9,7 @@
  *
  * WHY A SERVER ROUTE AND NOT A BROWSER FETCH. The SDK's `useChat` speaks its own
  * SSE dialect (`data: {chunk}\n\n` under the UI-message-stream protocol), while
- * Aughor's backend speaks its own (`data: {json}` frames). Something has to
+ * Pramanyx's backend speaks its own (`data: {json}` frames). Something has to
  * translate, and doing it here rather than in the browser means the backend URL
  * and its key never reach the client, and the shell has one wire format to
  * understand.

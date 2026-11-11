@@ -73,7 +73,7 @@ def _seed(connection_id: str) -> None:
     # OPEN choice unless the ask names one — the open-choice path stays measurable.
     from aughor.slackbots.models import SlackBot
     from aughor.slackbots.store import save_bot
-    save_bot(SlackBot(id="sb_fixture_a", name="Aughor", bot_token="xoxb-fixture-a",
+    save_bot(SlackBot(id="sb_fixture_a", name="Pramanyx", bot_token="xoxb-fixture-a",
                       connection_id=connection_id))
     save_bot(SlackBot(id="sb_fixture_b", name="TheLook Analyst",
                       bot_token="xoxb-fixture-b", connection_id=connection_id))

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Seven destinations · Evidence → Action mockup</title>
 <!--
-  Mockup, 2026-11-10. Aughor's navigation redrawn as EVIDENCE_TO_ACTION_DESIGN_SYSTEM.md v2.0 §3 and §4 say:
+  Mockup, 2026-11-10. Pramanyx's navigation redrawn as EVIDENCE_TO_ACTION_DESIGN_SYSTEM.md v2.0 §3 and §4 say:
   seven destinations at most (Home · Ask · Data · Analyze · Model · Decide · Monitor), global chrome in the top bar
   (workspace, environment, search, jobs, notifications, help, settings), a 224px nav that collapses to 56px.
   Every page and tab reachable today is placed (web/app/page.tsx NAV_PRIMARY + NAV_SECTIONS, and each workspace's
@@ -184,7 +184,7 @@ table.grid { width: 100%; border-collapse: separate; border-spacing: 0; font-siz
 
 <div class="shell" id="shell" data-nav="expanded">
   <header class="topbar">
-    <div class="brand"><span class="brand-mark">A</span><span class="word">Aughor</span></div>
+    <div class="brand"><span class="brand-mark">A</span><span class="word">Pramanyx</span></div>
     <button class="select"><span class="lbl">Workspace</span> Default <svg class="i sm"><use href="#i-chev"/></svg></button>
     <div class="search" role="search"><svg class="i sm"><use href="#i-search"/></svg>Search pages, assets &amp; commands<kbd>⌘K</kbd></div>
     <div class="spacer"></div>
@@ -215,7 +215,7 @@ table.grid { width: 100%; border-collapse: separate; border-spacing: 0; font-siz
 </div>
 
 <div class="mock-ctl" aria-label="Mockup controls (not part of the design)">
-  Names <button data-names="doc" aria-pressed="true">Doc</button><button data-names="safe" aria-pressed="false">Aughor-safe</button>
+  Names <button data-names="doc" aria-pressed="true">Doc</button><button data-names="safe" aria-pressed="false">Pramanyx-safe</button>
   · <button data-theme-btn="light" aria-pressed="true">Light</button><button data-theme-btn="dark" aria-pressed="false">Dark</button>
   · scroll for notes
 </div>
@@ -240,11 +240,11 @@ table.grid { width: 100%; border-collapse: separate; border-spacing: 0; font-siz
         <li><b>No page gets fewer clicks, and 31 of 55 get one more.</b> Today all 22 rows are always on screen, so every row is one click. Here only a destination's first section is one click.</li>
         <li><b>What softens it:</b> a destination could reopen the section you last used there, and ⌘K reaches any page by name (it already reaches Playbook, which has no row). Neither changes the count for a page you haven't opened yet.</li>
         <li><b>What it buys:</b> room. The tallest destination open (Monitor, 8 sections) ends at 524px, where today's rows run to 830 of 852 at 1440×900. A new page no longer pushes another below the fold.</li>
-        <li><b>With the Aughor-safe names, most of it is today's grouping folded up.</b> Operations is today's Operations plus Health and Brain map. The real moves are Briefing's ten tabs spreading across four destinations, and Inbox and Record joining under Decide.</li>
+        <li><b>With the Pramanyx-safe names, most of it is today's grouping folded up.</b> Operations is today's Operations plus Health and Brain map. The real moves are Briefing's ten tabs spreading across four destinations, and Inbox and Record joining under Decide.</li>
       </ul>
       <h3>Calls I made that need your yes</h3>
       <ul>
-        <li class="call"><b>The doc has no destination for what Aughor knows</b> (today's whole "Intelligence" group). I placed those pages by best fit: Profile → Data, Org and Memory → Model, Evidence → Decide, Brain map → Monitor. This is the biggest gap the exercise found.</li>
+        <li class="call"><b>The doc has no destination for what Pramanyx knows</b> (today's whole "Intelligence" group). I placed those pages by best fit: Profile → Data, Org and Memory → Model, Evidence → Decide, Brain map → Monitor. This is the biggest gap the exercise found.</li>
         <li><b>Record stays whole under Decide.</b> The doc would split it, with Inquiries under Ask and Decisions under Decide. You approved Record as one row with five views.</li>
         <li><b>Agent Ops stays whole under Monitor</b> (your rule: its tabs stay as they are).</li>
         <li><b>Spreadsheets → Analyze</b> rather than Data, since people work in sheets. <b>Documents → Data</b>, as material the agents read.</li>
@@ -256,7 +256,7 @@ table.grid { width: 100%; border-collapse: separate; border-spacing: 0; font-siz
     <div>
       <h3>Names: the doc's against the glossary</h3>
       <table>
-        <tr><th>Doc</th><th>Clash in Aughor</th><th>Aughor-safe</th></tr>
+        <tr><th>Doc</th><th>Clash in Pramanyx</th><th>Pramanyx-safe</th></tr>
         <tr><td>Home · Ask · Data · Analyze · Decide</td><td>None found</td><td>Same</td></tr>
         <tr><td><b>Model</b></td><td>In the glossary and the product, "model" is the AI model (model calls, Settings ▸ Models). A Model destination next to a Models setting would read as the LLM.</td><td><b>Define</b> (a verb, like Ask, Analyze and Decide)</td></tr>
         <tr><td><b>Monitor</b></td><td>The glossary defines a Monitor as one watch-a-metric rule, and this destination holds a "Monitors" section: "Monitor › Monitors".</td><td><b>Operations</b> (today's group name)</td></tr>
@@ -285,7 +285,7 @@ const DEST = [
   ]},
   { id: "data", doc: "Data", safe: "Data", icon: "data", sections: [
     { id: "catalog", label: "Catalog", today: ["Catalog"], holds: "Tables, schemas & profiles" },
-    { id: "profile", label: "Profile", today: ["Briefing", "Profile"], holds: "What Aughor knows about this business, by the domains its findings are filed under", call: true },
+    { id: "profile", label: "Profile", today: ["Briefing", "Profile"], holds: "What Pramanyx knows about this business, by the domains its findings are filed under", call: true },
     { id: "documents", label: "Documents", today: ["Documents"], holds: "Authored material the agents reason with; global, not per connection" },
   ]},
   { id: "analyze", doc: "Analyze", safe: "Analyze", icon: "analyze", sections: [
@@ -314,7 +314,7 @@ const DEST = [
     { id: "spend", label: "Spend", today: ["Spend"], holds: "Caps, usage, model health and the spend audit feed" },
     { id: "security", label: "Security & Audit", today: ["Security & Audit"], tabs: ["Security", "Activity", "Approvals", "Gates", "Policies"], holds: "Access, PII, approvals and the audit trail" },
     { id: "evals", label: "Evals", today: ["Evals"], tabs: ["Suites", "Runs", "Experiments"], holds: "How right the agents are, measured" },
-    { id: "brain", label: "Brain map", today: ["Briefing", "Brain map"], holds: "Every store behind what Aughor knows, with live counts", call: true },
+    { id: "brain", label: "Brain map", today: ["Briefing", "Brain map"], holds: "Every store behind what Pramanyx knows, with live counts", call: true },
   ]},
 ];
 const SETTINGS = [
@@ -377,7 +377,7 @@ function renderMain() {
       <div class="k">Here</div><div><span class="path">${crumb.map(p => `<span class="p new">${p}</span>`).join('<span class="sep">›</span>')}${tabs.length && state.tab ? `<span class="sep">›</span><span class="p new">${tabs[state.tab]}</span>` : ""}</span></div>
       <div class="k">Clicks from elsewhere</div><div>${ct} today → <b>${cn}</b> here ${cn < ct ? '<span class="badge success">fewer</span>' : cn > ct ? '<span class="badge warning">more</span>' : ""}</div>
       <div class="k">Beside it now</div><div>${neighbours.join(" · ")}</div>
-      ${sec.call ? `<div class="k">Placed by</div><div><span class="badge warning">Best fit</span> The doc has no destination for what Aughor knows</div>` : ""}
+      ${sec.call ? `<div class="k">Placed by</div><div><span class="badge warning">Best fit</span> The doc has no destination for what Pramanyx knows</div>` : ""}
     </div></div></section>
     <div class="placeholder">${sec.label}${tabs.length ? " › " + tabs[state.tab] : ""}: the page as it is today, unchanged. This mockup is about where pages live, not what they look like.</div>`;
   $("#st-where").textContent = crumb.join(" › ");

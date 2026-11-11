@@ -1,12 +1,12 @@
-# Aughor installer for Windows.
+# Pramanyx installer for Windows.
 #
-# On a computer without Aughor, one line does everything, typed in Command Prompt or PowerShell:
-# downloads Aughor into the aughor folder in your home folder, installs what it needs, starts it
+# On a computer without Pramanyx, one line does everything, typed in Command Prompt or PowerShell:
+# downloads Pramanyx into the aughor folder in your home folder, installs what it needs, starts it
 # and opens it in the browser. Nothing has to be installed first, not even Git:
-#   powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/amit-kamlapure/aughor/main/install.ps1 | iex"
+#   powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/amit-kamlapure/pramanyx/main/install.ps1 | iex"
 #
 # Inside a checkout:
-#   install.cmd                install everything Aughor needs, start it, open it in a browser
+#   install.cmd                install everything Pramanyx needs, start it, open it in a browser
 #   install.cmd --no-start     install only
 #   install.cmd --help         every option
 #
@@ -19,8 +19,8 @@
 # other character here would be garbled.
 
 # AUGHOR_REPO_URL and AUGHOR_ARCHIVE_URL install from a fork (or a local copy) instead.
-$RepoUrl = if ($env:AUGHOR_REPO_URL) { $env:AUGHOR_REPO_URL } else { 'https://github.com/amit-kamlapure/aughor.git' }
-$ArchiveUrl = if ($env:AUGHOR_ARCHIVE_URL) { $env:AUGHOR_ARCHIVE_URL } else { 'https://github.com/amit-kamlapure/aughor/archive/refs/heads/main.zip' }
+$RepoUrl = if ($env:AUGHOR_REPO_URL) { $env:AUGHOR_REPO_URL } else { 'https://github.com/amit-kamlapure/pramanyx.git' }
+$ArchiveUrl = if ($env:AUGHOR_ARCHIVE_URL) { $env:AUGHOR_ARCHIVE_URL } else { 'https://github.com/amit-kamlapure/pramanyx/archive/refs/heads/main.zip' }
 $PythonVersion = '3.11'  # aughor/installer.py PYTHON_VERSION
 
 function Write-Status([string]$Text) {
@@ -145,7 +145,7 @@ function Get-Aughor([string]$Target, [string]$Log) {
         $unpacked = Get-ChildItem -LiteralPath $staging -Directory |
             Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'pyproject.toml') } |
             Select-Object -First 1
-        if (-not $unpacked) { throw 'The downloaded archive holds no Aughor checkout.' }
+        if (-not $unpacked) { throw 'The downloaded archive holds no Pramanyx checkout.' }
         Move-Item -LiteralPath $unpacked.FullName -Destination $Target -ErrorAction Stop
     } finally {
         $ProgressPreference = $previousProgress
@@ -162,7 +162,7 @@ $script:Blank = $false
 
 function Install-Aughor([string[]]$Arguments) {
     Write-Host ''
-    Write-Host '  Aughor installer'
+    Write-Host '  Pramanyx installer'
     Write-Host ''
     $script:Blank = $true  # the header ends with a blank line
 
@@ -177,21 +177,21 @@ function Install-Aughor([string[]]$Arguments) {
             # Never write into a folder that holds anything else: a failed download is cleaned
             # up by deleting the folder, and that must only ever meet what the download put there.
             if ((Test-Path -LiteralPath $root) -and (Get-ChildItem -LiteralPath $root -Force | Select-Object -First 1)) {
-                Write-Failure "$root already exists, and it isn't Aughor." 'Move it out of the way, or pick another folder by setting AUGHOR_DIR, then run this again.'
+                Write-Failure "$root already exists, and it isn't Pramanyx." 'Move it out of the way, or pick another folder by setting AUGHOR_DIR, then run this again.'
                 $script:ExitCode = 1; return
             }
             Test-Reachable 'github.com'
-            Write-Status "Downloading Aughor into $root..."
+            Write-Status "Downloading Pramanyx into $root..."
             $downloadLog = Join-Path $env:TEMP 'aughor-download.log'
             try {
                 Get-Aughor $root $downloadLog
             } catch {
                 Add-Content -LiteralPath $downloadLog -Value $_.Exception.Message -ErrorAction SilentlyContinue
                 if (Test-CertificateFailure $_) { Show-ProxyHint }
-                Write-Failure 'Could not download Aughor.' "Check your internet connection, then run this again. Log: $downloadLog"
+                Write-Failure 'Could not download Pramanyx.' "Check your internet connection, then run this again. Log: $downloadLog"
                 $script:ExitCode = 1; return
             }
-            Write-Ok 'Aughor downloaded'
+            Write-Ok 'Pramanyx downloaded'
         }
         $root = (Resolve-Path -LiteralPath $root).Path
     }
@@ -202,7 +202,7 @@ function Install-Aughor([string[]]$Arguments) {
     # -- Get uv, the one tool the rest cannot install through itself --
     $uv = Find-Uv
     if (-not $uv) {
-        Write-Status 'Installing uv, the Python package manager Aughor uses...'
+        Write-Status 'Installing uv, the Python package manager Pramanyx uses...'
         $log = Join-Path $logs 'uv-install.log'
         $command = '[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; irm https://astral.sh/uv/install.ps1 | iex'
         Start-Process -FilePath 'powershell.exe' -Wait -NoNewWindow `
@@ -220,7 +220,7 @@ function Install-Aughor([string[]]$Arguments) {
 
     $uvVersion = ((& $uv --version) -split ' ')[1]
     if ($uvVersion -match '^0\.[0-7](\.|$)') {
-        Write-Failure "uv $uvVersion is too old for Aughor." 'Update it (uv self update), then run this again.'
+        Write-Failure "uv $uvVersion is too old for Pramanyx." 'Update it (uv self update), then run this again.'
         $script:ExitCode = 1; return
     }
 

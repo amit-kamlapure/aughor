@@ -1,10 +1,10 @@
-"""One-shot install for Aughor: the same steps and the same messages on every OS.
+"""One-shot install for Pramanyx: the same steps and the same messages on every OS.
 
 `install.sh` (macOS, Linux) and `install.ps1` (Windows) do only what a shell has to: find
 the checkout and get `uv`. They then run this module on a uv-provided Python OUTSIDE the
 project's `.venv`, and everything else happens here, once, for all three systems:
 
-  0. Industries             which industry packages Aughor reads — asked once, through the terminal,
+  0. Industries             which industry packages Pramanyx reads — asked once, through the terminal,
                             before anything slow; `--industries` or AUGHOR_INDUSTRIES answer it ahead
   1. Python dependencies    `uv sync --all-extras --locked`
   2. Node.js                the one on this computer when it is new enough; otherwise an
@@ -431,7 +431,7 @@ def _child_env(**extra: str) -> dict:
 
 # ── 0. Industries ────────────────────────────────────────────────────────────────
 # IP-2 (ROADMAP §3.17 "Chosen at install"). The API reads the answer from one small file; this module can
-# import nothing of Aughor's, so it mirrors that file's name, the path rule and its shape from
+# import nothing of Pramanyx's, so it mirrors that file's name, the path rule and its shape from
 # aughor/packs/industry_choice.py — tests/unit/test_installer.py holds the two equal.
 
 #: aughor/packs/industry_choice.py CHOICE_FILE.
@@ -613,12 +613,12 @@ def _terminal() -> Iterator[Optional[tuple[IO[str], IO[str]]]]:
 
 
 def ask_industries(terminal: tuple[IO[str], IO[str]], shipped: Sequence[Industry]) -> Union[Optional[list[str]], str]:
-    """Ask which industries Aughor is for. Returns the answer (None for every industry), or "unanswered"
+    """Ask which industries Pramanyx is for. Returns the answer (None for every industry), or "unanswered"
     when the terminal closed or no answer matched after three tries — then nothing is recorded, and the
     next install asks again."""
     reader, writer = terminal
     width = len(str(len(shipped)))
-    lines = ["", "  Which industries is Aughor for?"]
+    lines = ["", "  Which industries is Pramanyx for?"]
     lines += [f"    {str(n).rjust(width)}  {industry.name}" for n, industry in enumerate(shipped, 1)]
     lines += ["  Type numbers or names, separated by commas. Press Enter for all of them: each",
               "  connection's industry is then detected. Type none to use only what every industry shares.",
@@ -839,10 +839,10 @@ def ensure_node(root: Path, steps: Steps) -> Node:
         steps.up_to_date(f"Node.js {node.version_text}")
         return node
     if too_old is not None:
-        why = f"Node.js {'.'.join(map(str, too_old))} is older than Aughor needs (20.9)"
+        why = f"Node.js {'.'.join(map(str, too_old))} is older than Pramanyx needs (20.9)"
     else:
         why = "Node.js isn't installed on this computer"
-    steps.line(steps.dim(f"{why}, so Aughor will use its own copy."))
+    steps.line(steps.dim(f"{why}, so Pramanyx will use its own copy."))
     return download_node(root, steps)
 
 
@@ -851,10 +851,10 @@ def node_dist_filename(version: str, system: str, machine: str, *, xz: bool = Tr
     os_part = {"darwin": "darwin", "linux": "linux", "windows": "win"}.get(system.lower())
     arch = {"x86_64": "x64", "amd64": "x64", "arm64": "arm64", "aarch64": "arm64"}.get(machine.lower())
     if os_part is None or arch is None:
-        raise InstallError(f"Aughor can't download Node.js for this computer ({system} {machine}).",
+        raise InstallError(f"Pramanyx can't download Node.js for this computer ({system} {machine}).",
                            hint=_GET_NODE)
     if os_part == "linux" and any(Path("/lib").glob("ld-musl-*")):
-        raise InstallError("Aughor can't download Node.js for a musl-based Linux (Alpine).",
+        raise InstallError("Pramanyx can't download Node.js for a musl-based Linux (Alpine).",
                            hint=_GET_NODE)
     extension = "zip" if os_part == "win" else ("tar.xz" if xz else "tar.gz")
     return f"node-{version}-{os_part}-{arch}.{extension}"
@@ -1162,7 +1162,7 @@ def web_env(api_port: int = DEFAULT_API_PORT, base: Optional[dict] = None) -> di
     themselves wins.
     """
     env = _child_env() if base is None else dict(base)
-    # Next.js's anonymous usage telemetry stays off unless the user switched it on: Aughor's
+    # Next.js's anonymous usage telemetry stays off unless the user switched it on: Pramanyx's
     # posture is that nothing leaves the machine by default.
     env.setdefault("NEXT_TELEMETRY_DISABLED", "1")
     if api_port != DEFAULT_API_PORT:
@@ -1177,7 +1177,7 @@ def prepare_web(root: Path, steps: Steps, *, api_port: int = DEFAULT_API_PORT,
     production server — a build that matches the sources. Returns the Node.js to run it with
     and the environment to run it in."""
     if not (root / "web" / "package.json").is_file():
-        raise InstallError(f"There is no web app at {root / 'web'}. Is this an Aughor checkout?")
+        raise InstallError(f"There is no web app at {root / 'web'}. Is this a Pramanyx checkout?")
     node = ensure_node(root, steps)
     ensure_web_deps(root, node, steps)
     ensure_slack_supervisor_deps(root, node, steps)
@@ -1206,7 +1206,7 @@ def launcher_dir(uv: str) -> Optional[Path]:
 
 
 def launcher_script(root: Path, uv: str, windows: bool) -> str:
-    """The `aughor` command. With no arguments it starts Aughor; anything else goes to its CLI
+    """The `aughor` command. With no arguments it starts Pramanyx; anything else goes to its CLI
     (`aughor seed`, `aughor up --dev`). It runs from the checkout, whatever folder the terminal
     is in, and says so plainly if the checkout has been moved or deleted."""
     if windows:
@@ -1215,11 +1215,11 @@ def launcher_script(root: Path, uv: str, windows: bool) -> str:
         return "\r\n".join([
             "@echo off",
             f"rem {LAUNCHER_MARK}.",
-            "rem `aughor` starts Aughor; `aughor seed`, `aughor up --dev` and the rest go to its CLI.",
+            "rem `aughor` starts Pramanyx; `aughor seed`, `aughor up --dev` and the rest go to its CLI.",
             "setlocal",
             f'set "AUGHOR_ROOT={root}"',
             'if exist "%AUGHOR_ROOT%\\pyproject.toml" goto found',
-            "echo Aughor is no longer in %AUGHOR_ROOT%. Run the installer again. 1>&2",
+            "echo Pramanyx is no longer in %AUGHOR_ROOT%. Run the installer again. 1>&2",
             "exit /b 1",
             ":found",
             'set "AUGHOR_UV=uv"',
@@ -1239,10 +1239,10 @@ def launcher_script(root: Path, uv: str, windows: bool) -> str:
     return "\n".join([
         "#!/bin/sh",
         f"# {LAUNCHER_MARK}.",
-        "# `aughor` starts Aughor; `aughor seed`, `aughor up --dev` and the rest go to its CLI.",
+        "# `aughor` starts Pramanyx; `aughor seed`, `aughor up --dev` and the rest go to its CLI.",
         f"root={shlex.quote(str(root))}",
         'if [ ! -f "$root/pyproject.toml" ]; then',
-        '  echo "Aughor is no longer in $root. Run the installer again." >&2',
+        '  echo "Pramanyx is no longer in $root. Run the installer again." >&2',
         "  exit 1",
         "fi",
         '[ "$#" -eq 0 ] && set -- up',
@@ -1291,7 +1291,7 @@ def install_launcher(root: Path, uv: Optional[str]) -> str:
 # ── 5. Hand over to `aughor up` ──────────────────────────────────────────────────
 
 def start_command_hint() -> str:
-    """How to start Aughor next time. One word wherever the installer could put the `aughor`
+    """How to start Pramanyx next time. One word wherever the installer could put the `aughor`
     command on PATH; otherwise the checkout's own command, from a terminal that may lack two
     things the installer had:
     uv on PATH (a uv the bootstrap just installed reaches PATH only in NEW terminals), and the
@@ -1299,7 +1299,7 @@ def start_command_hint() -> str:
     `cd … && …`, which Windows PowerShell 5.1 cannot run."""
     launcher = os.environ.get("AUGHOR_LAUNCHER")
     if launcher == "ready":
-        return "Next time, start Aughor with:  aughor"
+        return "Next time, start Pramanyx with:  aughor"
     if launcher == "new-terminal":
         return "Next time, open a new terminal and run:  aughor"
     first = []
@@ -1308,7 +1308,7 @@ def start_command_hint() -> str:
     if os.environ.get("AUGHOR_CHECKOUT_DIR"):
         first.append(f"go to {os.environ['AUGHOR_CHECKOUT_DIR']}")
     if not first:
-        return "Next time, start Aughor with:  uv run aughor up"
+        return "Next time, start Pramanyx with:  uv run aughor up"
     return f"Next time, {', '.join(first)} and run:  uv run aughor up"
 
 
@@ -1329,9 +1329,9 @@ def _hand_off(root: Path, args: Sequence[str]) -> int:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="install", allow_abbrev=False,
-        description="Install everything Aughor needs, then start it and open it in your browser. "
+        description="Install everything Pramanyx needs, then start it and open it in your browser. "
                     "Safe to run again: it only redoes what changed.")
-    parser.add_argument("--no-start", action="store_true", help="install everything, but don't start Aughor")
+    parser.add_argument("--no-start", action="store_true", help="install everything, but don't start Pramanyx")
     parser.add_argument("--api-port", type=int, default=DEFAULT_API_PORT, help="port for the API (default 8000)")
     parser.add_argument("--web-port", type=int, default=3000, help="port for the web app (default 3000)")
     parser.add_argument("--dev", action="store_true", help="development mode: hot reload, logs in this terminal")
@@ -1386,11 +1386,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     root = Path.cwd()
     steps = Steps(verbose=options.verbose, show_up_to_date=True)
     if not os.environ.get("AUGHOR_BOOTSTRAP"):
-        steps.header("Aughor installer")
+        steps.header("Pramanyx installer")
     try:
         if not ((root / "pyproject.toml").is_file() and (root / "web" / "package.json").is_file()):
-            raise InstallError(f"{root} is not an Aughor checkout.",
-                               hint="Run the installer from the folder Aughor was cloned into.")
+            raise InstallError(f"{root} is not a Pramanyx checkout.",
+                               hint="Run the installer from the folder Pramanyx was cloned into.")
         choose_industries(root, steps, options.industries if options.industries is not None
                           else os.environ.get("AUGHOR_INDUSTRIES"))
         update_checkout(root, steps)
@@ -1408,7 +1408,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     os.environ["AUGHOR_LAUNCHER"] = install_launcher(root, find_uv())
     if options.no_start:
         steps.line()
-        steps.line(steps.bold("Aughor is installed."))
+        steps.line(steps.bold("Pramanyx is installed."))
         steps.line(start_command_hint())
         steps.line()
         return 0

@@ -3,7 +3,7 @@
 T2.4 verbatim: *guard-suppressed data must be indistinguishable from absence in the
 model's view; the suppression count surfaces to the user out-of-band.*
 
-Auditing the paths found Aughor already correct — the PII scanner's redacted count goes to
+Auditing the paths found Pramanyx already correct — the PII scanner's redacted count goes to
 the audit log, the row-budget truncation is silent, the RBAC row policy filters inside the
 SQL (so the model simply sees fewer rows), and ``format_result_for_llm`` renders neither
 ``caveats`` nor ``annotations``. Nothing needed fixing.

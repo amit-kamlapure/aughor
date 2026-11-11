@@ -288,7 +288,7 @@ Each row: the verdict in better-ui's terms, the finding that decides it, and the
 | **Agent runs** | Approve | header says "Recents" (MEDIUM); `Agentic · 8233e4fd` on every card (HIGH class); sparkles in violet; three tiles then a card grid — readable | 9 |
 | **Health** | Approve | one sentence (MEDIUM, §2.2) | capture |
 | **Documents** | Approve | the wizard leads with chunk parameters greyed out (MEDIUM → disclosure); `📄` (MEDIUM); the embedder notice is honest and good | 10 |
-| **Catalog** | Block | Filter clips at 1024, three titles (HIGH/MEDIUM); the draft connection duplicates every LuxExperience table in Suggested; "BigQuery 0 schemas · 0 tables" and "Aughor Ops 0 schemas · 0 tables" listed without a reason (MEDIUM) | 5 |
+| **Catalog** | Block | Filter clips at 1024, three titles (HIGH/MEDIUM); the draft connection duplicates every LuxExperience table in Suggested; "BigQuery 0 schemas · 0 tables" and "Pramanyx Ops 0 schemas · 0 tables" listed without a reason (MEDIUM) | 5 |
 | **SQL Editor** | Approve | the strongest screen: catalog rail with insert-at-cursor, tabs, Compose/Write toggle, run settings, format, history, shortcuts, ask-for-a-diff; a horizontal overflow of 800px in a 496px pane at 1024 (results table — needs its own scroll) | capture |
 | **Semantic Layer** | Approve | SCOPE tree + five tabs + a long explanatory paragraph before the table; UNIT column packs three facts (LOW); the state column ("In use · approved", "Formula rejected", "Needs binding") is good | capture |
 | **Agent Ops › Overview** | Block | body wider than the pane (HIGH); RANGE under the tabs at 1024 (HIGH); 10px text (LOW); the NEEDS YOU title is a concatenated key (HIGH class); the tiles and the roster table are good | 4 |

@@ -182,7 +182,7 @@ jobs:
     name: Slack bot · typecheck + tests
     # RC-1 shipped bots/slack with a hermetic suite and nothing ran it: a guard
     # no job executes is decorative. The suite needs no Slack workspace and no
-    # Aughor API — @chat-adapter/tests drives the real Chat pipeline against a
+    # Pramanyx API — @chat-adapter/tests drives the real Chat pipeline against a
     # mock adapter, and the chart test rasterizes a real SVG in-process.
     runs-on: ubuntu-latest
     defaults:

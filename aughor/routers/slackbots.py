@@ -1,4 +1,4 @@
-"""The /slack-bots surface — create and manage Slack bots from inside Aughor (RC-5).
+"""The /slack-bots surface — create and manage Slack bots from inside Pramanyx (RC-5).
 
 Every response goes through `SlackBot.to_safe_dict`, so a raw token never leaves the
 server. The update path accepts the mask it handed out and keeps the stored secret, so
@@ -18,6 +18,13 @@ from aughor.slackbots.models import SlackBot, merge_secrets
 from aughor.security.authz import connection_owner_guard
 
 logger = logging.getLogger(__name__)
+
+#: The name a bot gets when nobody typed one. A name still equal to a default is
+#: replaced by the bound agent's own name. "Aughor" is the product's earlier name: a
+#: client built before the rename still sends it as its fallback, and it must read as
+#: "nobody typed one" too, not as a chosen name.
+DEFAULT_BOT_NAME = "Pramanyx"
+_DEFAULT_BOT_NAMES = frozenset({DEFAULT_BOT_NAME, "Aughor"})
 #: DATA-06 — every connection a door of this router names, in its path, query or body, belongs to the caller's org.
 router = APIRouter(tags=["slack-bots"], dependencies=[Depends(connection_owner_guard)])
 
@@ -51,7 +58,7 @@ def list_slack_bots():
 
 
 @router.get("/slack-bots/manifest")
-def slack_bot_manifest(name: str = "Aughor", description: str = "", agent_id: str = "",
+def slack_bot_manifest(name: str = DEFAULT_BOT_NAME, description: str = "", agent_id: str = "",
                        agent_view: bool = True):
     """The Slack app manifest to paste at api.slack.com/apps?new_app=1.
 
@@ -64,7 +71,7 @@ def slack_bot_manifest(name: str = "Aughor", description: str = "", agent_id: st
             from aughor.custom_agents.store import get_agent
             agent = get_agent(agent_id)
             if agent:
-                name = name if name != "Aughor" else agent.name
+                name = name if name not in _DEFAULT_BOT_NAMES else agent.name
                 description = description or agent.purpose or ""
         except Exception:
             logger.warning("manifest: agent lookup failed; rendering with the given name",
@@ -106,7 +113,7 @@ class SlackAppCreate(BaseModel):
     """One configuration token, from api.slack.com/apps → Your App Configuration Tokens.
     Used once, never stored."""
     config_token: str
-    name: str = "Aughor"
+    name: str = DEFAULT_BOT_NAME
     description: str = ""
     agent_id: str = ""
     connection_id: str = ""
@@ -115,7 +122,7 @@ class SlackAppCreate(BaseModel):
 
 @router.post("/slack-bots/apps")
 def create_slack_app(body: SlackAppCreate):
-    """Create the Slack app from the manifest Aughor renders, with Slack's own API.
+    """Create the Slack app from the manifest Pramanyx renders, with Slack's own API.
 
     Measured 2026-10-03: twenty manual steps across four surfaces and five pasted
     secrets. After this call the app exists, its signing secret is stored, and an
@@ -124,7 +131,7 @@ def create_slack_app(body: SlackAppCreate):
     offers no API for it, and the response says so (`needs`), never pretending.
     """
     from aughor.slackbots import apps
-    name = (body.name or "Aughor").strip()
+    name = (body.name or DEFAULT_BOT_NAME).strip()
     description = body.description
     if body.agent_id and not description:
         try:
@@ -132,7 +139,7 @@ def create_slack_app(body: SlackAppCreate):
             agent = get_agent(body.agent_id)
             if agent:
                 description = agent.purpose or ""
-                name = name if name != "Aughor" else agent.name
+                name = name if name not in _DEFAULT_BOT_NAMES else agent.name
         except Exception:
             logger.warning("app create: agent lookup failed; using the given name", exc_info=True)
     redirect = _oauth_redirect_uri()
@@ -191,7 +198,7 @@ def slack_bot_install(bot_id: str):
                             "(AUGHOR_PUBLIC_API_URL), so Slack cannot send the install back "
                             "here — install at api.slack.com and paste the bot token instead")
     if not bot.client_id:
-        raise HTTPException(status_code=409, detail="this bot's app was not created by Aughor, "
+        raise HTTPException(status_code=409, detail="this bot's app was not created by Pramanyx, "
                             "so there is no OAuth client to install with")
     scopes = list(BOT_SCOPES) + (["assistant:write"] if bot.agent_view else [])
     return RedirectResponse(apps.install_url(bot.client_id, scopes, redirect,
@@ -434,7 +441,7 @@ def update_slack_bot(bot_id: str, body: SlackBotBody):
         raise HTTPException(status_code=409, detail="agent mode is one-way: Slack does not "
                             "let an app leave Agents & AI Apps once it is in it, so the "
                             "record cannot either")
-    # A bot Aughor created arrives disabled with no tokens; keep the app's identity.
+    # A bot Pramanyx created arrives disabled with no tokens; keep the app's identity.
     merged = merged.model_copy(update={"client_id": stored.client_id or merged.client_id})
     # Re-verify only when a credential actually changed — an ordinary rename should not
     # depend on Slack being reachable.

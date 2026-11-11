@@ -1,7 +1,7 @@
 """Evidence Ledger store — append-only SQLite backend.
 
 All writes are append-only (no UPDATE on claim rows, only on feedback fields).
-This preserves a complete audit trail of every claim Aughor has ever made.
+This preserves a complete audit trail of every claim Pramanyx has ever made.
 
 Since phase 1 of the 2027 study this store is a WRITER's staging, not the Record: a deep
 analysis's rows here are booked as claims in the kernel ledger when its receipt is written

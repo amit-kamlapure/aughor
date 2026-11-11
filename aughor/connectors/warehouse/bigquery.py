@@ -1,4 +1,4 @@
-"""BigQuery connector for Aughor.
+"""BigQuery connector for Pramanyx.
 
 DSN format:  bigquery://project-id
 Meta fields: {"dataset": "analytics", "credentials": "/path/to/sa.json"}

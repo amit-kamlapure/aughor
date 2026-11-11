@@ -3,7 +3,7 @@ CSV materialization.
 
 Why this exists
 ---------------
-Aughor's production answer path validates that SQL *binds* (``safety.preflight_repair`` →
+Pramanyx's production answer path validates that SQL *binds* (``safety.preflight_repair`` →
 ``conn.dry_run`` / ``EXPLAIN``) but never closes the loop on the *actual result*. Every
 top-of-leaderboard text-to-SQL system (Spider 2.0, BIRD) does the opposite: it **executes the
 candidate against the real engine, reads the error or the result, and repairs** — for several

@@ -745,10 +745,10 @@ The Roster is an INDEX (one table, two groups); clicking a row replaces the inde
 - [ ] Cost sub "no price is declared for the model it ran on" / "N calls unpriced — a floor, not a total" / "a floor — some calls unpriced" (web/components/AgenticAgentsPanel.tsx:784, :740)
 - [ ] Spend footnote: "Priced from each provider's published catalogue, or a rate the operator declared (AUGHOR_MODEL_PRICES). A model nothing prices counts as unpriced, never as free." (web/components/AgenticAgentsPanel.tsx:751)
 - [ ] Details rail "any — the asker's connection", "all schemas", "nothing — no grants", "No instructions — the agent answers on the platform's defaults." (web/components/AgenticAgentsPanel.tsx:577, :598)
-- [ ] Quality "The learning loop is off (Settings ▸ Organization ▸ What Aughor may do): verdicts … are recorded but teach it nothing as itself — N so far." (web/components/AgenticAgentsPanel.tsx:936)
+- [ ] Quality "The learning loop is off (Settings ▸ Organization ▸ What Pramanyx may do): verdicts … are recorded but teach it nothing as itself — N so far." (web/components/AgenticAgentsPanel.tsx:936)
 - [ ] Quality "Candidates — waiting for a person's SQL … A candidate counts for nothing until you certify it" (web/components/AgenticAgentsPanel.tsx:945)
 - [ ] Quality "This agent has no golden questions, so it ships unmeasured — every answer it gives is unfalsifiable." (web/components/AgenticAgentsPanel.tsx:993)
-- [ ] Quality "Draft questions" refused-while-off tooltip "Refused while the organisation has not let Aughor run model work on its own schedule (Settings ▸ Organization)" (web/components/AgenticAgentsPanel.tsx:1008)
+- [ ] Quality "Draft questions" refused-while-off tooltip "Refused while the organisation has not let Pramanyx run model work on its own schedule (Settings ▸ Organization)" (web/components/AgenticAgentsPanel.tsx:1008)
 - [ ] Setup "No uploaded documents yet — an agent only sees the documents attached to it." (web/components/AgenticAgentsPanel.tsx:1197)
 - [ ] Setup grants "Bind a connection first — grants name that connection's declared actions." / "No declared actions on this connection yet — declare one in the ontology (Actions), then grant it here." (web/components/AgenticAgentsPanel.tsx:1244, :1253)
 - [ ] Setup "Name is required." on save (web/components/AgenticAgentsPanel.tsx:1136)
@@ -1984,7 +1984,7 @@ _Source: web/components/BrainMapPanel.tsx (+ web/lib/brainMap.ts; mounted by web
 
 ### Controls
 - [ ] Rail row "Brain map" (Operations destination, last row) — opens tab `intelligence`, layer `brain` (web/lib/navDestinations.ts:87; web/app/page.tsx:956)
-- [ ] Command palette action "Brain map" ("Every store behind what Aughor knows, with live counts") (web/components/CommandPalette.tsx:367, 410)
+- [ ] Command palette action "Brain map" ("Every store behind what Pramanyx knows, with live counts") (web/components/CommandPalette.tsx:367, 410)
 - [ ] Context-bar "Connection" select — only when more than one briefings-enabled connection exists; lists briefings-enabled connections only (web/components/IntelligenceWorkspace.tsx:196, 204-217; web/app/page.tsx:2160)
 - [ ] Context-bar "Schema" select — only when the connection has more than one schema; remembered per connection; it does not change the Brain map (the panel takes no schema) (web/components/IntelligenceWorkspace.tsx:197, 221-237)
 - [ ] "Retry" — on a failed read, reads the map again (web/components/BrainMapPanel.tsx:55)
@@ -2003,7 +2003,7 @@ _Source: web/components/BrainMapPanel.tsx (+ web/lib/brainMap.ts; mounted by web
 - [ ] No dialogs, drawers or popovers
 
 ### Figures, counts, badges, status chips, freshness
-- [ ] Heading "Where Aughor's knowledge lives" + right note "read live · an arrow is a measured count · a dash, a store not read" (web/components/BrainMapPanel.tsx:66-69)
+- [ ] Heading "Where Pramanyx's knowledge lives" + right note "read live · an arrow is a measured count · a dash, a store not read" (web/components/BrainMapPanel.tsx:66-69)
 - [ ] Vault column titles (uppercase) over the boxes (web/components/BrainMapPanel.tsx:90-95)
 - [ ] Each store box: title, live count (percent for the visibility box), one line saying what the count holds; a hatched "—" when the store was not read (web/components/BrainMapPanel.tsx:134-157; web/lib/brainMap.ts:18-22)
 - [ ] Arrows between boxes — solid for a measured count, faint for zero, each with a short count pill (web/components/BrainMapPanel.tsx:97-127; web/lib/brainMap.ts:39-43)
@@ -2035,7 +2035,7 @@ _Source: web/components/BrainMapPanel.tsx (+ web/lib/brainMap.ts; mounted by web
 - [ ] GET /exploration/{conn}/datasets — the Maturity mark (web/components/DatasetProgram.tsx:360; web/lib/api.ts:2486 → aughor/routers/datasets.py:155) read-only
 - [ ] No polling
 
-**Top rows today:** no layer tabs and no toolbar (hidden on the main screen); one context bar holding "Connection" select (only when >1 briefings-enabled connection) · "Schema" select (only when >1 schema; no effect on this layer) · "Maturity" mark. The page then opens on the heading "Where Aughor's knowledge lives" with its "read live …" note at the right.
+**Top rows today:** no layer tabs and no toolbar (hidden on the main screen); one context bar holding "Connection" select (only when >1 briefings-enabled connection) · "Schema" select (only when >1 schema; no effect on this layer) · "Maturity" mark. The page then opens on the heading "Where Pramanyx's knowledge lives" with its "read live …" note at the right.
 
 ## Settings — screen chrome (`tab=settings`)
 _Source: web/app/page.tsx (SettingsScreen 591-635; section state 1083; URL routing 936-998, 1095-1104, 1112-1163, 1170-1197, 1203-1290; theme plumbing 1353-1406)_
@@ -2086,7 +2086,7 @@ _Source: web/app/page.tsx (SettingsScreen 591-635; section state 1083; URL routi
 ## Settings — Organization (`tab=settings&layer=organization`)
 _Source: web/components/OrgSettingsPanel.tsx + web/components/OwnersPanel.tsx, mounted at web/app/page.tsx:614-620 (children: web/components/OrgPrioritiesSection.tsx, web/components/OrgIndustriesSection.tsx, web/components/OrgPlaybookSection.tsx → web/components/PlaybookPanel.tsx, web/components/AgentPolicySection.tsx, web/components/OrgByokSection.tsx, web/components/settings/parts.tsx)_
 
-Note: the section rides `?layer=`, not `?settings=` (the old name is still read, then deleted). Several cards render at app scope only — with a workspace selected and the scope set to the workspace, Priorities, Exploration budget, What Aughor may do, Industries, Playbook, Outside agents and BYOK disappear (web/components/OrgSettingsPanel.tsx:342, 380, 402, 430, 439, 444).
+Note: the section rides `?layer=`, not `?settings=` (the old name is still read, then deleted). Several cards render at app scope only — with a workspace selected and the scope set to the workspace, Priorities, Exploration budget, What Pramanyx may do, Industries, Playbook, Outside agents and BYOK disappear (web/components/OrgSettingsPanel.tsx:342, 380, 402, 430, 439, 444).
 
 ### Controls
 #### Scope (only when a workspace is active)
@@ -2098,7 +2098,7 @@ Note: the section rides `?layer=`, not `?settings=` (the old name is still read,
 - [ ] "Company name" text field (web/components/OrgSettingsPanel.tsx:323)
 - [ ] "Website" text field (web/components/OrgSettingsPanel.tsx:324)
 - [ ] "HQ location" text field (web/components/OrgSettingsPanel.tsx:325)
-- [ ] "Industry" text field — a set industry overrides what Aughor infers (web/components/OrgSettingsPanel.tsx:326, 328)
+- [ ] "Industry" text field — a set industry overrides what Pramanyx infers (web/components/OrgSettingsPanel.tsx:326, 328)
 #### Localization card (saved by the one Save)
 - [ ] "Reporting currency" select — (none)/USD/EUR/GBP/JPY/CNY/INR/AUD/CAD/CHF/SGD/BRL/ZAR (web/components/OrgSettingsPanel.tsx:332, 58)
 - [ ] "Timezone" select — (none)/UTC + 12 zones (web/components/OrgSettingsPanel.tsx:333, 60-64)
@@ -2119,11 +2119,11 @@ Note: the section rides `?layer=`, not `?settings=` (the old name is still read,
 #### Exploration budget card (app scope; saved by the one Save)
 - [ ] "Monthly budget (model tokens)" numeric input (blank = none) (web/components/OrgSettingsPanel.tsx:383-390)
 - [ ] "Details" fold — the per-connection budget and Start rules (web/components/OrgSettingsPanel.tsx:394-397; web/components/settings/parts.tsx:62-77)
-#### What Aughor may do card (app scope; saved by the one Save; the org switches of aughor/orgsettings/allows.py:15-22)
+#### What Pramanyx may do card (app scope; saved by the one Save; the org switches of aughor/orgsettings/allows.py:15-22)
 - [ ] "Share summary statistics with other installs" checkbox (`share_aggregates`) (web/components/OrgSettingsPanel.tsx:208-209)
 - [ ] "Send row text to an outside, cheaper model" checkbox (`outside_row_model`) (web/components/OrgSettingsPanel.tsx:210-211)
 - [ ] "Ask for a reason before anyone reads a run's details" checkbox (`reason_to_read_runs`) (web/components/OrgSettingsPanel.tsx:212-213)
-- [ ] "Let Aughor run model work on its own schedule" checkbox (`scheduled_model_work`) (web/components/OrgSettingsPanel.tsx:214-215)
+- [ ] "Let Pramanyx run model work on its own schedule" checkbox (`scheduled_model_work`) (web/components/OrgSettingsPanel.tsx:214-215)
 - [ ] "Read each warehouse's own query history" checkbox (`read_query_history`) (web/components/OrgSettingsPanel.tsx:216-217)
 - [ ] "Copy a source's rows into the federation engine for cross-source joins" checkbox (`copy_rows_across_sources`) (web/components/OrgSettingsPanel.tsx:218-219)
 #### Save line
@@ -2178,7 +2178,7 @@ Note: the section rides `?layer=`, not `?settings=` (the old name is still read,
 - [ ] Needs-you row "N owner(s) is/are unresolved" — each owner · where used — "a question for it has nowhere to go" (web/components/OrgSettingsPanel.tsx:288-293)
 - [ ] Workspace-scope note "Overrides for <workspace>. Blank fields inherit the app default…" (web/components/OrgSettingsPanel.tsx:310-315)
 - [ ] Per-allow amber line "On through this server's environment until you choose here." (web/components/OrgSettingsPanel.tsx:236-240)
-- [ ] Card notes — Organization ("Steers briefings, metric recipes and exploration…"), Localization ("Empty = inferred from the data…"), Display ("“Default” follows the light or dark theme."), Briefing ("Empty = the default: 24 while the Briefing reads by area, 12 otherwise. Each one is three warehouse queries per Briefing."), Exploration budget, What Aughor may do ("Off unless chosen here…") (web/components/OrgSettingsPanel.tsx:328, 337, 351, 375, 393, 408)
+- [ ] Card notes — Organization ("Steers briefings, metric recipes and exploration…"), Localization ("Empty = inferred from the data…"), Display ("“Default” follows the light or dark theme."), Briefing ("Empty = the default: 24 while the Briefing reads by area, 12 otherwise. Each one is three warehouse queries per Briefing."), Exploration budget, What Pramanyx may do ("Off unless chosen here…") (web/components/OrgSettingsPanel.tsx:328, 337, 351, 375, 393, 408)
 - [ ] Save line — "unsaved changes" chip (amber) when dirty; "Saved ✓"; "Saves everything above" / "Saves <workspace>'s overrides above" (web/components/OrgSettingsPanel.tsx:413-421; web/components/settings/parts.tsx:81-90)
 - [ ] Priorities card count (web/components/OrgPrioritiesSection.tsx:29)
 - [ ] Industries notes — what the choice means; amber "Ignored, because no package carries it: …"; amber server problem; after save "Saved. N business profiles will be rebuilt the next time their data is used." / "Saved ✓" (web/components/OrgIndustriesSection.tsx:107-122, 64-66)
@@ -2234,7 +2234,7 @@ Note: the section rides `?layer=`, not `?settings=` (the old name is still read,
 - [ ] After Save: GET /org-settings/effective (formatter cache) (web/lib/api.ts:529 → aughor/routers/orgsettings.py:137)
 - [ ] Writes on action only — PUT /org-settings (orgsettings.py:38), PUT /workspaces/{id} (workspace.py:77), PUT /org-settings/industries (orgsettings.py:113; may drop business profiles, rebuilt later with a model call), POST /playbook/seed (metrics.py:1502), PUT /playbook/{id} (metrics.py:1473), PUT/DELETE /org-settings/agent-policy (orgsettings.py:229, 244), PUT/DELETE /org-settings/llm (orgsettings.py:167, 180; gated SECURITY_SUITE), PUT/DELETE /owners/links (owners.py). Nothing writes or spends on open.
 
-**Top rows today:** no toolbar; the shell's settings section tab strip sits above (web/app/page.tsx:609). The panel opens on the four-figure row (Industries · Priorities · Owners reachable · Exploration budget), then the Needs-you block, then — only with a workspace active — the "Scope: App default | <workspace>" switch. The one "Save" is at the BOTTOM of the form cards (after What Aughor may do), not in a top row; Industries, Outside agents, BYOK and Owners each save in their own card.
+**Top rows today:** no toolbar; the shell's settings section tab strip sits above (web/app/page.tsx:609). The panel opens on the four-figure row (Industries · Priorities · Owners reachable · Exploration budget), then the Needs-you block, then — only with a workspace active — the "Scope: App default | <workspace>" switch. The one "Save" is at the BOTTOM of the form cards (after What Pramanyx may do), not in a top row; Industries, Outside agents, BYOK and Owners each save in their own card.
 
 ## Settings — Access (`tab=settings&layer=access`)
 _Source: web/components/RolesPanel.tsx, mounted at web/app/page.tsx:626 (+ web/components/settings/parts.tsx)_
@@ -2343,7 +2343,7 @@ _Source: web/components/settings/AppearancePanel.tsx (+ web/components/LookPanel
 - [ ] Theme card, radio "Dark — Dark backgrounds, light text" — sets theme dark (html data-theme, localStorage, PUT /me/preferences/theme) (web/components/settings/AppearancePanel.tsx:19, 32; web/app/page.tsx:1399-1405)
 - [ ] Theme card, radio "Light — White backgrounds, dark text" — sets theme light, same path (web/components/settings/AppearancePanel.tsx:20, 32)
 - [ ] Look card header button "Back to the default" — shown only when any knob differs from default; resets all seven knobs (web/components/LookPanel.tsx:95)
-- [ ] Preset radio "Aughor" (hover: "Blue · slate · small corners · 100% · Inter · 36px rows — the default") — sets all knobs at once (web/components/LookPanel.tsx:37, 97-107)
+- [ ] Preset radio "Pramanyx" (hover: "Blue · slate · small corners · 100% · Inter · 36px rows — the default") — sets all knobs at once (web/components/LookPanel.tsx:37, 97-107)
 - [ ] Preset radio "Workbench" (hover: "Blue · slate · small corners · 95% · Source Sans · compact rows — a denser look") (web/components/LookPanel.tsx:38, 97-107)
 - [ ] Accent swatches (26 radios: gray, gold, bronze, brown, yellow, amber, orange, tomato, red, ruby, crimson, pink, plum, purple, violet, iris, indigo, blue, cyan, teal, jade, green, grass, lime, mint, sky), each with a name tooltip (web/components/LookPanel.tsx:109-111; web/lib/lookValues.ts:6-10)
 - [ ] Grey swatches (6 radios: gray, mauve, slate, sage, olive, sand; "gray" drawn desaturated) (web/components/LookPanel.tsx:112-114; web/lib/lookValues.ts:11)
@@ -2522,7 +2522,7 @@ _Source: web/components/SystemPanel.tsx (+ Backend, FeatureFlags, FlagRow, Gradu
 ### Figures, counts, badges, status chips, freshness
 - [ ] Header "System Stats" — "Uptime: <h m>" · "refreshed <time>" (web/components/SystemPanel.tsx:244-252)
 - [ ] Backend "In force: <url> — from <your setting (this browser) | the built-in demo — completed analyses only, no live engine | NEXT_PUBLIC_API_URL at build time | the built-in default>" (web/components/SystemPanel.tsx:136-140, 167-169)
-- [ ] Backend probe line "Connected" / "Reached it, but it answered <status>" / "Reached it, but it is not an Aughor backend" (web/components/SystemPanel.tsx:108-111)
+- [ ] Backend probe line "Connected" / "Reached it, but it answered <status>" / "Reached it, but it is not a Pramanyx backend" (web/components/SystemPanel.tsx:108-111)
 - [ ] Ontology (M12): "ACTION token expansions", "Enrichment runs (LLM)", "Enrichment cache hits" (web/components/SystemPanel.tsx:278-294)
 - [ ] Deep analysis: "Tier 0 skips (baseline only)" (sub "within normal variance"), "Tier 1 skips (no dimensional)", "Tier 2 skips (no behavioral)" (web/components/SystemPanel.tsx:297-314)
 - [ ] SQL Quality: "Self-correction retries", "Corrections succeeded", "Correction success rate" (green > 70%) (web/components/SystemPanel.tsx:317-337)
@@ -2740,7 +2740,7 @@ _Source: web/app/page.tsx (Topbar, Sidebar, Home), web/app/layout.tsx, web/compo
 ### Controls
 
 #### Top bar (left to right)
-- [ ] "Aughor" wordmark — static text, not a link (web/app/page.tsx:264)
+- [ ] "Pramanyx" wordmark — static text, not a link (web/app/page.tsx:264)
 - [ ] Workspace switcher pill — shows the active workspace's name + caret; click opens the workspace popover (web/components/WorkspaceSwitcher.tsx:144)
 - [ ] Workspace row (per workspace) — switch the whole app to that workspace; clears the open canvas and chat/history session (web/components/WorkspaceSwitcher.tsx:243, web/app/page.tsx:1829)
 - [ ] Workspace row pencil "Manage <name>" — opens that workspace's membership editor (web/components/WorkspaceSwitcher.tsx:286)
@@ -2911,4 +2911,4 @@ _Source: web/app/page.tsx (Topbar, Sidebar, Home), web/app/layout.tsx, web/compo
 - [ ] StatusStrip footer — connection name · engine, running-runs count (web/components/shell/PageChrome.tsx:140, web/app/page.tsx:2345)
 - [ ] Inspector side panel — resizable (grip, keyboard), tabs, "Close · Esc" (web/components/shell/Inspector.tsx:79, :128, :141)
 
-**Top rows today:** Top bar, left to right: Aughor wordmark · workspace switcher pill · LIVE activity strip · (right) "Search, ask, or run a command ⌘K" · dark/light segmented toggle · user menu. There is no connection picker in the shell: connection pickers live inside pages (Agent Ops context bar, Intelligence, Data). Rail head: collapse toggle. Rail foot: Settings · "v2 · Local".
+**Top rows today:** Top bar, left to right: Pramanyx wordmark · workspace switcher pill · LIVE activity strip · (right) "Search, ask, or run a command ⌘K" · dark/light segmented toggle · user menu. There is no connection picker in the shell: connection pickers live inside pages (Agent Ops context bar, Intelligence, Data). Rail head: collapse toggle. Rail foot: Settings · "v2 · Local".

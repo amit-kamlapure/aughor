@@ -1,6 +1,6 @@
 """The platform's number-formatting AUTHORITY — one precision policy, one place.
 
-Aughor quotes its own grounded numbers verbatim: the explorer copies a value out of a real
+Pramanyx quotes its own grounded numbers verbatim: the explorer copies a value out of a real
 result cell, the narrator copies it out of the finding, and the frontend copies it out of the
 prose ("never invent a number"). That chain is what makes the numbers trustworthy — and it is
 also why a single raw ``float64`` repr entering at the top surfaces, unchanged, in a headline:

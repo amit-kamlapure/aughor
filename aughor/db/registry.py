@@ -38,7 +38,7 @@ BUILTIN_ID = "fixture"
 POSTGRES_BUILTIN_ID = "mydb"
 SAMPLES_ID = "samples"
 WORKSPACE_ID = "workspace"  # default DuckDB-backed scratch space for file uploads
-AUGHOR_OPS_ID = "aughor_ops"  # Aughor-on-Aughor: the platform's own task_history/jobs/events
+AUGHOR_OPS_ID = "aughor_ops"  # Pramanyx-on-Pramanyx: the platform's own task_history/jobs/events
 #: Arc SH — the sheets people make, as one connection (`aughor/sheets/connection.py`).
 SHEETS_ID = "sheets"
 #: The builtin connections: their ids are the same on every install.
@@ -193,12 +193,12 @@ def list_connections(org_id: str | None = None) -> list[dict]:
             "builtin": False,
         })
 
-    # Aughor-on-Aughor — the platform's own operational tables as a queryable
+    # Pramanyx-on-Pramanyx — the platform's own operational tables as a queryable
     # connection, present only while spans are being recorded (flag obs.task_table).
     if AUGHOR_OPS_ID not in hidden and _aughor_ops_available():
         rows.append({
             "id": AUGHOR_OPS_ID,
-            "name": "Aughor Ops (self-investigation)",
+            "name": "Pramanyx Ops (self-investigation)",
             "conn_type": "aughor_ops",
             "dsn_preview": "aughor://ops/task_history",
             "schema_name": "aughor_ops",

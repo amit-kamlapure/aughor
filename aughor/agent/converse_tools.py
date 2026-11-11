@@ -648,7 +648,7 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
         ToolSpec(
             name="deep_analysis",
             description=(
-                "Run Aughor's multi-step deep analysis for one question, live in this "
+                "Run Pramanyx's multi-step deep analysis for one question, live in this "
                 "turn: the analyst loop slices the data (baseline, decomposition, "
                 "cross-sections, its own SQL), streams each phase to the user as it "
                 "lands, and ends in a full synthesized report with a confidence "
@@ -936,7 +936,7 @@ def converse_system_prompt(connection_id: str, extra: Optional[str] = None,
 
     The org-context line is the same block `/ask` prepends (CI-2): the reader's
     DECLARED identity — industry, reporting currency, fiscal year — describing the
-    organization using Aughor, never the data under analysis (the first line already
+    organization using Pramanyx, never the data under analysis (the first line already
     names that). Empty for an unconfigured org, so that prompt is unchanged.
     """
     org_note = ""
@@ -961,8 +961,8 @@ def converse_system_prompt(connection_id: str, extra: Optional[str] = None,
             "read from a row — then each check you ran and what it found; then what you did not check. "
             "No cause, no recommendation, no period the question did not name.")
     lines = [
-        "You are Aughor's analyst — the conversation over the whole platform: the "
-        f"connected data warehouse '{connection_id}' and everything Aughor has "
+        "You are Pramanyx's analyst — the conversation over the whole platform: the "
+        f"connected data warehouse '{connection_id}' and everything Pramanyx has "
         "established around it (findings, briefings, the knowledge graph, monitors, "
         "packs, governed metrics).",
         *(["", org_note] if org_note else []),

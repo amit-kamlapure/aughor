@@ -1,6 +1,6 @@
-# Deep Study — NL2SQL Lean-Deterministic Advisory vs. Aughor As-Built
+# Deep Study — NL2SQL Lean-Deterministic Advisory vs. Pramanyx As-Built
 
-*Analysis deliverable. No code changed. Every "what Aughor does today" claim below is
+*Analysis deliverable. No code changed. Every "what Pramanyx does today" claim below is
 grounded in a specific file/line read during this study, so the advisory can be judged
 against the real system rather than an imagined one.*
 
@@ -164,7 +164,7 @@ remains for the fallback and for the planner's reasoning.
 
 ## 3. Scorecard: how much of the advisory is already built
 
-| Advisory component | Status in Aughor today | Gap to close |
+| Advisory component | Status in Pramanyx today | Gap to close |
 |---|---|---|
 | Symbol table (ontology graph) | **Built** (`ontology/models.py`) | None — richer than assumed |
 | Deterministic templates | **Partially** (`ACTION:` expansion, opt-in, one path) | Make it the spine, not an option |
@@ -176,7 +176,7 @@ remains for the fallback and for the planner's reasoning.
 | Deterministic guards | **Built** (`lint.py`, `inspect.py`, ambiguity, divergence, verify) | Reframe as fallback floor; don't thrash |
 | Materialization / caching | **Built** (`db/matcache.py`, `kpi_daily`) | Wire compiler to prefer rollups |
 
-**Bottom line:** the advisory describes a destination Aughor is ~60% of the way to, but
+**Bottom line:** the advisory describes a destination Pramanyx is ~60% of the way to, but
 mis-locates the gap. The gap is **not** "build a symbol table and templates" — those exist.
 The gap is the **two missing middle layers**: a typed **Intent IR + parser**, and a
 **synthesizer that compiles IR against the ontology** instead of the LLM compiling text in its

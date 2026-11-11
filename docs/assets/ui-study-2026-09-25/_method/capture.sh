@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Headless capture of one Aughor screen, the way the 2026-09-25 UI/UX study took its figures.
+# Headless capture of one Pramanyx screen, the way the 2026-09-25 UI/UX study took its figures.
 #   usage: capture.sh <outdir> <width> <height> <name> <url>
 # Rules that cost a session to learn: use a FRESH --user-data-dir (the launch is otherwise swallowed by a
 # running Chrome, and a killed run leaves a SingletonLock); use --timeout, never --virtual-time-budget (it

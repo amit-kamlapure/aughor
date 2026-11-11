@@ -24,7 +24,7 @@ Design — POSITIVE DETECTION ONLY: every function returns True only when the AS
 *confirms* a mutation. On a parse failure it returns False, so the caller's
 existing regex first-token gate stays the fallback. This strictly ADDS coverage
 and never newly blocks the many legitimate SELECTs sqlglot can't parse across
-Aughor's dialects. The mutation verdict, when found, is decisive — callers must
+Pramanyx's dialects. The mutation verdict, when found, is decisive — callers must
 not swallow it via a tolerate()/except-pass.
 
 DE-1 (ROADMAP §3.51) taught it the reads that

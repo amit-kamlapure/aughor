@@ -64,7 +64,7 @@ def search_graph(connection_id: str, query: str, *, limit: int = 10,
     """Search the connection knowledge graph — tables, metrics, terms, findings.
 
     The read-back protocol's search, exposed. Returns what an agent should ground on
-    before asking Aughor to re-derive anything.
+    before asking Pramanyx to re-derive anything.
     """
     graph = _load_graph(connection_id, org_id)
     if graph is None or not graph.nodes:

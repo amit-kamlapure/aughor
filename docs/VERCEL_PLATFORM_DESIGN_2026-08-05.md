@@ -1,7 +1,7 @@
-# Running Aughor on Vercel at full capacity — design note
+# Running Pramanyx on Vercel at full capacity — design note
 
 > 🗃️ **HISTORICAL, 2026-09-23.** BOTH Vercel projects this document describes —
-> `aughor-platform` and `aughor_intelligence` — were deleted by the operator. Aughor is
+> `aughor-platform` and `aughor_intelligence` — were deleted by the operator. Pramanyx is
 > served from the self-hosted API, whose clock is its own apscheduler heartbeat (every
 > 60s) and never depended on Vercel Cron.
 >
@@ -20,7 +20,7 @@
 > rather than wrong — removing them is a refactor, not a cleanup.
 >
 > Everything below records what was built and measured at the time; none of it describes
-> how Aughor runs today.
+> how Pramanyx runs today.
 
 
 **Status:** proposal; §1's trim is IMPLEMENTED · **Date:** 2026-08-05

@@ -567,7 +567,7 @@ function OriginSection({ detail }: { detail: ObjectTypeDetail }) {
     ? `Proposed by ${detail.provenance || "an explorer"} — not confirmed yet.`
     : detail.origin === "human"
       ? `Declared by a person${detail.provenance ? ` — first proposed by ${detail.provenance}` : ""}.`
-      : detail.platform ? "Kept by Aughor: its objects live in the edit layer, set by actions."
+      : detail.platform ? "Kept by Pramanyx: its objects live in the edit layer, set by actions."
         : `Found by the builder${from ? ` in ${from}` : ""}.`;
   return (
     <Section title="Where it comes from">
