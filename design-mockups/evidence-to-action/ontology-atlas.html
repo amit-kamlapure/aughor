@@ -1,0 +1,785 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Business Atlas · theLook · mockup</title>
+<!--
+  Mockup, 2026-11-10 (second pass). The Business Atlas of AUGHOR_BUSINESS_ATLAS_v3_0 — a 2.5D business landscape with
+  five lenses and a persistent inspector — composed from theLook's LIVE ontology (connection 8233e4fd, schema thelook)
+  instead of sample data. Every structure stands for something the ontology holds, and every figure was read from the
+  API and embedded as it came back:
+    GET /object-types          the object types, their objects, keys and links   (the structures)
+    GET /ontology/processes    the process: stages, moves, exit, promises, impact (the route)
+    GET /metrics/coverage/…    the areas the retail package reads the business by (the value chain)
+    GET /ontology/release, /ontology/draft, /ontology/kinetic-actions            (evidence, studio, actions)
+  The mockup's own choices, each said on the page: where a structure stands (position is order, not geography), and
+  which stage stands beside which object type. Buttons that leave the page go nowhere.
+-->
+<style>
+:root {
+  --bg-0: #111113; --bg-1: #18191b; --bg-2: #212225; --bg-hover: #27292d;
+  --t1: #edeef0; --t2: #b0b4ba; --t3: #8b8f96;
+  --b0: #2e3135; --b1: #43474d; --b2: #5a6169;
+  --blue1: #0d2847; --blue2: #205d9e; --blue3: #70b8ff; --blue4: #7db8ff;
+  --amb1: #2d2008; --amb3: #ffc53d; --amb4: #ffca4a;
+  --grn1: #132d21; --grn4: #6fd392;
+  --red1: #3b1219; --red4: #ff9592;
+  --teal: #4ccce6;
+  --font: "Source Sans 3", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+  --r2: 3px; --r3: 6px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg-0); color: var(--t1); font: 13px/1.45 var(--font); }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; text-align: left; cursor: pointer; }
+button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--blue3); outline-offset: 2px; }
+.app { display: grid; grid-template-columns: 224px minmax(0, 1fr); grid-template-rows: 44px minmax(0, 1fr) 28px; height: 100vh; }
+@media (max-width: 1180px) { .app { grid-template-columns: minmax(0, 1fr); } .rail { display: none; } .main { position: relative; } .insp { position: absolute; right: 0; top: 0; bottom: 0; width: 320px; box-shadow: -18px 0 40px rgba(0, 0, 0, .5); z-index: 5; } .body .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .body .chain { grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); } .body .two, .body .three { grid-template-columns: minmax(0, 1fr); } .top .search { display: none; } }
+.top { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; padding: 0 16px; border-bottom: 1px solid var(--b0); }
+.brand { font-weight: 700; letter-spacing: .1em; }
+.crumb { color: var(--t3); } .crumb b { color: var(--t1); font-weight: 600; }
+.top .search { position: relative; margin-left: auto; width: 360px; height: 28px; border: 1px solid var(--b1); border-radius: var(--r2); display: flex; align-items: center; gap: 8px; padding: 0 10px; color: var(--t3); font-size: 12px; }
+.top .search:focus-within { border-color: var(--blue3); }
+.top .search input { flex: 1; min-width: 0; background: none; border: 0; outline: 0; color: var(--t1); font: inherit; }
+.top .search .kbd { font: 500 11px var(--mono); color: var(--t3); }
+.qres { position: absolute; top: 32px; left: -1px; right: -1px; z-index: 20; background: var(--bg-2); border: 1px solid var(--b1); border-radius: var(--r3); box-shadow: 0 14px 34px rgba(0, 0, 0, .55); padding: 4px; }
+.qres[hidden] { display: none; }
+.qres button { display: flex; gap: 10px; width: 100%; padding: 7px 10px; border-radius: var(--r2); color: var(--t1); font-size: 13px; }
+.qres button:hover, .qres button.first { background: var(--bg-hover); }
+.qres .k { color: var(--t3); width: 86px; flex: none; font-size: 12px; }
+.qres .v { margin-left: auto; color: var(--t3); font-variant-numeric: tabular-nums; font-size: 12px; }
+.qres .none { padding: 8px 10px; color: var(--t3); }
+.rail { background: var(--bg-1); border-right: 1px solid var(--b0); padding: 10px 0; overflow: auto; }
+.rail .g { font-size: 11px; color: var(--t3); padding: 14px 16px 4px; text-transform: uppercase; letter-spacing: .08em; }
+.rail .i { padding: 6px 16px; color: var(--t2); }
+.rail .i.on { background: var(--blue1); color: var(--t1); box-shadow: inset 2px 0 0 var(--blue3); }
+.status { grid-column: 1 / -1; display: flex; align-items: center; gap: 18px; padding: 0 14px; border-top: 1px solid var(--b0); color: var(--t3); font-size: 12px; white-space: nowrap; overflow: hidden; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--grn4); display: inline-block; margin-right: 6px; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr) auto; min-height: 0; }
+.page { min-width: 0; overflow: auto; display: flex; flex-direction: column; }
+.title { display: flex; align-items: center; gap: 14px; padding: 12px 20px 10px; flex-wrap: wrap; }
+.title h1 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -.005em; }
+.facts { display: flex; gap: 6px; flex-wrap: wrap; }
+.fact { height: 22px; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border: 1px solid var(--b0); border-radius: var(--r2); color: var(--t2); font-size: 12px; white-space: nowrap; }
+.fact b { color: var(--t1); font-weight: 600; }
+.acts { margin-left: auto; display: flex; gap: 8px; }
+.btn { height: 28px; display: inline-flex; align-items: center; gap: 6px; padding: 0 11px; border: 1px solid var(--b2); border-radius: var(--r2); color: var(--t1); font-size: 12px; white-space: nowrap; background: var(--bg-1); }
+.btn:hover { background: var(--bg-hover); }
+.btn.primary { background: var(--blue3); color: #0b1220; border-color: transparent; font-weight: 600; }
+.btn.amber { background: var(--amb1); color: var(--amb4); border-color: #6b5215; }
+.btn.sm { height: 24px; padding: 0 8px; }
+.btn[hidden] { display: none; }
+.lenses { display: flex; gap: 2px; padding: 0 20px; border-bottom: 1px solid var(--b0); }
+.lens { padding: 9px 12px 8px; color: var(--t2); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.lens:hover { color: var(--t1); }
+.lens.on { color: var(--t1); border-bottom-color: var(--blue3); }
+.lens em { font-style: normal; color: var(--t3); margin-left: 5px; font-size: 12px; }
+.body { padding: 14px 20px 24px; display: flex; flex-direction: column; gap: 14px; }
+
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--b0); border-radius: var(--r3); background: var(--bg-1); }
+.kpi { padding: 11px 16px 12px; border-left: 1px solid var(--b0); display: flex; flex-direction: column; gap: 1px; width: 100%; }
+.kpi:first-child { border-left: 0; }
+button.kpi:hover { background: var(--bg-2); }
+.kpi .l { color: var(--t3); font-size: 12px; }
+.kpi .v { font-size: 24px; font-weight: 600; line-height: 1.15; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.kpi .v small { font-size: 13px; font-weight: 500; color: var(--t2); margin-left: 6px; letter-spacing: 0; }
+.kpi .s { color: var(--t3); font-size: 12px; }
+.kpi.bad .v { color: var(--red4); } .kpi.warn .v { color: var(--amb4); }
+
+/* ── the viewport ──────────────────────────────────────────────────────────── */
+.vp { border: 1px solid var(--b0); border-radius: var(--r3); background: var(--bg-1); overflow: hidden; }
+.vphead { display: flex; align-items: center; gap: 12px; padding: 9px 14px; border-bottom: 1px solid var(--b0); flex-wrap: wrap; }
+.vphead h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.vphead .sub { color: var(--t3); font-size: 12px; }
+.seg { display: inline-flex; border: 1px solid var(--b1); border-radius: var(--r2); overflow: hidden; }
+.seg button { padding: 4px 11px; font-size: 12px; color: var(--t2); border-left: 1px solid var(--b1); }
+.seg button:first-child { border-left: 0; }
+.seg button.on { background: var(--blue1); color: var(--blue4); }
+.seglab { color: var(--t3); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+.stagewrap { position: relative; overflow: hidden; background: radial-gradient(90% 70% at 50% 38%, #1b2a3b 0%, #111821 52%, #0a0d12 100%); cursor: grab; }
+.stagewrap.drag { cursor: grabbing; }
+.world { container-type: inline-size; position: relative; width: 100%; aspect-ratio: 1100 / 590; transform-origin: 50% 50%; transition: transform 180ms ease-out; }
+.world svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.st { cursor: pointer; transition: opacity 160ms; }
+.st:hover { filter: brightness(1.13); }
+.st:hover .pad, .st:focus-visible .pad { stroke: #a9c3da; }
+.pad.alert { stroke: #b9585c; }
+.st.on .pad { stroke: var(--blue3); stroke-width: 2; fill: #17304c; filter: drop-shadow(0 0 9px rgba(112, 184, 255, .55)); }
+.dim .st:not(.lit) { opacity: .28; }
+.dim .mk:not(.lit) { opacity: .3; }
+.flow { cursor: pointer; }
+.flow .hit { stroke: transparent; stroke-width: 22; fill: none; }
+.flow .ln { stroke: var(--blue3); stroke-width: 3; fill: none; stroke-linecap: round; filter: drop-shadow(0 0 4px rgba(112, 184, 255, .75)); }
+.flow .hd { fill: var(--blue3); }
+.flow:hover .ln, .flow.on .ln { stroke: #b6dbff; stroke-width: 4; }
+.flow.on .hd, .flow:hover .hd { fill: #b6dbff; }
+.flow.exit .ln { stroke: #8b96a3; stroke-dasharray: 5 5; stroke-width: 2; filter: none; }
+.flow.exit .hd { fill: #8b96a3; }
+.link .ln { stroke: #9db4cb; stroke-width: 1.2; stroke-dasharray: 2 6; fill: none; opacity: .5; }
+.hide-links .link, .hide-links .mk.lk { display: none; }
+.st.exp { opacity: .72; }
+.flow.exp .ln { stroke-dasharray: 6 6; filter: none; opacity: .6; } .flow.exp .hd { opacity: .6; } .flow.exp { cursor: default; }
+.mk.lv { display: none; } .mk.lv.on { display: flex; }
+.link.on .ln { stroke: var(--blue3); stroke-width: 1.8; opacity: 1; stroke-dasharray: 3 4; }
+.hide-flow .flow, .hide-flow .mk.mv { display: none; }
+.tracer { stroke: #e6f3ff; stroke-width: 5; fill: none; stroke-linecap: round; stroke-dasharray: 5 200; stroke-dashoffset: 205; opacity: 0; }
+.tracing .tracer { opacity: 1; animation: trace 2600ms linear 1 forwards; }
+@keyframes trace { from { stroke-dashoffset: 205; } to { stroke-dashoffset: 105; } }
+@media (prefers-reduced-motion: reduce) { .tracing .tracer { animation: none; opacity: 0; } .world { transition: none; } }
+
+.mk { font-size: clamp(9px, 1.23cqw, 13px); position: absolute; transform: translate(-50%, -100%); display: flex; flex-direction: column; align-items: center; pointer-events: none; transition: opacity 160ms; }
+.mk.below { transform: translate(-50%, 0); flex-direction: column-reverse; }
+.mk .board { display: block; pointer-events: auto; background: rgba(17, 22, 29, .94); border: 1px solid #3b4b5c; border-radius: 5px; padding: .3em .7em .38em; box-shadow: 0 6px 18px rgba(0, 0, 0, .4); }
+.mk .board:hover { border-color: #7f97b0; }
+.mk.on .board { border-color: var(--blue3); box-shadow: 0 0 0 1px var(--blue3), 0 6px 18px rgba(0, 0, 0, .4); }
+.mk .h { display: flex; align-items: center; gap: 7px; font-weight: 600; white-space: nowrap; }
+.mk .ix { font: 600 .77em/1.6 var(--mono); padding: 0 .45em; border-radius: 2px; background: #1e3246; color: #a9cdf2; }
+.mk .pt { width: 7px; height: 7px; border-radius: 50%; background: var(--grn4); flex: none; }
+.mk .pt.ent { background: var(--teal); border-radius: 1px; }
+.mk .pt.off { background: transparent; border: 1px dashed var(--t3); }
+.mk .h::first-letter { text-transform: uppercase; }
+.mk .c { color: var(--t2); font-weight: 400; margin-left: 3px; font-size: .93em; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mk .c b { color: var(--t1); font-weight: 600; }
+.mk .al { display: block; margin: 4px auto 0; width: max-content; padding: .3em .75em; border-radius: 2px; background: var(--red1); color: var(--red4); border: 1px solid #6e2a30; font-size: .9em; white-space: nowrap; font-variant-numeric: tabular-nums; pointer-events: auto; }
+.mk .al:hover { border-color: var(--red4); }
+.mk .stem { width: 1px; height: var(--stem, 16px); background: #5d7389; }
+.mk .foot { width: 5px; height: 5px; border-radius: 50%; background: #9db4cb; }
+.mk.mv .board, .mk.lk .board { padding: .3em .75em; background: rgba(13, 17, 23, .9); border-color: #2c3a49; box-shadow: none; }
+.mk.mv .c { color: #b9d6f5; } .mk.lk .board { border-style: dashed; border-color: #44576b; } .mk.lk .c { color: #a9bccf; font-size: .86em; }
+.mk.mv, .mk.lk { transform: translate(-50%, -50%); }
+.vpnote { position: absolute; right: 14px; top: 12px; z-index: 2; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; pointer-events: none; max-width: 420px; }
+.vpnote .k { font: 600 10.5px/1 var(--mono); letter-spacing: .14em; color: #7fa6cc; }
+.vpnote .asof { padding: 3px 8px; border: 1px solid #334456; border-radius: 3px; color: var(--t2); font-size: 12px; background: rgba(13, 17, 23, .7); }
+.legend { display: flex; gap: 18px; padding: 8px 14px; border-top: 1px solid var(--b0); color: var(--t2); font-size: 12px; flex-wrap: wrap; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.legend i { display: inline-block; }
+.zoom { position: absolute; right: 14px; bottom: 12px; display: flex; align-items: center; border: 1px solid #2c3a49; border-radius: 4px; background: rgba(13, 17, 23, .86); overflow: hidden; }
+.zoom button { width: 30px; height: 28px; text-align: center; color: var(--t1); }
+.zoom button:hover { background: var(--bg-hover); }
+.zoom span { width: 52px; text-align: center; color: var(--t2); font-size: 12px; font-variant-numeric: tabular-nums; border-left: 1px solid #2c3a49; border-right: 1px solid #2c3a49; line-height: 28px; }
+
+/* ── the precise 2D route ──────────────────────────────────────────────────── */
+.flat { padding: 16px 18px 18px; }
+.route { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(130px, 1.1fr) minmax(150px, 1fr) minmax(130px, 1.1fr) minmax(150px, 1fr) minmax(130px, 1.1fr) minmax(150px, 1fr); align-items: stretch; }
+.lane { grid-column: 1 / -1; font-size: 11px; color: var(--t3); text-transform: uppercase; letter-spacing: .08em; padding: 2px 0 6px; }
+.cell { min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.pick { border: 1px solid var(--b1); border-radius: var(--r3); background: var(--bg-2); padding: 10px 12px; width: 100%; }
+.pick:hover { background: var(--bg-hover); border-color: var(--b2); }
+.pick.on { border-color: var(--blue3); box-shadow: 0 0 0 1px var(--blue3); }
+.promise { border-left: 2px solid var(--amb3); }
+.promise .nm { font-weight: 600; } .promise .ru { color: var(--t3); font-size: 12px; }
+.promise .br { color: var(--red4); font-size: 12px; font-variant-numeric: tabular-nums; }
+.stemv { height: 12px; width: 0; border-left: 1px solid var(--b2); margin: 0 auto; }
+.stage .nm { font-weight: 600; font-size: 14px; }
+.stage .big { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.stage .of { color: var(--t3); font-size: 12px; font-variant-numeric: tabular-nums; }
+.stage .track { height: 4px; background: var(--b0); border-radius: 2px; margin: 6px 0 5px; overflow: hidden; }
+.stage .track i { display: block; height: 100%; background: var(--blue3); }
+.stage .an { font-family: var(--mono); font-size: 11px; color: var(--t3); }
+.move { padding: 6px 10px; border: 1px solid transparent; border-radius: var(--r3); width: 100%; text-align: center; }
+.move:hover { background: var(--bg-hover); } .move.on { border-color: var(--blue3); }
+.move .n { font-variant-numeric: tabular-nums; font-size: 12px; } .move .d { font-variant-numeric: tabular-nums; color: var(--t3); font-size: 12px; }
+.arrow { position: relative; height: 12px; margin: 3px 0; }
+.arrow::before { content: ""; position: absolute; left: 0; right: 6px; top: 5px; border-top: 2px solid var(--blue3); }
+.arrow::after { content: ""; position: absolute; right: 0; top: 1px; border: 5px solid transparent; border-left: 8px solid var(--blue3); border-right: 0; }
+.arrow.dash::before { border-top: 1px dashed var(--amb3); top: 6px; } .arrow.dash::after { border-left-color: var(--amb3); }
+.impact .n { color: var(--amb4); }
+.exitp { border-style: dashed; } .exitp b { font-variant-numeric: tabular-nums; }
+
+/* ── value chain, tables ───────────────────────────────────────────────────── */
+.lab { font-size: 11px; color: var(--t3); text-transform: uppercase; letter-spacing: .08em; display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.lab .r { margin-left: auto; text-transform: none; letter-spacing: 0; font-size: 12px; }
+.chain { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 8px; }
+.area { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; background: var(--bg-1); border: 1px dashed var(--b1); border-radius: var(--r3); min-height: 92px; }
+.area.has { border-style: solid; border-color: #2f6b4a; background: linear-gradient(180deg, #14241c, var(--bg-1) 70%); }
+.area:hover { background: var(--bg-2); }
+.area.on { border-color: var(--blue3); border-style: solid; box-shadow: 0 0 0 1px var(--blue3); }
+.area .ix { font: 500 10.5px/1.2 var(--mono); color: var(--t3); letter-spacing: .06em; text-transform: uppercase; }
+.area.has .ix { color: var(--grn4); }
+.area .a { font-weight: 600; } .area .q { color: var(--t3); font-size: 12px; line-height: 1.3; flex: 1; }
+.area .m { color: var(--t2); font-size: 12px; }
+.nodata { color: var(--t3); font-size: 12px; margin-top: 8px; } .nodata b { color: var(--t2); font-weight: 500; }
+.two { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 14px; }
+.three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.card { background: var(--bg-1); border: 1px solid var(--b0); border-radius: var(--r3); padding: 12px 14px 6px; }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-weight: 500; font-size: 11px; color: var(--t3); text-transform: uppercase; letter-spacing: .06em; padding: 0 10px 7px 0; border-bottom: 1px solid var(--b1); white-space: nowrap; }
+td { height: 36px; padding: 4px 10px 4px 0; border-bottom: 1px solid var(--b0); color: var(--t2); }
+tr:last-child td { border-bottom: 0; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+td .nm { color: var(--t1); font-weight: 500; } td.mono, .mono { font-family: var(--mono); font-size: 12px; }
+tr.rowbtn { cursor: pointer; } tr.rowbtn:hover td { background: var(--bg-2); }
+tr.rowbtn.on td { background: #15253a; } tr.rowbtn.on td:first-child { box-shadow: inset 2px 0 0 var(--blue3); }
+.card td:first-child, .card th:first-child { padding-left: 8px; }
+.chip { display: inline-flex; align-items: center; border: 1px solid var(--b1); border-radius: 2px; padding: 3px 9px; font-size: 11.5px; color: var(--t2); white-space: nowrap; }
+.chip.ok { color: var(--grn4); border-color: #2f6b4a; background: var(--grn1); }
+.chip.warn { color: var(--amb4); border-color: #6b5215; background: var(--amb1); }
+.chip.bad { color: var(--red4); border-color: #6e2a30; background: var(--red1); }
+.chip.blue { color: var(--blue4); border-color: #24507f; background: var(--blue1); }
+.feed button { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; width: 100%; padding: 9px 0; border-bottom: 1px solid var(--b0); align-items: start; }
+.feed button:last-child { border-bottom: 0; } .feed button:hover .w { text-decoration: underline; }
+.feed .g { width: 22px; height: 22px; border-radius: 3px; display: grid; place-items: center; font-weight: 700; font-size: 12px; }
+.feed .g.bad { background: var(--red1); color: var(--red4); } .feed .g.warn { background: var(--amb1); color: var(--amb4); } .feed .g.info { background: var(--blue1); color: var(--blue4); }
+.feed .w { color: var(--t1); font-weight: 500; } .feed .s { color: var(--t3); font-size: 12px; }
+.ok { color: var(--grn4); } .warn { color: var(--amb4); } .bad { color: var(--red4); }
+
+/* ── the inspector ─────────────────────────────────────────────────────────── */
+.insp { width: 356px; border-left: 1px solid var(--b0); background: var(--bg-1); display: flex; flex-direction: column; min-height: 0; }
+.insp[hidden] { display: none; }
+.insp header { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px 11px; border-bottom: 1px solid var(--b0); }
+.insp header .k { font: 600 10.5px/1.3 var(--mono); color: #7fa6cc; text-transform: uppercase; letter-spacing: .12em; }
+.insp header h3 { margin: 2px 0 0; font-size: 16px; font-weight: 600; }
+.insp header .x { margin-left: auto; width: 26px; height: 26px; border: 1px solid var(--b2); border-radius: var(--r2); text-align: center; color: var(--t2); flex: none; }
+.insp .sc { flex: 1; overflow: auto; padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 14px; }
+.insp .sec { font-size: 11px; color: var(--t3); text-transform: uppercase; letter-spacing: .08em; margin-bottom: -6px; }
+.insp .figs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.insp .fig { border: 1px solid var(--b0); border-radius: var(--r3); padding: 8px 10px; background: var(--bg-0); }
+.insp .fig .v { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.insp .fig .l { color: var(--t3); font-size: 12px; }
+.insp .fig.bad .v { color: var(--red4); }
+.insp dl { margin: 0; display: grid; grid-template-columns: 126px minmax(0, 1fr); row-gap: 6px; column-gap: 10px; }
+.insp dt { color: var(--t3); font-size: 12px; } .insp dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.insp .said { color: var(--t2); font-size: 12px; border-left: 2px solid var(--b2); padding: 1px 0 1px 10px; }
+.insp .why { color: var(--t2); font-size: 12px; background: var(--amb1); border: 1px solid #4d3b10; border-radius: var(--r2); padding: 8px 10px; }
+.insp .do { display: flex; flex-wrap: wrap; gap: 8px; }
+.insp footer { padding: 9px 14px; border-top: 1px solid var(--b0); color: var(--t3); font-size: 12px; }
+.insp .rel { display: flex; flex-direction: column; gap: 4px; }
+.insp .rel button { display: flex; gap: 8px; padding: 6px 10px; border: 1px solid var(--b0); border-radius: var(--r2); background: var(--bg-0); }
+.insp .rel button:hover { border-color: var(--b2); } .insp .rel .v { color: var(--t3); }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top"><span class="brand">AUGHOR</span><span class="crumb">Ontology &nbsp;/&nbsp; <b>Business Atlas</b></span><div class="search"><span class="kbd">⌘K</span><input id="q" type="search" placeholder="Search a stage, an object, a promise…" autocomplete="off" aria-label="Search the atlas"><div class="qres" id="qres" hidden></div></div></div>
+  <div class="rail">
+    <div class="i">Home</div><div class="i">Briefing</div><div class="i">Now</div>
+    <div class="g">Define</div><div class="i">Semantic Layer</div><div class="i on">Ontology</div><div class="i">Actions</div><div class="i">Graph</div><div class="i">Memory</div><div class="i">Org</div>
+    <div class="g">Decide</div><div class="i">Inbox</div><div class="i">Record</div>
+  </div>
+  <div class="main">
+    <div class="page">
+      <div class="title">
+        <h1>Business Atlas</h1>
+        <div class="facts" id="facts"></div>
+        <div class="acts"><button class="btn">Ask about this</button><button class="btn amber" id="reviewBtn"></button></div>
+      </div>
+      <div class="lenses" id="lenses" role="tablist"></div>
+      <div class="body" id="body"></div>
+    </div>
+    <aside class="insp" id="insp" hidden aria-label="Inspector"></aside>
+  </div>
+  <div class="status" id="status"></div>
+</div>
+
+<script id="data" type="application/json">{"read_at": "10 Nov 2026 16:22 UTC", "connection": {"id": "8233e4fd", "name": "theLook", "schema": "thelook", "engine": "BigQuery"}, "pack": "retail", "process_area": "fulfilment", "release": {"number": 6, "id": "8233e4fd/thelook@6", "at": "2026-10-10T02:15:26.211345+00:00", "by": "amitkamlapure"}, "releases": [{"number": 6, "at": "2026-10-10T02:15:26.211345+00:00", "by": "amitkamlapure", "note": "5 changes published", "changes": [{"class": "SAFE"}, {"class": "SAFE"}, {"class": "SAFE"}, {"class": "SAFE"}, {"class": "SAFE"}]}, {"number": 5, "at": "2026-10-10T01:08:45.283271+00:00", "by": "amitkamlapure", "note": "1 change published", "changes": [{"class": "WARN"}]}, {"number": 4, "at": "2026-10-09T14:19:29.751722+00:00", "by": "amitkamlapure", "note": "2 changes published", "changes": [{"class": "WARN"}, {"class": "SAFE"}]}, {"number": 3, "at": "2026-10-09T10:45:29.230759+00:00", "by": "amitkamlapure", "note": "1 change published", "changes": [{"class": "MEANING"}]}, {"number": 2, "at": "2026-10-09T10:45:19.815157+00:00", "by": "amitkamlapure", "note": "1 change published", "changes": [{"class": "SAFE"}]}, {"number": 1, "at": "2026-10-09T10:45:19.285531+00:00", "by": "", "note": "the declarations in force when releases were turned on", "changes": []}], "counts": {"processes": 1, "rules": 1, "actions": 4}, "types": [{"object_type": "event", "id": "Event", "display_name": "Business Event", "role": "event", "domain": "Marketing", "key": "", "key_verified": null, "rows": null, "table": "events", "properties": 13, "links": 1, "origin": "table"}, {"object_type": "case", "id": "Case", "display_name": "Case", "role": "business_object", "domain": "", "key": "id", "key_verified": true, "rows": null, "table": "", "properties": 4, "links": 0, "origin": "human"}, {"object_type": "user", "id": "User", "display_name": "Customer", "role": "business_object", "domain": "Customer", "key": "id", "key_verified": true, "rows": 100000, "table": "users", "properties": 22, "links": 4, "origin": "table"}, {"object_type": "order", "id": "Order", "display_name": "Customer Order", "role": "business_object", "domain": "Commerce", "key": "order_id", "key_verified": true, "rows": 125136, "table": "orders", "properties": 12, "links": 3, "origin": "table"}, {"object_type": "distribution_center", "id": "DistributionCenter", "display_name": "Distribution Center", "role": "reference_data", "domain": "Operations", "key": "id", "key_verified": true, "rows": 10, "table": "distribution_centers", "properties": 5, "links": 3, "origin": "table"}, {"object_type": "inventory_item", "id": "InventoryItem", "display_name": "Inventory Item", "role": "event", "domain": "Operations", "key": "id", "key_verified": true, "rows": 490318, "table": "inventory_items", "properties": 12, "links": 3, "origin": "table"}, {"object_type": "order_item", "id": "OrderItem", "display_name": "Order Line", "role": "event", "domain": "Commerce", "key": "id", "key_verified": true, "rows": 181610, "table": "order_items", "properties": 11, "links": 5, "origin": "table"}, {"object_type": "product", "id": "Product", "display_name": "Product", "role": "reference_data", "domain": "Catalog", "key": "id", "key_verified": true, "rows": 29120, "table": "products", "properties": 10, "links": 5, "origin": "table"}], "links": [{"from": "event", "to": "user", "business_name": "performed_by", "verb": "performed by", "cardinality": "N:1", "measured": true}, {"from": "order_item", "to": "user", "business_name": "order_item_purchased_by_user", "verb": "purchased by", "cardinality": "N:1", "measured": true}, {"from": "order", "to": "user", "business_name": "order_placed_by_user", "verb": "placed by", "cardinality": "N:1", "measured": true}, {"from": "inventory_item", "to": "product", "business_name": "instance_of", "verb": "is unit of", "cardinality": "N:1", "measured": true}, {"from": "order_item", "to": "product", "business_name": "order_item_is_for_product", "verb": "is for", "cardinality": "N:1", "measured": true}, {"from": "order_item", "to": "order", "business_name": "belongs_to", "verb": "belongs to", "cardinality": "N:1", "measured": true}, {"from": "order_item", "to": "inventory_item", "business_name": "fulfilled_by", "verb": "fulfilled from", "cardinality": "1:1", "measured": true}, {"from": "product", "to": "distribution_center", "business_name": "product_ships_from_distribution_center", "verb": "ships from", "cardinality": "N:1", "measured": true}, {"from": "inventory_item", "to": "distribution_center", "business_name": "stored_at", "verb": "stored at", "cardinality": "N:1", "measured": true}, {"from": "order_item", "to": "product", "business_name": "of_product", "verb": "of product", "cardinality": "N:1", "measured": true}, {"from": "order", "to": "user", "business_name": "placed_by", "verb": "placed by", "cardinality": "N:1", "measured": true}, {"from": "product", "to": "distribution_center", "business_name": "ships_from", "verb": "ships from", "cardinality": "N:1", "measured": true}], "table_rows": {"inventory_items": 487914, "order_items": 180746, "orders": 124452, "events": 2421707, "users": 100000, "products": 29120}, "areas": [{"id": "orders_sales", "name": "Orders & sales", "question": "How much did we sell?", "rows": 793112, "tables": [{"name": "inventory_items", "rows": 487914, "why": "Sales Volume by Category reads it"}, {"name": "order_items", "rows": 180746, "why": "its name says order"}, {"name": "orders", "rows": 124452, "why": "its name says order"}], "metrics": [{"name": "sales_volume_by_category", "label": "Sales Volume by Category", "status": "draft", "why": "its name says sales"}, {"name": "revenue", "label": "Revenue", "status": "approved", "why": "its name says revenue"}, {"name": "average_order_value_aov", "label": "Average Order Value (AOV)", "status": "approved", "why": "it is the knowledge base's Average Order Value (AOV)"}], "open": 9, "said": []}, {"id": "returns", "name": "Returns", "question": "What came back, and what did it cost?", "rows": 180746, "tables": [{"name": "order_items", "rows": 180746, "why": "Return rate reads it"}], "metrics": [{"name": "return_rate", "label": "Return rate", "status": "approved", "why": "it is the knowledge base's Order Return Rate"}], "open": 2, "said": []}, {"id": "margin_pricing", "name": "Margin & pricing", "question": "What did we keep?", "rows": 668660, "tables": [{"name": "inventory_items", "rows": 487914, "why": "Gross Margin Percentage reads it"}, {"name": "order_items", "rows": 180746, "why": "Gross Margin Percentage reads it"}], "metrics": [{"name": "gross_margin_percentage", "label": "Gross Margin Percentage", "status": "approved", "why": "its name holds the knowledge base's Gross Margin"}], "open": 11, "said": []}, {"id": "fulfilment", "name": "Fulfilment", "question": "Did it arrive as promised?", "rows": 305198, "tables": [{"name": "order_items", "rows": 180746, "why": "Average Ship-to-Delivery Lead Time reads it"}, {"name": "orders", "rows": 124452, "why": "Average Delivery Time reads it"}], "metrics": [{"name": "average_delivery_time", "label": "Average Delivery Time", "status": "proposed", "why": "its name says delivery"}, {"name": "average_ship_to_delivery_lead_time", "label": "Average Ship-to-Delivery Lead Time", "status": "approved", "why": "its name says delivery"}], "open": 3, "said": []}, {"id": "marketing", "name": "Marketing", "question": "What did growth cost?", "rows": 2421707, "tables": [{"name": "events", "rows": 2421707, "why": "its ontology entity's domain is Marketing"}], "metrics": [], "open": 18, "said": []}, {"id": "traffic_conversion", "name": "Traffic & conversion", "question": "Are visitors becoming buyers?", "rows": 2421707, "tables": [{"name": "events", "rows": 2421707, "why": "Session-to-Purchase Conversion Rate reads it"}], "metrics": [{"name": "cart_to_order_conversion_rate", "label": "Cart-to-order conversion rate", "status": "approved", "why": "its name holds the knowledge base's Conversion Rate"}, {"name": "session_to_purchase_conversion_rate", "label": "Session-to-Purchase Conversion Rate", "status": "approved", "why": "its name holds the knowledge base's Conversion Rate"}], "open": 23, "said": []}, {"id": "customers", "name": "Customers", "question": "Who buys, and do they come back?", "rows": 224452, "tables": [{"name": "orders", "rows": 124452, "why": "Repeat Purchase Rate reads it"}, {"name": "users", "rows": 100000, "why": "its ontology entity's domain is Customer"}], "metrics": [{"name": "repeat_purchase_rate", "label": "Repeat Purchase Rate", "status": "approved", "why": "it is the knowledge base's Repeat Purchase Rate"}], "open": 9, "said": []}, {"id": "payments", "name": "Payments & risk", "question": "Did the money land safely?", "rows": 0, "tables": [], "metrics": [], "open": 2, "said": []}, {"id": "crm_consent", "name": "CRM & consent", "question": "Can we reach them?", "rows": 0, "tables": [], "metrics": [], "open": 1, "said": []}, {"id": "service", "name": "Service", "question": "Did we look after them?", "rows": 0, "tables": [], "metrics": [], "open": 1, "said": []}, {"id": "clienteling_events", "name": "Clienteling & events", "question": "Does the personal touch pay?", "rows": 2421707, "tables": [{"name": "events", "rows": 2421707, "why": "its name says event"}], "metrics": [{"name": "daily_active_users_dau", "label": "Daily Active Users (DAU)", "status": "approved", "why": "it reads events, which its name says event"}], "open": 0, "said": ["the knowledge base carries no pattern for this area yet — a package can add one"]}, {"id": "inventory", "name": "Inventory & merchandising", "question": "Is the stock right?", "rows": 517034, "tables": [{"name": "inventory_items", "rows": 487914, "why": "its name says inventory"}, {"name": "products", "rows": 29120, "why": "its name says product"}], "metrics": [{"name": "units_sold", "label": "Units Sold", "status": "approved", "why": "it reads inventory_items, which its name says inventory"}, {"name": "inventory_sell_through_rate", "label": "Inventory Sell-Through Rate", "status": "approved", "why": "its name holds the knowledge base's Sell-through Rate"}], "open": 8, "said": []}, {"id": "recurring_revenue", "name": "Recurring revenue", "question": "Is recurring revenue growing?", "rows": 0, "tables": [], "metrics": [], "open": 4, "said": []}, {"id": "receivables", "name": "Receivables", "question": "Are we paid on time?", "rows": 0, "tables": [], "metrics": [], "open": 1, "said": []}], "unplaced": ["distribution_centers"], "process": {"id": "order_fulfilment", "display_name": "Order Fulfilment", "description": "", "entity": "order", "entity_id": "Order", "owner": "", "origin": "human", "provenance": "", "objects": 125136, "verified": true, "note": "125,136 Order objects; 4 of 4 stages reached; 2 promises measured", "measured_at": "2026-11-09T22:49:10+00:00", "stages": [{"name": "placed", "display_name": "placed", "anchor": {"timestamp": "created_at"}, "reached": 125136, "share": 1.0, "verified": true, "note": "125,136 of 125,136 Order objects reached placed (created_at)", "transition": null, "promise": null, "precedes": {}, "roles": [{"entity": "Order", "role": "goes through the process"}]}, {"name": "shipped", "display_name": "shipped", "anchor": {"timestamp": "shipped_at"}, "reached": 81463, "share": 0.650996, "verified": true, "note": "81,463 of 125,136 Order objects reached shipped (shipped_at)", "transition": {"from": "placed", "both": 81463, "skipped": 0, "out_of_order": 0, "p50_days": 2.0, "p90_days": 3.0, "p95_days": 3.0, "lag": "dispatch_lag_days"}, "promise": {"name": "dispatch", "kind": "within_days", "deadline": "", "within_days": 2, "within_hours": null, "grain": "order", "grain_id": "Order", "via": "", "target": null, "objects": 125136, "reached": 81463, "breached": 13691, "kept": 67772, "open": 24994, "open_overdue": 24994, "breach_rate": 0.168064, "as_of": "2026-11-11 00:13:07.242004+00:00", "verified": true, "flags": [], "note": "13,691 of the 81,463 Order objects that reached shipped broke the dispatch promise (16.81%); 24,994 have not reached it, 24,994 of them already past it as of 2026-11-11 00:13:07.242004+00:00", "segment": "late_dispatch", "metric": "dispatch_breach_rate", "overdue_segment": "overdue_dispatch"}, "precedes": {}, "roles": [{"entity": "Order", "role": "goes through the process"}, {"entity": "Order", "role": "the lead object its promise is kept per", "why": "the promise is kept per the object that goes through the process"}]}, {"name": "delivered", "display_name": "delivered", "anchor": {"timestamp": "delivered_at"}, "reached": 43884, "share": 0.35069, "verified": true, "note": "43,884 of 125,136 Order objects reached delivered (delivered_at)", "transition": {"from": "shipped", "both": 43884, "skipped": 0, "out_of_order": 0, "p50_days": 2.0, "p90_days": 4.0, "p95_days": 5.0, "lag": "delivery_lag_days"}, "promise": {"name": "delivery", "kind": "within_days", "deadline": "", "within_days": 4, "within_hours": null, "grain": "order", "grain_id": "Order", "via": "", "target": null, "objects": 125136, "reached": 43884, "breached": 4347, "kept": 39537, "open": 37579, "open_overdue": 37579, "breach_rate": 0.099057, "as_of": "2026-11-15 16:44:39.603214+00:00", "verified": true, "flags": [], "note": "4,347 of the 43,884 Order objects that reached delivered broke the delivery promise (9.91%); 37,579 have not reached it, 37,579 of them already past it as of 2026-11-15 16:44:39.603214+00:00", "segment": "late_delivery", "metric": "delivery_breach_rate", "overdue_segment": "overdue_delivery"}, "precedes": {}, "roles": [{"entity": "Order", "role": "goes through the process"}, {"entity": "Order", "role": "the lead object its promise is kept per", "why": "the promise is kept per the object that goes through the process"}]}, {"name": "returned", "display_name": "returned", "anchor": {"timestamp": "returned_at"}, "reached": 12604, "share": 0.100722, "verified": true, "note": "12,604 of 125,136 Order objects reached returned (returned_at)", "transition": {"from": "delivered", "both": 12604, "skipped": 0, "out_of_order": 0, "p50_days": 2.0, "p90_days": 3.0, "p95_days": 3.0, "lag": "returned_lag_days"}, "promise": null, "precedes": {}, "roles": [{"entity": "Order", "role": "goes through the process"}]}], "derived": {"segments": [{"name": "late_dispatch", "kind": "segment", "source": "the dispatch promise of process order_fulfilment", "description": "the Order objects that broke the dispatch promise — more than 2 calendar days from placed to shipped", "usable": true}, {"name": "late_delivery", "kind": "segment", "source": "the delivery promise of process order_fulfilment", "description": "the Order objects that broke the delivery promise — more than 4 calendar days from shipped to delivered", "usable": true}], "properties": [{"name": "dispatch_lag_days", "kind": "property", "source": "process order_fulfilment", "description": "calendar days from placed (created_at) to shipped (shipped_at)", "usable": true}, {"name": "delivery_lag_days", "kind": "property", "source": "process order_fulfilment", "description": "calendar days from shipped (shipped_at) to delivered (delivered_at)", "usable": true}, {"name": "returned_lag_days", "kind": "property", "source": "process order_fulfilment", "description": "calendar days from delivered (delivered_at) to returned (returned_at)", "usable": true}], "metrics": [{"name": "dispatch_breach_rate", "kind": "metric", "source": "the dispatch promise of process order_fulfilment", "description": "the share of the Order objects that reached shipped with the dispatch promise in force and broke it", "usable": true}, {"name": "delivery_breach_rate", "kind": "metric", "source": "the delivery promise of process order_fulfilment", "description": "the share of the Order objects that reached delivered with the delivery promise in force and broke it", "usable": true}]}, "transitions": [], "observed": [{"from_stage": "placed", "to_stage": "shipped", "declared": true, "objects": 81463}, {"from_stage": "placed", "to_stage": "left", "declared": true, "objects": 18679}, {"from_stage": "shipped", "to_stage": "delivered", "declared": true, "objects": 43884}, {"from_stage": "delivered", "to_stage": "returned", "declared": true, "objects": 12604}], "conformance": {"seen_only_in_data": [], "never_observed": [], "untimed": []}, "leaves": {"property": "status", "values": ["Cancelled"], "left": 18679, "missing": [], "unknown": 0, "note": "18,679 Order objects left the process (status is Cancelled); they are no longer open or overdue"}}, "rules": [{"id": "completed_orders", "display_name": "Completed orders", "property": "status", "values": ["Complete"], "admitted": 31280, "objects": 125136}], "impacts": [{"id": "dispatch_bears_on_delivery", "display_name": "Dispatch bears on delivery", "description": "", "owner": "", "upstream": "order_fulfilment.dispatch", "downstream": "order_fulfilment.delivery", "mechanism": "influence", "formula": "", "evidence": "", "window_days": null, "origin": "human", "provenance": "", "lead": "Order", "path": "", "to_many": false, "objects": 43884, "upstream_broke": 7342, "upstream_kept": 36542, "rate_when_broke": 0.065377, "rate_when_kept": 0.105823, "lag_days": 2.0, "window": "all of the data, to 2026-11-15", "as_of": "2026-11-15 16:44:39.603214+00:00", "verified": false, "flags": [], "note": "of the 43,884 Order objects that reached delivered with the delivery promise in force (all of the data, to 2026-11-15), 7,342 saw the dispatch promise broken and 6.54% of those broke delivery, against 10.58% of the 36,542 that saw it kept; delivered came a median 2 days after shipped_at — the data does not show delivery broken more often when dispatch was", "measured_at": "2026-11-09T22:49:12+00:00", "upstream_label": "the dispatch promise of Order Fulfilment", "downstream_label": "the delivery promise of Order Fulfilment", "reading": "the dispatch promise of Order Fulfilment is declared to bear on the delivery promise of Order Fulfilment — of the 43,884 Order objects that reached delivered with the delivery promise in force (all of the data, to 2026-11-15), 7,342 saw the dispatch promise broken and 6.54% of those broke delivery, against 10.58% of the 36,542 that saw it kept; delivered came a median 2 days after shipped_at — the data does not show delivery broken more often when dispatch was"}], "actions": [{"id": "flag_for_review", "display_name": "Flag for review", "object_type": "Order", "risk": "low"}, {"id": "open_case", "display_name": "Open a case", "object_type": "order", "risk": "low"}, {"id": "resolve_case", "display_name": "Resolve the case", "object_type": "case", "risk": "low"}, {"id": "start_work_on_case", "display_name": "Start work on the case", "object_type": "case", "risk": "low"}], "packs": {"b2b-saas": {"title": "B2B SaaS", "objects": [{"name": "Account", "roles": ["party"], "aliases": ["accounts", "customers", "companies", "organizations", "organisations"], "description": "The paying company — the grain retention, churn and ACV are counted at.", "skin": ""}, {"name": "Contact", "roles": ["party"], "aliases": ["contacts", "users", "people", "leads", "members"], "description": "A person at an account — a user of the product or a buyer in the deal.", "skin": ""}, {"name": "Opportunity", "roles": ["transaction"], "aliases": ["opportunities", "deals", "pipeline", "opps"], "description": "A sales opportunity with an account, from creation to closed won or lost.", "skin": ""}, {"name": "Subscription", "roles": ["asset"], "aliases": ["subscriptions", "contracts", "agreements", "licenses", "licences"], "description": "An account's subscription to a plan, with its billing period and recurring price.", "skin": ""}, {"name": "Plan", "roles": ["catalog"], "aliases": ["plans", "tiers", "price_plans", "pricing_plans", "editions"], "description": "A priced offering — a tier, an edition — a subscription is to.", "skin": ""}, {"name": "Invoice", "roles": ["transaction"], "aliases": ["invoices", "bills", "charges", "payments"], "description": "A bill for a subscription period or a one-time charge; collected cash, not recurring revenue.", "skin": ""}, {"name": "Seat", "roles": ["asset"], "aliases": ["seats", "assigned_licenses", "license_assignments", "memberships"], "description": "One licence assigned to one user under a subscription.", "skin": ""}, {"name": "Ticket", "roles": ["event"], "aliases": ["tickets", "cases", "support_tickets", "support_requests", "conversations"], "description": "A support request from an account, with its first response and its resolution.", "skin": ""}, {"name": "Signup", "roles": ["event"], "aliases": ["signups", "sign_ups", "trials", "registrations", "free_trials"], "description": "A trial or free signup that may activate and convert to a paid subscription.", "skin": ""}], "links": [{"from": "Contact", "to": "Account", "cardinality": "N:1", "description": "many people per account"}, {"from": "Opportunity", "to": "Account", "cardinality": "N:1", "description": "many deals per account over time"}, {"from": "Subscription", "to": "Account", "cardinality": "N:1", "description": "an account holds one or more subscriptions"}, {"from": "Subscription", "to": "Plan", "cardinality": "N:1", "description": ""}, {"from": "Invoice", "to": "Subscription", "cardinality": "N:1", "description": "a one-time charge may have no subscription"}, {"from": "Seat", "to": "Subscription", "cardinality": "N:1", "description": ""}, {"from": "Seat", "to": "Contact", "cardinality": "N:1", "description": "an unassigned seat has no person"}, {"from": "Ticket", "to": "Account", "cardinality": "N:1", "description": "a ticket from a trial has no account yet"}, {"from": "Signup", "to": "Account", "cardinality": "N:1", "description": "a signup that never converted became no account"}], "lifecycles": [{"object": "Subscription", "states": ["trialing", "active", "past_due", "paused", "cancelled", "expired"]}, {"object": "Opportunity", "states": ["open", "qualified", "proposal", "negotiation", "closed_won", "closed_lost"]}, {"object": "Invoice", "states": ["draft", "open", "paid", "void", "uncollectible"]}, {"object": "Ticket", "states": ["open", "pending", "solved", "closed"]}], "processes": [{"name": "trial_to_paid", "object": "Signup", "description": "A signup activates, then converts to a paid subscription.", "stages": [{"name": "signed_up", "hints": ["signed_up_at", "created_at", "registered_at"]}, {"name": "activated", "hints": ["activated_at", "activation_at", "first_value_at"]}, {"name": "converted", "hints": ["converted_at", "paid_at", "subscription_started_at"]}]}, {"name": "ticket_resolution", "object": "Ticket", "description": "A ticket is opened, answered and solved; the first response and the resolution usually carry a promise.", "stages": [{"name": "opened", "hints": ["created_at", "opened_at"]}, {"name": "first_response", "hints": ["first_response_at", "first_replied_at", "first_reply_at"]}, {"name": "solved", "hints": ["solved_at", "resolved_at", "closed_at"]}]}]}, "banking": {"title": "Banking", "objects": [{"name": "Institution", "roles": ["party"], "aliases": ["institutions", "banks", "reporting_entities", "legal_entities"], "description": "A bank, savings institution or legal entity that files financial reports.", "skin": ""}, {"name": "CallReport", "roles": ["event"], "aliases": ["call_reports", "regulatory_reports", "financial_reports", "financials"], "description": "One institution's financial report for one period — its income over the period and its balances.", "skin": ""}, {"name": "Customer", "roles": ["party"], "aliases": ["customers", "clients", "borrowers", "depositors", "parties"], "description": "A person or organisation that holds an account or borrows.", "skin": ""}, {"name": "DepositAccount", "roles": ["asset"], "aliases": ["deposit_accounts", "accounts", "deposits"], "description": "A checking, savings, money market or time deposit account.", "skin": ""}, {"name": "Loan", "roles": ["asset"], "aliases": ["loans", "facilities", "credit_accounts", "loan_accounts"], "description": "A loan, lease or line of credit extended to a customer.", "skin": ""}, {"name": "Transaction", "roles": ["event", "transaction"], "aliases": ["transactions", "postings", "account_transactions"], "description": "A posting to a deposit or loan account.", "skin": ""}, {"name": "Branch", "roles": ["place"], "aliases": ["branches", "offices"], "description": "A branch or office an account is held at.", "skin": ""}], "links": [{"from": "CallReport", "to": "Institution", "cardinality": "N:1", "description": "Every report is filed by one institution; an institution files one per period."}, {"from": "DepositAccount", "to": "Customer", "cardinality": "N:1", "description": "A deposit account belongs to a customer (joint owners are a separate role)."}, {"from": "Loan", "to": "Customer", "cardinality": "N:1", "description": "A loan is extended to a borrower."}, {"from": "Transaction", "to": "DepositAccount", "cardinality": "N:1", "description": "A transaction posts to one account."}, {"from": "DepositAccount", "to": "Branch", "cardinality": "N:1", "description": "An account is held at a branch; one opened online may have none."}], "lifecycles": [{"object": "Loan", "states": ["application", "approved", "funded", "current", "delinquent", "nonaccrual", "charged_off", "paid_off"]}, {"object": "DepositAccount", "states": ["open", "dormant", "frozen", "closed"]}], "processes": []}, "airline": {"title": "Airline", "objects": [{"name": "Flight", "roles": ["event", "transaction"], "aliases": ["flights", "flight_legs", "scheduled_flights", "legs", "segments"], "description": "One scheduled flight of a marketing carrier network, on a date, between two airports.", "skin": ""}, {"name": "Carrier", "roles": ["party"], "aliases": ["carriers", "airlines", "marketing_carriers"], "description": "The airline, or carrier network, that sold or operated a flight.", "skin": ""}, {"name": "Airport", "roles": ["place"], "aliases": ["airports", "stations"], "description": "An airport a flight leaves or reaches.", "skin": "airfield"}, {"name": "Aircraft", "roles": ["asset"], "aliases": ["tails", "fleet", "planes"], "description": "The aircraft, by tail number, that flew a flight.", "skin": ""}], "links": [{"from": "Flight", "to": "Carrier", "cardinality": "N:1", "description": "Every flight is sold by one marketing carrier network."}, {"from": "Flight", "to": "Aircraft", "cardinality": "N:1", "description": "An operated flight is flown by one aircraft; a cancelled flight has none."}, {"from": "Flight", "to": "Airport", "cardinality": "N:1", "description": "Every flight leaves one airport (and reaches another)."}], "lifecycles": [{"object": "Flight", "states": ["scheduled", "departed", "arrived", "diverted", "cancelled"]}], "processes": []}}, "roles": {"Event": {"role": null, "as": null, "skin": "", "builder": "event"}, "Case": {"role": null, "as": null, "skin": "", "builder": "business_object"}, "User": {"role": "party", "as": "Customer", "skin": "", "builder": "business_object"}, "Order": {"role": "transaction", "as": "Order", "skin": "", "builder": "business_object"}, "DistributionCenter": {"role": "location", "as": "Warehouse", "skin": "depot", "builder": "reference_data"}, "InventoryItem": {"role": "stock", "as": "InventoryLot", "skin": "", "builder": "event"}, "OrderItem": {"role": "event", "as": "OrderItem", "skin": "", "builder": "event"}, "Product": {"role": "catalog", "as": "Product", "skin": "", "builder": "reference_data"}}, "draft": {"counts": {"proposed": 6, "confirmed": 7, "released": 0, "withdrawn": 0, "refused": 2}, "proposals": [{"kind": "part", "tier": "proposed", "sentence": "events is a part of User, read as events (timeseries)"}, {"kind": "part", "tier": "proposed", "sentence": "inventory_items is a part of Product, read as inventory (detail)"}, {"kind": "part", "tier": "confirmed", "sentence": "order_items is a part of Order, read as lines (detail)"}, {"kind": "link", "tier": "confirmed", "sentence": "InventoryItem stored_at DistributionCenter on product_distribution_center_id = id"}, {"kind": "link", "tier": "confirmed", "sentence": "Order placed_by User on user_id = id"}, {"kind": "link", "tier": "confirmed", "sentence": "OrderItem of_product Product on product_id = id"}, {"kind": "link", "tier": "confirmed", "sentence": "Product ships_from DistributionCenter on distribution_center_id = id"}, {"kind": "link_name", "tier": "proposed", "sentence": "Event performed_by User — the name of a link the builder found"}, {"kind": "link_name", "tier": "proposed", "sentence": "InventoryItem instance_of Product — the name of a link the builder found"}, {"kind": "link_name", "tier": "proposed", "sentence": "OrderItem belongs_to Order — the name of a link the builder found"}, {"kind": "link_name", "tier": "proposed", "sentence": "OrderItem fulfilled_by InventoryItem — the name of a link the builder found"}, {"kind": "link_name", "tier": "refused", "sentence": "OrderItem placed_by User — the name of a link the builder found"}, {"kind": "process", "tier": "confirmed", "sentence": "Order goes through placed → shipped → delivered → returned"}, {"kind": "rule", "tier": "confirmed", "sentence": "completed_orders on Order: status in Complete"}, {"kind": "rule", "tier": "refused", "sentence": "returned_orders on Order: returned_at not_null None"}]}}</script>
+<script>
+const D = JSON.parse(document.getElementById("data").textContent);
+const P = D.process;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const n = (v) => (v == null ? "not measured" : Number(v).toLocaleString("en-US"));
+const pct = (v) => (v == null ? "not measured" : (v * 100).toFixed(2) + "%");
+const days = (v) => (v == null ? "—" : (Number.isInteger(v) ? v : v.toFixed(1)));
+const D8 = (iso) => new Date(String(iso).replace(" ", "T"));
+const when = (iso) => D8(iso).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC" }) + " UTC";
+const day = (iso) => D8(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+const plural = (k, one, many) => `${n(k)} ${k === 1 ? one : many}`;
+
+const T = Object.fromEntries(D.types.map((t) => [t.id, t]));
+const bySnake = Object.fromEntries(D.types.map((t) => [t.object_type, t]));
+const rowsOf = (id) => T[id].rows ?? D.table_rows[T[id].table] ?? null;
+const ST = Object.fromEntries(P.stages.map((s) => [s.name, s]));
+const promises = P.stages.filter((s) => s.promise).map((s) => s.promise);
+const PR = Object.fromEntries(promises.map((p) => [p.name, p]));
+const impact = D.impacts[0] || null;
+const seen = (a, b) => (P.observed || []).find((m) => m.from_stage === a && m.to_stage === b);
+const worst = promises.slice().sort((a, b) => b.open_overdue - a.open_overdue)[0];
+
+let lens = "overview", view = "25d", flows = "all", picked = "stage:shipped", area = null, zoom = 1, pan = [0, 0], biz = "live";
+{ const h = new URLSearchParams(location.hash.slice(1));   // the state is addressable: lens, view, selection, area
+  if (h.get("lens")) lens = h.get("lens"); if (h.get("view")) view = h.get("view"); if (h.has("pick")) picked = h.get("pick") || null; if (h.get("area")) area = h.get("area"); if (h.get("biz")) biz = h.get("biz"); }
+
+/* ══ the scene: COMPOSED, never laid out by hand. The composer reads three things — an object's role, the links between
+   object types, and the stages of a process — and knows no industry, no pack and no object by name. ══ */
+let S = 25, OX = 590, OY = 92, ZK = 1, SCENE = null;
+const P3 = (u, v, z = 0) => [OX + (u - v) * S, OY + (u + v) * S / 2 - z * ZK];
+const pts = (a) => a.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ");
+const poly = (a, fill, extra = "") => `<polygon points="${pts(a)}" fill="${fill}" ${extra}/>`;
+const STEEL = { top: "#40586f", left: "#2b4056", right: "#1c2d3f", line: "#6485a5" };
+const WARM = { top: "#d8ad72", left: "#9c7a52", right: "#70563c", line: "#ecca98" };
+const GLASS = { top: "rgba(125,184,255,.34)", left: "rgba(125,184,255,.18)", right: "rgba(125,184,255,.11)", line: "#8cc4ff" };
+const LIT = { top: "#8cc4ff", left: "#2f6fb0", right: "#1f4f82", line: "#c4e2ff" };
+const AMBER = { top: "#ffc53d", left: "#b88a2c", right: "#7d5e1e", line: "#ffe08a" };
+const TEALS = { top: "#2f5f59", left: "#244b45", right: "#183833", line: "#63c2b4" };
+const ln = (a, b, stroke, extra = "") => `<line x1="${a[0].toFixed(1)}" y1="${a[1].toFixed(1)}" x2="${b[0].toFixed(1)}" y2="${b[1].toFixed(1)}" stroke="${stroke}" ${extra}/>`;
+function box(u, v, w, d, h, c = STEEL, z = 0) {     // three lit faces: flat colour, then a shading pass per face
+  const s = `stroke="${c.line || STEEL.line}" stroke-width=".8" stroke-linejoin="round"`;
+  const L = [P3(u, v + d, z + h), P3(u + w, v + d, z + h), P3(u + w, v + d, z), P3(u, v + d, z)];
+  const R = [P3(u + w, v, z + h), P3(u + w, v + d, z + h), P3(u + w, v + d, z), P3(u + w, v, z)];
+  const T = [P3(u, v, z + h), P3(u + w, v, z + h), P3(u + w, v + d, z + h), P3(u, v + d, z + h)];
+  return poly(L, c.left, s) + poly(L, "url(#shL)") + poly(R, c.right, s) + poly(R, "url(#shR)") + poly(T, c.top, s) + poly(T, "url(#shT)");
+}
+const foot = (u, v, w, d, g = 0) => [P3(u - g, v - g), P3(u + w + g, v - g), P3(u + w + g, v + d + g), P3(u - g, v + d + g)];
+function pad(u, v, w, d, tone = "") {              // the raised platform a structure stands on
+  if (tone === "ghost") return `<polygon class="pad" points="${pts(foot(u, v, w, d))}" fill="#17212c" fill-opacity=".5" stroke="#62768b" stroke-width="1.2" stroke-dasharray="6 5"/>`;
+  const ring = tone === "alert" ? "#ff9592" : tone === "stage" ? "#70b8ff" : "#4ccce6";
+  return `<polygon points="${pts(foot(u, v, w, d, .22))}" fill="none" stroke="${ring}" stroke-opacity="${tone === "alert" ? .5 : .2}" stroke-width="1"/>` +
+    poly([P3(u, v + d, 0), P3(u + w, v + d, 0), P3(u + w, v + d, -6), P3(u, v + d, -6)], "#0e151d") + poly([P3(u + w, v, 0), P3(u + w, v + d, 0), P3(u + w, v + d, -6), P3(u + w, v, -6)], "#0a1017") +
+    `<polygon class="pad ${tone}" points="${pts(foot(u, v, w, d))}" fill="url(#padf)" stroke="#40566c" stroke-width="1.2"/>`;
+}
+const shadow = (u, v, w, d) => poly([P3(u + .3, v + d, 0), P3(u + w + 1.1, v + d + .7, 0), P3(u + w + 1.1, v + 1.1, 0), P3(u + w, v + .2, 0)], "#000", 'opacity=".5" filter="url(#soft)"');
+const crate = (u, v, z = 0, k = 1) => box(u, v, .5 * k, .5 * k, 9 * k, WARM, z);
+const faceL = (u, v, w, z0, z1, fill, extra = "") => poly([P3(u, v, z1), P3(u + w, v, z1), P3(u + w, v, z0), P3(u, v, z0)], fill, extra);      // a panel on a front-left face
+const faceR = (u, v, d, z0, z1, fill, extra = "") => poly([P3(u, v, z1), P3(u, v + d, z1), P3(u, v + d, z0), P3(u, v, z0)], fill, extra);      // a panel on a front-right face
+
+/* ── the glyph library: one family per ROLE. w × d is the footprint in ground units, h the height a label clears. ── */
+const GLYPH = {
+  facility: { w: 6.4, d: 5.2, h: 60, says: "a site with bays", draw(u, v, w, d, o, docks) {   // role place — one bay per object when there are few; docks only as a skin
+    const bd = d - 1.25, H = 36, k = o.count && o.count <= 12 ? o.count : 6;
+    let s = poly([P3(u, v + bd), P3(u + w, v + bd), P3(u + w, v + d - .1), P3(u, v + d - .1)], "#1d2c3b", 'stroke="#33495e" stroke-width=".8"');
+    if (docks) for (let i = 0; i < Math.floor(w); i++) s += ln(P3(u + .2 + i, v + bd + .12), P3(u + .2 + i, v + d - .25), "#ffc53d", 'stroke-opacity=".4" stroke-width="1"');
+    s += shadow(u, v, w, bd) + box(u, v, w, bd, H, { top: "#131d27", left: "#2e4a63", right: "#1c3248", line: "#6388aa" }) + faceL(u, v + bd, w, H - 4, H, "#70b8ff", 'opacity=".92"');
+    for (let i = 0; i < Math.floor(w - .4); i++) { const a = u + .4 + i, open = i % 2 === 1;
+      if (!docks) { s += faceL(a + .05, v + bd, .6, 9, 21, i === Math.floor((w - .4) / 2) ? "url(#bay)" : "#9ad4ff", `opacity="${i === Math.floor((w - .4) / 2) ? .95 : .45}"`); continue; }
+      s += faceL(a, v + bd, .7, 2, 22, open ? "url(#bay)" : "#0f1a25", 'stroke="#86abcb" stroke-width=".8"');
+      if (!open) [7, 12, 17].forEach((z) => { s += ln(P3(a, v + bd, z), P3(a + .7, v + bd, z), "#3d566d", 'stroke-width=".8"'); }); }
+    for (let i = 0; i < Math.floor((bd - .5) / .85); i++) s += faceR(u + w, v + .45 + i * .85, .55, 22, 28, "#9ad4ff", 'opacity=".5"');
+    s += box(u + .12, v + .12, w - .24, bd - .24, 3, { top: "#19252f", left: "#35526b", right: "#223a50", line: "#6f93b3" }, H);
+    const per = Math.ceil(k / 2), bw = (w - 1.1) / per, rd = (bd - 1.5) / 2;
+    for (let i = 0; i < k; i++) { const r = Math.floor(i / per), c = i % per, a = u + .55 + c * bw, b = v + .55 + r * (rd + .35);
+      s += box(a, b, bw - .3, rd, 15, { top: i % 3 ? "#86a8c4" : "#e0b267", left: "#2f4c65", right: "#1f364a", line: "#9bbbd6" }, H + 3); }
+    if (docks) [.5, 1.3, w - 2.1, w - 1.3].forEach((a, i) => { s += crate(u + a, v + bd + .35) + (i % 2 ? "" : crate(u + a + .1, v + bd + .45, 9, .7)); });
+    return s; } },
+  airfield: { w: 6.4, d: 5.2, h: 62, says: "a terminal, a tower and a strip", draw(u, v, w, d) {  // a skin of role place
+    let s = poly([P3(u + .3, v + d - 1.5), P3(u + w - .3, v + d - 1.5), P3(u + w - .3, v + d - .3), P3(u + .3, v + d - .3)], "#101821", 'stroke="#3d566e" stroke-width=".8"') +
+      ln(P3(u + .7, v + d - .9), P3(u + w - .7, v + d - .9), "#e8eef4", 'stroke-width="1.4" stroke-dasharray="7 6" opacity=".8"');
+    s += shadow(u + .4, v + .5, w * .6, 2.1) + box(u + .4, v + .5, w * .6, 2.1, 15, { top: "#1b2935", left: "#2e4a63", right: "#1c3248", line: "#6388aa" }) + faceL(u + .4, v + 2.6, w * .6, 4, 11, "#9ad4ff", 'opacity=".55"');
+    s += box(u + w - 1.7, v + .7, .7, .7, 44, STEEL) + box(u + w - 1.95, v + .45, 1.2, 1.2, 7, LIT, 44);
+    return s; } },
+  cluster: { w: 3.8, d: 3.6, h: 46, says: "a cluster", draw(u, v) {                           // role party — many of them
+    let s = "";
+    [[.3, .3, 26], [1.45, .2, 38], [2.6, .4, 22], [.4, 1.5, 18], [1.55, 1.4, 30], [2.7, 1.55, 16], [1.0, 2.55, 12], [2.15, 2.6, 20]].forEach(([a, b, h], i) => {
+      s += shadow(u + a, v + b, .75, .75) + box(u + a, v + b, .75, .75, h, i % 3 ? STEEL : { top: "#5d819f", left: "#2f4860", right: "#1d3144", line: "#7fa2c2" });
+      for (let z = 5; z < h - 3; z += 7) s += faceL(u + a + .15, v + b + .75, .45, z, z + 3, "#ffd58a", 'opacity=".8"'); });
+    return s; } },
+  units: { w: 3.4, d: 3.0, h: 32, says: "units on a plinth", draw(u, v, w, d) {                // role asset — things owned or held
+    let s = shadow(u + .3, v + .3, w - .6, d - .6) + box(u + .3, v + .3, w - .6, d - .6, 5);
+    [[.55, .55], [1.45, .7], [2.25, .55], [1.0, 1.6], [1.95, 1.7]].forEach(([a, b], i) => { s += box(u + a, v + b, .62, .62, 12 + (i % 2) * 6, LIT, 5); });
+    return s; } },
+  tiles: { w: 3.6, d: 3.0, h: 30, says: "a tiled block", draw(u, v, w, d) {                    // role catalog — the list things are chosen from
+    let s = shadow(u + .4, v + .4, w - .8, d - .8) + box(u + .4, v + .4, w - .8, d - .8, 14);
+    [5, 10].forEach((z) => { s += ln(P3(u + .4, v + d - .4, z), P3(u + w - .4, v + d - .4, z), "#8fb0cc", 'stroke-width=".7" opacity=".6"'); });
+    const tint = ["#7896b3", "#d4a868", "#52b4ab", "#9bb0c5", "#7896b3", "#c59562"];
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++)
+      s += box(u + .58 + i * .66, v + .56 + j * .68, .46, .46, 4 + ((i * 3 + j * 5) % 4) * 3, { top: tint[(i + j * 2) % 6], left: "#33485c", right: "#22313f", line: "#8aa5bf" }, 14);
+    return s; } },
+  stack: { w: 3.2, d: 2.8, h: 30, says: "a stack", draw(u, v, w, d) {                          // role stock — quantities held
+    let s = shadow(u + .3, v + .3, w - .6, d - .6) + box(u + .3, v + .3, w - .6, d - .6, 4);
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) { s += crate(u + .5 + i * .58, v + .5 + j * .6, 4, .9); if ((i + j) % 2 === 0) s += crate(u + .5 + i * .58, v + .5 + j * .6, 12, .9); }
+    return s; } },
+  hub: { w: 2.8, d: 2.8, h: 38, says: "a hub", draw(u, v) {                                    // role transaction — where a deal is struck
+    return shadow(u + .7, v + .7, 1.4, 1.4) + box(u + .7, v + .7, 1.4, 1.4, 24) + faceL(u + .7, v + 2.1, 1.4, 16, 20, "#70b8ff") + faceR(u + 2.1, v + .7, 1.4, 16, 20, "#3f86cc") + box(u + 1.05, v + 1.05, .7, .7, 7, LIT, 24); } },
+  layers: { w: 3.6, d: 3.6, h: 64, says: "stacked layers", draw(u, v) {                        // role event — activity, with no place of its own
+    let s = shadow(u + .5, v + .5, 2.4, 2.4) + box(u + .5, v + .5, 2.4, 2.4, 12, { top: "#2f455b", left: "#23384c", right: "#18293a", line: "#567695" });
+    [20, 33, 46].forEach((z, i) => { s += box(u + .75 + i * .12, v + .75 + i * .12, 1.9 - i * .24, 1.9 - i * .24, 5, GLASS, z); });
+    s += ln(P3(u + 1.7, v + 1.7, 12), P3(u + 1.7, v + 1.7, 62), "#8cc4ff", 'stroke-width="1" opacity=".75"') + `<circle cx="${P3(u + 1.7, v + 1.7, 62)[0]}" cy="${P3(u + 1.7, v + 1.7, 62)[1]}" r="2.4" fill="#c4e2ff"/>`;
+    s += faceL(u + 2.15, v + 3.25, 1.1, 6, 26, "rgba(125,184,255,.16)", 'stroke="#8cc4ff" stroke-width=".9"');
+    [21, 16, 11].forEach((z, i) => { s += ln(P3(u + 2.27, v + 3.25, z), P3(u + 2.27 + [.8, .55, .7][i], v + 3.25, z), "#c4e2ff", 'stroke-width="1.4" opacity=".8"'); });
+    return s; } },
+  bars: { w: 2.8, d: 2.6, h: 34, says: "a row of periods", draw(u, v, w, d) {                  // role calendar
+    let s = shadow(u + .3, v + .3, w - .6, d - .6) + box(u + .3, v + .3, w - .6, d - .6, 4);
+    [10, 16, 12, 22].forEach((h, i) => { s += box(u + .55 + i * .5, v + .9, .32, .8, h, i === 3 ? LIT : STEEL, 4); });
+    return s; } },
+  plinth: { w: 2.6, d: 2.6, h: 22, says: "a plain plinth", draw(u, v, w, d) {                  // a role the library does not know
+    return shadow(u + .5, v + .5, w - 1, d - 1) + box(u + .5, v + .5, w - 1, d - 1, 5) + box(u + .95, v + .95, .7, .7, 9, STEEL, 5); } },
+};
+GLYPH.depot = { ...GLYPH.facility, says: "a depot with docks", draw: (u, v, w, d, o) => GLYPH.facility.draw(u, v, w, d, o, true) };   // a skin of role place
+const ROLE_GLYPH = { place: "facility", location: "facility", party: "cluster", asset: "units", catalog: "tiles", stock: "stack", transaction: "hub", event: "layers", calendar: "bars" };
+const ROLE_RANK = ["place", "location", "asset", "stock", "catalog", "party", "transaction", "calendar", "event"];     // the most telling role of several
+const roleOf = (roles) => ROLE_RANK.find((r) => (roles || []).includes(r)) || "";
+const STAGE = {                                                                               // a stage has three shapes, by where it stands on the route
+  first: (u, v) => shadow(u + .4, v + .4, 1.4, 1.4) + box(u + .4, v + .4, 1.4, 1.4, 22) + faceL(u + .4, v + 1.8, 1.4, 14, 18, "#70b8ff") + box(u + .75, v + .75, .7, .7, 6, LIT, 22),
+  mid: (u, v) => box(u + .5, v + .1, .36, .36, 28, STEEL) + box(u + .5, v + .1, .36, 2.0, 5, AMBER, 28) + box(u + .5, v + 1.74, .36, .36, 28, STEEL),
+  last: (u, v) => shadow(u + .45, v + .45, 1.3, 1.3) + box(u + .45, v + .45, 1.3, 1.3, 8, TEALS) + box(u + .95, v + .95, .3, .3, 16, STEEL, 8) + box(u + .82, v + .82, .56, .56, 5, LIT, 24),
+};
+function seg(pick, a, b, cls = "") {
+  const A = P3(...a), B = P3(...b), ang = Math.atan2(B[1] - A[1], B[0] - A[0]), L = 11, W = 5.5;
+  const base = [B[0] - L * Math.cos(ang), B[1] - L * Math.sin(ang)];
+  const h = [B, [base[0] - W * Math.sin(ang), base[1] + W * Math.cos(ang)], [base[0] + W * Math.sin(ang), base[1] - W * Math.cos(ang)]];
+  return `<g class="flow ${cls}" ${pick ? `data-pick="${pick}" tabindex="0" role="button" aria-label="${esc(pick)}"` : ""}><path class="hit" d="M${A} L${B}"/><path class="ln" d="M${A} L${base}"/><polygon class="hd" points="${pts(h)}"/></g>`;
+}
+function marker({ at, pick, ix, kind = "stage", title, sub = "", alert, stem = 16, cls = "", tables = "" }) {
+  const [x, y] = P3(...at);
+  return `<div class="mk ${cls}" data-mk="${pick}" data-tables="${tables}" style="left:${((x - 200) / 11).toFixed(2)}%;top:${((y - 50) / 5.9).toFixed(2)}%;--stem:${stem}px">
+    <div><button class="board" data-pick="${pick}"><span class="h">${ix ? `<span class="ix">${ix}</span>` : ""}<span class="pt ${kind === "entity" ? "ent" : kind === "off" ? "off" : ""}"></span>${esc(title)}<span class="c">${sub}</span></span></button>${alert ? `<button class="al" data-pick="${alert.pick}">${alert.text}</button>` : ""}</div>
+    <span class="stem"></span><span class="foot"></span></div>`;
+}
+const tag = (at, text, pick, cls, attrs = "") => { const [x, y] = P3(...at);
+  return `<div class="mk ${cls}" ${attrs} style="left:${((x - 200) / 11).toFixed(2)}%;top:${((y - 50) / 5.9).toFixed(2)}%">` + (pick ? `<button class="board" data-pick="${pick}"><span class="c">${text}</span></button>` : `<span class="board"><span class="c">${text}</span></span>`) + `</div>`; };
+
+/* ── the composer: a model in, a scene out. Same code for every business. ── */
+function compose(M) {
+  const through = new Set(M.processes.map((p) => p.object)), byId = Object.fromEntries(M.objects.map((o) => [o.id, o]));
+  const adj = Object.fromEntries(M.objects.map((o) => [o.id, new Set()]));
+  M.links.forEach((l) => { if (adj[l.a] && adj[l.b] && l.a !== l.b) { adj[l.a].add(l.b); adj[l.b].add(l.a); } });
+  // 1 · order: breadth-first over the links, from what goes through a process — or, with none declared, from the most linked type
+  let seeds = [...through].filter((x) => adj[x]);
+  if (!seeds.length) seeds = [M.objects.slice().sort((a, b) => adj[b.id].size - adj[a.id].size || a.id.localeCompare(b.id))[0].id];
+  const dist = {}, order = [], queue = [...seeds]; seeds.forEach((x) => { dist[x] = 0; });
+  while (queue.length) { const x = queue.shift(); order.push(x); [...adj[x]].sort().forEach((y) => { if (dist[y] === undefined) { dist[y] = dist[x] + 1; queue.push(y); } }); }
+  M.objects.forEach((o) => { if (dist[o.id] === undefined) { dist[o.id] = null; order.push(o.id); } });
+  const rank = Object.fromEntries(order.map((id, i) => [id, i]));
+  // 2 · shape: a glyph from the role (a skin may refine it); what goes through a process IS its route and gets no structure
+  const items = M.objects.filter((o) => !through.has(o.id)).map((o) => { const g = GLYPH[o.skin] ? o.skin : (ROLE_GLYPH[o.role] || "plinth"); return { o, g, w: GLYPH[g].w, d: GLYPH[g].d }; });
+  // 3 · rows: the largest footprints stand behind the routes, the rest in front; each row in link order
+  const GAP = 1.3, BUDGET = 27, back = [], front = []; let used = 0;
+  items.slice().sort((a, b) => b.w * b.d - a.w * a.d || rank[a.o.id] - rank[b.o.id]).forEach((it) => { if (used + it.w + GAP <= BUDGET) { back.push(it); used += it.w + GAP; } else front.push(it); });
+  [back, front].forEach((r) => r.sort((a, b) => rank[a.o.id] - rank[b.o.id]));
+  const len = (r) => r.reduce((s, it) => s + it.w + GAP, -GAP);
+  const lanes = M.processes.length ? M.processes : [null], nMax = Math.max(0, ...M.processes.map((p) => p.stages.length));
+  const U = Math.max(len(back), front.length ? len(front) : 0, nMax ? nMax * 5.6 : 12) + 2.6;
+  const vEdge = 1.2 + Math.max(0, ...back.map((it) => it.d)), laneV = (k) => vEdge + (M.processes.length ? 4.4 : 2.3) + k * 5.2, hasExit = M.processes.some((p) => p.exit);
+  const vRow2 = laneV(lanes.length - 1) + 1.1 + (hasExit ? 3.7 : 1.9);
+  const V = (front.length ? vRow2 + Math.max(...front.map((it) => it.d)) : laneV(lanes.length - 1) + 1.1 + (hasExit ? 3.5 : 1.3)) + 1.2;
+  S = Math.min(1040 / (U + V), 890 / (U + V), 30); ZK = S / 25;
+  OX = 230 + V * S + (1040 - (U + V) * S) / 2; OY = 168 + (445 - (U + V) * S / 2) / 2;
+  const lay = (row, edge, toFront) => { let u = (U - len(row)) / 2; row.forEach((it) => { it.u = u; it.v = toFront ? edge - it.d : edge; u += it.w + GAP; }); };
+  lay(back, vEdge, true); lay(front, vRow2, false);
+  const centre = {}, why = {}; items.forEach((it) => { centre[it.o.id] = [it.u + it.w / 2, it.v + it.d / 2]; });
+  // 4 · draw: ground, lanes, links under everything; then structures back to front
+  const top = [P3(0, 0), P3(U, 0), P3(U, V), P3(0, V)];
+  let g = poly([P3(0, V, 0), P3(U, V, 0), P3(U, V, -16), P3(0, V, -16)], "url(#edgeL)") + poly([P3(U, 0, 0), P3(U, V, 0), P3(U, V, -16), P3(U, 0, -16)], "#080c12") + poly(top, "url(#gnd)", 'stroke="#33485c" stroke-width="1"') + poly(top, "url(#spot)");
+  for (let i = 1; i < U; i++) g += ln(P3(i, 0), P3(i, V), "#fff", 'stroke-opacity=".03"');
+  for (let j = 1; j < V; j++) g += ln(P3(0, j), P3(U, j), "#fff", 'stroke-opacity=".03"');
+  let flows = "", stagesSvg = "", marks = "", tracer = "";
+  lanes.forEach((p, k) => { const lv = laneV(k), bed = [P3(1.3, lv - .6), P3(U - 1.3, lv - .6), P3(U - 1.3, lv + .6), P3(1.3, lv + .6)];
+    if (!p) { g += poly(bed, "#0c131b", 'fill-opacity=".5" stroke="#3d566e" stroke-width="1" stroke-dasharray="6 6"'); marks += tag([U / 2, lv, 0], "No process is declared here", null, "lk"); return; }
+    g += poly(bed, "#0c131b", `stroke="#2c4055" stroke-width="1" ${p.measured ? "" : 'stroke-dasharray="6 6" fill-opacity=".55"'}`) + ln(P3(1.6, lv), P3(U - 1.6, lv), "#70b8ff", 'stroke-opacity=".16" stroke-width="1" stroke-dasharray="3 9"');
+    const nS = p.stages.length, cu = (i) => (nS > 1 ? 3.3 + i * (U - 6.6) / (nS - 1) : U / 2);
+    centre[p.object] = centre[p.object] || [cu(0), lv];
+    p.stages.forEach((st, i) => { const c = cu(i), shape = i === 0 ? "first" : i === nS - 1 ? "last" : "mid";
+      stagesSvg += `<g class="st ${p.measured ? "" : "exp"}" data-pick="${st.pick}" data-tables="${p.tables || ""}" tabindex="0" role="button" aria-label="${esc(`Stage ${i + 1}, ${st.label}`)}">${pad(c - 1.1, lv - 1.1, 2.2, 2.2, !p.measured ? "ghost" : st.alert ? "alert" : "stage")}${STAGE[shape](c - 1.1, lv - 1.1)}</g>`;
+      marks += marker({ at: [c, lv, 31], pick: st.pick, ix: String(i + 1).padStart(2, "0"), kind: p.measured ? "stage" : "off", title: st.label, sub: st.reached != null ? `<b>${n(st.reached)}</b>` : i === 0 && !p.measured ? esc(p.name) : "", alert: st.alert, stem: 9, tables: p.tables || "" });
+      why[st.pick] = `Stage ${i + 1} of ${nS} of ${p.name}, in order along its route. Position is order, not geography.`;
+      if (i) { flows += seg(st.movePick || "", [cu(i - 1) + 1.25, lv], [c - 1.15, lv], p.measured ? "" : "exp"); if (st.moved != null) marks += tag([(cu(i - 1) + c) / 2, lv, 0], `<b>${n(st.moved)}</b> →`, st.movePick, "mv"); } });
+    if (p.measured) tracer += `<path class="tracer" pathLength="100" d="M${P3(cu(0), lv)} L${P3(cu(nS - 1), lv)}"/>`;
+    if (p.exit) { const c = cu(p.exit.from || 0);
+      g += poly([P3(c - .3, lv + .6), P3(c + .3, lv + .6), P3(c + .3, lv + 2.4), P3(c - .3, lv + 2.4)], "#0c131b", 'stroke="#2c4055" stroke-width="1"');
+      flows += seg(p.exit.pick, [c, lv + 1.15], [c, lv + 2.35], "exit");
+      const a = P3(c - .5, lv + 2.8), b = P3(c + .5, lv + 3.6), e = P3(c + .5, lv + 2.8), f = P3(c - .5, lv + 3.6);
+      stagesSvg += `<g class="st" data-pick="${p.exit.pick}" data-tables="${p.tables || ""}" tabindex="0" role="button" aria-label="Leaves the process">${pad(c - 1, lv + 2.4, 2, 1.6, "ghost")}<path d="M${a} L${b} M${e} L${f}" stroke="#8b96a3" stroke-width="2" stroke-linecap="round"/></g>`;
+      marks += tag([c + 1.9, lv + 3.9, 0], `<b>${n(p.exit.n)}</b> left · ${esc(p.exit.label)}`, p.exit.pick, "mv ex"); } });
+  let links = "";
+  M.links.forEach((l) => { const A = centre[l.a], B = centre[l.b]; if (!A || !B || l.a === l.b) return;
+    links += `<g class="link" data-a="${l.a}" data-b="${l.b}"><path class="ln" d="M${P3(...A)} L${P3(...B)}"/></g>`;
+    marks += tag([(A[0] + B[0]) / 2, (A[1] + B[1]) / 2, 0], esc(l.verb), null, "lk lv", `data-a="${l.a}" data-b="${l.b}"`); });
+  const drawRow = (row) => row.map((it) => { const G = GLYPH[it.g], o = it.o;
+    marks += marker({ at: [it.u + it.w / 2, it.v + it.d / 2, G.h + 6], pick: "entity:" + o.id, kind: M.measured ? "entity" : "off", title: o.name, sub: o.count != null ? `<b>${n(o.count)}</b>` : "", stem: 14, tables: o.table || "" });
+    why["entity:" + o.id] = `Drawn as ${G.says} because its role is ${o.role || "not known"}${o.as ? ` (the package's ${o.as})` : ""}${(it.g === "facility" || it.g === "depot") && o.count && o.count <= 12 ? "; one bay per object" : ""}${o.skin && GLYPH[o.skin] ? "; the package hints this skin" : ""}. ` +
+      (dist[o.id] === null ? "It links to no other type, so it stands last." : dist[o.id] === 0 ? "It is the most linked type, so the others are ordered from it." : `It stands ${dist[o.id]} link${dist[o.id] === 1 ? "" : "s"} from ${byId[seeds[0]].name}; position is order, not geography.`);
+    return `<g class="st ${M.measured ? "" : "exp"}" data-pick="entity:${o.id}" data-tables="${o.table || ""}" tabindex="0" role="button" aria-label="${esc(o.name)}">${pad(it.u, it.v, it.w, it.d, M.measured ? "" : "ghost")}${G.draw(it.u, it.v, it.w, it.d, o)}</g>`; }).join("");
+  const structures = drawRow(back) + stagesSvg + drawRow(front);
+  return { why, structures: items.length, routes: M.processes.length, markers: marks,
+    svg: `<svg viewBox="200 50 1100 590" role="img" aria-label="${esc(`Isometric business landscape of ${M.title}: ${items.map((it) => it.o.name).join(", ")}. Each structure can be selected.`)}">
+    <defs>
+      <linearGradient id="gnd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1c2836"/><stop offset="1" stop-color="#111922"/></linearGradient>
+      <radialGradient id="spot" cx=".5" cy=".42" r=".55"><stop offset="0" stop-color="#5aa0e6" stop-opacity=".13"/><stop offset="1" stop-color="#5aa0e6" stop-opacity="0"/></radialGradient>
+      <linearGradient id="edgeL" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#111a24"/><stop offset="1" stop-color="#0a0f15"/></linearGradient>
+      <linearGradient id="padf" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f2d3b"/><stop offset="1" stop-color="#162029"/></linearGradient>
+      <linearGradient id="shL" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".09"/><stop offset="1" stop-color="#000" stop-opacity=".24"/></linearGradient>
+      <linearGradient id="shR" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity=".04"/><stop offset="1" stop-color="#000" stop-opacity=".32"/></linearGradient>
+      <linearGradient id="shT" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".16"/><stop offset=".6" stop-color="#fff" stop-opacity="0"/></linearGradient>
+      <linearGradient id="bay" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe2a6"/><stop offset="1" stop-color="#c98d3e"/></linearGradient>
+      <filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="5"/></filter></defs>
+    ${g}${links}${flows}${tracer}${structures}</svg>` };
+}
+/* ══ end of the composer ══ */
+
+/* ── the models: what the composer is handed. The live one is this connection's ontology; a pack's is what it EXPECTS. ── */
+const spaced = (s) => String(s).replace(/([a-z])([A-Z])/g, "$1 $2").replace(/_/g, " ");
+function model() {
+  if (biz === "live") { const tbl = T[P.entity_id].table;
+    return { id: "live", title: D.connection.name, measured: true,
+      objects: D.types.map((t) => { const r = D.roles[t.id] || {}; return { id: t.id, name: t.display_name, role: r.role || (r.builder === "event" ? "event" : ""), as: r.as || "", skin: r.skin || "", count: rowsOf(t.id), table: t.table || "" }; }),
+      links: D.links.map((l) => ({ a: bySnake[l.from].id, b: bySnake[l.to].id, verb: l.verb || String(l.business_name).replace(/_/g, " ") })),
+      processes: [{ id: P.id, name: P.display_name, object: P.entity_id, measured: true, tables: tbl,
+        stages: P.stages.map((s, i) => ({ pick: "stage:" + s.name, label: s.display_name || s.name, reached: s.reached, movePick: "move:" + s.name,
+          moved: i ? (seen(P.stages[i - 1].name, s.name) || {}).objects : null, alert: s.promise && s.promise.open_overdue > 0 ? { pick: "promise:" + s.promise.name, text: `${n(s.promise.open_overdue)} overdue` } : null })),
+        exit: P.leaves ? { pick: "exit", n: P.leaves.left, label: P.leaves.values.join(", "), from: 0 } : null }] }; }
+  const K = D.packs[biz];
+  return { id: biz, title: K.title, measured: false,
+    objects: K.objects.map((o) => ({ id: o.name, name: spaced(o.name), role: roleOf(o.roles), skin: o.skin, count: null })),
+    links: K.links.map((l) => ({ a: l.from, b: l.to, verb: l.cardinality })),
+    processes: K.processes.map((p) => ({ id: p.name, name: spaced(p.name), object: p.object, measured: false, stages: p.stages.map((s) => ({ pick: `stage:${p.name}/${s.name}`, label: spaced(s.name) })) })) };
+}
+
+/* ══ the precise 2D route — the same objects, selection and figures ══ */
+const on = (key) => (picked === key ? " on" : "");
+function route() {
+  const st = P.stages, cells = [`<div class="lane">Promises</div>`];
+  st.forEach((s, i) => {
+    cells.push(`<div class="cell">` + (s.promise ? `<button class="pick promise${on("promise:" + s.promise.name)}" data-pick="promise:${s.promise.name}"><div class="nm">${esc(s.promise.name)}</div>
+      <div class="ru">${esc(s.name)} within ${s.promise.within_days} days of ${esc(st[i - 1].name)}</div><div class="br">${pct(s.promise.breach_rate)} broke it · ${n(s.promise.open_overdue)} past it</div></button><div class="stemv"></div>` : "") + `</div>`);
+    if (i < st.length - 1) { const nx = st[i + 1], lk = impact && s.promise && nx.promise && impact.upstream.endsWith("." + s.promise.name) && impact.downstream.endsWith("." + nx.promise.name);
+      cells.push(`<div class="cell">` + (lk ? `<button class="move impact${on("impact")}" data-pick="impact"><div class="n">bears on · ${esc(impact.mechanism)}</div><div class="arrow dash"></div><div class="d">${impact.verified ? "the data shows it" : "the data does not show it"}</div></button>` : "") + `</div>`); }
+  });
+  cells.push(`<div class="lane">Stages</div>`);
+  st.forEach((s, i) => {
+    cells.push(`<div class="cell"><button class="pick stage${on("stage:" + s.name)}" data-pick="stage:${s.name}"><div class="nm">${esc(s.display_name || s.name)}</div><div class="big">${n(s.reached)}</div>
+      <div class="of">${pct(s.share)} of ${n(P.objects)} reached it</div><div class="track"><i style="width:${(s.share * 100).toFixed(1)}%"></i></div><div class="an">${esc(s.anchor.timestamp)}</div></button></div>`);
+    if (i < st.length - 1) { const t = st[i + 1].transition, m = seen(s.name, st[i + 1].name);
+      cells.push(`<div class="cell"><button class="move${on("move:" + st[i + 1].name)}" data-pick="move:${st[i + 1].name}"><div class="n">${m ? n(m.objects) + " moved" : "no move seen"}</div><div class="arrow"></div>
+        <div class="d">median ${days(t.p50_days)} d · 9 in 10 within ${days(t.p90_days)} d</div></button></div>`); }
+  });
+  cells.push(`<div class="lane" style="padding-top:12px">Leaves the process</div>`);
+  st.forEach((s, i) => { const out = (P.observed || []).find((m) => m.from_stage === s.name && m.to_stage === "left");
+    cells.push(`<div class="cell">` + (out ? `<button class="pick exitp${on("exit")}" data-pick="exit"><div><b>${n(out.objects)}</b> left after ${esc(s.name)}</div><div class="of" style="color:var(--t3);font-size:12px">${esc(P.leaves.property)} is ${esc(P.leaves.values.join(", "))}</div></button>` : "") + `</div>`);
+    if (i < st.length - 1) cells.push(`<div class="cell"></div>`); });
+  return `<div class="route">${cells.join("")}</div>`;
+}
+
+/* ══ lenses ══ */
+function viewport() {
+  const M = model(), live = biz === "live";
+  const bizSeg = `<div class="seg" role="group" aria-label="Business">${[["live", `${D.connection.name} · live`]].concat(Object.keys(D.packs).map((k) => [k, D.packs[k].title])).map(([k, l]) => `<button data-biz="${k}" class="${biz === k ? "on" : ""}">${esc(l)}</button>`).join("")}</div>`;
+  const head = `<div class="vphead"><div><h2>${esc(M.title)} — operating landscape</h2><div class="sub">${view === "2d" ? "The same process, drawn flat and exact." : live ? "Composed from this connection's ontology: shape from each object type's role, order from its links and its process. Position is order, not geography." : `What the ${esc(M.title)} package expects such a business to hold. Nothing here is measured; dashed means expected, not declared.`}</div></div>
+    <div style="margin-left:auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="seglab">Business</span>${bizSeg}
+      ${view === "25d" ? `<div class="seg">${[["all", "All"], ["flow", "Process"], ["links", "Links"]].map(([k, l]) => `<button data-flows="${k}" class="${flows === k ? "on" : ""}">${l}</button>`).join("")}</div>${live ? `<button class="btn sm" id="trace">▸ Trace</button>` : ""}` : ""}
+      ${live ? `<div class="seg" role="group" aria-label="View"><button data-view="25d" class="${view === "25d" ? "on" : ""}">2.5D</button><button data-view="2d" class="${view === "2d" ? "on" : ""}">2D</button></div>` : ""}</div></div>`;
+  if (view === "2d" && live) return `<div class="vp">${head}<div class="flat">${route()}</div></div>`;
+  return `<div class="vp">${head}<div class="stagewrap ${flows === "flow" ? "hide-links" : flows === "links" ? "hide-flow" : ""}" id="stagewrap">
+    <div class="world ${area && live ? "dim" : ""}" id="world" style="transform:translate(${pan[0]}px,${pan[1]}px) scale(${zoom})">${SCENE.svg}${SCENE.markers}</div>
+    <div class="vpnote"><span class="k">AUGHOR // BUSINESS ATLAS</span><span class="asof">${live ? `Counted ${when(P.measured_at)} · release ${D.release.number} · not live` : `Expected shape · ${esc(M.title)} package · nothing measured`}</span></div>
+    <div class="zoom"><button data-zoom="-1" aria-label="Zoom out">−</button><span>${Math.round(zoom * 100)}%</span><button data-zoom="1" aria-label="Zoom in">+</button><button data-zoom="0" aria-label="Reset view" title="Reset view" style="border-left:1px solid #2c3a49">⟲</button></div></div>
+    <div class="legend"><span><i style="width:7px;height:7px;border-radius:50%;background:var(--grn4)"></i>Measured stage</span><span><i style="width:7px;height:7px;background:var(--teal)"></i>Object type</span>
+      <span><i style="width:18px;border-top:3px solid var(--blue3)"></i>Measured move</span><span><i style="width:18px;border-top:1px dotted #9fb2c6"></i>Link</span>
+      <span><i style="width:9px;height:9px;background:var(--red1);border:1px solid var(--red4)"></i>Past a promise</span><span><i style="width:12px;height:9px;border:1px dashed var(--t3)"></i>Expected, not declared</span>
+      <span style="margin-left:auto;color:var(--t3)">Composed: ${SCENE.structures} structures, ${SCENE.routes} ${SCENE.routes === 1 ? "route" : "routes"} · one composer for every business</span></div></div>`;
+}
+function shapeTable() {            // the proof on the page: what each object type is drawn as, and why
+  const M = model();
+  return `<div class="card"><div class="lab">How this scene was composed <span class="r">role → shape · the composer names no industry, pack or object</span></div><table><thead><tr><th>Object type</th><th>Role</th><th>Drawn as</th><th>Why it stands where it does</th></tr></thead><tbody>
+    ${M.objects.map((o) => { const through = M.processes.find((p) => p.object === o.id), w = SCENE.why["entity:" + o.id] || "";
+      return `<tr class="rowbtn ${picked === "entity:" + o.id ? "on" : ""}" data-go="entity:${o.id}"><td><span class="nm">${esc(o.name)}</span></td><td>${o.role ? esc(o.role) : `<span class="warn">not known</span>`}</td>
+        <td>${through ? "the route itself" : esc(GLYPH[GLYPH[o.skin] ? o.skin : (ROLE_GLYPH[o.role] || "plinth")].says)}${o.skin && GLYPH[o.skin] ? ` <span class="chip blue">skin</span>` : ""}</td><td>${through ? `It goes through ${esc(through.name)}, so its stages are the route.` : esc(w.slice(w.indexOf(". ") + 2))}</td></tr>`; }).join("")}</tbody></table></div>`;
+}
+function inspectPack() {
+  if (!picked) return null;
+  const K = D.packs[biz], i = picked.indexOf(":"), kind = picked.slice(0, i), key = picked.slice(i + 1), mono = (v) => `<span class="mono">${esc(v)}</span>`;
+  if (kind === "entity") { const o = K.objects.find((x) => x.name === key); if (!o) return null; const lc = K.lifecycles.find((l) => l.object === key);
+    const rel = K.links.filter((l) => l.from === key || l.to === key).map((l) => { const other = l.from === key ? l.to : l.from; return ["entity:" + other, `${l.from === key ? "→" : "←"} ${spaced(other)}`, l.cardinality]; });
+    const rows = [["Role", esc(o.roles.join(", "))], ["Also called", o.aliases.length ? mono(o.aliases.join(", ")) : "—"], ["Measured", "no — no source is connected"]];
+    if (lc) rows.push(["States it expects", esc(lc.states.join(", "))]);
+    return { k: `Object type · expected by the ${K.title} package`, title: spaced(o.name), figs: [["not measured", "objects"], [String(rel.length), "links the package expects"]], rows, said: o.description, acts: ["Connect a source"], rel, why: SCENE.why[picked] || "" }; }
+  if (kind === "stage") { const [pid, sn] = key.split("/"), p = K.processes.find((x) => x.name === pid); if (!p) return null; const j = p.stages.findIndex((x) => x.name === sn), s = p.stages[j];
+    return { k: `Stage · expected by the ${K.title} package`, title: spaced(sn), figs: [["not measured", "reached it"], [`${j + 1} of ${p.stages.length}`, `along ${spaced(pid)}`]],
+      rows: [["Process", esc(spaced(pid))], ["Goes through it", esc(spaced(p.object))], ["Reached when, usually", mono(s.hints.join(", "))]], said: p.description, acts: ["Declare this process"], rel: [["entity:" + p.object, spaced(p.object), "goes through it"]], why: SCENE.why[picked] || "" }; }
+  return null;
+}
+function kpis() {
+  const withData = D.areas.filter((a) => a.rows > 0).length;
+  return `<div class="kpis">
+    <button class="kpi" data-pick="stage:placed"><span class="l">${esc(T[P.entity_id].display_name)}s in ${esc(P.display_name)}</span><span class="v">${n(P.objects)}</span><span class="s">objects, counted ${day(P.measured_at)}</span></button>
+    <button class="kpi bad" data-pick="promise:${worst.name}"><span class="l">Past the ${esc(worst.name)} promise</span><span class="v">${n(worst.open_overdue)}<small>not ${esc(P.stages.find((s) => s.promise === worst).name)}</small></span><span class="s">as of ${day(worst.as_of)}, the data's clock</span></button>
+    <button class="kpi" data-lens="processes"><span class="l">Declared processes</span><span class="v">${D.counts.processes}<small>of ${withData} areas with data</small></span><span class="s">${withData - 1} areas have no process declared</span></button>
+    <button class="kpi warn" data-lens="studio"><span class="l">Waiting for review</span><span class="v">${D.draft.counts.proposed}<small>proposals</small></span><span class="s">${D.draft.counts.confirmed} confirmed · ${D.draft.counts.refused} refused, in the draft</span></button></div>`;
+}
+function chain() {
+  const withData = D.areas.filter((a) => a.rows > 0), without = D.areas.filter((a) => !(a.rows > 0));
+  return `<div><div class="lab">Areas of the business <span class="r">the ${esc(D.pack)} package's own · select one to light what it reads</span></div>
+    <div class="chain">${withData.map((a, i) => { const has = a.id === D.process_area, ap = a.metrics.filter((m) => m.status === "approved").length;
+      return `<button class="area ${has ? "has" : ""} ${area === a.id ? "on" : ""}" data-area="${a.id}" aria-pressed="${area === a.id}"><span class="ix">${has ? "1 process" : "No process"}</span>
+        <span class="a">${esc(a.name)}</span><span class="q"></span><span class="m">${a.metrics.length ? `${plural(a.metrics.length, "metric", "metrics")}, ${ap} approved` : "no metric yet"}</span></button>`; }).join("")}</div>${area ? `<div class="nodata" style="color:var(--t2)"><b style="color:var(--t1)">${esc(D.areas.find((a) => a.id === area).name)}</b> — ${esc(D.areas.find((a) => a.id === area).question)} It reads ${D.areas.find((a) => a.id === area).tables.map((t) => `<span class="mono">${esc(t.name)}</span> (${n(t.rows)} rows)`).join(", ")}; what it reads is lit above.</div>` : ""}
+    <div class="nodata"><b>No data for ${without.length} more areas:</b> ${without.map((a) => esc(a.name)).join(" · ")}</div></div>`;
+}
+function coverage() {
+  const withData = D.areas.filter((a) => a.rows > 0).length, c = D.draft.counts;
+  const rows = [[P.display_name, `<span class="chip ok">Declared · measured</span>`, P.owner ? "—" : "Name an owner", "stage:placed"],
+    [impact.display_name, `<span class="chip warn">Declared · the data does not show it</span>`, "Review the impact", "impact"],
+    [`${c.proposed} proposals from the explorer`, `<span class="chip warn">Needs review</span>`, "Open Model Studio", "lens:studio"],
+    [`${D.unplaced.join(", ")}`, `<span class="chip">In no area</span>`, "Place the table in an area", "entity:DistributionCenter"],
+    [`${withData - 1} areas with data`, `<span class="chip">No process</span>`, "Declare a process", "lens:processes"],
+    [`${D.areas.length - withData} areas of the package`, `<span class="chip">No data</span>`, "Connect a source", ""]];
+  return `<div class="card"><div class="lab">Model coverage <span class="r">what is declared, what waits, what is not modeled</span></div><table><thead><tr><th>What</th><th>State</th><th>Next step</th></tr></thead><tbody>
+    ${rows.map(([a, b, c2, p]) => `<tr class="${p ? "rowbtn" : ""}" ${p ? `data-go="${p}"` : ""}><td><span class="nm">${esc(a)}</span></td><td>${b}</td><td>${esc(c2)}</td></tr>`).join("")}</tbody></table></div>`;
+}
+function feed() {
+  const d = PR.dispatch, l = PR.delivery;
+  const it = [["bad", "!", `${n(d.open_overdue)} orders are not shipped and already past the 2-day dispatch promise`, `Every order still open is past it, as of ${day(d.as_of)}.`, "promise:dispatch"],
+    ["bad", "!", `${n(l.open_overdue)} orders are not delivered and already past the 4-day delivery promise`, `As of ${day(l.as_of)}, the data's clock.`, "promise:delivery"],
+    ["warn", "≠", `Late dispatch does not show up as late delivery`, `${pct(impact.rate_when_broke)} broke delivery after a late dispatch, against ${pct(impact.rate_when_kept)} after an on-time one.`, "impact"],
+    ["info", "i", `${n(P.leaves.left)} orders left as Cancelled`, "They are not open and never overdue. An exit, not a bottleneck.", "exit"]];
+  return `<div class="card feed"><div class="lab">What needs attention <span class="r">from the measurement, not a model's opinion</span></div>
+    ${it.map(([k, g, w, s, p]) => `<button data-pick="${p}"><span class="g ${k}">${g}</span><span><span class="w">${esc(w)}</span><br><span class="s">${esc(s)}</span></span></button>`).join("")}</div>`;
+}
+function lensProcesses() {
+  const a = D.areas.find((x) => x.id === D.process_area);
+  const metrics = a.metrics.map((m) => [m.label, m.status]).concat((P.derived.metrics || []).map((m) => [m.name, "derived"]));
+  const acts = D.actions.filter((x) => String(x.object_type).toLowerCase() === P.entity);
+  return `<div class="vp"><div class="vphead"><div><h2>${esc(P.display_name)}</h2><div class="sub">${n(P.objects)} ${esc(T[P.entity_id].display_name)} objects · declared by a person · owner ${P.owner ? esc(P.owner) : "not named"} · every stage and promise measured ${when(P.measured_at)}</div></div>
+    <div style="margin-left:auto;display:flex;gap:8px"><button class="btn sm">Open as dashboard</button><button class="btn sm">Edit</button></div></div><div class="flat">${route()}
+    <div style="color:var(--t3);font-size:12px;margin-top:14px">A stage's count is the objects that ever reached it, not the objects waiting there. Every move the data shows was declared, and every declared move was seen.</div></div></div>
+  <div class="three"><div class="card"><div class="lab">Metrics in ${esc(a.name)}</div><table><tbody>${metrics.map(([l, s]) => `<tr><td><span class="nm">${esc(l)}</span></td><td class="n"><span class="chip ${s === "approved" ? "ok" : s === "derived" ? "blue" : "warn"}">${esc(s)}</span></td></tr>`).join("")}</tbody></table></div>
+    <div class="card"><div class="lab">Rules on ${esc(T[P.entity_id].display_name)}</div><table><tbody>${D.rules.map((r) => `<tr><td><span class="nm">${esc(r.display_name)}</span><br>${esc(r.property)} is ${esc(r.values.join(", "))}</td><td class="n">${n(r.admitted)} of ${n(r.objects)}</td></tr>`).join("")}</tbody></table></div>
+    <div class="card"><div class="lab">Actions on ${esc(T[P.entity_id].display_name)}</div><table><tbody>${acts.map((x) => `<tr><td><span class="nm">${esc(x.display_name)}</span></td><td class="n">${esc(x.risk)} risk</td></tr>`).join("")}</tbody></table></div></div>`;
+}
+function lensEntities() {
+  return `<div class="two"><div class="card"><div class="lab">Object types <span class="r">select one to inspect</span></div><table><thead><tr><th>Object type</th><th>Role</th><th class="n">Objects</th><th>Key</th><th>Table</th><th class="n">Links</th></tr></thead><tbody>
+    ${D.types.map((t) => `<tr class="rowbtn ${picked === "entity:" + t.id ? "on" : ""}" data-go="entity:${t.id}"><td><span class="nm">${esc(t.display_name)}</span></td><td>${esc(String(t.role || "").replace(/_/g, " "))}</td><td class="n">${rowsOf(t.id) == null ? "not counted" : n(rowsOf(t.id))}</td><td class="mono">${esc(t.key || "none")}</td><td class="mono">${esc(t.table || "no table")}</td><td class="n">${t.links}</td></tr>`).join("")}</tbody></table></div>
+    <div class="card"><div class="lab">Links <span class="r">${D.links.length} · all measured</span></div><table><thead><tr><th>From</th><th>Reads as</th><th>To</th><th>Shape</th></tr></thead><tbody>
+    ${D.links.map((l) => `<tr><td><span class="nm">${esc(bySnake[l.from]?.display_name || l.from)}</span></td><td>${esc(l.verb || String(l.business_name).replace(/_/g, " "))}</td><td><span class="nm">${esc(bySnake[l.to]?.display_name || l.to)}</span></td><td class="mono">${esc(l.cardinality)}</td></tr>`).join("")}</tbody></table></div></div>`;
+}
+function lensEvidence() {
+  const rows = [];
+  P.stages.forEach((s) => rows.push([`Stage · ${s.name}`, `${T[P.entity_id].table}.${s.anchor.timestamp}`, s.note, s.verified, "stage:" + s.name]));
+  promises.forEach((p) => rows.push([`Promise · ${p.name}`, `within ${p.within_days} days · kept per ${p.grain_id}`, p.note, p.verified, "promise:" + p.name]));
+  rows.push([`Exit · ${P.leaves.values.join(", ")}`, `${T[P.entity_id].table}.${P.leaves.property}`, P.leaves.note, true, "exit"]);
+  D.rules.forEach((r) => rows.push([`Rule · ${r.display_name}`, `${T[P.entity_id].table}.${r.property}`, `admits ${n(r.admitted)} of ${n(r.objects)}`, true, ""]));
+  rows.push([`Impact · ${impact.display_name}`, impact.mechanism, impact.note, impact.verified, "impact"]);
+  return `<div class="card"><div class="lab">Evidence <span class="r">every definition, what backs it, and what the count said · release ${D.release.number}, ${esc(D.release.id)}</span></div>
+    <table><thead><tr><th>Definition</th><th>Backed by</th><th>What the measurement said</th><th>Verdict</th></tr></thead><tbody>
+    ${rows.map(([a, b, c, v, p]) => `<tr class="${p ? "rowbtn" : ""} ${p && picked === p ? "on" : ""}" ${p ? `data-go="${p}"` : ""}><td style="white-space:nowrap"><span class="nm">${esc(a)}</span></td><td class="mono">${esc(b)}</td><td>${esc(c)}</td><td>${v ? `<span class="chip ok">measured</span>` : `<span class="chip warn">not shown</span>`}</td></tr>`).join("")}</tbody></table></div>`;
+}
+function lensStudio() {
+  const c = D.draft.counts, tier = { proposed: "warn", confirmed: "ok", refused: "bad" };
+  return `<div class="two"><div class="card"><div class="lab">The draft <span class="r">${c.proposed} proposed · ${c.confirmed} confirmed · ${c.refused} refused · nothing here is in force until released</span></div>
+    <table><thead><tr><th>Proposal</th><th>Kind</th><th>State</th></tr></thead><tbody>${D.draft.proposals.map((p) => `<tr><td>${esc(p.sentence)}</td><td>${esc(p.kind)}</td><td><span class="chip ${tier[p.tier] || ""}">${esc(p.tier)}</span></td></tr>`).join("")}</tbody></table></div>
+    <div class="card"><div class="lab">Releases <span class="r">what every reader sees</span></div><table><thead><tr><th>Release</th><th>Published</th><th>Changes</th></tr></thead><tbody>
+    ${D.releases.map((r) => `<tr><td><span class="nm">${r.number}</span>${r.number === D.release.number ? ` <span class="chip ok">in force</span>` : ""}</td><td>${day(r.at)}${r.by ? " · " + esc(r.by) : ""}</td><td>${esc(r.note)}${r.changes.some((x) => x.class !== "SAFE") ? ` <span class="chip warn">${esc([...new Set(r.changes.map((x) => x.class).filter((x) => x !== "SAFE"))].join(", ").toLowerCase())}</span>` : ""}</td></tr>`).join("")}</tbody></table></div></div>`;
+}
+
+/* ══ the inspector — one contract for every element ══ */
+function inspect() {
+  if (biz !== "live") return inspectPack();
+  if (!picked) return null;
+  const [kind, key] = picked.split(":"), mono = (v) => `<span class="mono">${esc(v)}</span>`;
+  let k = "", title = "", figs = [], rows = [], said = "", acts = [], rel = [];
+  if (kind === "stage") { const s = ST[key], i = P.stages.indexOf(s);
+    k = `Stage ${i + 1} of ${P.stages.length} · ${P.display_name}`; title = s.display_name || s.name; said = s.note;
+    figs = [[n(s.reached), "reached it"], [pct(s.share), `of ${n(P.objects)} objects`]];
+    rows = [["Reached when", mono(`${s.anchor.timestamp} is set`)], ["Object type", esc(T[P.entity_id].display_name)], ["Measured", s.verified ? "yes" : "no"], ["Promise", s.promise ? esc(s.promise.name) : "none declared"]];
+    if (s.promise) rel.push(["promise:" + s.promise.name, `${s.promise.name} promise`, `${pct(s.promise.breach_rate)} broke it`]);
+    if (s.transition) rel.push(["move:" + s.name, `${s.transition.from} → ${s.name}`, `median ${days(s.transition.p50_days)} d`]);
+    acts = ["Open these objects", "View SQL", "Ask about this"];
+  } else if (kind === "move") { const s = ST[key], t = s.transition, m = seen(t.from, s.name);
+    k = "Move"; title = `${t.from} → ${s.name}`; said = "Calendar days between the two moments, over the objects that carry both.";
+    figs = [[n(m && m.objects), "moved"], [`${days(t.p50_days)} d`, "median"]];
+    rows = [["Declared", m && m.declared ? "yes" : "no"], ["Carry both moments", n(t.both)], ["Skipped the stage before", n(t.skipped)], ["Out of order", n(t.out_of_order)],
+      ["9 in 10 within", `${days(t.p90_days)} days`], ["19 in 20 within", `${days(t.p95_days)} days`], ["As a property", mono(t.lag)]];
+    acts = ["Open these objects", "View SQL", "Ask about this"];
+  } else if (kind === "promise") { const p = PR[key], s = P.stages.find((x) => x.promise === p);
+    k = "Promise"; title = `${p.name} — ${s.name} within ${p.within_days} days`; said = p.note;
+    figs = [[n(p.open_overdue), "not reached, already past", "bad"], [pct(p.breach_rate), "of those that reached it broke it", "bad"]];
+    rows = [["Kept per", esc(p.grain_id)], ["Reached, in force", n(p.reached)], ["Broke it", n(p.breached)], ["Kept it", n(p.kept)], ["Not reached yet", n(p.open)],
+      ["As of", `${when(p.as_of)} — the data's clock`], ["Target", p.target == null ? "none declared" : pct(p.target)], ["Late objects", mono(p.segment)], ["Overdue objects", mono(p.overdue_segment)], ["Breach rate", mono(p.metric)]];
+    if (impact) rel.push(["impact", impact.display_name, impact.verified ? "the data shows it" : "the data does not show it"]);
+    rel.push(["stage:" + s.name, `Stage · ${s.name}`, `${n(s.reached)} reached it`]);
+    acts = [`Open the ${n(p.open_overdue)} overdue`, "Ask why", "Flag for review…"];
+  } else if (kind === "exit") { const L = P.leaves; k = "Leaves the process"; title = `${L.property} is ${L.values.join(", ")}`; said = L.note;
+    figs = [[n(L.left), "left"], [n(L.unknown), "could not be read"]];
+    rows = [["Property", mono(L.property)], ["Values no object holds", L.missing.length ? esc(L.missing.join(", ")) : "none"]]; acts = ["Open these objects", "View SQL"];
+  } else if (kind === "impact") { const I = impact; k = "What one promise does to another"; title = I.display_name; said = I.reading;
+    figs = [[pct(I.rate_when_broke), "broke delivery after a late dispatch"], [pct(I.rate_when_kept), "broke delivery after an on-time one"]];
+    rows = [["Declared as", esc(I.mechanism)], ["Objects compared", n(I.objects)], ["Saw dispatch broken", n(I.upstream_broke)], ["Saw dispatch kept", n(I.upstream_kept)], ["Window", esc(I.window)], ["Shown by the data", I.verified ? "yes" : "no"]];
+    rel = promises.map((p) => ["promise:" + p.name, `${p.name} promise`, `${pct(p.breach_rate)} broke it`]); acts = ["Ask about this", "Edit"];
+  } else if (kind === "entity") { const t = T[key], r = rowsOf(key);
+    k = `Object type · ${String(t.role || "").replace(/_/g, " ")}`; title = t.display_name;
+    figs = [[r == null ? "not counted" : n(r), key === "Event" ? "rows in events" : "objects"], [String(t.links), "links to other types"]];
+    rows = [["Key", t.key ? mono(t.key) + (t.key_verified ? " · verified" : "") : "none declared"], ["Table", t.table ? mono(t.table) : "no table"], ["Properties", n(t.properties)], ["Origin", esc(t.origin)],
+      ["Areas", esc(D.areas.filter((a) => a.tables.some((x) => x.name === t.table)).map((a) => a.name).join(", ") || "in no area")]];
+    if (key === "DistributionCenter") rows.splice(2, 0, ["Stores", `${n(rowsOf("InventoryItem"))} inventory items`]);
+    rel = D.links.filter((l) => l.from === t.object_type || l.to === t.object_type).slice(0, 6).map((l) => { const o = bySnake[l.from === t.object_type ? l.to : l.from];
+      return ["entity:" + o.id, `${l.from === t.object_type ? "→" : "←"} ${o.display_name}`, `${l.verb || String(l.business_name).replace(/_/g, " ")} · ${l.cardinality}`]; });
+    if (key === P.entity_id) rel.unshift(["stage:placed", P.display_name, "goes through this process"]);
+    acts = ["Open the objects", "Open the type", "Ask about this"];
+  }
+  return { k, title, figs, rows, said, acts, rel, why: SCENE.why[picked] || "" };
+}
+function inspector() {
+  const el = $("insp"), I = inspect();
+  if (!I) { el.hidden = true; el.innerHTML = ""; return; }
+  el.hidden = false;
+  el.innerHTML = `<header><div><div class="k">${esc(I.k)}</div><h3>${esc(I.title)}</h3></div><button class="x" id="closeInsp" aria-label="Close">×</button></header>
+    <div class="sc"><div class="figs">${I.figs.map(([v, l, c]) => `<div class="fig ${c || ""}"><div class="v">${esc(v)}</div><div class="l">${esc(l)}</div></div>`).join("")}</div>
+      <dl>${I.rows.map(([a, b]) => `<dt>${esc(a)}</dt><dd>${b}</dd>`).join("")}</dl>
+      ${I.said ? `<div class="sec">What the measurement said</div><div class="said">${esc(I.said)}</div>` : ""}
+      ${I.rel.length ? `<div class="sec">Connected</div><div class="rel">${I.rel.map(([p, a, b]) => `<button data-pick="${p}"><span>${esc(a)}</span><span class="v" style="margin-left:auto">${esc(b)}</span></button>`).join("")}</div>` : ""}
+      ${I.why ? `<div class="sec">Why it is drawn here</div><div class="why">${esc(I.why)}</div>` : ""}
+      <div class="do">${I.acts.map((a, i) => `<button class="btn ${i === 0 ? "primary" : ""}">${esc(a)}</button>`).join("")}</div></div>
+    <footer>Release ${D.release.number} · published ${day(D.release.at)} by ${esc(D.release.by)} · counted ${when(P.measured_at)}</footer>`;
+}
+
+/* ══ wiring ══ */
+let LIVE_FACTS = "";
+function shell() {
+  LIVE_FACTS = `<span class="fact">${esc(D.connection.name)} · ${esc(D.connection.schema)}</span><span class="fact">release <b>${D.release.number}</b> · ${day(D.release.at)}</span>` +
+    `<span class="fact">counted <b>${when(P.measured_at)}</b></span><span class="fact">${esc(D.pack)} package</span>`;
+  $("reviewBtn").textContent = `Review ${D.draft.counts.proposed}`;
+  $("status").innerHTML = `<span><span class="dot"></span>${esc(D.connection.name)} · ${esc(D.connection.engine)}</span><span>release ${D.release.number} in force</span>` +
+    `<span>process counts are kept once for every reader; a row policy recounts them for you and says so</span><span style="margin-left:auto">live API data, read ${esc(D.read_at)}</span>`;
+}
+function draw() {
+  if (biz !== "live") { lens = "overview"; view = "25d"; }
+  $("facts").innerHTML = biz === "live" ? LIVE_FACTS : `<span class="fact">${esc(D.packs[biz].title)} package</span><span class="fact">its expected shape</span><span class="fact"><b>no source connected</b> · nothing measured</span>`;
+  $("reviewBtn").hidden = biz !== "live";
+  SCENE = compose(model());
+  $("lenses").innerHTML = [["overview", "Overview"], ["processes", "Processes", D.counts.processes], ["entities", "Entities", D.types.length], ["evidence", "Evidence"], ["studio", "Model Studio", D.draft.counts.proposed]]
+    .map(([k, l, c]) => `<button class="lens ${lens === k ? "on" : ""}" role="tab" aria-selected="${lens === k}" data-lens="${k}" ${biz !== "live" && k !== "overview" ? 'disabled style="opacity:.4;cursor:default"' : ""}>${l}${c != null ? `<em>${c}</em>` : ""}</button>`).join("");
+  $("body").innerHTML = biz !== "live" ? viewport() + shapeTable() : lens === "overview" ? kpis() + viewport() + shapeTable() + chain() + `<div class="two">${coverage()}${feed()}</div>` :
+    lens === "processes" ? lensProcesses() : lens === "entities" ? lensEntities() : lens === "evidence" ? lensEvidence() : lensStudio();
+  // selection and area lighting in the scene
+  const lit = area ? new Set(D.areas.find((a) => a.id === area).tables.map((t) => t.name)) : null;
+  const pst = picked && picked.startsWith("promise:") ? "stage:" + P.stages.find((s) => s.promise && s.promise.name === picked.slice(8)).name : null;
+  document.querySelectorAll(".st, .flow, .mk[data-mk]").forEach((el) => {
+    const p = el.dataset.pick || el.dataset.mk; el.classList.toggle("on", p === picked || p === pst);
+    if (lit && el.dataset.tables != null) el.classList.toggle("lit", el.dataset.tables.split(" ").some((t) => lit.has(t)));
+  });
+  document.querySelectorAll(".link, .mk.lv").forEach((el) => el.classList.toggle("on", picked === "entity:" + el.dataset.a || picked === "entity:" + el.dataset.b));
+  inspector(); bind();
+  history.replaceState(null, "", "#" + new URLSearchParams({ lens, view, pick: picked || "", ...(area ? { area } : {}), ...(biz !== "live" ? { biz } : {}) }).toString());
+}
+function pick(p) { if (p.startsWith("lens:")) { lens = p.slice(5); } else picked = p; draw(); }
+function bind() {
+  document.querySelectorAll("[data-pick]").forEach((b) => { b.onclick = (e) => { e.stopPropagation(); pick(b.dataset.pick); };
+    if (b.tagName !== "BUTTON") b.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(b.dataset.pick); } }; });
+  document.querySelectorAll("[data-go]").forEach((r) => r.onclick = () => pick(r.dataset.go));
+  document.querySelectorAll("[data-lens]").forEach((b) => b.onclick = () => { lens = b.dataset.lens; draw(); });
+  document.querySelectorAll("[data-view]").forEach((b) => b.onclick = () => { view = b.dataset.view; draw(); });
+  document.querySelectorAll("[data-biz]").forEach((b) => b.onclick = () => { biz = b.dataset.biz; picked = null; area = null; zoom = 1; pan = [0, 0]; draw(); });
+  document.querySelectorAll("[data-flows]").forEach((b) => b.onclick = () => { flows = b.dataset.flows; draw(); });
+  document.querySelectorAll("[data-area]").forEach((b) => b.onclick = () => { area = area === b.dataset.area ? null : b.dataset.area; draw(); });
+  document.querySelectorAll("[data-zoom]").forEach((b) => b.onclick = (e) => { e.stopPropagation(); const k = +b.dataset.zoom;
+    if (k === 0) { zoom = 1; pan = [0, 0]; } else zoom = Math.min(2, Math.max(.75, +(zoom + k * .25).toFixed(2))); draw(); });
+  const c = $("closeInsp"); if (c) c.onclick = () => { picked = null; draw(); };
+  const t = $("trace"); if (t) t.onclick = () => { const w = $("world"); w.classList.remove("tracing"); void w.offsetWidth; w.classList.add("tracing"); setTimeout(() => w.classList.remove("tracing"), 2700); };
+  const sw = $("stagewrap"); if (sw) { let from = null;
+    sw.onpointerdown = (e) => { if (e.target.closest("button, .st, .flow")) return; from = [e.clientX - pan[0], e.clientY - pan[1]]; sw.classList.add("drag"); sw.setPointerCapture(e.pointerId); $("world").style.transition = "none"; };
+    sw.onpointermove = (e) => { if (!from) return; pan = [e.clientX - from[0], e.clientY - from[1]]; $("world").style.transform = `translate(${pan[0]}px,${pan[1]}px) scale(${zoom})`; };
+    sw.onpointerup = sw.onpointercancel = () => { from = null; sw.classList.remove("drag"); $("world").style.transition = ""; }; }
+}
+/* search: every stage, promise, object type and area, by name */
+const INDEX = P.stages.map((s, i) => ({ k: `Stage ${i + 1}`, t: s.display_name || s.name, v: n(s.reached), p: "stage:" + s.name }))
+  .concat(promises.map((p) => ({ k: "Promise", t: p.name, v: `${n(p.open_overdue)} overdue`, p: "promise:" + p.name })))
+  .concat(D.types.map((t) => ({ k: "Object type", t: t.display_name, v: rowsOf(t.id) == null ? "" : n(rowsOf(t.id)), p: "entity:" + t.id })))
+  .concat([{ k: "Exit", t: "Cancelled", v: n(P.leaves.left), p: "exit" }, { k: "Impact", t: impact.display_name, v: "", p: "impact" }])
+  .concat(D.areas.filter((a) => a.rows > 0).map((a) => ({ k: "Area", t: a.name, v: plural(a.metrics.length, "metric", "metrics"), a: a.id })));
+function goto(r) { biz = "live"; if (r.a) { area = r.a; lens = "overview"; view = "25d"; } else picked = r.p; $("q").value = ""; $("qres").hidden = true; $("q").blur(); draw(); }
+function search() { const s = $("q").value.trim().toLowerCase(), box = $("qres"); if (!s) { box.hidden = true; return []; }
+  const hits = INDEX.filter((r) => (r.t + " " + r.k).toLowerCase().includes(s)).slice(0, 8); box.hidden = false;
+  box.innerHTML = hits.length ? hits.map((r, i) => `<button class="${i ? "" : "first"}" data-i="${INDEX.indexOf(r)}"><span class="k">${esc(r.k)}</span><span>${esc(r.t)}</span><span class="v">${esc(r.v)}</span></button>`).join("") : `<div class="none">Nothing in this ontology is called that.</div>`;
+  box.querySelectorAll("button").forEach((b) => b.onmousedown = (e) => { e.preventDefault(); goto(INDEX[+b.dataset.i]); }); return hits; }
+$("q").oninput = search; $("q").onfocus = search; $("q").onblur = () => setTimeout(() => { $("qres").hidden = true; }, 120);
+$("q").onkeydown = (e) => { if (e.key === "Enter") { const h = search(); if (h[0]) goto(h[0]); } if (e.key === "Escape") { $("q").value = ""; $("q").blur(); e.stopPropagation(); } };
+document.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); $("q").focus(); return; }
+  if (e.target === $("q")) return;
+  if (e.key === "Escape") { if (picked) picked = null; else if (area) area = null; draw(); }
+  if ((e.key === "ArrowRight" || e.key === "ArrowLeft") && picked && picked.startsWith("stage:")) {   // step along the process
+    const i = P.stages.findIndex((s) => "stage:" + s.name === picked) + (e.key === "ArrowRight" ? 1 : -1);
+    if (P.stages[i]) { e.preventDefault(); picked = "stage:" + P.stages[i].name; draw(); } }
+});
+shell(); draw();
+</script>
+</body>
+</html>

@@ -1,0 +1,12496 @@
+import type { EvalBasis } from "./agentEval";
+import { getActiveWorkspace } from "./workspace";
+import { getApiBase } from "./config";
+import { installUpsellInterceptor } from "./upsell";
+import { installApprovalInterceptor } from "./approval";
+import { normalizeDeparture } from "./departures";
+
+// Screen every API response for HTTP 402 (capability_locked) → app-wide upsell modal,
+// and HTTP 428 (approval_required) → app-wide approval modal. Idempotent, client-only;
+// installed when the API layer first loads, so every fetch call site is covered.
+installUpsellInterceptor();
+installApprovalInterceptor();
+
+export interface Connection {
+  id: string;
+  name: string;
+  conn_type: string;
+  dsn_preview: string;
+  schema_name: string | null;
+  builtin: boolean;
+  /** Whether this connection is opted into Briefings (opt-out: true unless disabled). */
+  briefings_enabled?: boolean;
+}
+
+export interface TestResult {
+  ok: boolean;
+  message: string;
+}
+
+export async function getConnections(): Promise<Connection[]> {
+  const res = await fetch(`${getApiBase()}/connections`);
+  if (!res.ok) throw new Error("Failed to fetch connections");
+  return res.json();
+}
+
+// SP-3/SP-4 — the per-user settings store. Stored preferences follow the USER across
+// browsers and sessions; localStorage is only this device's paint-before-fetch cache.
+export interface MyPreferences {
+  user: string;
+  /** A value is whatever its key's validator admits — a string for `theme`, an object of card positions for
+   *  `ontology_map_layout`. The store's closed key registry is what types them; this map does not. */
+  preferences: Record<string, unknown>;
+}
+
+export async function getMyPreferences(): Promise<MyPreferences> {
+  const res = await fetch(`${getApiBase()}/me/preferences`);
+  if (!res.ok) throw new Error("Failed to fetch preferences");
+  return res.json();
+}
+
+export async function putMyPreference(key: string, value: unknown): Promise<void> {
+  const res = await fetch(`${getApiBase()}/me/preferences/${encodeURIComponent(key)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ value }),
+  });
+  if (!res.ok) throw new Error("Failed to store preference");
+}
+
+export interface DemoSeedResult {
+  /** The demo connection's id — present whether or not this call created it. */
+  id: string;
+  /** True when this call wrote the dataset; false when it already existed. */
+  seeded: boolean;
+  message: string;
+}
+
+/** Provision the bundled demo dataset and return its connection.
+ *
+ *  Nothing is seeded on boot, so a fresh install has no data at all — this is the
+ *  in-app half of `aughor seed`, for the user who never opens a terminal. Idempotent:
+ *  calling it when the demo already exists returns the connection with `seeded: false`
+ *  and leaves the data alone. */
+export async function seedDemoConnection(): Promise<DemoSeedResult> {
+  const res = await fetch(`${getApiBase()}/connections/demo`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to load the demo dataset");
+  return res.json();
+}
+
+// ── Capabilities (commercial tier gating) ──────────────────────────────────
+export interface Capabilities {
+  tier: "free" | "pro" | "enterprise" | string;
+  capabilities: string[];
+  roles?: string[];
+  /** Whether tenants are distinguishable (per-request identity is enforced).
+   *  Per-org controls are hidden without it — with one org, an "org override" can
+   *  only restate the deployment config, so offering it is a second place to
+   *  configure the same thing. */
+  multi_tenant?: boolean;
+}
+
+/** The active tier + granted capabilities (defaults to enterprise = everything on). */
+export async function getCapabilities(connectionId?: string): Promise<Capabilities> {
+  const q = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${getApiBase()}/capabilities${q}`);
+  if (!res.ok) return { tier: "enterprise", capabilities: [] };  // fail-open: never block UI
+  return res.json();
+}
+
+// ── Business / Industry Profile ─────────────────────────────────────────────
+/** The range a metric's `unit_or_range` text STATES, read by the backend and shipped with the profile:
+ *  'ratio01' a stated 0..1 rate, 'pct100' a stated 0..100 one, 'band' any other stated band ('0..24',
+ *  '≥ 1' — `lo`/`hi` is null where the text leaves that end open), 'typical' a band the text only calls
+ *  usual (never a bound), 'open' no band at all. One reader — `stated_range` in
+ *  `aughor/business_profile/validate.py`, the same one the value audit holds the metric to — so a figure
+ *  the audit keeps is never hidden here by a bound its text doesn't state. */
+export interface StatedRange {
+  kind: "ratio01" | "pct100" | "band" | "typical" | "open";
+  lo: number | null;
+  hi: number | null;
+}
+export interface NorthStarMetric {
+  name: string;
+  definition: string;
+  maps_to: string;
+  why_it_matters: string;
+  unit_or_range: string;
+  /** How `unit_or_range` reads. Absent from an API older than the field — then the figure reads as 'open'. */
+  stated_range?: StatedRange;
+  value_sql: string;
+  chart_sql?: string;
+}
+export interface BusinessProfileResponse {
+  available: boolean;
+  /** When the profile was inferred — the store's stamp. */
+  generated_at?: string;
+  profile?: {
+    industry: string;
+    business_model: string;
+    summary: string;
+    north_star_metrics: NorthStarMetric[];
+    key_questions: string[];
+    confidence: number;
+    currency_code?: string;   // ISO 4217 the business reports in (drives €/£/$ figures)
+    /** Why the inference landed where it did, in the model's words. */
+    evidence?: string | string[];
+  };
+}
+
+/** Display symbol for an ISO currency code (mirrors backend triage.currency_symbol). */
+export function currencySymbol(code?: string | null): string {
+  if (!code) return "$";
+  const map: Record<string, string> = { USD: "$", EUR: "€", GBP: "£", JPY: "¥", CNY: "¥", INR: "₹" };
+  return map[code.toUpperCase()] ?? `${code.toUpperCase()} `;
+}
+export async function getBusinessProfile(connectionId: string, schema?: string): Promise<BusinessProfileResponse> {
+  const q = schema ? `&schema_name=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${getApiBase()}/business-profile?connection_id=${encodeURIComponent(connectionId)}${q}`);
+  if (!res.ok) return { available: false };
+  return res.json();
+}
+
+// ── Workspaces ─────────────────────────────────────────────────────────────
+// The top-level scope: a named grouping of connections.
+// Connections, Canvases and intelligence are all viewed through the lens of
+// the currently-selected Workspace.
+export interface Workspace {
+  id: string;
+  name: string;
+  description: string;
+  connection_ids: string[];
+  /** What this workspace can actually see: membership ∪ explicit catalog grants,
+   *  resolved by the backend's own visibility gate. The picker filters on THIS —
+   *  filtering on `connection_ids` alone hid granted catalogs the API served. */
+  accessible_connection_ids?: string[];
+  is_default: boolean;
+  settings_override?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getWorkspaces(): Promise<Workspace[]> {
+  const res = await fetch(`${getApiBase()}/workspaces`);
+  if (!res.ok) throw new Error("Failed to fetch workspaces");
+  return res.json();
+}
+
+export async function getWorkspace(id: string): Promise<Workspace> {
+  const res = await fetch(`${getApiBase()}/workspaces/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error("Failed to fetch workspace");
+  return res.json();
+}
+
+// ── Org / workspace settings (identity, localization, appearance) ──────────────
+export interface OrgSettings {
+  company_name: string;
+  website: string;
+  hq_location: string;
+  industry: string;
+  currency_code: string;
+  timezone: string;
+  date_format: string;
+  fiscal_year_start_month: number;
+  chart_palette: string;
+  /** CA-5 — land on the conversation instead of the workbench. */
+  chat_first_home: boolean;
+  /** CB-6 — what the organisation is trying to do this quarter, written by people. */
+  priorities: Priority[];
+  /** The exploration principles §7 — the organisation's monthly budget, in model tokens, for what the
+   *  Explorer spends on its own initiative; 0 = none. */
+  exploration_monthly_tokens?: number;
+  /** Arc MC — how many approved headline metrics a Briefing measures; 0 = the platform's default (24 while the
+   *  Briefing reads by area, 12 while it does not). */
+  briefing_metric_cap?: number;
+  /** What Aughor may do (ROADMAP §3.65) — the organisation's four choices, each off by default; null = never set,
+   *  when the server's former flag variable answers (`getOrgAllows` says which). */
+  share_aggregates?: boolean | null;
+  outside_row_model?: boolean | null;
+  reason_to_read_runs?: boolean | null;
+  scheduled_model_work?: boolean | null;
+  /** Arc NV-3 (ROADMAP §3.68) — read each warehouse's own query history for candidates; born a setting. */
+  read_query_history?: boolean | null;
+  /** Track D1 (ROADMAP §3.69) — copy a source's rows into the federation engine for a cross-source join. */
+  copy_rows_across_sources?: boolean | null;
+}
+
+/** The choices an organisation makes about what Aughor may do (ROADMAP §3.65; §3.68 added `read_query_history`). */
+export type OrgAllowSetting = "share_aggregates" | "outside_row_model" | "reason_to_read_runs" | "scheduled_model_work"
+  | "read_query_history" | "copy_rows_across_sources";
+
+/** Each choice's answer, and whether an admin set it — one never set answers from the server's environment. */
+export type OrgAllows = Record<OrgAllowSetting, { allowed: boolean; set: boolean }>;
+
+export async function getOrgAllows(): Promise<OrgAllows> {
+  const res = await fetch(`${getApiBase()}/org-settings/allows`);
+  if (!res.ok) throw new Error("Failed to read what the organisation allows");
+  return res.json();
+}
+
+/** CB-6 — one declared priority: the metric it names, the target, which way is good, by when. */
+export interface Priority { metric: string; target: string; direction: "" | "up" | "down"; by: string; note: string }
+
+export async function getOrgSettings(): Promise<OrgSettings> {
+  const res = await fetch(`${getApiBase()}/org-settings`);
+  if (!res.ok) throw new Error("Failed to fetch org settings");
+  return res.json();
+}
+
+export async function updateOrgSettings(settings: OrgSettings): Promise<OrgSettings> {
+  const res = await fetch(`${getApiBase()}/org-settings`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to update org settings"));
+  }
+  return res.json();
+}
+
+// ── Industries chosen at install (IP-2) — which industry packages this deployment reads ────
+export interface ShippedIndustry {
+  id: string;
+  name: string;
+  title: string;
+  description: string;
+}
+
+export interface IndustryChoice {
+  /** null keeps every industry, each connection's detected on its own; a list keeps those (none too). */
+  industries: string[] | null;
+  source: string;
+  updated_at: string;
+  ignored: string[];
+  problem: string;
+  shipped: ShippedIndustry[];
+  /** Business profiles this change dropped because their industry now resolves differently. */
+  profiles_refreshed: number;
+}
+
+export async function getIndustryChoice(): Promise<IndustryChoice> {
+  const res = await fetch(`${getApiBase()}/org-settings/industries`);
+  if (!res.ok) throw new Error("Failed to load the industry choice");
+  return res.json();
+}
+
+export async function updateIndustryChoice(industries: string[] | null): Promise<IndustryChoice> {
+  const res = await fetch(`${getApiBase()}/org-settings/industries`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ industries }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to save the industry choice"));
+  }
+  return res.json();
+}
+
+// ── Org-scoped BYOK (CI-5b) — the org's own provider keys + per-role models ────
+export interface OrgLLMConfig {
+  /** The providers an org may choose — the deployment's one list, built-in and added. */
+  backends?: string[];
+  /** Which of them take a key (an added one may run without). */
+  keyed?: string[];
+  /** The names the added providers were given, by id. */
+  labels?: Record<string, string>;
+  configured: boolean;
+  backend: string;
+  models: Record<string, string>;
+  keys_set: Record<string, boolean>;          // USABLE — a stored key that cannot be decrypted is false
+  keys_state?: Record<string, "set" | "unset" | "unreadable">;
+  updated_at: string;
+}
+
+export interface OrgLLMPatch {
+  backend?: string;
+  models?: Record<string, string>;
+  keys?: Record<string, string>;
+  allow_paid?: boolean;
+}
+
+export async function getOrgLLM(): Promise<OrgLLMConfig> {
+  const res = await fetch(`${getApiBase()}/org-settings/llm`);
+  if (!res.ok) throw new Error("Failed to fetch org model settings");
+  return res.json();
+}
+
+export async function updateOrgLLM(patch: OrgLLMPatch): Promise<OrgLLMConfig> {
+  const res = await fetch(`${getApiBase()}/org-settings/llm`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to update org model settings"));
+  }
+  return res.json();
+}
+
+export async function clearOrgLLM(): Promise<OrgLLMConfig> {
+  const res = await fetch(`${getApiBase()}/org-settings/llm`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to clear org model settings");
+  return res.json();
+}
+
+/** Agent Context surface (P2): re-derive the working context after a scope edit. */
+export interface RescopeResult {
+  manifest: { tables: string[]; table_count: number; estimated_tokens: number; joins: { from: string; to: string; kind: string }[] };
+  all_tables: string[];
+  full_tokens: number;
+  scoped_tokens: number;
+  token_delta: number;
+}
+
+export async function rescopeContext(connectionId: string, keep: string[]): Promise<RescopeResult> {
+  const res = await fetch(`${getApiBase()}/investigations/context/rescope`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, keep }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to rescope context"));
+  }
+  return res.json();
+}
+
+/** Reject a pending plan — cancel the paused investigation outright. */
+export async function cancelInvestigation(invId: string): Promise<void> {
+  await fetch(`${getApiBase()}/investigations/${encodeURIComponent(invId)}/cancel`, { method: "POST" });
+}
+
+/** FL-1b — cancel the deep run behind a still-loading turn, if it has one.
+ *  A deep run executes as a KERNEL JOB (K1): aborting the HTTP stream stops the
+ *  watching, not the work, so stop/interrupt must also cancel the job. Lives
+ *  here — the backend-contract mirror — so callers need not name the backend's
+ *  frozen `investigation` spelling (the vocabulary ratchet's rule); best-effort,
+ *  like the reject path above. */
+export function cancelActiveDeepRun(
+  turn: { investigationId?: string | null } | null | undefined,
+): void {
+  const id = turn?.investigationId;
+  if (id) void cancelInvestigation(id).catch(() => { /* best-effort */ });
+}
+
+/** Best-effort capture: the user drilled ("explore this fact") an overview card. Feeds the
+ *  per-connection notability prior the next tour reads back (backend overview.drills).
+ *  Fire-and-forget — a failed capture must never disrupt the drill it accompanies. */
+export function recordOverviewDrill(
+  connectionId: string,
+  opts: { canvasId?: string; lens?: string; table?: string } = {},
+): void {
+  try {
+    void fetch(`${getApiBase()}/overview/drill`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        connection_id: connectionId,
+        canvas_id: opts.canvasId ?? null,
+        lens: opts.lens ?? "",
+        table: opts.table ?? "",
+      }),
+    }).catch(() => {});
+  } catch {
+    /* ignore — capture is best-effort */
+  }
+}
+
+/** Action-approval audit + allowlist (P4, Pillar B). */
+export interface ApprovalAuditEvent {
+  seq?: number; at?: string; action: string; risk: string; decision: string;
+  scope: string; actor: string; detail?: string;
+}
+export interface AllowlistEntry { action: string; scope: string; by?: string; at?: string; allowed?: boolean }
+
+export async function getApprovalsAudit(limit = 100): Promise<ApprovalAuditEvent[]> {
+  const res = await fetch(`${getApiBase()}/approvals/audit?limit=${limit}`);
+  if (!res.ok) throw new Error("Failed to fetch approvals audit");
+  return res.json();
+}
+export async function getAllowlist(): Promise<AllowlistEntry[]> {
+  const res = await fetch(`${getApiBase()}/approvals/allowlist`);
+  if (!res.ok) throw new Error("Failed to fetch allowlist");
+  return res.json();
+}
+export async function revokeApproval(action: string, scope: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/approvals/revoke`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, scope }),
+  });
+  if (!res.ok) throw new Error("Failed to revoke approval");
+}
+
+/** Record a human verdict on an investigation finding (Bet 0 — ground-truth capture). */
+export async function recordVerdict(input: {
+  verdict: "accept" | "correct" | "reject";
+  connectionId?: string;
+  investigationId?: string;
+  headline?: string;
+  note?: string;
+  /** S3 fix-it: the SQL that produced the judged answer + an optional human fix —
+   *  the structural payload the closed loop reads back into planning. */
+  sqlSource?: string;
+  correctedSql?: string;
+}): Promise<void> {
+  const res = await fetch(`${getApiBase()}/verify/verdict`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      verdict: input.verdict,
+      connection_id: input.connectionId ?? "",
+      investigation_id: input.investigationId ?? "",
+      headline: input.headline ?? "",
+      note: input.note ?? "",
+      sql_source: input.sqlSource ?? "",
+      corrected_sql: input.correctedSql ?? "",
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to record verdict"));
+  }
+}
+
+/** G2 governed tags, read path (S1/J13): the governance axis rendered on entity
+ *  pages. `securable` format is `table:catalog.schema.name`. */
+export interface GovernedTag {
+  securable: string;
+  key: string;
+  value: string;
+  set_by: string;
+  set_at: string;
+  source: string;
+}
+
+export async function listGovernedTags(opts: { key?: string; securablePrefix?: string } = {}): Promise<GovernedTag[]> {
+  const qs = new URLSearchParams();
+  if (opts.key) qs.set("key", opts.key);
+  if (opts.securablePrefix) qs.set("securable_prefix", opts.securablePrefix);
+  const res = await fetch(`${getApiBase()}/governance/tags?${qs.toString()}`);
+  if (!res.ok) throw new Error("Failed to list governed tags");
+  return res.json();
+}
+
+/** S5 cited memory — a remembered reading with its citation (who settled it,
+ *  when, how often served). Revocable one row at a time. */
+export interface RememberedReading {
+  id: string;
+  connection_id: string;
+  subject: string;
+  resolved_reading: string;
+  resolution_source: string;
+  resolved_sql?: string | null;
+  created_at: string;
+  last_used_at?: string | null;
+  use_count: number;
+}
+
+export async function listRememberedReadings(connectionId?: string): Promise<RememberedReading[]> {
+  const qs = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${getApiBase()}/learning/resolutions${qs}`);
+  if (!res.ok) throw new Error("Failed to list remembered readings");
+  return res.json();
+}
+
+export async function revokeRememberedReading(resId: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/learning/resolutions/${encodeURIComponent(resId)}`,
+                          { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to revoke reading");
+}
+
+/** K5 — write a human overlay annotation on a table (merged onto reads by K3;
+ *  never mutates source). Column/row targeting optional. */
+export async function annotateTable(connectionId: string, input: {
+  table: string; body: string; column?: string; keyColumn?: string; rowKey?: string;
+  kind?: "annotation" | "correction";
+}): Promise<{ id: string; target: string }> {
+  const res = await fetch(
+    `${getApiBase()}/kinetic-actions/annotate?connection_id=${encodeURIComponent(connectionId)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        table: input.table, body: input.body, column: input.column ?? "",
+        key_column: input.keyColumn ?? "", row_key: input.rowKey ?? "",
+        kind: input.kind ?? "annotation",
+      }),
+    });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to annotate"));
+  }
+  return res.json();
+}
+
+export async function getEffectiveSettings(workspaceId?: string): Promise<OrgSettings> {
+  const q = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
+  const res = await fetch(`${getApiBase()}/org-settings/effective${q}`);
+  if (!res.ok) throw new Error("Failed to fetch effective settings");
+  return res.json();
+}
+
+export async function createWorkspace(
+  name: string,
+  connection_ids: string[] = [],
+  description = "",
+): Promise<Workspace> {
+  const res = await fetch(`${getApiBase()}/workspaces`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, connection_ids, description }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to create workspace"));
+  }
+  return res.json();
+}
+
+export async function updateWorkspace(
+  id: string,
+  patch: { name?: string; description?: string; connection_ids?: string[]; settings_override?: Record<string, unknown> },
+): Promise<Workspace> {
+  const res = await fetch(`${getApiBase()}/workspaces/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to update workspace"));
+  }
+  return res.json();
+}
+
+export async function deleteWorkspace(id: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/workspaces/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to delete workspace"));
+  }
+}
+
+export async function addConnection(
+  name: string,
+  conn_type: string,
+  dsn: string,
+  schema_name?: string,
+  meta?: Record<string, string>,
+  workspace_id?: string,
+): Promise<{ id: string; message: string; test_result: string }> {
+  const res = await fetch(`${getApiBase()}/connections`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    // `workspace_id` is what makes the new connection VISIBLE in the catalogue the
+    // caller is looking at — without it the server files it under Default and this
+    // workspace's tree silently omits it.
+    body: JSON.stringify({ name, conn_type, dsn: dsn || "", schema_name: schema_name || null,
+                           meta: meta || {}, workspace_id: workspace_id || null }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(fastApiError(err, "Failed to add connection"));
+  }
+  return res.json();
+}
+
+export interface ConnectorTypeInfo {
+  type: string;
+  dsn_preview: string;
+  category: string;
+  fields: Array<{ key: string; label: string; placeholder: string; secret: boolean }>;
+  /** Whether this connector's driver is importable on the server answering the
+   *  request. Optional so an older backend still renders — an absent field means
+   *  "unknown", which the UI treats as available rather than greying out the
+   *  entire picker against a server that simply hasn't been redeployed. */
+  available?: boolean;
+  /** Module names the connector imports that are missing there. */
+  missing?: string[];
+}
+
+export async function getConnectorTypes(): Promise<ConnectorTypeInfo[]> {
+  const res = await fetch(`${getApiBase()}/connectors/types`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.types ?? [];
+}
+
+export interface ImportOptions {
+  tableName?: string;
+  schema?: string;
+  columnTypes?: Record<string, string>;
+}
+
+export async function uploadFileToConnection(
+  connId: string,
+  file: File,
+  opts: ImportOptions = {},
+): Promise<{ table_name: string; schema?: string; filename: string }> {
+  const form = new FormData();
+  form.append("file", file);
+  if (opts.tableName) form.append("table_name", opts.tableName);
+  if (opts.schema) form.append("schema", opts.schema);
+  if (opts.columnTypes && Object.keys(opts.columnTypes).length > 0)
+    form.append("column_types", JSON.stringify(opts.columnTypes));
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/files`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Upload failed"));
+  }
+  return res.json();
+}
+
+export interface BulkUploadResult {
+  filename: string;
+  table_name?: string;
+  status: "ok" | "error";
+  error?: string;
+}
+
+export interface BulkUploadResponse {
+  schema: string;
+  results: BulkUploadResult[];
+  added: number;
+  failed: number;
+}
+
+export async function bulkUploadFilesToConnection(
+  connId: string,
+  files: File[],
+  schema: string,
+): Promise<BulkUploadResponse> {
+  const form = new FormData();
+  for (const f of files) form.append("files", f);
+  if (schema) form.append("schema", schema);
+  const res = await fetch(
+    `${getApiBase()}/connections/${encodeURIComponent(connId)}/files/bulk`,
+    { method: "POST", body: form },
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Bulk upload failed"));
+  }
+  return res.json();
+}
+
+export interface ColumnAnalysis {
+  name: string;
+  detected_type: string;
+  suggested_type: string | null;
+  /** Set when the column holds numbers wearing formatting — '₹1,099', '64%', '24,269'.
+   *  Carries WHY the text column is about to become a number, so the review row can say
+   *  it rather than showing an unexplained type change. */
+  detected_format: { kind: string; unit: string; example: string | null } | null;
+  /** DE-5's hygiene — set when the reader would have typed this column as a number and
+   *  changed its values (leading zeros dropped, integers beyond BIGINT rounded), so it was
+   *  read as text instead. Says why, so the review row can. */
+  kept_as_text?: string | null;
+}
+
+export interface FileAnalysis {
+  filename: string;
+  columns: ColumnAnalysis[];
+  preview: { columns: string[]; rows: (string | null)[][] };
+  row_count: number;
+  suggested_table_name: string;
+}
+
+export async function analyzeConnectionFile(
+  connId: string,
+  file: File,
+): Promise<FileAnalysis> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(
+    `${getApiBase()}/connections/${encodeURIComponent(connId)}/files/analyze`,
+    { method: "POST", body: form },
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Analyze failed"));
+  }
+  return res.json();
+}
+
+export interface ConnectionFile {
+  filename: string;
+  table_name: string;
+  schema: string;
+  size_bytes: number;
+  extension: string;
+  column_types?: Record<string, string>;
+}
+
+export async function listConnectionFiles(connId: string): Promise<ConnectionFile[]> {
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/files`);
+  if (!res.ok) return [];
+  const data = await res.json().catch(() => ({ files: [] }));
+  return data.files ?? [];
+}
+
+export async function deleteConnectionFile(
+  connId: string,
+  filename: string,
+  schema = "main",
+): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/connections/${encodeURIComponent(connId)}/files/${encodeURIComponent(filename)}?schema=${encodeURIComponent(schema)}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) throw new Error("Delete failed");
+}
+
+export async function listConnectionSchemas(connId: string): Promise<string[]> {
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/schemas`);
+  if (!res.ok) return ["main"];
+  const data = await res.json().catch(() => ({ schemas: ["main"] }));
+  return data.schemas ?? ["main"];
+}
+
+export async function createConnectionSchema(connId: string, name: string): Promise<string> {
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/schemas`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Schema create failed"));
+  }
+  const data = await res.json();
+  return data.schema;
+}
+
+/** Remove an entire schema (dataset) from a workspace connection — drops its tables,
+ *  backing files, and derived profile/exploration. */
+export async function deleteConnectionSchema(connId: string, schema: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/connections/${encodeURIComponent(connId)}/schemas/${encodeURIComponent(schema)}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Schema remove failed"));
+  }
+}
+
+/** Remove a single table from a workspace connection — drops it + its backing file(s). */
+export async function deleteConnectionTable(connId: string, table: string, schema = "main"): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/connections/${encodeURIComponent(connId)}/tables/${encodeURIComponent(table)}?schema=${encodeURIComponent(schema)}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Table remove failed"));
+  }
+}
+
+export async function testConnection(id: string): Promise<TestResult> {
+  const res = await fetch(`${getApiBase()}/connections/${id}/test`, { method: "POST" });
+  if (!res.ok) throw new Error("Test request failed");
+  return res.json();
+}
+
+export async function deleteConnection(id: string): Promise<void> {
+  await fetch(`${getApiBase()}/connections/${id}`, { method: "DELETE" });
+}
+
+// ── Rich schema types ─────────────────────────────────────────────────────────
+
+export interface SchemaColumn {
+  name: string;
+  type: string;
+  is_fk: boolean;
+  description?: string;
+}
+
+export interface SchemaTable {
+  name: string;
+  row_count: string | null;
+  columns: SchemaColumn[];
+}
+
+export interface SchemaJoin {
+  t1: string;
+  c1: string;
+  t2: string;
+  c2: string;
+  match: "exact" | "inferred";
+}
+
+export interface SchemaWarning {
+  level: "warn" | "info";
+  message: string;
+}
+
+export interface RichSchema {
+  tables: SchemaTable[];
+  joins: SchemaJoin[];
+  isolated: string[];
+  warnings: SchemaWarning[];
+}
+
+export async function getSchemaRich(id: string): Promise<RichSchema> {
+  const res = await fetch(`${getApiBase()}/connections/${id}/schema/rich`);
+  if (!res.ok) throw new Error("Failed to fetch rich schema");
+  return res.json();
+}
+
+export interface TableSample {
+  columns: string[];
+  rows: (string | null)[][];
+  row_count?: number;
+  /** Execution error — distinguishes "fetch failed" from a genuinely empty table. */
+  error?: string | null;
+}
+
+export async function sampleTable(
+  connId: string,
+  table: string,
+  limit = 100,
+  schema?: string,
+): Promise<TableSample> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (schema) params.set("schema", schema);
+  const res = await fetch(
+    `${getApiBase()}/connections/${encodeURIComponent(connId)}/tables/${encodeURIComponent(table)}/sample?${params}`,
+  );
+  if (!res.ok) throw new Error(`Failed to sample table "${table}"`);
+  return res.json();
+}
+
+export interface TableColumn {
+  name: string;
+  type: string;
+}
+
+/** Reliable per-table column list — same lightweight path as the sample reader. */
+export async function getTableColumns(
+  connId: string,
+  table: string,
+  schema?: string,
+): Promise<TableColumn[]> {
+  const params = new URLSearchParams();
+  if (schema) params.set("schema", schema);
+  const res = await fetch(
+    `${getApiBase()}/connections/${encodeURIComponent(connId)}/tables/${encodeURIComponent(table)}/columns?${params}`,
+  );
+  if (!res.ok) return [];
+  const data = await res.json().catch(() => ({ columns: [] }));
+  return data.columns ?? [];
+}
+
+export async function alterColumn(
+  connId: string,
+  table: string,
+  column: string,
+  newType: string,
+  schema?: string,
+): Promise<{ ok: boolean; applied?: boolean; override_only?: boolean; message?: string; error?: string }> {
+  const params = new URLSearchParams();
+  if (schema) params.set("schema", schema);
+  const res = await fetch(
+    `${getApiBase()}/connections/${encodeURIComponent(connId)}/tables/${encodeURIComponent(table)}/alter-column?${params}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ column, new_type: newType }),
+    },
+  );
+  if (!res.ok) {
+    const err = await res.text().catch(() => "Failed to alter column");
+    throw new Error(err);
+  }
+  return res.json();
+}
+
+// ── Catalog tree ──────────────────────────────────────────────────────────────
+
+export interface CatalogTableInfo {
+  name: string;
+  row_count: number | null;
+}
+
+export interface CatalogSchemaInfo {
+  name: string;
+  tables: CatalogTableInfo[];
+}
+
+export interface CatalogEntry {
+  conn_id: string;
+  name: string;
+  conn_type: string;
+  builtin: boolean;
+  schemas: CatalogSchemaInfo[];
+}
+
+export interface CatalogSection {
+  id: string;
+  label: string;
+  entries: CatalogEntry[];
+}
+
+export interface CatalogTree {
+  sections: CatalogSection[];
+}
+
+export async function getCatalogTree(workspaceId?: string): Promise<CatalogTree> {
+  // The workspace the reader stands in, unless the caller names one. The header does the same
+  // for the server, but the parameter is what the request log and a test can see.
+  const ws = workspaceId || getActiveWorkspace();
+  const qs = ws ? `?workspace_id=${encodeURIComponent(ws)}` : "";
+  const res = await fetch(`${getApiBase()}/catalog/tree${qs}`);
+  if (!res.ok) throw new Error("Failed to fetch catalog tree");
+  return res.json();
+}
+
+export async function refreshSchemaCache(id: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/connections/${id}/schema/refresh`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to refresh schema cache");
+}
+
+// ── Metrics Catalog ───────────────────────────────────────────────────────────
+
+export interface Metric {
+  name: string;
+  label: string;
+  sql: string;
+  tables: string[];
+  dimensions: string[];
+  filters: string[];
+  unit: string | null;
+  caveats: string | null;
+  target_value: number | null;
+  /** How far short of the target, in the metric's units, before it warns; then before it is off target. */
+  warning_threshold: number | null;
+  critical_threshold: number | null;
+  /** Which side of the target is good — "higher", "lower" — or a band (empty): beating a directed target is on target. */
+  target_direction?: TargetDirection | null;
+  target_period: string | null;
+  benchmark_source: string | null;
+  // Governance fields (M21)
+  owner: string | null;
+  freshness_sla: string | null;
+  freshness_check_sql: string | null;
+  quality_tests: string[];
+  lineage: string[];
+  wrong_usage_examples: string[];
+  approved_by: string | null;
+  approved_at: string | null;
+  // Governance lifecycle (B-8) — backend-owned; optional so editor forms needn't set them.
+  status?: string;
+  version?: number;
+  /** "*" for a metric that applies to every connection, else the connection's id.
+   *  SEND IT ON SAVE. The field existed here and the server's request model had none,
+   *  so every write fell back to "*" — and editing theLook's metric republished its
+   *  SQL, over `inventory_items`, to connections with no such table. */
+  connection?: string;
+  /** The dataset (schema) it belongs to; "*" — every dataset of its connection (promoted); null —
+   *  the one its SQL reads. `home_schema` is that resolved, as the server reads it. */
+  schema_name?: string | null;
+  home_schema?: string;
+  /** "additive" | "non_additive" — whether period figures may be summed. */
+  additivity?: string | null;
+  proposed_by?: string | null;
+  proposed_at?: string | null;
+  /** Arc BR-2 — how the metric is measured for a date range: set automatically by rule
+   *  (`time_source` says which), confirmed or corrected by a person (`time_confirmed_by`). */
+  time_column?: string | null;
+  time_kind?: "flow" | "stock" | "cohort" | null;
+  outcome_column?: string | null;
+  until_column?: string | null;
+  settles_after_days?: number | null;
+  /** The period it is reported by: day, week, month, quarter or year. */
+  time_grain?: "day" | "week" | "month" | "quarter" | "year" | null;
+  time_source?: string | null;
+  /** Stamped by the server with the person signed in — never sent. */
+  time_confirmed_by?: string | null;
+  /** Whether its dates can measure it, and why not when they cannot — read by the server from the definition
+   *  (`metric_time.measurable`): dates unset, or a date on a table the statement does not read. Absent on an
+   *  older client of the list. */
+  measurable?: boolean | null;
+  measurable_why?: string | null;
+  /** Arc OC-3 — the entity whose objects it measures, confirmed by a person through its own door
+   *  (`confirmMetricEntity`); never sent with an edit, which keeps it. */
+  entity?: string | null;
+  entity_confirmed_by?: string | null;
+}
+
+/** Arc OC-3 — one metric's key: the entity a person confirmed, and the one its grain proposes, with why. */
+export interface MetricKey {
+  name: string;
+  label: string;
+  status: string;
+  entity: string;
+  confirmed_by: string;
+  proposal: { entity: string; property: string; why: string; candidates: string[] };
+  agrees: boolean;
+}
+
+/** Arc OC-3 — one word people use: what it names as stored, whether it is keyed to an entity or a property, the key
+ *  proposed for a table or column entry, and the table and column a keyed one is read from now. */
+export interface VocabularyKey {
+  subject_kind: "table" | "column" | "entity" | "property";
+  subject_id: string;
+  synonym: string;
+  source: string;
+  note: string;
+  keyed: boolean;
+  proposal: { kind: "" | "entity" | "property"; subject: string; why: string };
+  reads: { table: string; column: string } | null;
+}
+
+export interface OntologyKeys {
+  connection_id: string;
+  schema_name: string;
+  entities: { id: string; label: string }[];
+  metrics: MetricKey[];
+  vocabulary?: VocabularyKey[];
+}
+
+/** Key a word people use to the entity or property it names — as the person signed in; the table or column entry it
+ *  replaces goes. The approval gate may hold it (it is a change to the ontology's meaning). */
+export async function keyVocabularyEntry(
+  connectionId: string, entry: Pick<VocabularyKey, "subject_kind" | "subject_id" | "synonym">,
+  key: { kind: "entity" | "property"; subject: string }, schema?: string,
+): Promise<void> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schema && schema !== "*") q.set("schema_name", schema);
+  const res = await fetch(`${getApiBase()}/ontology/vocabulary/key?${q}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...entry, ...key }),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The word was not keyed"));
+}
+
+/** PENDING item 28 — one question on a connection that reached none of its declared business terms (its rules and its
+ *  processes' stages). The record keeps the run's trace id, never its words: `question` is the run's ask while the
+ *  session log still keeps it, and null once it does not. */
+export interface FramingMiss {
+  at: string | null;
+  trace_id: string;
+  question: string | null;
+  /** The ask of a scheduled run, with the scheduled context taken off. */
+  scheduled: boolean;
+  /** What the near-match finder would offer — for a person to read; it frames nothing by itself (ROADMAP §3.32). */
+  might_mean?: { name: string; label: string; score: number }[];
+}
+
+/** `misses` counts every recorded miss; `recent` lists the newest of them only. */
+export interface FramingMisses {
+  connection_id: string;
+  misses: number;
+  recent: FramingMiss[];
+  note: string;
+}
+
+/** The questions on this connection that reached none of its declared terms, newest first. */
+export async function getFramingMisses(connectionId: string): Promise<FramingMisses> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  const res = await fetch(`${getApiBase()}/framing/misses?${q}`);
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Could not read the missed questions"));
+  return res.json();
+}
+
+/** What a word people use may name: a business rule, a process stage (`process.stage`), a metric or an entity. */
+export type DeclaredTermKind = "rule" | "stage" | "metric" | "entity";
+export interface DeclaredTerm { kind: DeclaredTermKind; id: string; label: string }
+
+/** A declared name as words: `units_sold` → "units sold" (a metric's display name is often its id). */
+const spaced = (name: string) => name.replace(/_/g, " ");
+
+/** The terms this connection declares that a word may name — read from the ontology it serves (the graph the key door
+ *  checks a word against), never the draft. Rules and stages first: only a word for one of them frames a question. */
+export async function getDeclaredTerms(connectionId: string): Promise<DeclaredTerm[]> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  const res = await fetch(`${getApiBase()}/ontology?${q}`);
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Could not read the declared terms"));
+  type Named = { display_name?: string };
+  const g = (await res.json()) as {
+    rules?: Record<string, Named>;
+    processes?: Record<string, Named & { stages?: (Named & { name: string })[] }>;
+    metrics?: Record<string, Named>;
+    entities?: Record<string, Named>;
+  };
+  const named = (kind: DeclaredTermKind, rows: Record<string, Named> | undefined): DeclaredTerm[] =>
+    Object.entries(rows ?? {}).map(([id, r]) => ({ kind, id, label: spaced(r.display_name || id) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  const stages = Object.entries(g.processes ?? {}).flatMap(([pid, p]) => (p.stages ?? []).map(s => ({
+    kind: "stage" as const, id: `${pid}.${s.name}`, label: `${spaced(p.display_name || pid)} · ${spaced(s.display_name || s.name)}`,
+  })));
+  return [...named("rule", g.rules), ...stages, ...named("metric", g.metrics), ...named("entity", g.entities)];
+}
+
+/** Add a word people use for a declared term — a new word, from a question that reached none — as the person signed
+ *  in. It goes through the key door (`PUT /ontology/vocabulary/key`) naming no stored entry; the approval gate may
+ *  hold it, and a term this scope does not serve is refused. */
+export async function addSynonym(
+  connectionId: string, word: { synonym: string; kind: DeclaredTermKind; subject: string },
+): Promise<{ kept: { subject_kind: string; subject_id: string; synonym: string; source: string; note: string } }> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  const res = await fetch(`${getApiBase()}/ontology/vocabulary/key?${q}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(word),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The word was not added"));
+  return res.json();
+}
+
+/** How the scope's metrics are keyed to its entities — the confirmed key, the proposal and why. */
+export async function getOntologyKeys(connectionId: string, schema?: string): Promise<OntologyKeys> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schema && schema !== "*") q.set("schema_name", schema);
+  const res = await fetch(`${getApiBase()}/ontology/keys?${q}`);
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Could not read the metric keys"));
+  return res.json();
+}
+
+/** Confirm (or, with "", clear) the entity a metric measures — as the person signed in. Its statement, status and
+ *  version are untouched. */
+export async function confirmMetricEntity(
+  name: string, connectionId: string, schema: string | undefined, entity: string,
+): Promise<Metric> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schema && schema !== "*") q.set("schema", schema);
+  const res = await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}/entity?${q}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ entity }),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Could not key the metric"));
+  return res.json();
+}
+
+export interface MetricAuditEntry {
+  metric: string;
+  action: string;
+  actor: string;
+  from: string;
+  to: string;
+  version: number;
+  at: string;
+}
+
+export interface QualityTestResult {
+  test_sql: string;
+  passed: boolean;
+  error: string | null;
+}
+
+export interface MetricValidationResult {
+  metric: string;
+  passed: boolean;
+  results: QualityTestResult[];
+  message: string;
+}
+
+export interface MetricFreshnessResult {
+  metric: string;
+  latest_data_at: string | null;
+  sla: string | null;
+  ok: boolean;
+  message: string;
+}
+
+export type HealthStatus = "green" | "yellow" | "red" | "unknown";
+
+/** Which side of a metric's target is good. */
+export type TargetDirection = "higher" | "lower";
+
+export interface ScorecardItem {
+  name: string;
+  label: string;
+  current: number | null;
+  target: number | null;
+  variance: number | null;
+  status: HealthStatus;
+  target_direction?: TargetDirection | null;
+  unit: string | null;
+  target_period: string | null;
+  benchmark_source: string | null;
+}
+
+/** A metric's health target, set through its own door — the definition is not re-sent (`PUT /metrics/{name}/target`).
+ *  No target value clears the target and everything that goes with it. */
+export interface MetricTarget {
+  target_value: number | null;
+  target_direction?: TargetDirection | null;
+  warning_threshold?: number | null;
+  critical_threshold?: number | null;
+  target_period?: string | null;
+  benchmark_source?: string | null;
+}
+
+export async function setMetricTarget(name: string, connectionId: string, target: MetricTarget, schema?: string): Promise<Metric> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schema) q.set("schema", schema);
+  const res = await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}/target?${q}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(target),
+  });
+  if (!res.ok) throw await refused(res, "Setting the target");
+  return res.json();
+}
+
+export async function getHealthScorecard(connId: string): Promise<ScorecardItem[]> {
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/health-scorecard`);
+  if (!res.ok) throw await refused(res, "Reading the health scorecard");
+  return res.json();
+}
+
+export async function getMetrics(connectionId?: string): Promise<Metric[]> {
+  const q = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${getApiBase()}/metrics${q}`);
+  if (!res.ok) throw new Error("Failed to fetch metrics");
+  return res.json();
+}
+
+/** One row of a connection's metric catalogue — see aughor/semantic/metric_catalogue.py. */
+export interface CatalogueMetric {
+  name: string;
+  label: string;
+  /** "defined" | "industry" | "explorer" | "coverage" — where this metric came from. */
+  source: string;
+  /** "defined" | "proposed" | "needs_binding" | "needs_formula" | "formula_rejected" | "gate_failed". */
+  state: string;
+  sql: string;
+  unit: string;
+  definition: string;
+  grain: string;
+  dimensions: string[];
+  tables: string[];
+  anti_patterns: string[];
+  pack_id: string;
+  required_roles: string[];
+  missing_roles: string[];
+  sane_range: { min?: number; max?: number; basis?: string; sources?: string[] } | null;
+  why_it_matters: string;
+  /** `formula_rejected` only — the audit's own words for why the formula was dropped. */
+  reason: string;
+  status: string;
+  version: number;
+  owner: string;
+  /** False until the row is materialised — a recipe is not edited in place. */
+  editable: boolean;
+  /** The dataset it belongs to; "*" — every dataset of the connection. A row is (source, schema,
+   *  name): two datasets may each have their own metric of one name. */
+  schema: string;
+  /** Arc MC — the area of the map it reads on, the pattern it computes, how a coverage proposal was made, and its
+   *  gates' verdicts. Absent unless a coverage run read it. */
+  area?: string;
+  pattern?: string;
+  origin?: string;
+  gates?: Record<string, CoverageGate> | null;
+  time_column?: string;
+  time_kind?: string;
+}
+
+// ── Arc MC — the areas a connection's metrics cover ────────────────────────────────────────────────────────────────
+
+/** One gate's verdict: passed, failed with why, or not read (null) with why. */
+export interface CoverageGate { ok: boolean | null; why: string }
+export interface CoverageTable { name: string; rows: number | null; dated: boolean; why: string }
+export interface CoverageAreaMetric { name: string; label: string; status: string; why: string; moves: CoverageGate | null }
+export interface CoveragePattern {
+  id: string; title: string; pack_id: string; area: string; kind: string; direction: string; definition: string;
+  proposable: boolean;
+}
+export interface CoverageArea {
+  id: string; name: string; question: string; pack_id: string; generic: boolean; order: number;
+  patterns: CoveragePattern[]; recipes: string[];
+  /** covered — an approved metric that moves; unchecked — approved, its figures not read yet; uncovered — data and no
+   *  working metric; no_data — nothing placed here holds rows. */
+  state: "covered" | "unchecked" | "uncovered" | "no_data";
+  has_data: boolean; rows: number;
+  tables: CoverageTable[]; metrics: CoverageAreaMetric[];
+  proposals: number; adoptable: number; failed: number; declined: number;
+  /** The patterns no metric or proposal here computes yet, and whether the writer would call on this area. */
+  open_patterns?: string[]; writable?: boolean;
+  said: string[];
+}
+export interface CoverageProposal {
+  name: string; label: string; area: string;
+  /** recipe · ontology · pattern · area · blind_spot */
+  source: string;
+  pattern: string; pattern_title?: string; state: "proposed" | "gate_failed"; reason: string;
+  gates: Record<string, CoverageGate>; sql: string; time_column: string; definition: string;
+  derived_from?: string; findings?: number; written_by?: string; declined?: boolean;
+}
+export interface CoverageSpendArea {
+  area: string; name: string; tables: string[]; patterns: number; proposals: number;
+  skipped: { pattern: string; why: string }[]; error: string;
+}
+export interface CoverageRun {
+  run_at: string; why: string; said: string[];
+  spend: { calls: number; model: string; at: string; done_at?: string; why?: string; areas: CoverageSpendArea[] } | null;
+}
+export interface MetricCoverage {
+  connection_id: string; schema: string | null; industry_pack: string;
+  areas: CoverageArea[]; unplaced_tables: string[]; said: string[];
+  counts: { areas: number; with_data: number; covered: number; uncovered: number; unchecked: number; patterns: number;
+            open_patterns?: number; writable?: number };
+  proposals: CoverageProposal[]; run: CoverageRun | null;
+}
+
+/** The coverage view. ``figures`` reads the approved metrics' figures not read within the hour. */
+export async function getMetricCoverage(connectionId: string, schema?: string, figures = false): Promise<MetricCoverage> {
+  const q = new URLSearchParams();
+  if (schema) q.set("schema", schema);
+  if (figures) q.set("figures", "true");
+  const qs = q.toString();
+  const res = await fetch(`${getApiBase()}/metrics/coverage/${encodeURIComponent(connectionId)}${qs ? `?${qs}` : ""}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "The coverage could not be read"));
+  }
+  return res.json();
+}
+
+/** Propose by code for the areas the data covers, on a thread — no model call. */
+export async function runMetricCoverage(connectionId: string, schema?: string): Promise<{ started: boolean }> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${getApiBase()}/metrics/coverage/${encodeURIComponent(connectionId)}/run${q}`, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "The proposals could not be made"));
+  }
+  return res.json();
+}
+
+/** Write the knowledge base's patterns for this schema — one model call per uncovered area, on a thread. */
+export async function writeMetricCoverage(connectionId: string, schema?: string): Promise<{ started: boolean }> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${getApiBase()}/metrics/coverage/${encodeURIComponent(connectionId)}/write${q}`, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "The writer could not be started"));
+  }
+  return res.json();
+}
+
+/** A proposal a person removed — never proposed here again until it is restored. */
+export interface RemovedProposal {
+  connection: string;
+  schema_name: string;
+  name: string;
+  label: string;
+  source: string;
+  by: string;
+  at: string;
+}
+
+export interface MetricCatalogue {
+  connection_id: string;
+  metrics: CatalogueMetric[];
+  counts: Record<string, number>;
+  removed?: RemovedProposal[];
+}
+
+/** Every metric that APPLIES to this connection: defined + industry + explorer. `schema` "*" — every
+ *  dataset of the connection at once, each row saying which. */
+export async function getMetricCatalogue(connectionId: string, schema?: string): Promise<MetricCatalogue> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${getApiBase()}/metrics/catalogue/${encodeURIComponent(connectionId)}${q}`);
+  if (!res.ok) throw new Error("Failed to fetch the metric catalogue");
+  return res.json();
+}
+
+/** Copy-on-write: make a computed row editable as a connection-scoped draft. */
+export async function materialiseMetric(connectionId: string, name: string, schema?: string): Promise<Metric> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(
+    `${getApiBase()}/metrics/catalogue/${encodeURIComponent(connectionId)}/${encodeURIComponent(name)}/materialise${q}`,
+    { method: "POST" },
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(fastApiError(body, "Could not make this metric editable"));
+  }
+  return res.json();
+}
+
+/** Remove a PROPOSED metric (the explorer's, or an industry package's) from one dataset ("*": every
+ *  dataset). Recorded with who and when; never proposed there again until it is restored. */
+export async function removeProposal(connectionId: string, name: string, schema?: string): Promise<RemovedProposal> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(
+    `${getApiBase()}/metrics/catalogue/${encodeURIComponent(connectionId)}/${encodeURIComponent(name)}/remove${q}`,
+    { method: "POST" });
+  if (!res.ok) throw await refused(res, "Removing the proposal");
+  return res.json();
+}
+
+export async function restoreProposal(connectionId: string, name: string, schema?: string): Promise<void> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(
+    `${getApiBase()}/metrics/catalogue/${encodeURIComponent(connectionId)}/${encodeURIComponent(name)}/restore${q}`,
+    { method: "POST" });
+  if (!res.ok) throw await refused(res, "Restoring the proposal");
+}
+
+/** Promote one dataset's definition to its whole connection: every dataset reads it, except one that
+ *  keeps a definition of its own under the same name. */
+export async function promoteMetric(name: string, connectionId: string, schema: string): Promise<Metric> {
+  const res = await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}/promote?connection_id=${
+    encodeURIComponent(connectionId)}&schema=${encodeURIComponent(schema)}`, { method: "POST" });
+  if (!res.ok) throw await refused(res, "Promoting the metric");
+  return res.json();
+}
+
+export async function createMetric(m: Omit<Metric, never>): Promise<Metric> {
+  const res = await fetch(`${getApiBase()}/metrics`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(m),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(fastApiError(err, "Failed to create metric"));
+  }
+  return res.json();
+}
+
+/** One date a metric could be grained at, as the platform proposes it (2026-09-26):
+ *  `schema.table.column` as the table is written, the profiler's main date of each table
+ *  first — only the tables the statement itself reads. */
+export interface MetricDateCandidate {
+  grain: string;
+  table: string;
+  column: string;
+  type: string;
+  primary: boolean;
+  /** A day kept as TEXT, offered by its name — the period filter reads it as a date. */
+  text?: boolean;
+}
+
+/** A date one join away from a statement whose own tables have none — where it is, and the key that reaches it. Not a
+ *  grain the statement can take as written: the definition must read that table first. */
+export interface MetricDateReachable {
+  grain: string;
+  table: string;
+  column: string;
+  via: string;
+  from: string;
+  type: string;
+}
+
+/** One runnable statement the platform proposes for a definition written as an expression:
+ *  the expression wrapped over `table` with the definition's filters, and why that table. */
+export interface MetricStatementOption {
+  table: string;
+  statement: string;
+  why: string;
+}
+
+/** What the platform proposes for a definition. `statements` is empty for a statement as
+ *  written, one entry when the table is known, several when several profiled tables carry
+ *  the expression's columns (`statement_note` says so — a person picks). `candidates` are
+ *  the dates on the statement's own tables; `note` says why the list is empty when it is. */
+export interface MetricProposals {
+  statements: MetricStatementOption[];
+  statement_note: string;
+  candidates: MetricDateCandidate[];
+  /** When the statement's own tables hold no date: the dates one join away. */
+  reachable?: MetricDateReachable[];
+  note: string;
+}
+
+/** What adopting a set of proposals did (2026-10-23): each metric adopted, or skipped with why. */
+export interface AdoptResult {
+  adopted: { name: string; label: string; version?: number; time_column?: string }[];
+  skipped: { name: string; label: string; reason: string }[];
+  /** The scope the set was approved under — the dataset and every metric in it. */
+  scope: string;
+}
+
+/** Adopt a set of proposed metrics in one door: each dated by the date a person confirmed, proposed and
+ *  approved; the set asks for approval ONCE (the app-wide modal shows it and sends this again). */
+export async function adoptMetrics(connectionId: string, schema: string | undefined,
+                                   items: { name: string; time_column?: string }[]): Promise<AdoptResult> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${getApiBase()}/metrics/catalogue/${encodeURIComponent(connectionId)}/adopt${q}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "The metrics could not be adopted"));
+  }
+  return res.json();
+}
+
+export async function getMetricProposals(
+  connection: string, sql: string, tables: string[], filters: string[], name: string,
+): Promise<MetricProposals> {
+  const res = await fetch(`${getApiBase()}/metrics/proposals`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection, sql, tables, filters, name }),
+  });
+  if (!res.ok) throw new Error("Failed to read the platform's proposals");
+  return res.json();
+}
+
+/** The metric's statement as the model wrote it from the editor's fields — one model call,
+ *  on the person's click. `note` says when the platform wrapped a bare aggregate over the
+ *  definition's table; `trace_id` joins the call's receipt. */
+export interface MetricSqlDraft {
+  sql: string;
+  /** What the platform's check found wrong with the text ("" when nothing): it is shown
+   *  beside the text, never instead of it. */
+  refused: string;
+  note: string;
+  model: string;
+  trace_id: string;
+}
+
+export interface MetricBrief {
+  name: string;
+  label: string;
+  definition: string;
+  unit: string;
+  tables: string[];
+  filters: string[];
+  dimensions: string[];
+  wrong_usage_examples: string[];
+}
+
+export async function generateMetricSql(connection: string, brief: MetricBrief): Promise<MetricSqlDraft> {
+  const res = await fetch(`${getApiBase()}/metrics/generate-sql`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection, ...brief }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err.detail === "string" ? err.detail : "The statement could not be written");
+  }
+  return res.json();
+}
+
+/** Save an edit. `schema` is the dataset of the definition being edited (`home_schema`); a different
+ *  `m.schema_name` or `m.name` moves it there. */
+export async function updateMetric(name: string, m: Metric, schema?: string): Promise<Metric> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}${q}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(m),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(fastApiError(err, "Failed to update metric"));
+  }
+  return res.json();
+}
+
+/** Remove ONE definition — this connection's, in this dataset. It used to send neither, so a delete
+ *  reached every connection's definition of that name, and it never read the answer, so a refusal
+ *  looked like success. */
+export async function deleteMetric(name: string, connection: string, schema?: string): Promise<void> {
+  const q = new URLSearchParams({ connection });
+  if (schema) q.set("schema", schema);
+  const res = await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}?${q}`, { method: "DELETE" });
+  if (!res.ok) throw await refused(res, "Removing the metric");
+}
+
+/** B-8 — drive a metric through its governance lifecycle (propose/approve/reject/deprecate).
+ *
+ *  SEND THE CONNECTION. This is the same defect the `connection` field above records on the
+ *  SAVE path, one route over and never fixed: the server's `TransitionRequest.connection`
+ *  defaults to `"*"`, so a transition posted without it looked for a GLOBAL metric of that name
+ *  and 404'd for every connection-scoped one. Measured 2026-09-20 against the real route — the
+ *  client-shaped POST answers `404 Metric 'x' not found for connection '*'`, and the identical
+ *  body carrying the connection answers 200. The server comment at `routers/metrics.py` records
+ *  this failure happening live (an approve intended for theLook's draft was refused because the
+ *  samples `revenue` was already approved) and fixing it server-side; the client was never
+ *  updated, so the approve button has been dead for every scoped metric since. */
+export async function transitionMetric(name: string, action: string, connection?: string,
+                                       schema?: string): Promise<{ metric: Metric; audit: MetricAuditEntry }> {
+  // No actor: the transition is the signed-in person's, stamped by the server (2026-10-07).
+  const post = (anyway: boolean) => fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}/transition`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, ...(connection ? { connection } : {}), ...(schema ? { schema_name: schema } : {}),
+      ...(anyway ? { approve_anyway: true } : {}) }),
+  });
+  let res = await post(false);
+  // An approval of a definition that measures exactly what an approved one does is refused with the
+  // other's name (2026-10-08); only the person's yes approves it anyway, and the audit says so.
+  if (res.status === 409) {
+    const body = await res.clone().json().catch(() => ({}));
+    const d = (body as { detail?: { reason?: string; message?: string } })?.detail;
+    if (d?.reason === "same_as_approved") {
+      const message = d.message || "This measures exactly what an approved metric measures";
+      if (!askToApproveTwin(message)) throw new Error(`${message}.`);
+      res = await post(true);
+    }
+  }
+  if (!res.ok) throw await refused(res, "Changing the metric's state");
+  return res.json();
+}
+
+/** The question asked when an approval would make a second definition of one measure. Replaceable (tests). */
+export let askToApproveTwin = (message: string): boolean =>
+  typeof window !== "undefined" && typeof window.confirm === "function"
+    ? window.confirm(`${message}.\n\nApprove it anyway? The choice is recorded under your name.`)
+    : false;
+export function setApproveTwinQuestion(fn: (message: string) => boolean): void { askToApproveTwin = fn; }
+
+/** A3 — one section of the definition report. `outcome` travels as a WORD on purpose:
+ *  "clean" (checked, nothing found) and "unavailable" (could not check) are different answers,
+ *  and a client that rendered both as an empty section would undo the whole point. */
+export interface DefinitionClaim {
+  outcome: "clean" | "findings" | "not_applicable" | "unavailable";
+  summary: string;
+  findings: { code: string; severity: "defect" | "caution"; what: string; evidence: string }[];
+  detail: Record<string, unknown>;
+}
+
+/** A3 — how reproducible the report's numbers are. `unpinnable` always carries its reason;
+ *  the server refuses to construct one without it. */
+export interface DefinitionPopulation {
+  mode: "pinned" | "fingerprinted" | "unpinnable";
+  reason: string;
+  token: string;
+  tables: string[];
+  taken_at: string;
+  reproducible: boolean;
+}
+
+/** A3 — the instrument beside the approval ask. Advisory: it never blocks an approval. */
+export interface DefinitionReport {
+  metric: string;
+  connection_id: string;
+  status: string;
+  version: number;
+  advisory: boolean;
+  taken_at: string;
+  predecessor: DefinitionClaim;
+  execution: DefinitionClaim;
+  declaration: DefinitionClaim;
+  segments: DefinitionClaim;
+  population: DefinitionPopulation;
+  defects: string[];
+}
+
+/** A3 — fetch the report for one metric on one connection. Spelled `conn_id` to match its
+ *  siblings (`/value`, `/validate`, `/freshness`); see the route's own note for why. */
+export async function getDefinitionReport(name: string, connId: string, schema?: string): Promise<DefinitionReport> {
+  const res = await fetch(
+    `${getApiBase()}/metrics/${encodeURIComponent(name)}/definition-report?conn_id=${encodeURIComponent(connId)}${
+      schema ? `&schema=${encodeURIComponent(schema)}` : ""}`);
+  if (!res.ok) {
+    const detail = await res.json().then(d => d?.detail).catch(() => null);
+    throw new Error(detail || "Could not build the definition report");
+  }
+  return res.json();
+}
+
+/** B-8 — the governance audit trail for a metric (newest first). */
+export async function getMetricAudit(name: string, connection?: string, schema?: string): Promise<MetricAuditEntry[]> {
+  const q = new URLSearchParams();
+  if (connection) q.set("connection_id", connection);
+  if (schema) q.set("schema", schema);
+  const res = await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}/audit${q.size ? `?${q}` : ""}`);
+  if (!res.ok) return [];
+  return (await res.json()).audit ?? [];
+}
+
+export async function validateMetric(name: string, connId: string): Promise<MetricValidationResult> {
+  const res = await fetch(
+    `${getApiBase()}/metrics/${encodeURIComponent(name)}/validate?conn_id=${encodeURIComponent(connId)}`,
+    { method: "POST" },
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Validation failed"));
+  }
+  return res.json();
+}
+
+export async function getMetricFreshness(name: string, connId: string): Promise<MetricFreshnessResult> {
+  const res = await fetch(
+    `${getApiBase()}/metrics/${encodeURIComponent(name)}/freshness?conn_id=${encodeURIComponent(connId)}`,
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Freshness check failed"));
+  }
+  return res.json();
+}
+
+// ── Ontology ──────────────────────────────────────────────────────────────────
+
+export interface ComputedProperty {
+  id: string;
+  label: string;
+  formula_sql: string;
+  unit: string;
+}
+
+// OE-1: first-class typed property on an entity — the semantic label on a column
+export interface EntityProperty {
+  name: string;
+  display_name: string;
+  data_type: string;
+  semantic_type: string;
+  description: string;
+  is_primary_key: boolean;
+  is_foreign_key: boolean;
+  is_nullable: boolean;
+  null_rate: number;
+  null_meaning: string;          // from phase-3 exploration
+  is_derived: boolean;
+  value_interpretation: string;
+  unit: string;
+  sample_values: string[];
+  // OE-4: distribution stats (numeric columns)
+  distribution_shape: string;
+  p25: number | null;
+  p50: number | null;
+  p75: number | null;
+}
+
+// OE-2: a segment — a saved, named filter over one entity's rows
+export interface Segment {
+  id: string;
+  display_name: string;
+  description: string;
+  filter_sql: string;
+  is_default: boolean;
+  source: "lifecycle" | "exploration" | "manual";
+}
+
+// OE-3: typed parameter extracted from {placeholder} tokens in sql_template. Shared by
+// QueryTemplate.parameters and a declared write action's params — hence the name.
+export interface ActionParameter {
+  name: string;
+  display_name: string;
+  data_type: string;
+  required: boolean;
+  description: string;
+  default_value: string | null;
+}
+
+// OE-6: shared structural shape implemented by multiple entity types
+export interface OntologyInterface {
+  id: string;
+  display_name: string;
+  description: string;
+  property_patterns: string[];
+  implementing_entities: string[];
+}
+
+export interface OntologyEntity {
+  id: string;
+  display_name: string;
+  description: string;
+  source_tables: string[];
+  identity_key: string;
+  grain_verified: boolean;
+  domain: string | null;
+  entity_type: "reference_data" | "business_object" | "event" | "standalone";
+  has_lifecycle: boolean;
+  lifecycle_column: string | null;
+  lifecycle_states: string[];
+  terminal_states: string[];
+  active_filter: string | null;
+  // OE-2. The backend also emits a deprecated `object_sets` copy of this for one
+  // release; read `segments`.
+  segments: Record<string, Segment>;
+  created_at_col: string | null;
+  default_filters: string[];
+  exclude_when: string[];
+  properties: Record<string, EntityProperty>;     // OE-1
+  computed_properties: ComputedProperty[];
+  exploration_insights: string[];                 // OE-4
+  implements: string[];                           // OE-6: interface ids
+}
+
+export interface ConnectionSettings {
+  ontology_refresh_hours: number | null;
+  briefings_enabled?: boolean | null;
+  /** This connection's monthly exploration budget, in model tokens; 0 clears it. */
+  exploration_monthly_tokens?: number | null;
+}
+
+export async function getConnectionSettings(id: string): Promise<ConnectionSettings> {
+  const res = await fetch(`${getApiBase()}/connections/${id}/settings`);
+  if (!res.ok) return { ontology_refresh_hours: null };
+  return res.json();
+}
+
+export async function updateConnectionSettings(
+  id: string,
+  settings: Partial<ConnectionSettings>,
+): Promise<ConnectionSettings> {
+  const res = await fetch(`${getApiBase()}/connections/${id}/settings`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+  if (!res.ok) throw new Error("Failed to update connection settings");
+  return res.json();
+}
+
+export async function rebuildOntology(connectionId: string, schemaName?: string): Promise<{ ok: boolean; generated_at: string; entities: number; warning?: string }> {
+  const qs = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) qs.set("schema_name", schemaName);
+  const res = await fetch(`${getApiBase()}/ontology/rebuild?${qs}`, { method: "POST" });
+  if (!res.ok) {
+    // The server says why the build failed and whether the previous ontology is unchanged; a bare
+    // "Ontology rebuild failed" said neither.
+    let detail = "";
+    try { detail = fastApiError(await res.json(), ""); } catch { /* not JSON */ }
+    throw new Error(detail || "Ontology rebuild failed");
+  }
+  return res.json();
+}
+
+export interface OntologyRelationship {
+  id: string;
+  from_entity: string;
+  to_entity: string;
+  verb: string;
+  cardinality: "1:1" | "1:N" | "N:1" | "N:N";
+  join_sql: string;
+  from_table: string;
+  from_col: string;
+  to_table: string;
+  to_col: string;
+  join_confidence: "exact" | "inferred" | "verified";
+  nullable: boolean;
+}
+
+// A reusable, governed SQL template over one entity (read-only). The wire keys stay
+// `actions` / `action_type` — those are the frozen persisted contract.
+export interface QueryTemplate {
+  id: string;
+  display_name: string;
+  description: string;
+  entity: string;
+  action_type: "filter" | "compute" | "traverse" | "aggregate" | "validate";
+  sql_template: string;
+  parameters: ActionParameter[];                 // OE-3
+  business_rules_enforced: string[];
+  returns: string;
+  source_table: string;
+  origin?: "structural" | "learned" | "manual";  // learned skills carry these
+  usage_count?: number;
+}
+
+export interface OntologyMetric {
+  id: string;
+  display_name: string;
+  description: string;
+  entity: string;
+  formula_sql: string;
+  grain: string;
+  unit: string;
+  tables: string[];
+  known_divergent_calculations: string[];
+  /** M24c self-validation: the formula was EXECUTED against the live database.
+   *  Unverified formulas are demoted — never injected as an exact expression.
+   *  The backend has always sent this; the type omitted it (PX-5 renders it loud). */
+  verified: boolean;
+}
+
+export interface OntologyGraph {
+  connection_id: string;
+  schema_name: string;
+  schema_fingerprint: string;
+  generated_at: string;
+  enriched: boolean;
+  entities: Record<string, OntologyEntity>;
+  relationships: Record<string, OntologyRelationship>;
+  metrics: Record<string, OntologyMetric>;
+  actions: Record<string, QueryTemplate>;
+  interfaces: Record<string, OntologyInterface>;  // OE-6
+}
+
+/** Thrown when no ontology is built for the requested scope. Carries the schemas that
+ *  ARE built, so the panel can offer switching to one instead of only "not available"
+ *  — the read path no longer builds on demand, so this is the whole way out. */
+export class OntologyNotBuilt extends Error {
+  constructor(message: string, readonly builtSchemas: string[]) {
+    super(message);
+    this.name = "OntologyNotBuilt";
+  }
+}
+
+export async function getOntology(connectionId: string, schemaName?: string): Promise<OntologyGraph> {
+  const q = schemaName
+    ? `connection_id=${encodeURIComponent(connectionId)}&schema_name=${encodeURIComponent(schemaName)}`
+    : `connection_id=${encodeURIComponent(connectionId)}`;
+  // Arc OC-2 — read by the ontology's own screens, so it asks for the draft.
+  const res = await fetch(`${getApiBase()}/ontology?${q}&ontology_view=draft`);
+  if (!res.ok) {
+    const built = (res.headers.get("X-Ontology-Schemas") ?? "").split(",").filter(Boolean);
+    let detail = "";
+    try { detail = fastApiError(await res.json(), ""); } catch { /* not JSON */ }
+    throw new OntologyNotBuilt(detail || "Ontology not available for this connection", built);
+  }
+  return res.json();
+}
+
+// ── Connection knowledge graph (Wave C4 — GET /graph) ─────────────────────────
+
+export interface CGProvenance { source: string; measured: number | null; note: string }
+/** Wave P2 — how we know it, derived at read time from provenance (never stored). */
+export type CGWarrantClass = "measured" | "human" | "declared" | "derived" | "inferred";
+export interface CGWarrant { warrant: CGWarrantClass; detail: string; label: string }
+export interface CGNode {
+  id: string; kind: string; label: string; summary: string;
+  tags: string[]; provenance: CGProvenance; data: Record<string, unknown>;
+  warrant?: CGWarrant;
+}
+export interface CGEdge {
+  id: string; kind: string; from_id: string; to_id: string;
+  provenance: CGProvenance; label: string;
+  warrant?: CGWarrant;
+}
+export interface CGDomain { label: string; tables: string[]; table_count: number }
+export interface CGDomainEdge { from: string; to: string; count: number }
+export type CGStaleness = "fresh" | "dirty" | "stale" | "unknown";
+export interface ConnectionGraph {
+  org_id: string; connection_id: string; schema_name: string;
+  structural_fingerprint: string; version: number;
+  nodes: Record<string, CGNode>;
+  edges: Record<string, CGEdge>;
+  counts: Record<string, number>;
+  domains: CGDomain[];
+  domain_edges: CGDomainEdge[];
+  staleness: CGStaleness;
+}
+
+/** The connection knowledge graph for the anti-hairball surface (Wave C4). */
+export async function getConnectionGraph(connectionId: string, schemaName?: string): Promise<ConnectionGraph> {
+  const q = schemaName
+    ? `connection_id=${encodeURIComponent(connectionId)}&schema_name=${encodeURIComponent(schemaName)}`
+    : `connection_id=${encodeURIComponent(connectionId)}`;
+  const res = await fetch(`${getApiBase()}/graph?${q}`);
+  if (!res.ok) throw new Error("Knowledge graph not available for this connection");
+  return res.json();
+}
+
+/** Rebuild the graph now and re-index it (a projection of stores already kept: no model, no warehouse). Refused with
+ *  why — no built ontology to project it from — rather than answered as done. */
+export async function rebuildContextGraph(connectionId: string, schemaName?: string): Promise<{ rebuilt: boolean; indexed: number }> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${getApiBase()}/graph/rebuild?${q}`, { method: "POST" });
+  if (!res.ok) throw await refused(res, "Rebuilding the graph");
+  return res.json();
+}
+
+// ── The graph's honesty scorecard (Wave P2 — GET /graph/audit) ────────────────
+
+export interface CGContentDrift {
+  drifted: boolean;
+  reason: string;
+  missing: Record<string, number>;
+  [k: string]: unknown;
+}
+export interface GraphAudit {
+  connection_id: string;
+  schema_name: string;
+  graph_version: number;
+  order: CGWarrantClass[];
+  labels: Record<CGWarrantClass, string>;
+  meanings: Record<CGWarrantClass, string>;
+  nodes: Record<CGWarrantClass, number>;
+  edges: Record<CGWarrantClass, number>;
+  edges_by_kind: Record<string, Record<CGWarrantClass, number>>;
+  totals: { nodes: number; edges: number; joins: number };
+  /** The headline: how many `joins_on` edges were probed against the data. Joins are
+   *  where a warrant is a real choice and a wrong one fabricates rows. */
+  joins_measured_share: number;
+  /** The whole-graph share, kept for completeness — never the headline, because
+   *  provenance links can never be measured and dominate the denominator. */
+  edge_grounded_share: number;
+  staleness: CGStaleness;
+  drift: CGContentDrift | null;
+}
+
+/** Warrant mix + staleness + content drift in one call — the three honesty signals
+ *  are only meaningful together (Wave P2). */
+export async function getGraphAudit(connectionId: string, schemaName?: string): Promise<GraphAudit> {
+  const q = schemaName
+    ? `connection_id=${encodeURIComponent(connectionId)}&schema_name=${encodeURIComponent(schemaName)}`
+    : `connection_id=${encodeURIComponent(connectionId)}`;
+  const res = await fetch(`${getApiBase()}/graph/audit?${q}`);
+  if (!res.ok) throw new Error("Graph audit not available");
+  return res.json();
+}
+
+// ── Node standing (Wave P3 — GET /graph/trust) ────────────────────────────────
+
+export type CGStanding = "confirmed" | "contested" | "disputed" | "corroborated" | "unchecked";
+export interface NodeTrust {
+  node_id: string;
+  standing: CGStanding;
+  findings: number;
+  contested: number;
+  stale: number;
+  accepts: number;
+  rejects: number;
+  detail: string;
+  meaning: string;
+}
+export interface TrustSidecar {
+  connection_id: string;
+  nodes: Record<string, NodeTrust>;
+  meanings: Record<CGStanding, string>;
+  by_standing: Record<CGStanding, number>;
+  scored_nodes: number;
+  verdicts_seen: number;
+  /** False ⇒ nobody has recorded a verdict on this connection yet. Stated as a field so
+   *  a reader does not have to infer it from a row of zeros. */
+  human_signal: boolean;
+}
+
+/** What standing each node has earned — a read-time sidecar, never stored (Wave P3). */
+export async function getGraphTrust(connectionId: string, schemaName?: string): Promise<TrustSidecar> {
+  const q = schemaName
+    ? `connection_id=${encodeURIComponent(connectionId)}&schema_name=${encodeURIComponent(schemaName)}`
+    : `connection_id=${encodeURIComponent(connectionId)}`;
+  const res = await fetch(`${getApiBase()}/graph/trust?${q}`);
+  if (!res.ok) throw new Error("Trust sidecar not available");
+  return res.json();
+}
+
+// ── What depends on a node (Wave P4 — GET /graph/lineage) ─────────────────────
+
+export interface GraphDependent {
+  node_id: string;
+  kind: string;
+  label: string;
+  depth: number;
+  via: string;
+  /** The expression in THIS node that references the subject — the line that would
+   *  break. Empty when the node records no expression (never a guess). */
+  site: string;
+  site_kind: "sql" | "formula" | "citation" | "";
+  site_line: number;
+}
+export interface GraphLineage {
+  connection_id: string;
+  node_id: string;
+  label: string;
+  root: string;
+  truncated: boolean;
+  counts_by_kind: Record<string, number>;
+  summary: string;
+  dependents: GraphDependent[];
+}
+
+/** What breaks if this table or metric changes — reported, never deleted (Wave P4). */
+export async function getGraphLineage(
+  connectionId: string, opts: { nodeId?: string; table?: string; schemaName?: string },
+): Promise<GraphLineage> {
+  const p = new URLSearchParams({ connection_id: connectionId });
+  if (opts.nodeId) p.set("node_id", opts.nodeId);
+  if (opts.table) p.set("table", opts.table);
+  if (opts.schemaName) p.set("schema_name", opts.schemaName);
+  const res = await fetch(`${getApiBase()}/graph/lineage?${p.toString()}`);
+  if (!res.ok) throw new Error("Lineage not available");
+  return res.json();
+}
+
+// ── The graph's review queue (Wave P5 — GET /graph/review) ────────────────────
+
+export type CGCheckKind = "probe_join" | "ask" | "review_finding" | "define" | "rebuild";
+export interface GraphReviewItem {
+  id: string;
+  type: "graph_behind" | "unprobed_join" | "contested_finding" | "ungrounded_finding"
+      | "undocumented_hub" | "isolated_table";
+  question: string;
+  why: string;
+  subject_id: string;
+  subject_label: string;
+  check: CGCheckKind;
+  /** How many other nodes depend on the thing in doubt — the ranking key, shown so the
+   *  reader can see why an item is near the top. Never an invented severity score. */
+  depends: number;
+  detail: Record<string, unknown>;
+}
+export interface GraphReview {
+  connection_id: string;
+  schema_name: string;
+  graph_version: number;
+  items: GraphReviewItem[];
+  /** How many items are in `items` (after the server's limit). */
+  total: number;
+  /** How many existed BEFORE the limit — a queue that renders 50 over a warehouse with
+   *  300 would under-report the very thing it exists to report. */
+  total_found: number;
+  truncated: boolean;
+  by_type: Record<string, number>;
+}
+
+/** What the graph knows it cannot vouch for — deterministic, ranked by consequence. */
+export async function getGraphReview(connectionId: string, schemaName?: string): Promise<GraphReview> {
+  const q = schemaName
+    ? `connection_id=${encodeURIComponent(connectionId)}&schema_name=${encodeURIComponent(schemaName)}`
+    : `connection_id=${encodeURIComponent(connectionId)}`;
+  const res = await fetch(`${getApiBase()}/graph/review?${q}`);
+  if (!res.ok) throw new Error("Graph review not available");
+  return res.json();
+}
+
+// ── The connection tour (Wave C5 — GET /graph/tour) ───────────────────────────
+
+export interface TourStep {
+  order: number;
+  node_id: string;
+  kind: string;                 // "table" | "metric"
+  label: string;
+  connects_to: string | null;
+  connects_to_label: string;
+  connection: string;           // deterministic reason ("joins Order Line", …)
+  why: string;                  // deterministic significance
+  narration: string;            // LLM connective narration (may be empty)
+}
+export interface ConnectionTour {
+  connection_id: string;
+  schema_name: string;
+  generated_at: string;
+  narrated: boolean;
+  steps: TourStep[];
+}
+
+/** The topology-ordered connection tour (Wave C5). */
+export async function getConnectionTour(connectionId: string, schemaName?: string): Promise<ConnectionTour> {
+  const base = schemaName
+    ? `connection_id=${encodeURIComponent(connectionId)}&schema_name=${encodeURIComponent(schemaName)}`
+    : `connection_id=${encodeURIComponent(connectionId)}`;
+  const res = await fetch(`${getApiBase()}/graph/tour?${base}`);
+  if (!res.ok) throw new Error("Connection tour not available");
+  return res.json();
+}
+
+// ── Duplicate-entity detection + merge (Borrow 5) ─────────────────────────────
+
+export interface DuplicateEntityRef { id: string; display_name: string; source_tables: string[] }
+export interface DuplicateCluster {
+  entities: DuplicateEntityRef[];
+  similarity: number;
+  // CB-4 — pairs inside this cluster a person already said are different (the rest were never judged).
+  rejected_pairs?: { pair: [string, string]; reason: string }[];
+}
+// CB-4 — a rejected pair, remembered with its reason and who said so.
+export interface RejectedDuplicate { pair: [string, string]; reason: string; rejected_by: string; rejected_at: string }
+export interface DuplicateSuggestions { clusters: DuplicateCluster[]; hidden: number; rejected: RejectedDuplicate[] }
+
+export async function getDuplicateSuggestions(
+  connectionId: string, schemaName?: string, threshold?: number,
+): Promise<DuplicateSuggestions> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  if (threshold != null) q.set("threshold", String(threshold));
+  const res = await fetch(`${getApiBase()}/ontology/duplicate-entities?${q}`);
+  if (!res.ok) throw new Error("Failed to load duplicate suggestions");
+  const body = await res.json();
+  return { clusters: body.clusters ?? [], hidden: body.hidden ?? 0, rejected: body.rejected ?? [] };
+}
+
+export async function rejectDuplicateEntities(
+  connectionId: string, entityIds: string[], reason: string, schemaName?: string,
+): Promise<void> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${getApiBase()}/ontology/duplicate-entities/reject?${q}`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ entity_ids: entityIds, reason }),
+  });
+  if (!res.ok) throw new Error("Couldn't record the rejection");
+}
+
+export async function reconsiderDuplicatePair(
+  connectionId: string, a: string, b: string, schemaName?: string,
+): Promise<void> {
+  const q = new URLSearchParams({ connection_id: connectionId, a, b });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${getApiBase()}/ontology/duplicate-entities/reject?${q}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Couldn't take the rejection back");
+}
+
+export async function getDuplicateEntities(
+  connectionId: string, schemaName?: string, threshold?: number,
+): Promise<DuplicateCluster[]> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  if (threshold != null) q.set("threshold", String(threshold));
+  const res = await fetch(`${getApiBase()}/ontology/duplicate-entities?${q}`);
+  if (!res.ok) throw new Error("Failed to load duplicate suggestions");
+  return (await res.json()).clusters ?? [];
+}
+
+export async function mergeOntologyEntities(
+  connectionId: string, mergeIds: string[], canonicalId: string, schemaName?: string,
+): Promise<{ merged_into: string; absorbed: string[]; warnings: string[] }> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${getApiBase()}/ontology/entities/merge?${q}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ merge_ids: mergeIds, canonical_id: canonicalId }),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(e, "Merge failed"));
+  }
+  return res.json();
+}
+
+/** ⚠️ `schemaName` is not optional in spirit — omitting it lets the server resolve a
+ *  schema of its own choosing, so an edit made while looking at schema B can land in
+ *  schema A's cached graph. Every caller that knows its scope must pass it. */
+export async function patchOntologyEntity(
+  connectionId: string,
+  entityId: string,
+  overrides: Partial<Pick<OntologyEntity, "description" | "active_filter" | "default_filters" | "exclude_when" | "lifecycle_states" | "terminal_states">>,
+  schemaName?: string,
+): Promise<OntologyEntity> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}?${q}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(overrides) },
+  );
+  if (!res.ok) throw new Error("Failed to update entity");
+  return res.json();
+}
+
+export async function patchQueryTemplate(
+  connectionId: string,
+  actionId: string,
+  overrides: Partial<Pick<QueryTemplate, "description" | "sql_template" | "business_rules_enforced" | "returns">>,
+  schemaName?: string,
+): Promise<QueryTemplate> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(
+    `${getApiBase()}/ontology/actions/${encodeURIComponent(actionId)}?${q}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(overrides) },
+  );
+  if (!res.ok) throw new Error("Failed to update action");
+  return res.json();
+}
+
+// ── Learned Skills (agent procedural memory) ──────────────────────────────────
+// Skills ARE QueryTemplates with origin='learned' + a usage_count. The backend
+// crystallizes them from finished investigations and the ontology overlay re-enters
+// them into the planner's action set; this surface lets a human review + manage them.
+
+export interface AutonomyLevel {
+  connection_id: string;
+  level: number;                 // 0 manual · 1 assisted · 2 supervised · 3 autonomous
+  label: string;
+  signals?: Record<string, unknown>;
+  reason?: string;
+  usage_count?: number;          // present on the per-skill variant
+}
+
+export async function getLearnedSkills(connectionId: string, schemaName?: string): Promise<QueryTemplate[]> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${getApiBase()}/ontology/skills?${q}`);
+  if (!res.ok) throw new Error("Failed to load learned skills");
+  return (await res.json()).skills ?? [];
+}
+
+// ── Ontology proposals — the review inbox for what the engine and the conversation
+// propose (metric gaps from the self-improving loop; column/table notes an agent staged
+// with evidence — ontology/agent_notes.py). A person accepts or dismisses; nothing here
+// changes context until they do. Until 2026-08-15 this endpoint had NO web consumer, so
+// "the human is the reviewer" had no surface to review on.
+export interface OntologyProposal {
+  id: string;
+  kind: string;                       // "metric" | "column_note" | "table_note"
+  target_id: string;
+  entity: string;
+  proposed_fields: Record<string, unknown>;
+  reason: string;
+  support: number;
+  evidence: Array<Record<string, unknown>>;
+  status: string;                     // pending | accepted | dismissed
+  first_seen: string;
+  last_seen: string;
+}
+
+export async function getOntologyProposals(connectionId: string, schemaName?: string): Promise<OntologyProposal[]> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${getApiBase()}/ontology/recommendations?${q}`);
+  if (!res.ok) throw new Error("Failed to load ontology proposals");
+  return (await res.json()).recommendations ?? [];
+}
+
+export async function acceptOntologyProposal(recId: string, connectionId: string, schemaName?: string): Promise<Record<string, unknown>> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${getApiBase()}/ontology/recommendations/${encodeURIComponent(recId)}/accept?${q}`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to accept proposal");
+  return res.json();
+}
+
+export async function dismissOntologyProposal(recId: string, connectionId: string, schemaName?: string): Promise<void> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${getApiBase()}/ontology/recommendations/${encodeURIComponent(recId)}/dismiss?${q}`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to dismiss proposal");
+}
+
+// Crystallize a CANDIDATE skill from a finished investigation (not persisted — the UI
+// confirms, then calls saveLearnedSkill). 422 when the run isn't skill-worthy.
+export async function proposeLearnedSkill(
+  invId: string, connectionId: string, schemaName?: string,
+): Promise<QueryTemplate> {
+  const q = new URLSearchParams({ inv_id: invId, connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${getApiBase()}/ontology/skills/propose?${q}`, { method: "POST" });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(e, "Run is not skill-worthy"));
+  }
+  return (await res.json()).candidate as QueryTemplate;
+}
+
+export async function saveLearnedSkill(
+  action: QueryTemplate, connectionId: string, schemaName?: string,
+): Promise<{ ok: boolean; schema_name: string; id: string }> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${getApiBase()}/ontology/skills?${q}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(action),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(e, "Skill rejected (SQL not read-only or failed dry-run)"));
+  }
+  return res.json();
+}
+
+export async function activateLearnedSkill(
+  actionId: string, connectionId: string, schemaName?: string,
+): Promise<{ ok: boolean; usage_count: number; autonomy: AutonomyLevel }> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${getApiBase()}/ontology/skills/${encodeURIComponent(actionId)}/use?${q}`, { method: "POST" });
+  if (!res.ok) throw new Error("Learned skill not found");
+  return res.json();
+}
+
+export async function deleteLearnedSkill(
+  actionId: string, connectionId: string, schemaName?: string,
+): Promise<void> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${getApiBase()}/ontology/skills/${encodeURIComponent(actionId)}?${q}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete learned skill");
+}
+
+export async function getAutonomy(connectionId: string): Promise<AutonomyLevel> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  const res = await fetch(`${getApiBase()}/ontology/autonomy?${q}`);
+  if (!res.ok) return { connection_id: connectionId, level: 0, label: "manual" };
+  return res.json();
+}
+
+// ── Proactive Schema Explorer ─────────────────────────────────────────────────
+
+export interface ExplorationStatus {
+  connection_id: string;
+  phase: string;
+  paused: boolean;
+  tables_total: number;
+  columns_total: number;
+  joins_total: number;
+  null_meanings_resolved: number;
+  joins_verified: number;
+  lifecycles_mapped: number;
+  distributions_profiled: number;
+  insights_found: number;
+  queries_executed: number;
+  facts_discovered: number;
+  started_at: string | null;
+  first_insight_at: string | null;        // B-6: time-to-first-insight milestone
+  first_insight_seconds: number | null;   // elapsed start→first insight, the KPI
+  completed_at: string | null;
+  error: string | null;
+  /** {schema: phase} for the aggregate of a multi-schema connection — lets the
+   *  Activity strip say WHICH run each phase belongs to. */
+  per_schema?: Record<string, string> | null;
+  /** The run stopped mid-phase (a restart killed it) and nothing is running it — its phase is
+   *  where it stopped, not where it is. A person's Continue resumes it; the hourly check does only
+   *  where the dataset's layer lets the platform ask its questions. */
+  interrupted?: boolean;
+  interrupted_at?: string | null;
+  interrupted_schemas?: string[];
+  interrupted_note?: string;
+  /** Why the platform is holding a run it wanted to start — a spent monthly budget. */
+  held_note?: string | null;
+  domain_intel_skipped?: boolean;
+  domain_intel_note?: string | null;
+}
+
+// ── The exploration principles: each dataset's layer, off switch, maturity and budget (2026-10-08) ──
+
+/** One of the three maturity readings: a share 0–1, or null with the reason it does not apply. */
+export interface MaturityBar {
+  share: number | null; note: string;
+  /** It applies and has not been read yet — the number beside the bars is then withheld ("—"). */
+  unmeasured?: boolean;
+}
+export interface Maturity {
+  structure: MaturityBar;
+  questions: MaturityBar;
+  time: MaturityBar;
+  /** The number beside the bars — the mean of the readings that apply. */
+  percent: number | null;
+  stage: "learning" | "exploring" | "watching";
+}
+export interface LayerProposal { layer: string; label: string; evidence: string[] }
+export interface LayerSet { layer: string; set_by: string; set_at: string }
+export interface DatasetOff { table: string; reason: string; note: string; declared_by: string }
+export interface DatasetTable {
+  name: string;
+  layer: { set: LayerSet | null; proposed: LayerProposal | null; effective: string };
+  off: DatasetOff | null;
+  maturity: Maturity;
+  /** The same entity in another table of the connection — its raw, cleansed or business copy. */
+  copies?: string[];
+}
+export interface DatasetSchema {
+  name: string;
+  key: string;
+  layer: { set: LayerSet | null; proposed: LayerProposal; effective: string; policy: string; jobs: string[] };
+  off: DatasetOff | null;
+  maturity: Maturity;
+  program: {
+    held: { at: string; why: string } | null;
+    reopened: { at: string; reason: string } | null;
+    last_run: { job: string; outcome: string; new_findings: number; ended_at: string; reason: string } | null;
+    watch: Record<string, {
+      through: string; read_at: string; measured: number; moved: { name: string; rel: number }[];
+      /** The segments that carry each move — its dimensions, the Briefing's own breakdown. */
+      explained?: { metric: string; name: string; dimension: string; group: string; change: number | null; share: boolean }[];
+      /** The model's explanation of the move, every number in it checked against the breakdown — or why it was withheld. */
+      story?: { text: string; withheld?: string; model?: string; at?: string; metric?: string };
+    }>;
+    failures: number;
+    /** Questions asked of it this week that it could not answer. */
+    unanswered?: number;
+    /** A raw dataset's daily pipeline health — what changed, said. */
+    health?: { read_at: string | null; notes: string[] };
+    /** New values the last reading found in its dimensions. */
+    news?: string[];
+  };
+  tables: DatasetTable[];
+}
+export interface ExplorationBudget {
+  organisation: { limit: number | null; spent: number | null };
+  connection: { limit: number | null; spent: number };
+  remaining: number | null;
+  held_by: "organisation" | "connection" | null;
+  spent_out: boolean;
+  sentence: string;
+}
+export interface DatasetsView {
+  connection_id: string;
+  schemas: DatasetSchema[];
+  budget: ExplorationBudget;
+  layers: { id: string; label: string; policy: string }[];
+  exclusion_reasons: string[];
+}
+
+export async function getDatasets(connId: string): Promise<DatasetsView> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connId)}/datasets`);
+  if (!res.ok) throw await refused(res, "Reading the datasets");
+  return res.json();
+}
+
+/** A person sets a schema's layer (or one table's). Setting one that asks questions starts them. */
+export async function setDatasetLayer(connId: string, schema: string, layer: string, table = ""):
+  Promise<LayerSet & { started: string | null }> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connId)}/datasets/layer`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ schema_name: schema, table, layer }),
+  });
+  if (!res.ok) throw await refused(res, "Setting the layer");
+  return res.json();
+}
+
+export async function clearDatasetLayer(connId: string, schema: string, table = ""): Promise<void> {
+  const q = new URLSearchParams({ schema_name: schema, ...(table ? { table } : {}) });
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connId)}/datasets/layer?${q}`, { method: "DELETE" });
+  if (!res.ok) throw await refused(res, "Clearing the layer");
+}
+
+/** A person accepts the proposed layers — of the named schemas, or of every schema not set yet. */
+export async function acceptDatasetLayers(connId: string, schemas: string[] = []):
+  Promise<{ accepted: { schema: string; layer: string }[]; started: Record<string, string> }> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connId)}/datasets/layers/accept`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ schemas }),
+  });
+  if (!res.ok) throw await refused(res, "Accepting the proposed layers");
+  return res.json();
+}
+
+/** A person turns a schema (no table) or a table off for analysis, or back on. */
+export async function setDatasetOff(connId: string, schema: string, off: boolean, opts: { table?: string; reason?: string; note?: string } = {}):
+  Promise<{ ok: boolean; off: DatasetOff | null }> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connId)}/datasets/off`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ schema_name: schema, table: opts.table ?? "", off, reason: opts.reason ?? "out_of_domain", note: opts.note ?? "" }),
+  });
+  if (!res.ok) throw await refused(res, off ? "Turning it off" : "Turning it back on");
+  return res.json();
+}
+
+export async function getExplorationStatus(connectionId: string): Promise<ExplorationStatus> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/status`);
+  if (!res.ok) throw new Error("Exploration status not available");
+  return res.json();
+}
+
+// ── Exploration findings ──────────────────────────────────────────────────────
+
+export interface NullMeaning {
+  meaning: string;
+  business_rule: string | null;
+  evidence_sql: string | null;
+  null_rate?: number;
+}
+
+export interface JoinVerification {
+  key: string;
+  from_table: string;
+  from_col: string;
+  to_table: string;
+  to_col: string;
+  orphan_count: number;
+  fk_distinct: number;
+  pk_distinct: number;
+  verified: boolean;
+  cardinality: string;
+}
+
+export interface LifecycleMap {
+  status_column: string;
+  states: string[];
+  terminal_states: string[];
+  active_states: string[];
+  transitions: { from: string; to: string; n: number }[];
+}
+
+export interface DistributionProfile {
+  shape: string;
+  p25: number | null;
+  p50: number | null;
+  p75: number | null;
+  pct_zero: number | null;
+  min: number | null;
+  max: number | null;
+  mean: number | null;
+  col_type?: string;
+}
+
+export interface ExplorationInsight {
+  id: string;
+  domain: string;
+  angle: string;
+  entities_involved: string[];
+  dimensions: string[];
+  measures: string[];
+  finding: string;
+  sql: string;
+  confidence: number;
+  novelty: number;
+  generated_at: string;
+  canvas_id?: string | null;
+  promoted_to_org?: boolean;
+  promotion_confidence?: number;
+  /** Origin schema, set only on the "All schemas" aggregate — disambiguates findings whose
+   *  per-schema ids collide (e.g. each schema's pinned questions start at pinned__0). */
+  source_schema?: string;
+  /** Briefing-triage annotations (stamped by the /domains endpoint): `impact` is the
+   *  ranking score; `plausibility` flags a finding the trust gate distrusts. */
+  impact?: number;
+  plausibility?: "implausible" | "confound" | null;
+}
+
+/** Stable identity for a finding across the aggregate union, where bare `id`s collide. */
+export function insightKey(ins: { id: string; source_schema?: string }): string {
+  return ins.source_schema ? `${ins.source_schema}::${ins.id}` : ins.id;
+}
+
+/** Collision-proof identity for a finding — use this (NOT `insightKey` or a bare `.id`) as the
+ *  React key and the client-side dedup identity for any list of ExplorationInsights.
+ *
+ *  `insightKey` (source_schema::id) is NOT unique for the meta-domains ("Key Questions" /
+ *  "Synthesis"): their findings reuse bare ids like `pinned__4` / `synth__chain__1` — some as
+ *  TRUE duplicates (same id AND text, e.g. a pinned question aggregated across schemas), some as
+ *  DISTINCT findings that merely share an id. Folding the finding text in disambiguates the
+ *  id-collisions; running the list through `dedupeInsights` first drops the true duplicates. Doing
+ *  both is what stops React's "two children with the same key" warning at the finding lists. */
+export function insightUid(ins: { id: string; source_schema?: string; finding: string }): string {
+  return `${insightKey(ins)}|${ins.finding}`;
+}
+
+/** Drop repeated findings (first occurrence wins), keyed by `insightUid`. */
+export function dedupeInsights<T extends { id: string; source_schema?: string; finding: string }>(list: T[]): T[] {
+  const seen = new Set<string>();
+  return list.filter(i => { const k = insightUid(i); if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
+/** Dedup every domain's findings in a domain→insights map. Apply this once at the fetch
+ *  boundary so every downstream surface (counts, lists, keys) sees the same de-duplicated
+ *  findings — the meta-domains ("Key Questions" / "Synthesis") arrive with the same finding
+ *  repeated (aggregated across schemas). */
+export function dedupeDomainInsights<D extends { insights: { id: string; source_schema?: string; finding: string }[] }>(
+  map: Record<string, D>,
+): Record<string, D> {
+  return Object.fromEntries(Object.entries(map).map(([k, d]) => [k, { ...d, insights: dedupeInsights(d.insights) }]));
+}
+
+export interface DomainInsights {
+  insights: ExplorationInsight[];
+  queries_used: number;
+  budget_cap: number;
+  angles_covered: string[];
+}
+
+export async function getDomainInsights(connectionId: string, schema?: string): Promise<Record<string, DomainInsights>> {
+  const params = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/domains${params}`);
+  if (!res.ok) throw new Error("Failed to fetch domain insights");
+  return res.json();
+}
+
+/** A finding the explorer recorded, by the glossary's word: the wire keeps its older name. */
+export type RecordedFinding = ExplorationInsight;
+
+/** The connection's recorded findings, by domain, as the dashboard's ledger picker reads them
+ *  (the canvas, 2026-10-08): every domain that has one, in name order. */
+export async function listFindingsByDomain(connectionId: string, schema?: string): Promise<{ domain: string; findings: RecordedFinding[] }[]> {
+  const by = await getDomainInsights(connectionId, schema);
+  return Object.entries(by).map(([domain, d]) => ({ domain, findings: d.insights ?? [] }))
+    .filter(g => g.findings.length).sort((a, b) => a.domain.localeCompare(b.domain));
+}
+
+/** Pin a recorded finding as a card — Door 1, by the glossary's word. */
+export function pinFinding(connectionId: string, findingId: string, opts: { scope?: string; scopeRef?: string; schema?: string } = {}) {
+  return pinInsightToDashboard(connectionId, findingId, opts);
+}
+
+/** The finding a card was made from, or "" for a card made from nothing recorded. */
+export function findingOfCard(card: StoredCard): string {
+  return card.provenance?.insight_id || "";
+}
+
+// ── A run a person starts: capped at the month's exploration budget (2026-10-08) ──────────────
+
+/** The month's exploration budget is spent and the person chose not to run past it. */
+export class BudgetSpentError extends Error {
+  constructor(message: string) { super(message); this.name = "BudgetSpentError"; }
+}
+
+/** The question asked when a person's run would spend past the month's budget. Replaceable (tests). */
+export let askToRunPastBudget = (message: string): boolean =>
+  typeof window !== "undefined" && typeof window.confirm === "function"
+    ? window.confirm(`${message}.\n\nRun it anyway? The choice is recorded under your name.`)
+    : false;
+export function setRunPastBudgetQuestion(fn: (message: string) => boolean): void { askToRunPastBudget = fn; }
+
+/** POST a run a person starts. The server caps it at what is left of the month's exploration budget; when
+ *  nothing is left it refuses with the reason (409 budget_spent), the person is asked, and only a yes runs
+ *  it anyway (`run_anyway`, recorded under their name). A no throws `BudgetSpentError`. */
+async function personRun(url: string, failed: string): Promise<Response> {
+  let res = await fetch(url, { method: "POST" });
+  if (res.status === 409) {
+    const body = await res.clone().json().catch(() => ({}));
+    const d = (body as { detail?: { reason?: string; message?: string } })?.detail;
+    if (d?.reason === "budget_spent") {
+      const message = d.message || "The monthly exploration budget is spent";
+      if (!askToRunPastBudget(message)) throw new BudgetSpentError(message);
+      res = await fetch(`${url}${url.includes("?") ? "&" : "?"}run_anyway=true`, { method: "POST" });
+    }
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, failed));
+  }
+  return res;
+}
+
+export async function extendDomainBudget(connectionId: string, domain: string): Promise<{ ok: boolean }> {
+  const res = await personRun(
+    `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/domains/${encodeURIComponent(domain)}/extend`,
+    "Failed to extend domain budget");
+  return res.json();
+}
+
+export async function getCanvasDomainInsights(canvasId: string): Promise<Record<string, DomainInsights>> {
+  const res = await fetch(`${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/domains`);
+  if (!res.ok) throw new Error("Failed to fetch canvas domain insights");
+  return res.json();
+}
+
+export async function extendCanvasDomainBudget(canvasId: string, domain: string): Promise<{ ok: boolean }> {
+  const res = await fetch(
+    `${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/domains/${encodeURIComponent(domain)}/extend`,
+    { method: "POST" }
+  );
+  if (!res.ok) throw new Error("Failed to extend canvas domain budget");
+  return res.json();
+}
+
+export async function promoteCanvasInsight(canvasId: string, insightId: string): Promise<{ promoted: boolean }> {
+  const res = await fetch(
+    `${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/findings/${encodeURIComponent(insightId)}/promote`,
+    { method: "POST" }
+  );
+  // the server's reason travels: Org writes first, and a promotion it could not store is refused with why (503)
+  if (!res.ok) throw await refused(res, "Promoting");
+  return res.json();
+}
+
+export async function promoteConnectionInsight(connectionId: string, insightId: string): Promise<{ promoted: boolean }> {
+  const res = await fetch(
+    `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/findings/${encodeURIComponent(insightId)}/promote`,
+    { method: "POST" }
+  );
+  if (!res.ok) throw await refused(res, "Promoting");
+  return res.json();
+}
+
+// ── Dashboard cards (briefing dashboard — user-authored KPI/chart/watch cards) ──
+
+export interface StoredCardRefresh {
+  cadence: string;
+  last_run: string;
+  last_value: number | null;
+  prev_value: number | null;
+  history: number[];
+}
+
+export interface StoredCard {
+  id: string;
+  connection_id: string;
+  scope: string;
+  scope_ref: string;
+  source: string;
+  kind: string;
+  title: string;
+  sql: string;
+  query_ref: string | null;
+  render: Record<string, unknown>;
+  refresh: StoredCardRefresh;
+  thresholds: Record<string, unknown>;
+  /** `metric` and `metric_version` (Arc CT-3): the approved metric a card was made from, and the
+   *  version it had then. Empty and 0 when the card was not made from a metric. */
+  provenance: { insight_id: string; origin_finding_id: string; receipt_ref: string; metric: string; metric_version: number;
+    /** The card that replaces this one: a duplicate is superseded, never deleted (2026-10-08). */
+    superseded_by?: string };
+  links: string[];
+  body: string;
+  author: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CardRunResult {
+  columns: string[];
+  rows: (string | number | null)[][];
+  row_count: number;
+  caveats: string[];
+  error: string | null;
+  /** `sheet_removed`: `error` is a sentence saying who removed the sheet this card read, and a tile draws it. */
+  error_kind?: string | null;
+  /** The figure of THIS run — the range's when the run was cut to one, the standing one
+   *  otherwise; null when the result is a table. `refresh` always carries the card's standing
+   *  value, so a card drawn for a range reads this and not that (Arc CT-4). Optional because a
+   *  server from before it does not send it. */
+  value?: number | null;
+  refresh: StoredCardRefresh;
+  /** BR-9 — present when the run asked for a range: what the number covers, or `standing`
+   *  with why the card's SQL could not be cut to it (no date on its tables). */
+  scoped?: { covers: string; standing: boolean; why: string; grain: string | null } | null;
+  /** Asked for with `compare`: the card's figure for the window its range is compared with,
+   *  cut the same way. `word` is short enough to follow "higher than"; `covers` is the full
+   *  phrase. `equal_age` is false until the range is final — part of any difference is then
+   *  age, not a move. `value` null says why; it is never read as zero. */
+  previous?: CardRunPrevious | null;
+  /** Arc AP-7 — a card of a person's own query, as it is shown: its figure, its table or its chart's points. */
+  shown?: QueryShaped | null;
+  duration_ms?: number;
+}
+
+// ── Arc AP-7 — your own query on the dashboard ──────────────────────────────────────────────────────────────────────────
+
+export type QueryShownAs = "table" | "figure" | "bar" | "line" | "area" | "scatter";
+export type QueryAgg = "count" | "count_distinct" | "sum" | "avg" | "min" | "max";
+export type QueryBucket = "" | "day" | "week" | "month" | "quarter" | "year";
+export type QuerySegments = "stacked" | "side_by_side" | "shares";
+
+/** How a card of a person's own query is shown (`aughor/dashboards/queries.py` `Shown`). */
+export interface QueryShown {
+  as: QueryShownAs;
+  /** True: the platform sums the query's rows; false: it is drawn as the query returns it. */
+  summed: boolean;
+  x: string;
+  bucket: QueryBucket;
+  series: { column: string; agg: QueryAgg; tone?: string; label?: string }[];
+  split: string;
+  top: number;
+  segments: QuerySegments;
+  running: boolean;
+  labels: boolean;
+  columns: string[];
+  sort: string;
+  descending: boolean;
+  label: string;
+  /** Bars that run sideways. */
+  across?: boolean;
+  /** A second value of a figure's statement, said beside it. */
+  beside?: { column: string; words: string; format: string } | null;
+  /** How a figure's value is written: money, percent or number. */
+  format?: string;
+}
+
+export interface QueryChartPoint { x: string | number | null; s: string; v: number | null }
+
+/** A run of a query card, shaped as it is shown — what was left out said in `said`. */
+export type QueryShaped =
+  | { as: "figure"; value: number | null; label: string; said: string[]; beside?: { value: number | null; words: string; format: string } | null; format?: string }
+  | { as: "table"; columns: TypedColumn[]; rows: (string | number | boolean | null)[][]; more: boolean; said: string[] }
+  | { as: "bar" | "line" | "area" | "scatter"; x: { name: string; kind: "number" | "date" | "time" | "text"; bucket: QueryBucket };
+      series: string[]; points: QueryChartPoint[]; other: boolean; said: string[]; tones?: Record<string, string>; format?: string };
+
+/** A query run as the builder would keep it: its typed columns and first rows, the card as shown — or what stops it. */
+export interface QueryPreview {
+  connection_id: string;
+  refused: string[];
+  columns?: TypedColumn[];
+  rows?: (string | number | boolean | null)[][];
+  more?: boolean;
+  duration_ms?: number;
+  caveats?: string[];
+  tables?: string[];
+  setup?: QueryShown;
+  shown?: QueryShaped;
+  /** Arc AP-8 — the dashboard's values it reads, by name (`{{name}}`). */
+  reads?: string[];
+}
+
+export interface QueryAsked {
+  sql: string; shown: Partial<QueryShown>; title?: string; replaces?: string;
+  /** Arc AP-8 — the dashboard's values it reads, as the page holds them now; each bound by the engine. */
+  values?: Record<string, { kind: string; value: unknown }>;
+  /** A reader's filters on the table it reads. */
+  filters?: QueryNarrowing[];
+}
+
+/** One filter a reader has on: this column of this table holds one of these (`aughor/dashboards/queries.py` `narrowed`). */
+export interface QueryNarrowing { table: string; column: string; values: (string | number)[]; grain?: string }
+
+/** A query that could not be kept: each reason, as the server says it. */
+export class QueryRefused extends Error {
+  constructor(public reasons: string[]) { super(reasons.join(" ")); }
+}
+
+export async function previewDashboardQuery(connectionId: string, asked: QueryAsked): Promise<QueryPreview> {
+  const res = await fetch(`${getApiBase()}/dashboards/queries/preview?connection_id=${encodeURIComponent(connectionId)}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(asked),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The query could not be run"));
+  return res.json();
+}
+
+export async function keepDashboardQuery(connectionId: string, asked: QueryAsked): Promise<{ card: DashboardCard; preview: QueryPreview }> {
+  const res = await fetch(`${getApiBase()}/dashboards/queries?connection_id=${encodeURIComponent(connectionId)}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(asked),
+  });
+  if (res.status === 422) {
+    const body = await res.json().catch(() => ({}));
+    const refused = (body as { detail?: { refused?: string[] } }).detail?.refused;
+    throw new QueryRefused(refused?.length ? refused : [fastApiError(body, "The query could not be kept")]);
+  }
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The query could not be kept"));
+  return res.json();
+}
+
+// ── PENDING 54 — a question on a dashboard: asked by the agent on a rhythm, shown as the Data Canvas shows an answer ──
+
+export type QuestionRhythm = "daily" | "weekly" | "monthly" | "ask";
+
+/** One answer in a line, newest first. */
+export interface QuestionAnswerLine {
+  id: string;
+  asked_at: string | null;
+  answered_at: string | null;
+  status: string;
+  headline: string;
+  /** As the Record booked it: "answered", "contradicted" (a later reading refuted it), or "" while it runs. */
+  verdict: string;
+}
+
+/** The latest finished answer, in the run's own words and figures. */
+export interface QuestionAnswer {
+  id: string;
+  headline: string;
+  summary: string;
+  figures: { label: string; value: string; note: string }[];
+  /** What moved it: the run's attribution when it measured one, else what its breakdown found, sentence by sentence. */
+  why: { drivers: { cause: string; amount: string; share: number | null }[]; lines: string[] };
+  gaps: string;
+  confidence: string;
+  period: string;
+  against: string;
+  asked_at: string | null;
+  answered_at: string | null;
+  minutes: number | null;
+}
+
+/** What a run costs on this install, from its own metered runs (`record/inquiry.py::run_cost_estimate`). */
+export interface RunCostEstimate {
+  kind: string;
+  from: string;
+  tokens: number | null;
+  minutes: number | null;
+  n: number;
+  usd_floor: number | null;
+  usd_n: number;
+  unpriced_calls: number;
+  ceiling: { tokens?: number; seconds?: number; charter?: string };
+}
+
+export interface DashboardQuestion {
+  automation_id: string;
+  question: string;
+  rhythm: QuestionRhythm | "custom";
+  rhythm_words: string;
+  next_at: string | null;
+  enabled: boolean;
+  latest: QuestionAnswer | null;
+  answers: QuestionAnswerLine[];
+  running: boolean;
+  cost: RunCostEstimate;
+}
+
+/** Keep a question for a dashboard. Nothing is asked now: its first answer comes on its rhythm, or is the Data Canvas
+ *  answer it is kept from (`first_run`). */
+export async function keepQuestion(connectionId: string, body: { question: string; rhythm: QuestionRhythm;
+  schema_name?: string; first_run?: string }): Promise<{ automation_id: string; session: string; first: string; rhythm: QuestionRhythm }> {
+  const res = await fetch(`${getApiBase()}/dashboards/questions?connection_id=${encodeURIComponent(connectionId)}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The question could not be kept"));
+  return res.json();
+}
+
+/** What one answer costs on this connection, before a question is kept. */
+export async function readQuestionCost(connectionId: string): Promise<RunCostEstimate> {
+  const res = await fetch(`${getApiBase()}/dashboards/questions/cost?connection_id=${encodeURIComponent(connectionId)}`);
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Its cost could not be read"));
+  return res.json();
+}
+
+/** A question as a dashboard shows it. No model call: the answers already kept. */
+export async function readQuestion(automationId: string, first?: string): Promise<DashboardQuestion> {
+  const q = first ? `?first=${encodeURIComponent(first)}` : "";
+  const res = await fetch(`${getApiBase()}/dashboards/questions/${encodeURIComponent(automationId)}${q}`);
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The question could not be read"));
+  return res.json();
+}
+
+/** Ask it now — a full agent run, a person's click. */
+export async function askQuestionNow(automationId: string): Promise<{ outcome: string; reason: string; asked: boolean; message: string }> {
+  const res = await fetch(`${getApiBase()}/dashboards/questions/${encodeURIComponent(automationId)}/ask`, { method: "POST" });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The question could not be asked"));
+  return res.json();
+}
+
+export async function setQuestionRhythm(automationId: string, rhythm: QuestionRhythm): Promise<{ automation_id: string; rhythm: string; next_at: string | null }> {
+  const res = await fetch(`${getApiBase()}/dashboards/questions/${encodeURIComponent(automationId)}/rhythm`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rhythm }),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Its rhythm could not be changed"));
+  return res.json();
+}
+
+export interface CardRunPrevious {
+  covers: string;
+  word: string;
+  equal_age: boolean;
+  value: number | null;
+  why: string;
+}
+
+/** Pin a briefing finding as a dashboard card (Door 1). The backend re-runs the finding's
+ *  SQL through the guard battery and refuses (throws) if it errors — a bad number is never
+ *  pinned. */
+export async function pinInsightToDashboard(
+  connectionId: string,
+  insightId: string,
+  opts: { scope?: string; scopeRef?: string; schema?: string; kind?: string; title?: string } = {},
+): Promise<{ card: StoredCard; preview: { columns: string[]; rows: string[][]; row_count: number }; caveats: string[] }> {
+  const res = await fetch(`${getApiBase()}/cards/pin-insight`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      connection_id: connectionId,
+      insight_id: insightId,
+      scope: opts.scope ?? "connection",
+      scope_ref: opts.scopeRef ?? connectionId,
+      schema: opts.schema,
+      kind: opts.kind ?? "kpi",
+      title: opts.title,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to pin to dashboard"));
+  }
+  return res.json();
+}
+
+/** Pin a Query-Builder query as a dashboard card (Door 2). The backend re-runs the
+ *  user-authored SQL through the guard battery and refuses (throws) if it errors or is
+ *  BLOCKED — the same trust gate as Door 1, now on hand-written SQL. `render` is the opaque
+ *  Chart spec the card draws with; `kind` (kpi/chart) is derived server-side from the shape. */
+export async function pinQueryToDashboard(
+  connectionId: string,
+  sql: string,
+  title: string,
+  opts: { scope?: string; scopeRef?: string; schema?: string; render?: Record<string, unknown>; queryRef?: string } = {},
+): Promise<{ card: StoredCard; preview: { columns: string[]; rows: string[][]; row_count: number }; caveats: string[] }> {
+  const res = await fetch(`${getApiBase()}/cards/pin-query`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      connection_id: connectionId,
+      sql,
+      title,
+      scope: opts.scope ?? "connection",
+      scope_ref: opts.scopeRef ?? connectionId,
+      schema: opts.schema,
+      render: opts.render ?? {},
+      query_ref: opts.queryRef,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to pin to dashboard"));
+  }
+  return res.json();
+}
+
+export async function listCards(
+  opts: { connectionId?: string; scope?: string; scopeRef?: string } = {},
+): Promise<StoredCard[]> {
+  const q = new URLSearchParams();
+  if (opts.connectionId) q.set("connection_id", opts.connectionId);
+  if (opts.scope) q.set("scope", opts.scope);
+  if (opts.scopeRef) q.set("scope_ref", opts.scopeRef);
+  const res = await fetch(`${getApiBase()}/cards?${q.toString()}`);
+  if (!res.ok) throw new Error("Failed to list dashboard cards");
+  return res.json();
+}
+
+/** Update a pinned card in place — the seam used to persist a chart's display config into
+ *  `card.render`. `PUT /cards/{id}` has existed since the dashboard shipped but had no client,
+ *  so every edit to a pinned chart was lost on unmount. */
+export async function updateCard(cardId: string, card: StoredCard): Promise<StoredCard> {
+  const res = await fetch(`${getApiBase()}/cards/${encodeURIComponent(cardId)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(card),
+  });
+  if (!res.ok) throw new Error("Failed to update dashboard card");
+  return res.json();
+}
+
+/** Saved chart display configs for a scope, as `{target_id: config}` — one fetch per brief.
+ *  For charts that are NOT pinned cards (ledger rows, digest tiles, KPI trends) and therefore
+ *  have no `render` blob of their own. `scopeKey` matches the briefing's stamp. */
+export async function getVizConfigs(scopeKey: string): Promise<Record<string, Record<string, unknown>>> {
+  const res = await fetch(`${getApiBase()}/viz-configs?scope_key=${encodeURIComponent(scopeKey)}`);
+  if (!res.ok) return {};                     // best-effort: display prefs never block a render
+  return res.json();
+}
+
+/** Persist one card-less chart's display config. An empty `config` resets it. */
+export async function saveVizConfig(
+  scopeKey: string, targetId: string, config: Record<string, unknown>,
+): Promise<void> {
+  await fetch(`${getApiBase()}/viz-configs`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scope_key: scopeKey, target_id: targetId, config }),
+  });
+}
+
+/** Recompute a card's value now (guard-on-read). Returns the current result + the rolling
+ *  last/prev value for a delta. */
+export async function runCard(cardId: string, range?: BriefingRange | null,
+  opts: { compare?: boolean; values?: Record<string, { kind: string; value: unknown }>; filters?: QueryNarrowing[] } = {}): Promise<CardRunResult> {
+  const q = new URLSearchParams();
+  if (range) {
+    if (range.preset === "custom") { if (range.start) q.set("start", range.start); if (range.end) q.set("end", range.end); }
+    else q.set("preset", range.preset);
+    // A dashboard asks for the figure of the window its range is compared with, too (`previous`).
+    if (opts.compare) q.set("compare", "true");
+  }
+  // The path is one template and the query a plain suffix: the API-contract test reads the
+  // template as the route, and a conditional inside it read as "/run${qs".
+  const url = `${getApiBase()}/cards/${encodeURIComponent(cardId)}/run`;
+  const qs = q.toString();
+  // Arc AP-8 — a query that reads the dashboard's values is sent them; every other card is run as it always was
+  const res = await fetch(qs ? `${url}?${qs}` : url, opts.values || opts.filters
+    ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ values: opts.values ?? {}, filters: opts.filters ?? [] }) }
+    : { method: "POST" });
+  if (!res.ok) throw new Error("Failed to refresh dashboard card");
+  return res.json();
+}
+
+// ── A person's dashboards in the Briefing (Arc CT-7 to CT-10) ────────────────────────────────────────
+
+/** One kept version of a dashboard. The newest carries its `spec`; a history entry does not. */
+export interface DashboardVersion {
+  version: number;
+  artifact_id: string;
+  kept_at: string;
+  current: boolean;
+  retired: boolean;
+  approved_by: string;
+  source: string;
+  note: string;
+  vocabulary_version: number;
+  /** Whose words the titles are. A model's were held to the numerals law; a person's are their own. */
+  written_by_model: boolean;
+  cards: string[];
+  changes: { added: string[]; removed: string[]; changed: string[] };
+  /** Arc AP-6 — what this version changed of the one before it, in words ("Added the map · distribution center"). */
+  said?: string[];
+  spec?: unknown;
+  /** Who this version reaches beyond its owner, and who published it (the canvas, B5). */
+  published_to?: { kind: "group" | "role"; id: string; name: string }[];
+  published_by?: string;
+  /** Arc OC-4 — the ontology release a version holding pieces was composed against. */
+  ontology_release?: string;
+  /** Arc ED-4 — where this version stands: a keep is a draft until it is published. */
+  state?: "draft" | "published" | "archived";
+  /** Arc ED-4 — on the newest version only: the version the App's readers read, null while it reaches nobody. */
+  published_version?: number | null;
+}
+
+/** Arc OC-4 — for a dashboard holding pieces bound to the ontology: the release it was composed against, the one in
+ *  force, and every change published between them that touches what its pieces read. */
+export interface DashboardPin {
+  pinned: string;
+  current: string;
+  changes: { release: string; number: number; kind: string; target_id: string; change: string;
+             class: "ERR" | "MEANING" | "WARN" | "SAFE"; pieces: string[] }[];
+}
+
+/** One of a person's dashboards, as the strip lists it. */
+export interface DashboardListed extends DashboardVersion {
+  cockpit_id: string;
+  title: string;
+  started_at: string;
+}
+
+/** A canvas's dashboard from before the home moved, waiting to be moved to the Briefing. */
+export interface CanvasDashboardLeft extends DashboardVersion {
+  canvas_id: string;
+  title: string;
+}
+
+export interface DashboardList {
+  person: string;
+  cockpits: DashboardListed[];
+  /** Cards pinned for everyone on the connection, and the person's own — what "My dashboard" starts from. */
+  shared_cards: number;
+  own_cards: number;
+  from_canvases: CanvasDashboardLeft[];
+}
+
+export interface DashboardRange {
+  status: "standing" | "final" | "provisional" | "to_date";
+  preset: RangePreset | null;
+  start: string | null;
+  last_day: string | null;
+  covers: string;
+  as_of: string | null;
+  lag_days: number | null;
+  still_moving: string[];
+  data_through?: string | null;
+  edge_note?: string;
+}
+
+/** A card a dashboard may place: the person's own, or one pinned for the connection — with the
+ *  record it was made from ("metric", "trusted_query", "finding", or "" for a query of its own)
+ *  and, for a card made from a metric, the metric's unit and the range that unit states. */
+export type DashboardCard = StoredCard & {
+  own: boolean;
+  /** Why the dashboard does not offer this card back — superseded, made from a deprecated metric,
+   *  or a copy of one already placed; "" when it is offered. */
+  not_offered?: string;
+  made_from?: "metric" | "trusted_query" | "finding" | "";
+  unit?: string;
+  stated_range?: StatedRange | null;
+};
+
+/** What the dashboard's read says of an image it places: its stamps from the volume's own row, and
+ *  whether this reader may see its bytes. An image that is gone, or not this connection's,
+ *  stands as its caption with `why`. */
+export interface DashboardImageStamp {
+  object: string;
+  file_name: string;
+  uploaded_by: string;
+  uploaded_at: string;
+  content_type: string;
+  bytes: number;
+  readable: boolean;
+  why: string;
+}
+
+export interface PersonDashboard {
+  connection_id: string;
+  owner: string;
+  cockpit_id: string;
+  cockpit: DashboardVersion;
+  cards: DashboardCard[];
+  range: DashboardRange;
+  history: DashboardVersion[];
+  /** The symbol a money figure is written with, as the Briefing resolves it. */
+  currency_symbol?: string;
+  /** The images the spec places, by object id (the canvas, 2026-10-08). */
+  images?: Record<string, DashboardImageStamp>;
+  ontology?: DashboardPin;
+}
+
+/** Where an image placed on a dashboard is read from: the API, with the reader's own access. */
+export function dashboardImageUrl(connectionId: string, objectId: string): string {
+  return `${getApiBase()}/dashboards/images/${encodeURIComponent(objectId)}?connection_id=${encodeURIComponent(connectionId)}`;
+}
+
+/** Upload an image into this connection's dashboard volume, to be placed on a dashboard by its object
+ *  id. PNG, JPEG, SVG, GIF or WebP up to 5 MB; a refusal says which it failed. */
+export async function uploadDashboardImage(connectionId: string, file: File): Promise<DashboardImageStamp> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(dashboardUrl("/dashboards/images", connectionId), { method: "POST", body: form });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "The image could not be uploaded"));
+  }
+  return res.json();
+}
+
+/** What a write answered: kept, unchanged — or a refusal, which arrives as an error. */
+export interface DashboardKept {
+  status: "kept" | "unchanged" | "refused" | "not_checked" | "failed";
+  kept: boolean;
+  version: number | null;
+  artifact_id: string;
+  sentences: string[];
+  cockpit_id?: string;
+}
+
+/** What a draft for an area came to: one proposal to keep, or the reasons none was drafted. */
+export interface DashboardDrafted {
+  staged: boolean;
+  proposal_id: string;
+  cockpit_id: string;
+  summary: string;
+  rounds: number;
+  stop_reason: string;
+  sentences: string[];
+}
+
+export interface DashboardMoved {
+  moved: boolean;
+  connection_id?: string;
+  owner?: string;
+  cockpit_id?: string;
+  title?: string;
+  version?: number;
+  cards_moved?: number;
+  sentences: string[];
+}
+
+/** A dashboard write that was refused. `sentences` are the validator's own, to show as they are. */
+export class DashboardRefused extends Error {
+  constructor(public readonly outcome: DashboardKept) {
+    super(outcome.sentences.join(" ") || "The dashboard was not kept.");
+    this.name = "DashboardRefused";
+  }
+}
+
+async function dashboardWrite(res: Response, fallback: string): Promise<DashboardKept> {
+  const body = await res.json().catch(() => ({}));
+  if (res.ok) return body as DashboardKept;
+  const detail = (body as { detail?: unknown }).detail;
+  if (detail && typeof detail === "object" && Array.isArray((detail as DashboardKept).sentences)) {
+    throw new DashboardRefused(detail as DashboardKept);
+  }
+  throw new Error(fastApiError(body, fallback));
+}
+
+function dashboardUrl(path: string, connectionId: string, extra?: URLSearchParams): string {
+  const q = new URLSearchParams(extra);
+  q.set("connection_id", connectionId);
+  return `${getApiBase()}${path}?${q.toString()}`;
+}
+
+function rangeParams(range?: BriefingRange | null): URLSearchParams {
+  const q = new URLSearchParams();
+  if (range) {
+    if (range.preset === "custom") { if (range.start) q.set("start", range.start); if (range.end) q.set("end", range.end); }
+    else q.set("preset", range.preset);
+  }
+  return q;
+}
+
+/** The asker's dashboards on this connection. */
+export async function listDashboards(connectionId: string): Promise<DashboardList> {
+  const res = await fetch(dashboardUrl("/dashboards", connectionId));
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to read your dashboards"));
+  }
+  return res.json();
+}
+
+/** One of the asker's dashboards as it stands, read for a range when one is chosen. */
+export async function getDashboard(connectionId: string, dashboardId: string, range?: BriefingRange | null): Promise<PersonDashboard> {
+  const res = await fetch(dashboardUrl(`/dashboards/${encodeURIComponent(dashboardId)}`, connectionId, rangeParams(range)));
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to read the dashboard"));
+  }
+  return res.json();
+}
+
+/** Keep a spec the person wrote — a card moved, a section renamed — as the next version. */
+export async function keepDashboard(
+  connectionId: string, dashboardId: string, spec: unknown, note = "", repin = false,
+): Promise<DashboardKept> {
+  const res = await fetch(dashboardUrl(`/dashboards/${encodeURIComponent(dashboardId)}`, connectionId), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(repin ? { spec, note, repin } : { spec, note }),
+  });
+  return dashboardWrite(res, "Failed to keep the dashboard");
+}
+
+/** Start "My dashboard" from the cards pinned in the Briefing, in the order they were arranged. No model. */
+export async function startMyDashboard(connectionId: string): Promise<DashboardKept> {
+  const res = await fetch(dashboardUrl("/dashboards/start", connectionId), { method: "POST" });
+  return dashboardWrite(res, "Failed to start your dashboard");
+}
+
+/** What a dashboard started from an object is offered (2026-10-10, `aughor/dashboards/from_object.py`): each piece with a
+ *  preview the object door measured. Nothing is kept and no model is asked. */
+export interface DashboardFromObject {
+  connection_id: string;
+  schema_name: string;
+  entity: string;
+  type_id: string;
+  /** The object's name; `title` is its plural, what the count is called. */
+  name: string;
+  title: string;
+  total: number | null;
+  /** Each category: its path, label, the object it is read through ("" for its own) and its top values. */
+  filters: { path: string; label: string; via: string; values: [unknown, number | null][] }[];
+  figures: { label: string; agg: "count" | "count_distinct" | "sum" | "avg" | "min" | "max"; path: string;
+             format: "number" | "money"; value: number | null }[];
+  /** Objects per day over the last whole days they hold, ending (exclusive) at `end`. */
+  chart: { time: string; label: string; days: number; end: string; bars: number[] } | null;
+  table: { columns: string[]; labels: string[] };
+  /** Whether its objects can be listed one by one — false for a type that declares no key (an event log). */
+  listable?: boolean;
+  actions: { id: string; label: string }[];
+  caveats: string[];
+  /** Arc AP-5 — the shapes it fits, the best first, each with one sentence of why. */
+  shapes?: ShapeOffer[];
+  /** What the shapes are laid out from, read from the ontology (`aughor/dashboards/shapes.py`). */
+  signals?: ShapeSignals;
+}
+
+export type ShapeName = "queue" | "map" | "one" | "timeline" | "overview";
+export interface ShapeOffer { shape: ShapeName; short: string; why?: string }
+export interface ShapeSignals {
+  entity: string;
+  type_id: string;
+  name: string;
+  /** The property each object is called by — "" when it has none. */
+  label: string;
+  /** A queue waits past a measured promise, or on a platform-owned type's status. */
+  queue: ({ kind: "promise"; process: string; noun: string; placed: string; reached: string; stage: string;
+            overdue: string; late: string; promise: string }
+          | { kind: "states"; status: string; final: string[]; moves: string }) | null;
+  /** The actions a dashboard can fill: an object parameter of the entity's own from the chosen one, a value asked. */
+  actions: { id: string; label: string; params: { name: string; source: "chosen" | "ask" }[] }[];
+  places: { lat: string; lng: string; via: string; through?: string } | null;
+  moments: { start: string; end: string } | null;
+  one: { label: string; links: ShapeLink[]; kinds: number } | null;
+  /** The first kind of objects that link to one — an order's lines. */
+  lines: ShapeLink | null;
+  window: number;
+  measured: Record<string, number | null>;
+}
+export interface ShapeLink {
+  entity: string; type_id: string; path: string; label: string;
+  /** Whether its objects can be listed — a kind that declares no key is counted instead. */
+  listable?: boolean;
+}
+
+/** Arc AP-5 — what each object suggests a dashboard be, read from the ontology alone. */
+export async function getSuggestedShapes(connectionId: string, schema?: string): Promise<{ entity: string; type_id: string; name: string; shape: ShapeName; short: string }[]> {
+  const q = new URLSearchParams();
+  if (schema) q.set("schema_name", schema);
+  const res = await fetch(dashboardUrl("/dashboards/shapes", connectionId, q));
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return ((await res.json()) as { objects: { entity: string; type_id: string; name: string; shape: ShapeName; short: string }[] }).objects;
+}
+
+export async function getDashboardFromObject(connectionId: string, entity: string, schema?: string): Promise<DashboardFromObject> {
+  const q = new URLSearchParams({ entity });
+  if (schema) q.set("schema_name", schema);
+  const res = await fetch(dashboardUrl("/dashboards/from-object", connectionId, q));
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { detail?: unknown } | null;
+    const d = body?.detail;
+    throw new Error(typeof d === "string" ? d : (d as { refused?: string } | undefined)?.refused ?? `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+/** ⚑ Spends model calls. Draft a new dashboard for an area the person names. */
+export async function draftDashboard(connectionId: string, area: string, schema?: string): Promise<DashboardDrafted> {
+  const res = await fetch(dashboardUrl("/dashboards/draft", connectionId), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ area, schema_name: schema || null }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to draft the dashboard"));
+  }
+  return res.json();
+}
+
+/** Move a canvas's dashboard to the asker's Briefing. */
+export async function moveCanvasDashboard(connectionId: string, canvasId: string): Promise<DashboardMoved> {
+  const res = await fetch(dashboardUrl("/dashboards/move", connectionId), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ canvas_id: canvasId }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (res.ok) return body as DashboardMoved;
+  const detail = (body as { detail?: unknown }).detail;
+  if (detail && typeof detail === "object" && Array.isArray((detail as DashboardMoved).sentences)) return detail as DashboardMoved;
+  throw new Error(fastApiError(body, "Failed to move the dashboard"));
+}
+
+/** Go back to an earlier version: it is kept again, as the newest. */
+export async function restoreDashboard(connectionId: string, dashboardId: string, version: number): Promise<DashboardKept> {
+  const res = await fetch(dashboardUrl(`/dashboards/${encodeURIComponent(dashboardId)}/restore`, connectionId), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ version }),
+  });
+  return dashboardWrite(res, "Failed to go back");
+}
+
+/** ⚑ Spends model calls. A change to one of the asker's dashboards, asked for in words: a proposal
+ *  to keep or not — an edit against the version on screen, or a publish. */
+export async function askDashboard(connectionId: string, dashboardId: string, words: string, schema?: string): Promise<DashboardDrafted> {
+  const res = await fetch(dashboardUrl(`/dashboards/${encodeURIComponent(dashboardId)}/ask`, connectionId), {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ words, schema_name: schema ?? null }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "The change could not be drafted"));
+  }
+  return res.json();
+}
+
+/** A group or a role a dashboard may be published to, or is. */
+export interface DashboardAudience { kind: "group" | "role"; id: string; name: string }
+
+/** The groups the asker belongs to and the roles they hold: who they may publish to. */
+export async function dashboardAudiences(connectionId: string): Promise<{ groups: DashboardAudience[]; roles: DashboardAudience[] }> {
+  const res = await fetch(dashboardUrl("/dashboards/audiences", connectionId));
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to read who you may publish to"));
+  }
+  return res.json();
+}
+
+/** Publish the dashboard as it stands to groups and roles. A version, under the asker's name. */
+export async function publishDashboard(connectionId: string, dashboardId: string, to: DashboardAudience[]): Promise<DashboardKept> {
+  const res = await fetch(dashboardUrl(`/dashboards/${encodeURIComponent(dashboardId)}/publish`, connectionId), {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to }),
+  });
+  return dashboardWrite(res, "Failed to publish the dashboard");
+}
+
+/** Stop sharing a dashboard. A version too. */
+export async function unpublishDashboard(connectionId: string, dashboardId: string): Promise<DashboardKept> {
+  const res = await fetch(dashboardUrl(`/dashboards/${encodeURIComponent(dashboardId)}/unpublish`, connectionId), { method: "POST" });
+  return dashboardWrite(res, "Failed to unpublish the dashboard");
+}
+
+/** A dashboard someone else published to a group the asker is in or a role they hold. */
+export interface SharedDashboardListed {
+  owner: string;
+  cockpit_id: string;
+  title: string;
+  version: number;
+  kept_at: string;
+  published_by: string;
+  published_to: DashboardAudience[];
+}
+
+export async function listSharedDashboards(connectionId: string): Promise<SharedDashboardListed[]> {
+  const res = await fetch(dashboardUrl("/dashboards/shared", connectionId));
+  if (res.status === 404) return [];
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to read the dashboards shared with you"));
+  }
+  return (await res.json()).cockpits as SharedDashboardListed[];
+}
+
+export interface SharedDashboard {
+  connection_id: string;
+  owner: string;
+  cockpit_id: string;
+  cockpit: DashboardVersion;
+  cards: DashboardCard[];
+  range: DashboardRange;
+  currency_symbol?: string;
+  images?: Record<string, DashboardImageStamp>;
+  published_by: string;
+  published_to: DashboardAudience[];
+  ontology?: DashboardPin;
+}
+
+/** A published dashboard as it stands, read for the asker's own range. */
+export async function getSharedDashboard(connectionId: string, owner: string, dashboardId: string, range?: BriefingRange | null): Promise<SharedDashboard> {
+  const res = await fetch(dashboardUrl(`/dashboards/shared/${encodeURIComponent(owner)}/${encodeURIComponent(dashboardId)}`, connectionId, rangeParams(range)));
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to read the shared dashboard"));
+  }
+  return res.json();
+}
+
+/** Start a dashboard of the asker's own from a published one. */
+export async function copySharedDashboard(connectionId: string, owner: string, dashboardId: string): Promise<DashboardKept & { title?: string }> {
+  const res = await fetch(dashboardUrl(`/dashboards/shared/${encodeURIComponent(owner)}/${encodeURIComponent(dashboardId)}/copy`, connectionId), { method: "POST" });
+  return dashboardWrite(res, "Failed to start a dashboard from this one");
+}
+
+/** Retire a dashboard. Its history stays. */
+export async function retireDashboard(connectionId: string, dashboardId: string, note = ""): Promise<DashboardKept> {
+  const res = await fetch(dashboardUrl(`/dashboards/${encodeURIComponent(dashboardId)}/retire`, connectionId), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ note }),
+  });
+  return dashboardWrite(res, "Failed to retire the dashboard");
+}
+
+export async function deleteCard(cardId: string): Promise<void> {
+  await fetch(`${getApiBase()}/cards/${encodeURIComponent(cardId)}`, { method: "DELETE" });
+}
+
+/** The dashboard layout (position + size per card) the reader arranged — saved SERVER-SIDE and
+ *  account-keyed, so any device/login shows the same arrangement. */
+export type DashboardLayout = Record<string, { x: number; y: number; w: number; h: number }>;
+
+export async function getDashboardLayout(connectionId: string): Promise<DashboardLayout> {
+  try {
+    const res = await fetch(`${getApiBase()}/cards/layout?connection_id=${encodeURIComponent(connectionId)}`);
+    return res.ok ? await res.json() : {};
+  } catch { return {}; }
+}
+
+export async function saveDashboardLayout(connectionId: string, layout: DashboardLayout): Promise<void> {
+  await fetch(`${getApiBase()}/cards/layout`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, layout }),
+  }).catch(() => {});
+}
+
+/** Graduate a KPI/watch card to a scheduled Monitor (Slice 4 — watch → alert): its guarded SQL
+ *  becomes a recurring threshold check and the thresholds are recorded back on the card. */
+export async function graduateCard(
+  cardId: string,
+  thresholds: { warning_threshold?: number | null; critical_threshold?: number | null; threshold_direction?: string },
+): Promise<{ card: StoredCard }> {
+  const res = await fetch(`${getApiBase()}/cards/${encodeURIComponent(cardId)}/graduate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(thresholds),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to set alert"));
+  }
+  return res.json();
+}
+
+export async function dismissCanvasInsight(canvasId: string, insightId: string, reason: string): Promise<{ dismissed: boolean }> {
+  const res = await fetch(
+    `${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/findings/${encodeURIComponent(insightId)}/dismiss`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }) }
+  );
+  if (!res.ok) throw new Error("Failed to dismiss insight");
+  return res.json();
+}
+
+export async function dismissConnectionInsight(connectionId: string, insightId: string, reason: string): Promise<{ dismissed: boolean }> {
+  const res = await fetch(
+    `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/findings/${encodeURIComponent(insightId)}/dismiss`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }) }
+  );
+  if (!res.ok) throw new Error("Failed to dismiss insight");
+  return res.json();
+}
+
+export async function resumeCanvasExploration(canvasId: string): Promise<{ status: string }> {
+  const res = await personRun(`${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/resume`,
+    "Failed to resume canvas exploration");
+  return res.json();
+}
+
+export async function stopCanvasExploration(canvasId: string): Promise<{ status: string }> {
+  const res = await fetch(`${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/stop`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to stop canvas exploration");
+  return res.json();
+}
+
+export async function restartCanvasExploration(canvasId: string): Promise<{ status: string }> {
+  const res = await personRun(`${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/restart`,
+    "Failed to restart canvas exploration");
+  return res.json();
+}
+
+export async function getCanvasExplorationStatus(canvasId: string): Promise<ExplorationStatus> {
+  const res = await fetch(`${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/status`);
+  if (!res.ok) throw new Error("Failed to fetch canvas exploration status");
+  return res.json();
+}
+
+export async function triggerCanvasDomainIntelligence(canvasId: string): Promise<{ ok: boolean; reason?: string }> {
+  const res = await personRun(`${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/trigger-intel`,
+    "Failed to trigger canvas domain intelligence");
+  return res.json();
+}
+
+export async function getCanvasExplorationEpisodes(canvasId: string, phase = "", limit = 300): Promise<ExplorationEpisode[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (phase) params.set("phase", phase);
+  const res = await fetch(`${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/episodes?${params}`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
+}
+
+export interface ExplorationFindings {
+  connection_id: string;
+  phase: string;
+  null_meanings: Record<string, NullMeaning>;
+  join_verifications: JoinVerification[];
+  lifecycle_maps: Record<string, LifecycleMap>;
+  distributions: Record<string, DistributionProfile>;
+  insights: ExplorationInsight[];
+}
+
+export async function getExplorationFindings(connectionId: string, schema?: string): Promise<ExplorationFindings> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/findings${q}`);
+  if (!res.ok) throw new Error("Failed to fetch exploration findings");
+  return res.json();
+}
+
+// ── Exploration episodes (live reasoning trace) ───────────────────────────────
+
+export interface ExplorationEpisode {
+  episode_id: string;
+  connection_id: string;
+  phase: string;
+  ts: number;
+  think: string;
+  sql: string;
+  observation: string;
+}
+
+export async function stopExploration(connectionId: string): Promise<{ ok: boolean; stopped: boolean }> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/stop`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to stop exploration");
+  return res.json();
+}
+
+export async function resumeExploration(connectionId: string): Promise<{ ok: boolean }> {
+  const res = await personRun(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/resume`,
+    "Failed to resume exploration");
+  return res.json();
+}
+
+export async function restartExploration(connectionId: string): Promise<{ ok: boolean }> {
+  const res = await personRun(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/restart`,
+    "Failed to restart exploration");
+  return res.json();
+}
+
+export interface RetryQueryResult {
+  ok: boolean;
+  corrected_sql: string;
+  explanation: string;
+  rows: string[][];
+  columns: string[];
+  row_count?: number;
+  error?: string;
+}
+
+export async function retryQuery(
+  connectionId: string,
+  sql: string,
+  error: string,
+  hint = "",
+  domain = "",
+): Promise<RetryQueryResult> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/retry-query`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sql, error, hint, domain }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(fastApiError(err, "Retry failed"));
+  }
+  return res.json();
+}
+
+// ── Fix-and-save (persist a repaired errored query) ────────────────────────────
+
+export interface FixSaveResult {
+  ok: boolean;
+  stored: boolean;
+  corrected_sql: string;
+  explanation?: string;
+  rows?: string[][];
+  columns?: string[];
+  reason?: string;
+  error?: string;
+  insight?: { id: string; domain: string; angle: string; finding: string; unverified: boolean; verification_note: string };
+}
+
+export interface FixEpisodeInput {
+  sql: string;
+  error: string;
+  think?: string;
+  phase?: string;
+}
+
+export interface FixAllResult {
+  summary: { total: number; fixed: number; saved: number; flagged: number; failed: number };
+  results: Array<FixSaveResult & { sql: string }>;
+}
+
+/** Repair an errored episode and, on success, SAVE it (heal episode + store a finding
+ *  through the same Phase-8 guards). Unlike retryQuery this persists. */
+export async function fixEpisode(
+  connectionId: string,
+  ep: FixEpisodeInput,
+  hint = "",
+  canvasId = "",
+): Promise<FixSaveResult> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/fix-episode`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sql: ep.sql, error: ep.error, think: ep.think ?? "", phase: ep.phase ?? "domain_intel", hint, canvas_id: canvasId }),
+  });
+  if (!res.ok) { const e = await res.json(); throw new Error(fastApiError(e, "fix-and-save failed")); }
+  return res.json();
+}
+
+/** Repair-and-save a batch — ONLY the episodes provided (the client passes the set
+ *  currently visible under its filter). Never starts the explorer or generates new queries. */
+export async function fixAll(
+  connectionId: string,
+  episodes: FixEpisodeInput[],
+  hint = "",
+  canvasId = "",
+): Promise<FixAllResult> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/fix-all`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      episodes: episodes.map(e => ({ sql: e.sql, error: e.error, think: e.think ?? "", phase: e.phase ?? "domain_intel" })),
+      hint, canvas_id: canvasId,
+    }),
+  });
+  if (!res.ok) { const e = await res.json(); throw new Error(fastApiError(e, "fix-all failed")); }
+  return res.json();
+}
+
+export async function getExplorationEpisodes(
+  connectionId: string,
+  phase = "domain_intel",
+  limit = 100,
+): Promise<ExplorationEpisode[]> {
+  const res = await fetch(
+    `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/episodes?phase=${encodeURIComponent(phase)}&limit=${limit}`,
+  );
+  if (!res.ok) return [];
+  return res.json();
+}
+
+// ── Dev stats ─────────────────────────────────────────────────────────────────
+
+export interface DevStats {
+  uptime_seconds: number;
+  counters: Record<string, number>;
+  timings: Record<string, { total_ms: number; count: number; avg_ms: number }>;
+  derived: {
+    rag_hit_rate: number | null;
+    sql_correction_success_rate: number | null;
+  };
+}
+
+export async function getDevStats(): Promise<DevStats> {
+  const res = await fetch(`${getApiBase()}/dev/stats`);
+  if (!res.ok) throw new Error("Failed to fetch dev stats");
+  return res.json();
+}
+
+export async function resetDevStats(): Promise<void> {
+  await fetch(`${getApiBase()}/dev/stats/reset`, { method: "POST" });
+}
+
+export async function getConnectionFreshness(connId: string): Promise<{ freshness: string | null; source: string | null }> {
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/freshness`);
+  if (!res.ok) return { freshness: null, source: null };
+  return res.json();
+}
+
+// ── Entity lifecycle counts ───────────────────────────────────────────────────
+
+export interface LifecycleCount {
+  state: string;
+  count: number;
+}
+
+export async function getEntityLifecycleCounts(
+  connectionId: string,
+  entityId: string,
+  schemaName?: string,
+): Promise<LifecycleCount[]> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/lifecycle-counts?${q}`,
+  );
+  if (!res.ok) return [];
+  return res.json();
+}
+
+// ── Outcome Tracking ──────────────────────────────────────────────────────────
+
+export type RecStatus = "accepted" | "rejected" | "implemented" | "verified" | "dismissed";
+
+// ── CB-5 — how much of the business the platform can see ───────────────────
+export interface VisibilityTables {
+  total: number; mapped: number; excluded: number; in_scope: number;
+  share: number | null; band: "green" | "orange" | "red" | "unknown";
+  basis: "profiler" | "unknown"; unmapped: string[];
+  exclusions: { table: string; reason: string; note: string; declared_by: string }[];
+  note: string;
+}
+export interface DefinitionHold { definition: string; holds: number; automations: string[]; latest: string }
+export interface Visibility {
+  tables: VisibilityTables;
+  joins: { total: number; measured: number; share: number } | null;
+  definitions: DefinitionHold[];
+  top_blocker: DefinitionHold | null;
+  line: string;
+  exclusion_reasons: string[];
+}
+
+export async function getVisibility(connectionId: string, schemaName?: string): Promise<Visibility> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${getApiBase()}/visibility?${q}`);
+  if (!res.ok) throw new Error(`getVisibility failed: ${res.status}`);
+  return res.json();
+}
+
+// ── CB-3 — owners the platform can reach ───────────────────────────────────
+export interface OwnerUse { kind: string; id: string; connection_id: string }
+export interface OwnerEntry {
+  owner_text: string;
+  owner_key: string;
+  uses: OwnerUse[];
+  principal: string | null;
+  resolved: boolean;
+  how: "principal" | "linked" | "unresolved";
+  linked_by: string;
+  linked_at: string;
+}
+export interface OwnerLink { owner_text: string; owner_key: string; principal: string; linked_by: string; linked_at: string }
+
+export async function listOwners(connectionId?: string): Promise<{ owners: OwnerEntry[]; links: OwnerLink[] }> {
+  const qs = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${getApiBase()}/owners${qs}`);
+  if (!res.ok) throw new Error(`listOwners failed: ${res.status}`);
+  return res.json();
+}
+
+export async function linkOwner(ownerText: string, principal: string): Promise<OwnerLink> {
+  const res = await fetch(`${getApiBase()}/owners/links`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ owner_text: ownerText, principal }),
+  });
+  if (!res.ok) {
+    let detail = `${res.status}`;
+    try { detail = fastApiError(await res.json(), detail); } catch { /* keep the status */ }
+    throw new Error(String(detail));
+  }
+  return res.json();
+}
+
+export async function unlinkOwner(ownerText: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/owners/links?owner_text=${encodeURIComponent(ownerText)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`unlinkOwner failed: ${res.status}`);
+}
+
+export interface RecOutcome {
+  id: string;
+  inv_id: string;
+  rec_index: number;
+  rec_text: string;
+  status: RecStatus;
+  metric_name: string | null;
+  metric_before: number | null;
+  metric_after: number | null;
+  created_at: string;
+  updated_at: string;
+  // CB-2 (2026-09-22) — the baseline recorded at acceptance and the scheduled review.
+  connection_id?: string;
+  accepted_by?: string;
+  spec?: { metric_label?: string; metric_sql?: string; metric_table?: string; date_column?: string;
+           window_days?: number } | null;
+  baseline_value?: number | null;
+  baseline_at?: string;
+  baseline_window?: string;
+  review_days?: number;
+  review_at?: string;
+  review_value?: number | null;
+  reviewed_at?: string;
+  review_window?: string;
+  review_question?: string;
+  review_asked_to?: string;
+  review_asked_at?: string;
+  review_note?: string;
+}
+
+export async function logOutcome(
+  invId: string,
+  recIndex: number,
+  recText: string,
+  status: RecStatus,
+  opts?: { metric_name?: string; metric_before?: number; metric_after?: number },
+): Promise<RecOutcome> {
+  const res = await fetch(
+    `${getApiBase()}/investigations/${encodeURIComponent(invId)}/recommendations/${recIndex}/outcome`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rec_text: recText, status, ...opts }),
+    },
+  );
+  if (!res.ok) throw new Error("Failed to log outcome");
+  return res.json();
+}
+
+/** Where an analysis's recommendations stand. Throws on a refused read: `[]` would say nothing
+ *  was ever marked, and every recommendation would read as still open. */
+export async function getInvestigationOutcomes(invId: string): Promise<RecOutcome[]> {
+  const res = await fetch(`${getApiBase()}/investigations/${encodeURIComponent(invId)}/outcomes`);
+  if (!res.ok) throw await refused(res, "Reading the outcomes");
+  return res.json();
+}
+
+// ── Document Ingestion ────────────────────────────────────────────────────────
+
+export interface DocumentEntry {
+  doc_id: string;
+  filename: string;
+  title: string;
+  chunk_count: number;
+  uploaded_at: string;
+  /** Whether the uploaded file itself was kept. Uploads used to be deleted the moment
+   *  they were indexed, so documents from before retention have a row and no bytes —
+   *  a real state to render, not a missing file. Preview and conversion are offered
+   *  on this flag alone; the server reports it per row from disk. */
+  has_original?: boolean;
+  original_bytes?: number;
+  original_suffix?: string;
+  has_markdown?: boolean;
+  /** Characters of Markdown the document converted to. Present on a fresh upload. */
+  characters?: number;
+  /** PDFs only. A part-scanned PDF imports the pages that HAVE a text layer, so these
+   *  say which did not — an "indexed" that hides missing pages reads as "all of it". */
+  page_count?: number;
+  pages_read?: number;
+  /** Pages with no text layer — OCR would fix these. */
+  pages_needing_ocr?: number[];
+  /** Pages that failed for some other reason. Separate, because OCR fixes one and
+   *  nothing the person can buy fixes the other. */
+  pages_failed?: number[];
+  /** Lines of unattributed figures held back from the index (not from the document). */
+  suppressed_numeric_runs?: number;
+  suppressed_sample?: string[];
+  /** True for schema documentation the platform COMPILED, false for a person's upload.
+   *  They share a collection because retrieval wants them together; this surface does
+   *  not, and without the flag one real file looked like sixteen documents. */
+  generated?: boolean;
+}
+
+/** What a document WOULD become, before anything is indexed or paid for. */
+export interface DocumentConversion {
+  filename: string;
+  markdown: string;
+  characters: number;
+  would_index_chunks: number;
+  page_count: number;
+  pages_read: number;
+  pages_needing_ocr: number[];
+  pages_failed: number[];
+  suppressed_numeric_runs: number;
+  suppressed_sample: string[];
+  /** Charts read back from the PDF's geometry and appended as tables. Content the
+   *  document GAINED — the counterpart of the pages it lost. */
+  charts_recovered?: number;
+  chart_pages?: number[];
+  settings: ChunkSettings;
+}
+
+/** Convert and show, indexing NOTHING and keeping nothing.
+ *
+ *  The look-before-you-commit step. The file stays in the browser and is posted again
+ *  to `uploadDocument` on approval — deliberately, so there is no staging area to
+ *  expire or leak. Conversion is deterministic, so what was approved is what is
+ *  indexed. */
+export async function convertDocument(
+  file: File, settings?: Partial<ChunkSettings>,
+): Promise<DocumentConversion> {
+  const form = new FormData();
+  form.append("file", file);
+  if (settings && Object.keys(settings).length) form.append("chunk_settings", JSON.stringify(settings));
+  const res = await fetch(`${getApiBase()}/documents/convert`, { method: "POST", body: form });
+  if (!res.ok) throw await documentError(res, "Could not read that document");
+  return res.json();
+}
+
+/** What restoring a connection's compiled schema documentation would add — or added. The artifact on disk, not the
+ *  index, is a schema document's source, so this can put back chunks the index lost; a connection whose artifact is
+ *  gone plans nothing. Every call is a dry run unless `dryRun` is false. */
+export interface DocTreePlan {
+  dry_run: boolean;
+  documents: { doc_id: string; in_store: number; in_artifact: number; adds: number }[];
+  restorable_chunks: number;
+  skipped: unknown[];
+  restored?: unknown[];
+  failed?: { doc_id: string; error: string }[];
+}
+export async function restoreDocTrees(dryRun = true, connectionId?: string): Promise<DocTreePlan> {
+  const res = await fetch(`${getApiBase()}/documents/restore-doctrees`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dry_run: dryRun, ...(connectionId ? { connection_id: connectionId } : {}) }),
+  });
+  if (!res.ok) throw await documentError(res, "Restore failed");
+  return res.json();
+}
+
+/** What a re-index would do (dry run) or did: it re-embeds every chunk the index holds with the active model and sets
+ *  each document's listed count to what the index holds (`registry_corrections`). */
+export interface ReindexPlan {
+  dry_run: boolean;
+  ok?: boolean;
+  error?: string;
+  chunks_to_re_embed?: number;
+  registry_corrections?: Record<string, { from: number; to: number }>;
+  unrecoverable_chunks?: number;
+  backend?: string;
+  model?: string;
+}
+export async function reindexDocuments(dryRun = true): Promise<ReindexPlan> {
+  const res = await fetch(`${getApiBase()}/documents/reindex`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dry_run: dryRun, purge_orphans: false }),
+  });
+  if (!res.ok) throw await documentError(res, "Re-index failed");
+  return res.json();
+}
+
+/** Chunks with no document — usually schema docs whose connection was deleted.
+ *  Separate from re-index because that one re-embeds the whole corpus on its way past
+ *  them; deleting an orphan needs no vector computed. */
+export async function purgeOrphanChunks(dryRun = true): Promise<Record<string, unknown>> {
+  const res = await fetch(
+    `${getApiBase()}/documents/purge-orphans?dry_run=${dryRun ? "true" : "false"}`,
+    { method: "POST" });
+  if (!res.ok) throw await documentError(res, "Purge failed");
+  return res.json();
+}
+
+/** Why a document could not be read, in a form a client can branch on.
+ *  A scanned PDF, a password-protected file and a wrong file type are three different
+ *  problems, and a person can only act on the one they actually have. */
+export type DocumentErrorCode =
+  | "needs_ocr" | "encrypted" | "too_large" | "empty"
+  | "unsupported" | "resource_limit" | "converter_missing"
+  | "unconvertible" | "no_original";
+
+export class DocumentError extends Error {
+  code: DocumentErrorCode;
+  constructor(message: string, code: DocumentErrorCode = "unconvertible") {
+    super(message);
+    this.name = "DocumentError";
+    this.code = code;
+  }
+}
+
+/** The API returns `detail` as either a string or `{message, code}`. Reading it
+ *  blindly with `err.detail ?? "..."` renders "[object Object]" in the UI — which is
+ *  precisely the message a person gets at the moment they most need a real one. */
+async function documentError(res: Response, fallback: string): Promise<DocumentError> {
+  const body = await res.json().catch(() => null);
+  const detail = body?.detail;
+  if (detail && typeof detail === "object" && "message" in detail) {
+    return new DocumentError(String(detail.message), detail.code as DocumentErrorCode);
+  }
+  return new DocumentError(typeof detail === "string" ? detail : fallback);
+}
+
+/** What the knowledge plane can actually do right now — see `aughor/knowledge/health.py`.
+ *  Exists because an empty search result had four possible causes and one appearance. */
+export interface KnowledgeStatus {
+  /** A search can run AND there is something to search. Stricter than "no error": a
+   *  working embedder over an empty corpus is healthy and useless. */
+  ready: boolean;
+  /** "" when ready; otherwise which of the four it is. */
+  reason: string;
+  documents: number;
+  /** What the STORE holds — the only number that answers "how much can be searched".
+   *  The per-document `chunk_count` below is the registry's CLAIM, and they differ. */
+  chunks: number;
+  /** `dim` is PROBED from the live embedder, never declared, so it is absent when the
+   *  probe could not run. `stored_dim` appears only when the index disagrees with it —
+   *  which is the one state where nothing can be indexed OR searched. */
+  embedder: {
+    backend?: string; model: string; endpoint: string; ok: boolean;
+    dim?: number; stored_dim?: number; error?: string; why?: string;
+  };
+  store: { ok: boolean; backend: string; chunks?: number; why?: string };
+  consistency: {
+    ok: boolean;
+    orphan_documents: number;
+    orphan_chunks: number;
+    orphans: string[];
+    mismatched_documents: Record<string, { registry: number; store: number }>;
+    listed_chunks_present: number;
+  };
+}
+
+export async function getKnowledgeStatus(): Promise<KnowledgeStatus> {
+  const res = await fetch(`${getApiBase()}/knowledge/status`);
+  if (!res.ok) throw await refused(res, "Reading the search status");
+  return res.json();
+}
+
+/** What this deployment can actually read. Served, not mirrored: the drop zone used to
+ *  carry its own copy of the list and went on refusing formats the parser had gained. */
+export interface DocumentFormats {
+  suffixes: string[];
+  /** Ready for an <input accept="…"> attribute. */
+  accept: string;
+  /** False when the converter is not installed — only Markdown and plain text work. */
+  converter: boolean;
+  converts: string[];
+}
+
+export async function getDocumentFormats(): Promise<DocumentFormats | null> {
+  const res = await fetch(`${getApiBase()}/documents/formats`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function listDocuments(): Promise<DocumentEntry[]> {
+  const res = await fetch(`${getApiBase()}/documents`);
+  if (!res.ok) throw await refused(res, "Reading the documents");
+  return res.json();
+}
+
+/** How a document is cut up. Every field defaults to the value the corpus was indexed
+ *  under, so an omitted setting is the previous behaviour and not a new one. */
+export interface ChunkSettings {
+  delimiter: string;
+  max_chars: number;
+  overlap_chars: number;
+  min_chars: number;
+  collapse_whitespace: boolean;
+  strip_urls_emails: boolean;
+  /** Keep headless runs of figures OUT of the index. Defaults ON, and unlike the rule
+   *  above it does not touch the document — the numbers stay in the stored Markdown,
+   *  the preview and every conversion; only retrieval skips them. */
+  suppress_numeric_runs: boolean;
+}
+
+export interface ChunkPreview {
+  total_chunks: number;
+  shown: number;
+  characters: number;
+  suppressed_numeric_runs?: number;
+  settings: ChunkSettings;
+  chunks: { index: number; characters: number; tokens_estimate: number; text: string }[];
+}
+
+/** Chunk a document and show the result WITHOUT indexing it — no embedder, no writes.
+ *  The alternative to seeing is upload, look at a number, delete, try again. */
+export async function previewDocumentChunks(
+  file: File, settings?: Partial<ChunkSettings>,
+): Promise<ChunkPreview> {
+  const form = new FormData();
+  form.append("file", file);
+  if (settings && Object.keys(settings).length) form.append("chunk_settings", JSON.stringify(settings));
+  const res = await fetch(`${getApiBase()}/documents/preview`, { method: "POST", body: form });
+  if (!res.ok) throw await documentError(res, "Preview failed");
+  return res.json();
+}
+
+export async function uploadDocument(
+  file: File, settings?: Partial<ChunkSettings>,
+): Promise<DocumentEntry> {
+  const form = new FormData();
+  form.append("file", file);
+  if (settings && Object.keys(settings).length) form.append("chunk_settings", JSON.stringify(settings));
+  const res = await fetch(`${getApiBase()}/documents/upload`, { method: "POST", body: form });
+  if (!res.ok) throw await documentError(res, "Upload failed");
+  return res.json();
+}
+
+/** The document as Markdown — what agents, canvases and prompts actually read.
+ *  Served from cache, or re-converted from the retained original when the cache is
+ *  cold, so it answers for documents stored before the cache existed. */
+export async function getDocumentMarkdown(docId: string): Promise<string> {
+  const res = await fetch(`${getApiBase()}/documents/${encodeURIComponent(docId)}/markdown`);
+  if (!res.ok) throw await documentError(res, "Could not read the document");
+  return (await res.json()).markdown as string;
+}
+
+/** What a stored document can be turned into ON THIS deployment. PDF and PowerPoint
+ *  need the `export` extra; offering them where it is absent produces a button that
+ *  fails at the click, which is worse than one that was never shown. */
+export interface ConvertFormat {
+  format: string;
+  label: string;
+  media_type: string;
+  suffix: string;
+  available: boolean;
+}
+
+export async function getDocumentConvertFormats(docId: string): Promise<ConvertFormat[]> {
+  const res = await fetch(`${getApiBase()}/documents/${encodeURIComponent(docId)}/formats`);
+  if (!res.ok) return [];
+  return (await res.json()).formats ?? [];
+}
+
+/** A URL that renders the document as `format` and downloads it. */
+export function documentConvertUrl(docId: string, format: string): string {
+  return `${getApiBase()}/documents/${encodeURIComponent(docId)}/convert`
+    + `?to=${encodeURIComponent(format)}`;
+}
+
+/** A URL for the document's own bytes, for an <iframe>/<img> preview.
+ *  Served inline, so the browser renders a PDF rather than downloading it. Only
+ *  meaningful when `has_original` — otherwise the request 409s. */
+export function documentOriginalUrl(docId: string): string {
+  return `${getApiBase()}/documents/${encodeURIComponent(docId)}/original`;
+}
+
+export async function deleteDocument(docId: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/documents/${encodeURIComponent(docId)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Delete failed");
+}
+
+// ── Knowledge sources (Confluence / Notion on the documents surface) ──────────
+// The form fields are SERVED by the connector registry — the client never mirrors
+// them, so a new field appears here without a frontend change.
+
+export interface KnowledgeSourceField {
+  key: string; label: string; placeholder?: string; secret?: boolean;
+}
+export interface KnowledgeSourceType {
+  conn_type: string; label: string; fields: KnowledgeSourceField[];
+}
+export interface KnowledgeSource {
+  id: string; name: string; conn_type: string;
+  status: {
+    last_sync?: string | null; pages_indexed?: Record<string, number> | number | null;
+    /** Pages the last sync did not index, each with why — capped; `skipped_count` is whole. */
+    pages_skipped?: { title: string; url: string; reason: string }[];
+    skipped_count?: number;
+  } | null;
+  error?: string;
+}
+
+export async function getKnowledgeSources(): Promise<{ types: KnowledgeSourceType[]; sources: KnowledgeSource[] }> {
+  const res = await fetch(`${getApiBase()}/knowledge/sources`);
+  if (!res.ok) throw await refused(res, "Reading the knowledge sources");
+  return res.json();
+}
+
+export async function createKnowledgeSource(
+  connType: string, name: string, config: Record<string, string>,
+): Promise<{ id: string; message: string; test_result: string }> {
+  const res = await fetch(`${getApiBase()}/knowledge/sources`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ conn_type: connType, name, config }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(typeof err.detail === "string" ? err.detail : "Connect failed");
+  }
+  return res.json();
+}
+
+export async function triggerKnowledgeSync(connId: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/knowledge-sync`, { method: "POST" });
+  if (!res.ok) throw new Error("Sync trigger failed");
+}
+
+// ── Process Map ───────────────────────────────────────────────────────────────
+
+export interface ProcessNode {
+  state: string;
+  count: number;
+  is_terminal: boolean;
+}
+
+export interface ProcessEdge {
+  from_state: string;
+  to_state: string;
+  count: number;
+  rate: number;
+}
+
+export interface ProcessMap {
+  entity_id: string;
+  display_name: string;
+  lifecycle_column: string;
+  nodes: ProcessNode[];
+  edges: ProcessEdge[];
+  total_records: number;
+  has_transitions: boolean;
+}
+
+export async function getProcessMap(connId: string, entityId: string, schemaName?: string): Promise<ProcessMap | null> {
+  const q = new URLSearchParams();
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(
+    `${getApiBase()}/connections/${encodeURIComponent(connId)}/process-map/${encodeURIComponent(entityId)}${q.size ? `?${q}` : ""}`,
+  );
+  if (!res.ok) return null;
+  return res.json();
+}
+
+// ── Canvas ────────────────────────────────────────────────────────────────────
+
+export interface CanvasScope {
+  connection_id: string;
+  schema_name: string | null;
+  tables: string[];
+}
+
+export interface Canvas {
+  id: string;
+  name: string;
+  description: string;
+  scopes: CanvasScope[];
+  /** Documents pinned to this workspace. PINNED, not restrictive: they are always in
+   *  reach for work done here, and the rest of the corpus stays searchable. (An
+   *  agent's `doc_ids` are the other shape — those fence it in.) */
+  doc_ids?: string[];
+  is_legacy: boolean;
+  created_at: string;
+  updated_at: string;
+  /** Most recent investigation/chat timestamp for this canvas (null if never used). */
+  last_activity?: string | null;
+}
+
+export async function getCanvases(workspaceId?: string): Promise<Canvas[]> {
+  const qs = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
+  const res = await fetch(`${getApiBase()}/canvases${qs}`);
+  if (!res.ok) throw new Error("Failed to fetch canvases");
+  return res.json();
+}
+
+/** Extract a readable message from a FastAPI error body, whose `detail`
+ *  may be a string OR an array of validation-error objects. */
+export function fastApiError(body: unknown, fallback: string): string {
+  const detail = (body as { detail?: unknown } | null)?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const msgs = detail
+      .map(d => (d && typeof d === "object" && "msg" in d ? String((d as { msg: unknown }).msg) : null))
+      .filter(Boolean);
+    if (msgs.length) return msgs.join("; ");
+  }
+  // A refusal the server explained as an OBJECT — `{code, why}`, `{message, code}`, the approval
+  // gate's 428. `new Error(object)` printed "[object Object]" under Approve on 2026-10-07.
+  if (detail && typeof detail === "object") {
+    const d = detail as Record<string, unknown>;
+    if (d.error === "approval_required") {
+      return `This needs approval first: approve "${String(d.action || "this action")}" in the approval prompt, then try again.`;
+    }
+    for (const key of ["message", "why", "reason", "hint"]) {
+      if (typeof d[key] === "string" && d[key]) return d[key] as string;
+    }
+  }
+  return fallback;
+}
+
+/** A write the server refused, as an Error carrying the server's own reason. Twelve admin
+ *  writes (roles, groups, grants, flags, guardrails, a revision restore, the learning export)
+ *  answered `null` or `false` instead, so a screen either said nothing or guessed a cause — "check that you
+ *  have permission" — for a refusal the server had already explained. */
+async function refused(res: Response, what: string): Promise<Error> {
+  const body = await res.json().catch(() => ({}));
+  return new Error(fastApiError(body, `${what} failed (${res.status})`));
+}
+
+export async function createCanvas(
+  name: string,
+  description: string,
+  scopes: CanvasScope[],
+): Promise<Canvas> {
+  // The backend expects a single, flat scope on the request body
+  // (connection_id / schema_name / tables), not a `scopes` array.
+  const s = scopes[0] ?? { connection_id: "", schema_name: null, tables: [] };
+  const res = await fetch(`${getApiBase()}/canvases`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name,
+      description,
+      connection_id: s.connection_id,
+      schema_name: s.schema_name,
+      tables: s.tables,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to create canvas"));
+  }
+  return res.json();
+}
+
+export async function updateCanvas(
+  id: string,
+  patch: { name?: string; description?: string; scopes?: CanvasScope[]; doc_ids?: string[] },
+): Promise<Canvas> {
+  // Backend UpdateCanvasRequest takes a flat { name, description, tables, doc_ids }.
+  const body: {
+    name?: string; description?: string; tables?: string[]; doc_ids?: string[];
+  } = {};
+  if (patch.name !== undefined) body.name = patch.name;
+  if (patch.description !== undefined) body.description = patch.description;
+  if (patch.scopes !== undefined) body.tables = patch.scopes[0]?.tables ?? [];
+  // Omitted leaves the binding alone; [] unbinds everything. Sending it
+  // unconditionally would clear every pin on an unrelated rename.
+  if (patch.doc_ids !== undefined) body.doc_ids = patch.doc_ids;
+  const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to update canvas"));
+  }
+  return res.json();
+}
+
+// ── Saved queries ─────────────────────────────────────────────────────────────
+// Persist a Query Builder query (SQL + visual builder spec) so it survives reloads.
+
+export interface SavedQuery {
+  id: string;
+  connection_id: string;
+  name: string;
+  sql: string;
+  /** Opaque visual-builder state (primaryTable, joins, dims, measures, filters, orderBy, limit). */
+  spec: Record<string, unknown>;
+  /** SE-8C — parameter widget definitions (`ParamDef` per `:name`), opaque here.
+   *  A separate field from `spec`: a non-empty spec routes a query to the visual
+   *  builder, and widgets on a SQL query must not change where it opens. */
+  param_defs?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listSavedQueries(connectionId?: string): Promise<SavedQuery[]> {
+  const qs = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${getApiBase()}/saved-queries${qs}`);
+  if (!res.ok) throw new Error("Failed to fetch saved queries");
+  return res.json();
+}
+
+// ── Quick Fix (SE-5a) ─────────────────────────────────────────────────────────
+
+export interface QuickFix {
+  /** "" when the model proposed nothing — see `changed`. */
+  proposed_sql: string;
+  rationale: string;
+  changed: boolean;
+  /** The deterministic classifier's read on the failure, independent of the model. */
+  diagnosis: string;
+}
+
+/** `/ask` in the SQL editor: the statement the platform's own question-to-SQL path writes (Quick analysis's core,
+ *  stopped before it runs), and what its guards did to it. Nothing is executed. A request the path declines throws
+ *  with the server's own sentence, which the editor says on the `/ask` line. */
+export interface AskedSql {
+  sql: string;
+  notes: string[];
+  outcome: string;
+}
+
+export async function askForSql(
+  connId: string, request: string, opts: { sql?: string; schema?: string; signal?: AbortSignal } = {},
+): Promise<AskedSql> {
+  const res = await fetch(`${getApiBase()}/query/ask`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    signal: opts.signal,
+    body: JSON.stringify({
+      conn_id: connId, request,
+      ...(opts.sql?.trim() ? { sql: opts.sql } : {}),
+      ...(opts.schema ? { schema_name: opts.schema } : {}),
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "the SQL could not be written just now"));
+  }
+  return res.json();
+}
+
+/** Ask for a proposed repair. The server never executes it and never applies it. */
+export async function quickFixSql(connId: string, sql: string, error: string): Promise<QuickFix> {
+  const res = await fetch(`${getApiBase()}/query/quickfix`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ conn_id: connId, sql, error }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Quick fix failed"));
+  }
+  return res.json();
+}
+
+// ── Saved-query versions (SE-4 J) ─────────────────────────────────────────────
+
+export interface SavedQueryVersion {
+  version: number;
+  state: string;
+  created_at: string;
+  name: string;
+  sql: string;
+  spec: Record<string, unknown>;
+}
+
+/** One field-level change between two versions. `path` is a dotted/indexed location
+ *  (`spec.filters[0].op`), which is why this is not a text diff. */
+export interface SavedQueryChange {
+  kind: "add" | "delete" | "change" | "move";
+  path: string;
+  before: unknown;
+  after: unknown;
+}
+
+export async function listSavedQueryVersions(queryId: string): Promise<SavedQueryVersion[]> {
+  const res = await fetch(`${getApiBase()}/saved-queries/${encodeURIComponent(queryId)}/versions`);
+  if (!res.ok) throw new Error("Failed to fetch version history");
+  return (await res.json()).versions ?? [];
+}
+
+export async function diffSavedQueryVersion(
+  queryId: string, version: number, against?: number,
+): Promise<{ from_version: number; to_version: number; changes: SavedQueryChange[] }> {
+  const qs = against !== undefined ? `?against=${against}` : "";
+  const res = await fetch(
+    `${getApiBase()}/saved-queries/${encodeURIComponent(queryId)}/versions/${version}/diff${qs}`);
+  if (!res.ok) throw new Error("Failed to diff versions");
+  return res.json();
+}
+
+export async function restoreSavedQuery(queryId: string, version: number): Promise<SavedQuery> {
+  const res = await fetch(
+    `${getApiBase()}/saved-queries/${encodeURIComponent(queryId)}/restore`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version }),
+    });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Restore failed"));
+  }
+  return (await res.json()).query;
+}
+
+export async function createSavedQuery(
+  connectionId: string, name: string, sql: string, spec: Record<string, unknown>,
+  paramDefs?: Record<string, unknown>,
+): Promise<SavedQuery> {
+  const res = await fetch(`${getApiBase()}/saved-queries`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      connection_id: connectionId, name, sql, spec,
+      ...(paramDefs && Object.keys(paramDefs).length ? { param_defs: paramDefs } : {}),
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to save query"));
+  }
+  return res.json();
+}
+
+export async function updateSavedQuery(
+  id: string,
+  patch: {
+    name?: string; sql?: string; spec?: Record<string, unknown>;
+    param_defs?: Record<string, unknown>;
+  },
+): Promise<SavedQuery> {
+  const res = await fetch(`${getApiBase()}/saved-queries/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to update saved query"));
+  }
+  return res.json();
+}
+
+export async function deleteSavedQuery(id: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/saved-queries/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete saved query");
+}
+
+// ── Measure grains (additivity) ─────────────────────────────────────────────
+// Per-unit vs per-line classification for a connection's measure columns — powers the
+// Query Builder's grain-misuse warnings (SUM a per-unit price without ×quantity = under-count).
+
+export interface MeasureGrains {
+  grains: Record<string, "per_unit" | "per_line">;   // keyed by lower-case column name
+  quantity_cols: string[];
+}
+
+export async function getMeasureGrains(connId: string): Promise<MeasureGrains> {
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/measure-grains`);
+  if (!res.ok) throw new Error("Failed to fetch measure grains");
+  return res.json();
+}
+
+/** Distinct non-null values for a column — powers the filter-value picker. */
+export async function getColumnDistinct(
+  connId: string, table: string, column: string, schema?: string, limit = 200,
+  /** DE-5d: a table the route could not read answers a typed refusal — `error` in the engine's words
+   *  and `code: "DISTINCT_FAILED"` — never a bare empty list that reads as "the column has no values". */
+): Promise<{ values: (string | null)[]; truncated: boolean; error?: string; code?: string }> {
+  const qs = new URLSearchParams({ table, column, limit: String(limit) });
+  if (schema) qs.set("schema", schema);
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/distinct?${qs.toString()}`);
+  if (!res.ok) throw new Error("Failed to fetch distinct values");
+  return res.json();
+}
+
+/** LLM-inferred Canvas name + description from the scoped tables' schema. */
+export async function suggestCanvasName(
+  connectionId: string,
+  tables: string[],
+): Promise<{ name: string; description: string }> {
+  const res = await fetch(`${getApiBase()}/canvases/suggest-name`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, tables }),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Failed to suggest name"));
+  return res.json();
+}
+
+/** Per-Canvas plain-English instructions (distinct from connection-level). */
+export async function getCanvasInstructions(canvasId: string): Promise<string> {
+  const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(canvasId)}/instructions`);
+  if (!res.ok) return "";
+  const d = await res.json().catch(() => ({ text: "" }));
+  return d.text ?? "";
+}
+
+export async function putCanvasInstructions(canvasId: string, text: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(canvasId)}/instructions`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Failed to save instructions"));
+}
+
+/** Connection-level instructions — apply to every Canvas on the connection; a Canvas's
+ *  own instructions take precedence on conflict (mirrors the grounding block's render). */
+export async function getConnectionInstructions(connId: string): Promise<string> {
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/instructions`);
+  if (!res.ok) return "";
+  const d = await res.json().catch(() => ({ text: "" }));
+  return d.text ?? "";
+}
+
+export async function putConnectionInstructions(connId: string, text: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/instructions`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Failed to save instructions"));
+}
+
+/** Throws with the server's reason when it refuses — it answered nothing before, so a refused delete closed the
+ *  confirm as if the canvas were gone. */
+export async function deleteCanvas(id: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw await refused(res, "Deleting the canvas");
+}
+
+/** A document pinned to a canvas. `missing` marks a binding whose document has since
+ *  been deleted — reported rather than dropped, because a pin that silently vanishes
+ *  is how a workspace loses its context without anyone noticing. */
+export interface CanvasDocument extends Partial<DocumentEntry> {
+  doc_id: string;
+  missing: boolean;
+}
+
+export async function getCanvasDocuments(canvasId: string): Promise<CanvasDocument[]> {
+  const res = await fetch(
+    `${getApiBase()}/canvases/${encodeURIComponent(canvasId)}/documents`);
+  if (!res.ok) return [];
+  return (await res.json()).documents ?? [];
+}
+
+export interface CanvasHistoryItem {
+  id: string;
+  question: string;
+  status: string;
+  started_at: string;
+  kind?: string;
+  connection_id?: string;
+}
+
+export interface CanvasArtifact {
+  id: string;
+  canvas_id: string;
+  kind: string;
+  title: string;
+  description: string;
+  sql: string;
+  question: string;
+  created_at: string;
+}
+
+export async function getCanvasArtifacts(canvasId: string): Promise<CanvasArtifact[]> {
+  const res = await fetch(getApiBase() + "/canvases/" + encodeURIComponent(canvasId) + "/artifacts");
+  if (!res.ok) throw new Error("Failed to fetch artifacts");
+  const data = await res.json();
+  return data.artifacts ?? [];
+}
+
+export async function deleteCanvasArtifact(canvasId: string, artifactId: string): Promise<void> {
+  const res = await fetch(getApiBase() + "/canvases/" + encodeURIComponent(canvasId) + "/artifacts/" + encodeURIComponent(artifactId), {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error("Failed to delete artifact");
+}
+
+export async function getCanvasHistory(id: string, limit = 20): Promise<CanvasHistoryItem[]> {
+  const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(id)}/history?limit=${limit}`);
+  if (!res.ok) throw await refused(res, "Reading the canvas history");
+  const data = await res.json();
+  return (data as { investigations: CanvasHistoryItem[] }).investigations ?? [];
+}
+
+// ── Playbook (referenced items surfaced in chat/investigation) ────────────────
+export interface PlaybookRef {
+  id: string;
+  recommendation: string;
+  trigger_condition: string;
+  status: string;
+  tags: string[];
+  historical_success_rate: number;
+  source_kb_id: string | null;
+}
+
+export async function deletePlaybookEntry(id: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/playbook/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to remove playbook item");
+}
+
+/** Edit just the recommendation text of a playbook item (preserves the rest). */
+export async function editPlaybookRecommendation(id: string, recommendation: string): Promise<void> {
+  const cur = await fetch(`${getApiBase()}/playbook/${encodeURIComponent(id)}`).then(r => (r.ok ? r.json() : null));
+  if (!cur) throw new Error("Playbook item not found");
+  const body = {
+    trigger_metric: cur.trigger_metric, trigger_condition: cur.trigger_condition,
+    trigger_operator: cur.trigger_operator ?? "any", trigger_value: cur.trigger_value ?? 0,
+    recommendation, expected_impact: cur.expected_impact ?? "",
+    typical_timeline: cur.typical_timeline ?? "", owner_role: cur.owner_role ?? "",
+    tags: cur.tags ?? [], status: cur.status ?? "active", source_kb_id: cur.source_kb_id ?? null,
+  };
+  const res = await fetch(`${getApiBase()}/playbook/${encodeURIComponent(id)}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("Failed to update playbook item");
+}
+
+/** Remove a single history line item (an investigation, or a whole chat session). */
+export async function deleteInvestigation(id: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/investigations/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) throw new Error("Failed to remove history item");
+}
+
+// ── M3 / M11 — Direct Query Runner ───────────────────────────────────────────
+
+export interface DirectQueryResult {
+  columns: string[];
+  rows: string[][];
+  row_count: number;
+  duration_ms: number;
+  sql: string;
+  cached: boolean;
+  error: string | null;
+  receipt_id?: string | null;   // WP-10: signed provenance → GET /receipt/{id}
+}
+
+export async function runDirectQuery(
+  connId: string,
+  sql: string,
+  limit = 500,
+  opts: { useCache?: boolean; useBulk?: boolean } = {},
+): Promise<DirectQueryResult> {
+  const res = await fetch(`${getApiBase()}/query/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      conn_id: connId,
+      sql,
+      limit,
+      use_cache: opts.useCache ?? false,
+      use_bulk: opts.useBulk ?? false,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Query failed"));
+  }
+  return res.json();
+}
+
+// ── SE-1 — the Query workbench's typed run (format:"typed", SE-0's contract) ──────
+//
+// A separate function from runDirectQuery rather than a flag on it: the two return
+// DIFFERENT shapes (typed columns, truncation honesty, caveats), and collapsing them
+// behind one signature would make every caller re-narrow the result. The legacy shape
+// stays exactly as it was for the visual builder.
+
+export interface TypedColumn {
+  name: string;
+  /** Normalised type name from the backend (`norm_type`) — drives alignment. */
+  type: string;
+  /** DE-close — the one table column this output column reads, from DE-4's lineage; absent for a
+   *  computed column, a star the tracer could not expand, or a result from an older server. With it, a
+   *  column of a joined statement can be read live and its related rows opened. */
+  source?: { table: string; column: string; confidence?: string | null };
+}
+
+export interface TypedQueryResult {
+  columns: string[];
+  columns_typed: TypedColumn[];
+  /** Cells are JSON-safe; a real SQL NULL arrives as null, distinct from "". */
+  rows: (string | number | boolean | null)[][];
+  row_count: number;
+  /** True when the server's n+1 probe row proved there is more beyond the limit. */
+  truncated: boolean;
+  /** DE-5d — WHAT cut the result, when it was cut: the person's own `limit`, the connection's row
+   *  `budget`, or the connector's per-call `cap` (below the limit asked for). null when whole. */
+  cut_by?: "limit" | "budget" | "cap" | null;
+  duration_ms: number;
+  sql: string;
+  cached: boolean;
+  error: string | null;
+  receipt_id?: string | null;
+  caveats?: string[];
+  format: "typed";
+  /** DE-5f — a result the panel opened from a cell carries the bound values its statement ran with, and a
+   *  label for the pager. A run's result has neither. */
+  params?: Record<string, unknown>;
+  label?: string;
+}
+
+// ── DE-2b — the organisation's agent policy: what an outside agent (MCP) may do ──────────────────
+
+export interface AgentPolicy {
+  level: "read" | "run" | "act";
+  /** Connection ids the agent may touch; null means all. */
+  connections: string[] | null;
+  /** Tool names the agent may call; null means all. */
+  tools: string[] | null;
+  set_by: string;
+  updated_at: string;
+  /** `default` (nobody set one), `saved` (a person did), `narrowed` (the environment narrowed the saved one). */
+  source: "default" | "saved" | "narrowed";
+  narrowed_by: string[];
+}
+
+export interface AgentPolicyView {
+  effective: AgentPolicy;
+  saved: AgentPolicy | null;
+  environment: { level: string | null; connections: string[] | null; tools: string[] | null };
+  levels: string[];
+}
+
+export async function getAgentPolicy(): Promise<AgentPolicyView> {
+  const res = await fetch(`${getApiBase()}/org-settings/agent-policy`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Could not read the agent policy"));
+  }
+  return res.json();
+}
+
+export async function updateAgentPolicy(body: { level: "read" | "run" | "act"; connections?: string[] | null; tools?: string[] | null }): Promise<AgentPolicyView> {
+  const res = await fetch(`${getApiBase()}/org-settings/agent-policy`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const detail = (err as { detail?: unknown }).detail;
+    throw new Error(typeof detail === "string" ? detail : "Could not save the agent policy");
+  }
+  return res.json();
+}
+
+export async function clearAgentPolicy(): Promise<AgentPolicyView> {
+  const res = await fetch(`${getApiBase()}/org-settings/agent-policy`, { method: "DELETE" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const detail = (err as { detail?: unknown }).detail;
+    throw new Error(typeof detail === "string" ? detail : "Could not clear the agent policy");
+  }
+  return res.json();
+}
+
+/** DE-5f — one join touching a column, with its evidence in the catalog's words. */
+export interface RelatedJoin {
+  table: string;
+  column: string;
+  other_table: string;
+  other_column: string;
+  match: "declared" | "exact" | "inferred";
+  overlap: number | null;
+  verdict: "verified" | "declared" | "disputed" | "rejected" | "unprobed";
+  cardinality: string | null;
+  source: "ontology" | "join_map";
+  /** Whether rows may be opened through it: verified, or declared and not disputed. */
+  openable: boolean;
+  sentence: string;
+}
+
+export interface RelatedJoinsAnswer {
+  table: string;
+  column: string;
+  joins: RelatedJoin[];
+  ontology: "built" | "not built";
+  /** Why the join map could not be read, when it could not. */
+  join_map?: string;
+}
+
+/** DE-5f — `GET /connections/{id}/related-joins`: the joins the data bears out that touch one column. */
+export async function getRelatedJoins(connId: string, table: string, column: string, schema?: string): Promise<RelatedJoinsAnswer> {
+  const qs = new URLSearchParams({ table, column });
+  if (schema) qs.set("schema", schema);
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/related-joins?${qs.toString()}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Could not read the joins"));
+  }
+  return res.json();
+}
+
+/** DE-5f — the rows on the other side of one verified join, for one value. The typed shape, plus the
+ *  statement that ran, its bound `params`, a `label`, the `join` and its evidence as a caveat; a refusal has
+ *  no rows and a `code` (`JOIN_NOT_VERIFIED`, `BLOCKED`, `FAILED`). */
+export interface RelatedRowsResult extends TypedQueryResult {
+  code?: string | null;
+  join?: RelatedJoin | null;
+}
+
+export async function openRelatedRows(
+  connId: string,
+  args: { table: string; column: string; value: unknown; otherTable: string; otherColumn: string; schema?: string },
+  limit = 500, signal?: AbortSignal,
+): Promise<RelatedRowsResult> {
+  return postCutRequest<RelatedRowsResult>("/query/related", {
+    conn_id: connId, table: args.table, column: args.column, value: args.value,
+    other_table: args.otherTable, other_column: args.otherColumn, limit, source: "query_workbench",
+    ...(args.schema ? { schema_name: args.schema } : {}),
+  }, signal);
+}
+
+/** DE-5d — `POST /query/count`: how many rows the statement returns in all. `total` is null on a
+ *  refusal, whose `code` is `BLOCKED`, `NOT_WRAPPABLE` or `FAILED` and whose `error` is the gate's or the
+ *  engine's own words. `as_of` is when the engine answered — the number says when it was true. */
+export interface QueryCount {
+  total: number | null;
+  as_of: string;
+  duration_ms: number;
+  sql: string;
+  error: string | null;
+  code: string | null;
+}
+
+/** DE-5d — `POST /query/more`: one page of a cut result, in the typed shape, plus where it starts and
+ *  whether the statement orders its rows (null: could not tell). A refusal is the same shape with no
+ *  rows and a `code` — `PAGE_BILLED_AS_SCAN` on an engine that bills each statement as a full scan. */
+export interface TypedQueryPage extends TypedQueryResult {
+  offset: number;
+  ordered: boolean | null;
+  code?: string | null;
+}
+
+async function postCutRequest<T>(path: string, body: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${getApiBase()}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (e) {
+    if (signal?.aborted || (e instanceof DOMException && e.name === "AbortError")) throw new QueryCancelled();
+    throw e;
+  }
+  if (!res.ok) {
+    if (res.status === 499) throw new QueryCancelled();
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Query failed"));
+  }
+  return res.json();
+}
+
+/** DE-5d — count every row the statement returns, through the run's door with the run's bound values. */
+export async function countQueryRows(
+  connId: string, sql: string, params?: Record<string, unknown>, signal?: AbortSignal,
+): Promise<QueryCount> {
+  return postCutRequest<QueryCount>("/query/count", {
+    conn_id: connId, sql, source: "query_workbench",
+    ...(params && Object.keys(params).length ? { params } : {}),
+  }, signal);
+}
+
+/** DE-5d — the next `limit` rows of the statement after the `offset` already shown. */
+export async function loadMoreRows(
+  connId: string, sql: string, offset: number, limit: number,
+  params?: Record<string, unknown>, signal?: AbortSignal,
+): Promise<TypedQueryPage> {
+  return postCutRequest<TypedQueryPage>("/query/more", {
+    conn_id: connId, sql, offset, limit, source: "query_workbench",
+    ...(params && Object.keys(params).length ? { params } : {}),
+  }, signal);
+}
+
+/** Thrown when the user cancelled the run — distinct from a query that failed, because
+ *  it is not a fault and must not be reported as one. */
+export class QueryCancelled extends Error {
+  constructor() { super("Query cancelled."); this.name = "QueryCancelled"; }
+}
+
+export async function runWorkbenchQuery(
+  connId: string,
+  sql: string,
+  limit = 500,
+  /** SE-4 H: values for the statement's `:name` parameters. Sent as a FIELD, never
+   *  substituted into the SQL here — client-side interpolation would hand the server a
+   *  statement whose shape depends on user input, which is the one thing bind values
+   *  exist to prevent. */
+  params?: Record<string, unknown>,
+  /** SE-3 F: abort this to cancel. Aborting the fetch closes the socket, which is
+   *  the server's cancel signal — it interrupts the engine mid-statement rather
+   *  than letting a runaway query finish into a response nobody will read. */
+  signal?: AbortSignal,
+): Promise<TypedQueryResult> {
+  let res: Response;
+  try {
+    res = await fetch(`${getApiBase()}/query/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        conn_id: connId, sql, limit,
+        use_cache: false, use_bulk: false,
+        format: "typed",
+        // Names this surface for the audit trail and for gate_user_sql's policy.
+        source: "query_workbench",
+        ...(params && Object.keys(params).length ? { params } : {}),
+      }),
+      signal,
+    });
+  } catch (e) {
+    // An aborted fetch rejects with AbortError. That is the user's own click coming
+    // back to them, so it becomes a typed cancellation rather than "Failed to fetch".
+    if (signal?.aborted || (e instanceof DOMException && e.name === "AbortError")) {
+      throw new QueryCancelled();
+    }
+    throw e;
+  }
+  if (!res.ok) {
+    // 499 is the server observing the same abort. It can arrive when the response
+    // races the disconnect, so it means cancelled here too — never an error toast.
+    if (res.status === 499) throw new QueryCancelled();
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Query failed"));
+  }
+  return res.json();
+}
+
+// ── SE-2 — the editor's history rail, a filtered read of the audit log ───────────
+//
+// Not a second store: every workbench run already writes an audit row tagged with the
+// surface that issued it (`source: "query_workbench"` → the log's `hypothesis_id`), so
+// "my recent queries" is a filter over the record that must exist anyway. A dedicated
+// history table would be a second source of truth that could disagree with the audit.
+
+export interface AuditRecord {
+  id: string;
+  ts: string;
+  connection_id: string;
+  /** The issuing surface — `query_workbench`, `query_builder`, … (SE-0's label). */
+  hypothesis_id: string;
+  sql_digest: string;
+  /** What ran: capped, translated for the engine. */
+  sql_full: string;
+  /** The statement as the person wrote it — "" on a row no person wrote, and on rows from before it was kept. */
+  sql_written?: string;
+  verdict: string;
+  row_count: number | null;
+  duration_ms: number | null;
+  error: string | null;
+}
+
+/** What each statement measures and how it is cut, in words — read from the statement alone, no query and no model
+ *  (`POST /query/describe`). "" for one that does not say; the caller then shows the statement alone. */
+export async function describeStatements(connId: string, statements: string[]): Promise<string[]> {
+  if (!statements.length) return [];
+  const res = await fetch(`${getApiBase()}/query/describe`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ conn_id: connId, statements: statements.slice(0, 20) }),
+  });
+  if (!res.ok) throw await refused(res, "Describing the recent runs");
+  const data = await res.json();
+  return Array.isArray(data?.titles) ? data.titles.map((t: unknown) => String(t ?? "")) : [];
+}
+
+export async function getQueryHistory(
+  connectionId: string, limit = 40, label = "query_workbench",
+): Promise<AuditRecord[]> {
+  const params = new URLSearchParams({
+    limit: String(limit), connection_id: connectionId, label,
+  });
+  const res = await fetch(`${getApiBase()}/security/audit?${params}`);
+  if (!res.ok) throw await refused(res, "Reading the query history");
+  const data = await res.json();
+  return (data as { records?: AuditRecord[] }).records ?? [];
+}
+
+// ── Semantic operators over a result's text columns (filter/extract/top_k/aggregate) ──
+
+export interface SemanticField { name: string; description?: string }
+
+export interface SemanticOpRequest {
+  operator: "filter" | "extract" | "top_k" | "aggregate";
+  column: string;
+  predicate?: string;            // filter
+  fields?: SemanticField[];      // extract
+  criterion?: string;            // top_k
+  k?: number;                    // top_k
+  instruction?: string;          // aggregate
+  out_column?: string;           // aggregate
+  limit?: number;
+  max_rows?: number;
+  override_cap?: boolean;
+}
+
+export interface SemanticOpResult {
+  columns: string[];
+  rows: string[][];
+  row_count: number;
+  sql: string;
+  error: string | null;
+  operator: string;
+  column: string;
+  input_rows: number;
+  output_rows: number;
+  truncated: boolean;
+  notes: string[];
+  llm_calls: number;
+}
+
+export async function runSemanticOp(connId: string, sql: string, op: SemanticOpRequest): Promise<SemanticOpResult> {
+  const res = await fetch(`${getApiBase()}/query/semantic`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ conn_id: connId, sql, ...op }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Semantic step failed"));
+  }
+  return res.json();
+}
+
+export interface BuildSqlMeasure {
+  expr: string;
+  alias: string;
+}
+
+export interface BuildSqlFilter {
+  col: string;
+  op: string;
+  val: string;
+}
+
+// Query Builder Layer-3 — reverse-compile raw SQL into the builder's chips.
+export interface DecompiledQuery {
+  ok: boolean;
+  reason?: string;
+  primary_table?: string;
+  joins?: { table: string; alias: string | null; side: string; on: string }[];
+  dimensions?: { col: string; table: string; transform: string | null; alias: string | null }[];
+  measures?: { agg: string; col: string; table: string; alias: string | null; customExpr: string }[];
+  filters?: { col: string; table: string; op: string; val: string }[];
+  unmapped_filters?: string[];
+  order_by?: string;
+  limit?: number;
+  having?: string;
+}
+
+export async function decompileSql(sql: string, dialect = "duckdb"): Promise<DecompiledQuery> {
+  const res = await fetch(`${getApiBase()}/query/decompile`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sql, dialect }),
+  });
+  if (!res.ok) return { ok: false, reason: "Decompile request failed" };
+  return res.json();
+}
+
+// On-demand governed validation of an answer's query (the guard battery, re-run live).
+export interface QueryValidation {
+  passed: boolean;
+  issue_count: number;
+  /** De-duped prompt-hint STRINGS from the fan-out detector battery (Verifier.scan). */
+  fanout_hits: string[];
+  join_warnings: { table_a: string; col_a: string; table_b: string; col_b: string; overlap: number }[];
+  filter_warnings: { table: string; column: string; literal: string; op: string; suggestion: string }[];
+  // SE-2: the endpoint has always returned these three; the type simply never named
+  // them, so every consumer was blind to the grain, trust and mutation verdicts.
+  // Optional because older cached responses (and the tests' fixtures) omit them.
+  grain_warnings?: { table: string; join_key: string; ratio: number; caveat: string }[];
+  trust_findings?: Record<string, unknown>[];
+  mutation_blockers?: { name: string; reason: string }[];
+  /** SE-4 H — the guards could not read this query (a parameter has no value), so
+   *  NOTHING was checked. Distinct from `passed: true`, and the reason `passed` is
+   *  false here: an issue_count of 0 must never be rendered as a clean bill of health
+   *  when zero things were looked at. */
+  unchecked?: boolean;
+  note?: string;
+  /** GM-4 — each guard that could not run on this statement, and why (a statement it could
+   *  not parse, a probe the warehouse refused). Any one makes `passed` false. */
+  unchecked_guards?: { guard: string; reason: string }[];
+}
+
+/** `dialect` defaults server-side to the connection's own, so callers that don't know
+ *  it (the chat surface) can omit it; the SQL editor passes the resolved family. */
+export async function validateQuery(
+  connId: string, sql: string, dialect?: string,
+  /** SE-4 H: without these the guards cannot read a parameterised query's literals,
+   *  and the verdict comes back `unchecked` rather than clean. */
+  params?: Record<string, unknown>,
+): Promise<QueryValidation> {
+  const res = await fetch(`${getApiBase()}/query/validate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      conn_id: connId, sql,
+      ...(dialect ? { dialect } : {}),
+      ...(params && Object.keys(params).length ? { params } : {}),
+    }),
+  });
+  if (!res.ok) throw new Error("Validation failed");
+  return res.json();
+}
+
+// Lightweight feedback/remember signal on a chat answer (journaled to the ledger).
+/** A 👍 also records the chat answer as ACCEPTED (PENDING item 23), with the SQL the server read from the turn's
+ *  own record. `accepted` says whether it now stands accepted — false when the turn could not be graded. */
+export async function sendChatFeedback(connId: string, turnId: string, verdict: "helpful" | "unhelpful", note = ""): Promise<{ accepted: boolean }> {
+  try {
+    const res = await fetch(`${getApiBase()}/chat/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conn_id: connId, turn_id: turnId, verdict, note }),
+    });
+    const body = res.ok ? await res.json().catch(() => ({})) : {};
+    return { accepted: Boolean((body as { accepted?: unknown }).accepted) };
+  } catch {
+    return { accepted: false };
+  }
+}
+
+// ── Evidence Ledger ────────────────────────────────────────────────────────────
+
+export interface EvidenceClaim {
+  id: string;
+  investigation_id: string;
+  hypothesis_id: string | null;
+  claim_text: string;
+  sql_source: string | null;
+  metric_used: string | null;
+  data_freshness: string | null;
+  /** null on every row since phase 1 of the 2027 study: not counted, so not shown as a figure. */
+  confidence: number | null;
+  created_at: string;
+  owner_feedback: "validated" | "disputed" | "needs_context" | null;
+  feedback_note: string | null;
+  downstream_recommendations: string[];
+  outcome_status: "acted_on" | "superseded" | "archived" | null;
+}
+
+export async function getEvidenceClaims(invId: string): Promise<EvidenceClaim[]> {
+  const res = await fetch(`${getApiBase()}/investigations/${invId}/evidence`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+/** Recent evidence claims across a scope (connection, optionally a canvas), newest-first. */
+export async function getRecentEvidenceClaims(
+  connectionId: string,
+  canvasId?: string,
+  limit = 50,
+): Promise<EvidenceClaim[]> {
+  const params = new URLSearchParams({ connection_id: connectionId, limit: String(limit) });
+  if (canvasId) params.set("canvas_id", canvasId);
+  const res = await fetch(`${getApiBase()}/investigations/evidence/recent?${params}`);
+  // A refused read throws: the Evidence layer says it could not read the ledger, never "no claims yet".
+  if (!res.ok) throw await refused(res, "Reading the claim ledger");
+  return res.json();
+}
+
+export async function submitClaimFeedback(
+  invId: string,
+  claimId: string,
+  feedback: "validated" | "disputed" | "needs_context",
+  note?: string,
+): Promise<EvidenceClaim> {
+  const res = await fetch(`${getApiBase()}/investigations/${invId}/evidence/${claimId}/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ feedback, note }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Feedback submission failed"));
+  }
+  return res.json();
+}
+
+// ── Monitors ──────────────────────────────────────────────────────────────────
+
+export interface MonitorDef {
+  id: string;
+  conn_id: string;
+  name: string;
+  metric_name: string | null;
+  custom_sql: string | null;
+  reanchor_window: boolean;
+  check_cron: string;
+  alert_on: "threshold_cross" | "trend_reversal" | "anomaly" | "segment_drift" | "data_freshness" | "any_change";
+  warning_threshold: number | null;
+  critical_threshold: number | null;
+  threshold_direction: "below" | "above";
+  sigma_threshold: number;
+  history_days: number;
+  dimension_column: string | null;
+  freshness_table: string | null;
+  freshness_column: string | null;
+  freshness_sla_hours: number;
+  drift_p_threshold: number | null;
+  grace_period_hours: number;
+  notification_channel: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MonitorAlert {
+  id: string;
+  monitor_id: string;
+  monitor_name: string;
+  conn_id: string;
+  metric_name: string | null;
+  triggered_at: string;
+  alert_on: string;
+  severity: "warning" | "critical" | "info";
+  current_value: number | null;
+  previous_value: number | null;
+  threshold: number | null;
+  message: string;
+  /** WP-1b — deterministic correctness finding on the monitor's
+   *  SQL (id-arithmetic / fan-out); the alert fired but its value may be mis-computed. */
+  caveat?: string | null;
+  acknowledged: boolean;
+  acknowledged_at: string | null;
+  /** Arc TC, TC-4 — the recovery that closed this alert, and when. Absent while it is open. */
+  closed_by?: string;
+  closed_at?: string;
+  /** On a recovery (`alert_on: "recovered"`): the alert it closes — the one its message names. */
+  closes?: string;
+}
+
+export interface DigestSection {
+  title: string;
+  items: string[];
+}
+
+export interface DigestResult {
+  conn_id: string;
+  period: string;
+  generated_at: string;
+  sections: DigestSection[];
+  alert_count: number;
+  critical_count: number;
+  markdown: string;
+}
+
+export async function getMonitors(connId?: string, workspaceId?: string): Promise<MonitorDef[]> {
+  const qs = new URLSearchParams();
+  if (connId) qs.set("conn_id", connId);
+  if (workspaceId) qs.set("workspace_id", workspaceId);
+  const q = qs.toString();
+  const res = await fetch(`${getApiBase()}/monitors${q ? `?${q}` : ""}`);
+  if (!res.ok) throw new Error("Failed to fetch monitors");
+  return res.json();
+}
+
+export async function createMonitor(data: Partial<MonitorDef> & { conn_id: string; name: string }): Promise<MonitorDef> {
+  const res = await fetch(`${getApiBase()}/monitors`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to create monitor");
+  return res.json();
+}
+
+export async function updateMonitor(id: string, data: Partial<MonitorDef>): Promise<MonitorDef> {
+  const res = await fetch(`${getApiBase()}/monitors/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to update monitor");
+  return res.json();
+}
+
+export async function deleteMonitor(id: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/monitors/${id}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) throw new Error("Failed to delete monitor");
+}
+
+/** A monitor run now: its alert, or that nothing fired — and either way what it READ, in words ("read 848,860.1
+ *  (warning below 900,000)"; "" when it read no single value). The Olist study, Gap 36. */
+export async function triggerMonitor(id: string): Promise<(MonitorAlert | { fired: false }) & { read?: string }> {
+  const res = await fetch(`${getApiBase()}/monitors/${id}/trigger`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to trigger monitor");
+  return res.json();
+}
+
+// ── Idea 6 · alerts that prove they work (`routers/monitors.py`) ──────────────────
+
+export interface MonitorBacktest {
+  monitor_id: string;
+  rule: string;
+  ok: boolean;
+  reason: string;
+  sigma: number | null;
+  days: number;
+  series_from: string;
+  series_to: string;
+  firings: { day: string; value: number; severity: string; z: number }[];
+  sentence: string;
+  quieter_sigma: number | null;
+}
+
+export interface MonitorDrill {
+  monitor_id: string;
+  at: string;
+  fired: boolean;
+  /** null when delivery was not attempted (a drill that only checks the rule). */
+  delivered: boolean | null;
+  detail: string;
+  channel: string;
+}
+
+export interface MonitorProof {
+  monitor_id: string;
+  /** "last proven working …" / "never proven — no drill, no delivered alert" — the server's sentence. */
+  sentence: string;
+  last_drill: MonitorDrill | null;
+  /** The last real alert this monitor delivered (a notification log row), when there was one. */
+  last_real_delivery?: { fired_at?: string; [k: string]: unknown } | null;
+}
+
+async function monitorProofCall<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${getApiBase()}/monitors/${path}`, init);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(typeof body?.detail === "string" ? body.detail : `request failed (${res.status})`);
+  }
+  return res.json();
+}
+
+/** Replay the monitor over the last year of its own series — one warehouse query. */
+export function backtestMonitor(id: string): Promise<MonitorBacktest> {
+  return monitorProofCall(`${encodeURIComponent(id)}/backtest`, { method: "POST" });
+}
+
+/** Feed the rule a synthetic outlier. `deliver` sends the [DRILL] alert through the monitor's real channel. */
+export function drillMonitor(id: string, deliver: boolean): Promise<MonitorDrill> {
+  return monitorProofCall(`${encodeURIComponent(id)}/drill`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deliver }),
+  });
+}
+
+export function getMonitorProof(id: string): Promise<MonitorProof> {
+  return monitorProofCall(`${encodeURIComponent(id)}/proof`);
+}
+
+// ── Idea 7 · fact-check a document (`routers/factcheck.py`) ────────────────────────
+
+export interface FactCheckResult {
+  /** The filed answer's id (the wire's `investigation_id`) — what its export is read by. */
+  answerId: string;
+  envelope: {
+    headline: string;
+    body: string;
+    caveats: string[];
+    grid: { columns: string[]; rows: unknown[][] } | null;
+  };
+}
+
+async function factCheckCall(path: string, init: RequestInit): Promise<FactCheckResult> {
+  const res = await fetch(`${getApiBase()}${path}`, init);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(typeof body?.detail === "string" ? body.detail : `the check failed (${res.status})`);
+  }
+  const body = await res.json();
+  return { answerId: String(body.investigation_id ?? ""), envelope: body.envelope };
+}
+
+/** Every numeric claim in pasted text, checked against the connection — one quick answer per claim. */
+export function factCheckText(text: string, connectionId: string): Promise<FactCheckResult> {
+  return factCheckCall("/factcheck", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, connection_id: connectionId }),
+  });
+}
+
+/** The same check on a document, converted the way the Documents tab converts it. */
+export function factCheckFile(file: File, connectionId: string): Promise<FactCheckResult> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("connection_id", connectionId);
+  return factCheckCall("/factcheck/upload", { method: "POST", body: form });
+}
+
+export async function getAllAlerts(connId?: string, limit = 100, workspaceId?: string): Promise<MonitorAlert[]> {
+  const qs = new URLSearchParams();
+  if (connId) qs.set("conn_id", connId);
+  qs.set("limit", String(limit));
+  if (workspaceId) qs.set("workspace_id", workspaceId);
+  const res = await fetch(`${getApiBase()}/alerts?${qs}`);
+  if (!res.ok) throw new Error("Failed to fetch alerts");
+  return res.json();
+}
+
+export async function acknowledgeAlert(alertId: string): Promise<MonitorAlert> {
+  const res = await fetch(`${getApiBase()}/alerts/${alertId}/acknowledge`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to acknowledge alert");
+  return res.json();
+}
+
+// ── Automations (Wave A) ────────────────────────────────────────────────────────
+// The condition→effect engine (A2), its per-tick history (A1), and the resolve-once
+// proposal inbox + standing grants (A4). Every route self-gates on `automations.engine`
+// (and the inbox on `automations.proposals`) → a 404 means the plane is off.
+
+export type ConditionKind =
+  | "schedule" | "metric" | "source_change" | "entity_appears"
+  // HB-3 — the hub's two triggers: a declared promise measured broken, a new finding
+  // recorded. Both publish a payload the chain binds as `trigger.<key>`.
+  | "promise_breached" | "finding_created"
+  // Arc FA, FA-5 — the objects a rule or segment newly admits.
+  | "objects_admitted"
+  // DS-17. Named for what it is from the chain's side: something outside calls it. The
+  // OUTBOUND `webhook` in the notifications and declared-action kind sets is a different
+  // idea entirely (a URL Aughor posts TO); the two never meet because every lookup in
+  // this plane is family-scoped.
+  | "webhook";
+/** The effect kinds a PERSON may author.
+ *
+ *  Narrower than the server's `Literal` on purpose: `monitor` and `agent_alert` are
+ *  adopted objects the engine writes when an existing monitor or alert rule migrates onto
+ *  it — the model's own docstring says they are "not authored by hand". */
+export type EffectKind =
+  | "investigate" | "brief" | "notify" | "kinetic_action" | "slack_post" | "subchain"
+  | "integration_call" | "metric_value" | "trusted_query"
+  // VA-9d — a read-only tool on an allowlisted foreign MCP server.
+  | "mcp_call"
+  // DS-18 — write up what the step before produced, under the context authored on it.
+  | "synthesize"
+  // Arc ED, ED-3 — measure a table's expectations and record each verdict as its health.
+  | "expectations";
+
+/**
+ * The `config` keys each kind REQUIRES, mirroring `_CONDITION_REQUIRED` and
+ * `_EFFECT_REQUIRED` in `aughor/automations/models.py`.
+ *
+ * Here rather than in a component for the same reason the rest of this module is here:
+ * it is the backend contract spelled field-for-field, and a UI that re-states a contract
+ * in its own words is a UI that drifts from it. `tests/unit/test_automation_required_keys.py`
+ * asserts this object against the Python one, so the mirror cannot go stale silently —
+ * which is the failure mode a hand-copied map has by default.
+ */
+export const AUTOMATION_REQUIRED_KEYS: Record<string, string[]> = {
+  schedule: ["cron"], metric: ["monitor_id"],
+  source_change: ["table"], entity_appears: ["table"],
+  // DS-17 — deliberately empty. A webhook trigger is configured by issuing a URL under
+  // Deploy, which is a deployment act, not a field on the canvas; an entry here would
+  // make the create form's incomplete gate demand a value nobody can type.
+  webhook: [],
+  // HB-3 — the hub's two triggers. `promise_breached` names the declared process it
+  // watches; `finding_created` is complete unfiltered (domain/min_confidence narrow it).
+  promise_breached: ["process"], finding_created: [],
+  // Arc FA, FA-5 — the entity, and the segment on it whose newly admitted objects fire it.
+  objects_admitted: ["entity", "segment"],
+  investigate: ["question"], brief: ["subscription_id"],
+  notify: ["trigger_id"], kinetic_action: ["action_id"],
+  slack_post: ["bot_id", "channel"], subchain: ["automation_id"],
+  integration_call: ["connection_id", "operation"],
+  metric_value: ["metric"], trusted_query: ["query_id"],
+  // VA-9d — WHICH allowlisted server and WHICH of its discovered tools. Neither is
+  // bindable: a `$from` on either would turn a named destination back into an
+  // arbitrary one, and the save refuses it.
+  mcp_call: ["server_id", "tool"],
+  // DS-18 — `data` only. `context` is optional: a step with no instruction still has an
+  // honest default ("summarise this"), and demanding a sentence before the node can be
+  // saved would make the common case the annoying one.
+  synthesize: ["data"],
+  // Arc ED, ED-3 — what the table must meet: a list the server validates expectation by expectation.
+  expectations: ["expectations"],
+};
+
+/** A Slack bot record, tokens masked by the server (`to_safe_dict`). Never carries a
+ *  usable credential — the mask is what the client renders and sends back. */
+export interface SlackBotSummary {
+  id: string;
+  name: string;
+  enabled: boolean;
+  /** AO-1e — why the PLATFORM switched this bot off ("its agent 'X' was deleted"); ""
+   *  when a person paused it or it is on. Cleared by the server on resume. */
+  disabled_reason: string;
+  /** AO-2a — the supervisor heartbeat that has this bot's socket open, or null when
+   *  nothing is listening (the record being "enabled" says nothing about that). */
+  listening: { supervisor_id: string; since: string; last_seen_at: string } | null;
+  /** Why nothing is listening, with the command to start it; "" while listening. */
+  liveness_hint: string;
+  /** AO-2d — set when Aughor created the app itself: the OAuth client that installs it. */
+  client_id?: string;
+  slack_app_id?: string;
+  /** AO-2f — optional home channel (`C…` or `#name`); "" means none. */
+  channel_id?: string;
+  /** AO-6 — posts from automations as this bot are held for a person's click first. */
+  rehearse?: boolean;
+  team_id: string;
+  bot_user_id: string;
+  /** DS-5 — the agent this bot is a door ONTO. On the wire since RC-5 (`to_safe_dict`
+   *  masks only the three secrets); undeclared here until the agent map needed to ask
+   *  which bots belong to an agent. */
+  agent_id: string;
+  connection_id: string;
+  /** Slack's Agent messaging mode. Set with the manifest at creation; carried through
+   *  every update unchanged (`patchBodyFor`), because the app and the record must agree. */
+  agent_view: boolean;
+}
+
+/** The plain fields an update sends — ALL of them, every time. The server replaces each
+ *  with what it is sent and keeps only the secrets it is not sent (`merge_secrets`), so a
+ *  partial body silently blanks the rest. Build it with `patchBodyFor` in lib/slackBots. */
+export interface SlackBotPatch {
+  name: string;
+  enabled: boolean;
+  agent_id: string;
+  connection_id: string;
+  agent_view: boolean;
+  /** AO-2d — a token pasted to finish an app Aughor created; absent means "keep stored". */
+  bot_token?: string;
+  app_token?: string;
+  signing_secret?: string;
+  /** AO-2f — the home channel; carried by `patchBodyFor` like the rest. */
+  channel_id?: string;
+  /** AO-6 — rehearse; carried by `patchBodyFor` like the rest. */
+  rehearse?: boolean;
+}
+
+/** B1 — the effect-kind vocabulary the canvas draws its ports from. FETCHED, never
+ *  mirrored: a hand-copied vocabulary rots in the worst direction, and the server's
+ *  `PUBLISHED_KEYS` is the same table `validate_chain` refuses against. */
+export interface GuardOp { op: string; label: string; unary: boolean }
+
+export interface AutomationVocabulary {
+  kinds: Record<string, { publishes: string[] | null; bindable: string[] }>;
+  /** W1 — every comparison the engine can make, with the word each READS as and
+   *  whether it takes a second value. `unary` is what tells a form to hide the right
+   *  field rather than ask for a value that is then ignored. */
+  guardOps: GuardOp[];
+  /** W2 — the fan-out's own vocabulary. `maxItems` is the engine's cap: a form that
+   *  carried its own copy would offer a list the save then refuses, which is the drift
+   *  every fetched vocabulary here exists to prevent. `itemAlias`/`itemValueKey` are
+   *  how an iteration names its item (`item.value`), so a hint can say it without
+   *  hardcoding the reserved word. */
+  forEach: { maxItems: number; itemAlias: string; itemValueKey: string;
+             publishes: string[] };
+}
+
+export async function getAutomationVocabulary(): Promise<AutomationVocabulary> {
+  const res = await fetch(`${getApiBase()}/automations/vocabulary`);
+  if (!res.ok) throw new Error(`Failed to load the vocabulary (${res.status})`);
+  const body = await res.json();
+  const fe = body.for_each ?? {};
+  return {
+    kinds: body.kinds ?? {},
+    guardOps: body.guard_ops ?? [],
+    forEach: {
+      maxItems: fe.max_items ?? 0,
+      itemAlias: fe.item_alias ?? "item",
+      itemValueKey: fe.item_value_key ?? "value",
+      publishes: fe.publishes ?? [],
+    },
+  };
+}
+
+/** DS-1 — one placeable thing, as the server describes it.
+ *
+ *  A sibling document to the vocabulary above, not part of it: that one is a closed set
+ *  of constants (safe to cache for the page), while this one counts the objects on THIS
+ *  deployment — bots, triggers, subscriptions, monitors — and its answer changes the
+ *  moment a reader creates one. `availability` is why the palette can refuse to look the
+ *  same on an install that can post to Slack and one that cannot. */
+/**
+ * DS-10 — one component: any capability this deployment has, in the one shape every
+ * family reports. `outputs: null` is the OPEN set (a component whose outputs cannot be
+ * enumerated), `[]` means it publishes nothing — the same distinction `publishes` draws
+ * on a palette entry, and a reader that collapses them will refuse a legal binding.
+ */
+export interface ComponentPort {
+  name: string;
+  label: string;
+  type: string;
+  required: boolean;
+  secret: boolean;
+  placeholder: string;
+  visible_when: Record<string, unknown>;
+  bindable: boolean;
+}
+
+export type ComponentFamily =
+  | "trigger" | "effect" | "connector" | "platform_tool" | "mcp_tool" | "declared_action";
+
+export interface Component {
+  id: string;
+  family: ComponentFamily;
+  kind: string;
+  label: string;
+  description: string;
+  icon: string;
+  priority: number;
+  inputs: ComponentPort[];
+  outputs: string[] | null;
+  availability: "ready" | "needs_setup" | "unavailable";
+  reason: string;
+  badges: string[];
+  exposable_as_tool: boolean;
+  /** The module that governs using this component — the registry's law, on the wire. */
+  governed_by: string;
+}
+
+export interface AutomationPaletteEntry {
+  kind: string;
+  group: "trigger" | "action";
+  label: string;
+  description: string;
+  /** An icon name from the client's own set — the server is guarded against sending one
+   *  we cannot draw (`tests/unit/test_automation_palette.py`). */
+  icon: string;
+  /** The server's curated order within a group; the client sorts by it, then by name. */
+  priority: number;
+  publishes: string[] | null;
+  bindable: string[];
+  availability: "ready" | "needs_setup";
+  /** Why it cannot be used here, in the words the reader should see. "" when ready. */
+  reason: string;
+}
+
+export async function getAutomationPalette(
+  connId?: string,
+): Promise<AutomationPaletteEntry[]> {
+  const qs = connId ? `?conn_id=${encodeURIComponent(connId)}` : "";
+  const res = await fetch(`${getApiBase()}/automations/palette${qs}`);
+  if (!res.ok) throw new Error(`Failed to load the palette (${res.status})`);
+  const body = await res.json();
+  return (body.entries ?? []) as AutomationPaletteEntry[];
+}
+
+/** DS-4 — where each step sits on the Design canvas, as `{alias: {x, y}}`.
+ *
+ *  Server-side and account-keyed rather than `localStorage`, for the reason the dashboard's
+ *  layout settled once: an arrangement someone made on their laptop and cannot find on
+ *  their desktop reads as the product having forgotten it. Its own endpoint, never a
+ *  field on the automation — a view preference must not ride the record the engine
+ *  reads, or a rename moves somebody's nodes. */
+export type CanvasLayout = Record<string, { x: number; y: number }>;
+
+export async function getAutomationLayout(id: string): Promise<CanvasLayout> {
+  const res = await fetch(`${getApiBase()}/automations/${encodeURIComponent(id)}/layout`);
+  if (!res.ok) throw new Error(`Failed to load the layout (${res.status})`);
+  return ((await res.json())?.layout ?? {}) as CanvasLayout;
+}
+
+export async function saveAutomationLayout(id: string, layout: CanvasLayout): Promise<void> {
+  const res = await fetch(`${getApiBase()}/automations/${encodeURIComponent(id)}/layout`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ layout }),
+  });
+  if (!res.ok) throw new Error(`Failed to save the layout (${res.status})`);
+}
+
+/* ── VA-11 · integrations: the credential as a governed object ─────────────── */
+
+/** One user grant, as the API returns it — token fields are DROPPED server-side
+ *  (`Connection.to_safe_dict`), so this type cannot even name them. */
+export interface IntegrationConnection {
+  id: string;
+  provider: string;
+  user_id: string;
+  scopes: string;
+  account: string;
+  token_type: string;
+  expires_at: string | null;
+  status: "active" | "needs_reconnect" | "revoked";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IntegrationProvider {
+  id: string;
+  name: string;
+  category: string;
+  blurb: string;
+  /** The org registered an OAuth client — flips the card from Set up to Connect. */
+  configured: boolean;
+  /** The stored OAuth client id, echoed back so the Set-up form can EDIT rather than
+   *  ask again. Not a secret: it travels in the browser's own address bar during the
+   *  dance. Empty when the provider was never set up. */
+  client_id: string;
+  /** Why the stored client id cannot be this provider's ("" when it can) — Connect is withheld while it is set. */
+  client_id_problem?: string;
+  /** The cards the last consent asked for and the provider did not grant (a box left unticked on its page). */
+  withheld_products?: string[];
+  /** A masked preview of the stored secret ("abcd••••••"), or "". Enough to say one
+   *  exists; never enough to read it. */
+  secret_preview: string;
+  /** The authored callback, when one was set; "" means the derived one applies. */
+  redirect_uri: string;
+  console_url: string;
+  /** Whether the OAuth dance can complete on THIS deployment: false when the provider
+   *  refuses `http://` and the callback this API would send is one. The card then routes
+   *  to `alt_door` instead of offering a button that cannot work here. */
+  oauth_ready: boolean;
+  /** A door needing no public callback — `"slack_app"` is Slack's app + Socket Mode,
+   *  which a laptop can complete. `""` when OAuth is the only way in. */
+  alt_door: string;
+  /** This provider REFUSES an `http://` redirect URL, localhost included — Slack says
+   *  so in its own docs, Google and Microsoft accept the loopback address. The Set-up
+   *  form uses it to warn BEFORE the credentials are pasted, instead of after the
+   *  provider's error page. */
+  https_only: boolean;
+  connection: IntegrationConnection | null;
+  /** The products this provider's one app reaches, each connected from its own card (Google,
+   *  2026-10-07). Empty for a provider connected as a whole. */
+  products?: IntegrationProduct[];
+}
+
+/** One product of a provider's app — a scope on its single grant, consented on its own card. */
+export interface IntegrationProduct {
+  id: string;
+  name: string;
+  blurb: string;
+  scopes: string;
+  /** The grant is live and covers this product's scopes. */
+  connected: boolean;
+  /** The tools connecting it lets an automation run. */
+  tools: string[];
+}
+
+/* ── VA-9d · MCP servers this deployment may CALL ──────────────────────────────
+ *
+ * The mirror of the provider catalog above: those are accounts a USER grants us, these
+ * are third-party servers an OPERATOR writes down. The list is normally EMPTY, and that
+ * is the posture rather than an empty state to apologise for — an allowlist with nothing
+ * in it is how a fresh deployment reaches nothing at all.
+ */
+
+/** One tool on an allowlisted server, as the deployment classified it. `disposition` is
+ *  OUR verdict, not the server's word, and `reason` is the server-authored sentence that
+ *  explains a refusal — rendered verbatim, because the read-only-first posture lives in
+ *  those words and a client that re-worded them would be re-deciding it. */
+export interface McpToolRow {
+  server_id: string;
+  name: string;
+  title: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+  disposition: "callable" | "refused_mutating";
+  reason: string;
+  read_only_hint: boolean | null;
+  destructive_hint: boolean | null;
+  discovered_at: string;
+  /** OUR ratification, orthogonal to `disposition`: that is what the SERVER said and is
+   *  recomputed on every discovery, this is what a PERSON said and survives one. */
+  grant_state: "none" | "active" | "stale";
+  /** Why a grant no longer applies. Empty unless `grant_state` is "stale". */
+  grant_reason: string;
+  granted_by: string;
+  granted_at: string;
+  grant_note: string;
+  /** What the door would actually do — precomputed server-side so this client and the
+   *  engine cannot disagree about a tool's reachability. */
+  callable_now: boolean;
+}
+
+/** How an http server is authenticated to: a credential in a header, a person's sign-in on the
+ *  server's own page, or this deployment's own OAuth client. */
+export type McpAuthMode = "header" | "oauth_authorization_code" | "oauth_client_credentials";
+
+/** What a read says of a server's sign-in — never the token. */
+export interface McpOAuthState {
+  mode: McpAuthMode;
+  signed_in: boolean;
+  obtained_at: string;
+  expires_at?: string;
+  /** The token set carries a refresh token, so the sign-in renews itself. */
+  refreshable?: boolean;
+  /** A sign-in begun here is waiting for the browser to come back to the API's callback. */
+  sign_in_pending?: boolean;
+  note?: string;
+}
+
+/** One allowlisted server, plus the roster last discovered against it.
+ *
+ *  `discovered_at` rides in the same object deliberately: a cached remote list rendered
+ *  as if it were live is the failure the pair exists to prevent, so a surface can never
+ *  show the tools without being handed their age. `""` means never discovered.
+ *
+ *  There is no `auth_header` — the server DROPS it rather than masking it, so this
+ *  interface could not carry a credential if it tried. `has_auth` is the only thing a
+ *  reader needs. */
+export interface McpServerRow {
+  id: string;
+  name: string;
+  transport: "stdio" | "http";
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  url: string;
+  has_auth: boolean;
+  /** The header the stored credential is sent in — `Authorization` unless the server names another
+   *  (Composio takes `x-api-key`). Not secret. Absent from a server older than the field. */
+  auth_header_name?: string;
+  auth_mode?: McpAuthMode;
+  oauth?: McpOAuthState;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+  discovered_at: string;
+  tool_count: number;
+  /** What the server declared read-only. */
+  callable_count: number;
+  /** What a person ratified. Separate from `callable_count` on purpose — collapsing them
+   *  would hide the grants, which are the only writes this deployment performs. */
+  granted_count: number;
+  tools: McpToolRow[];
+}
+
+export interface McpServerInput {
+  name: string;
+  transport: "stdio" | "http";
+  command?: string;
+  args?: string[];
+  url?: string;
+  /** Blank means "leave the stored one alone" on an update; "-" clears it. */
+  auth_header?: string;
+  /** The header `auth_header` is sent in; omitted on an update keeps the stored name. */
+  auth_header_name?: string;
+  /** `oauth_authorization_code`: a person signs in on the server's own page — no credential here. */
+  auth_mode?: McpAuthMode;
+  enabled?: boolean;
+}
+
+export async function listMcpServers(): Promise<{ servers: McpServerRow[] }> {
+  const res = await fetch(`${getApiBase()}/mcp-servers`);
+  if (!res.ok) throw new Error(`Failed to load MCP servers (${res.status})`);
+  return res.json();
+}
+
+export async function createMcpServer(body: McpServerInput): Promise<McpServerRow> {
+  const res = await fetch(`${getApiBase()}/mcp-servers`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await _mcpError(res, "add that server"));
+  return res.json();
+}
+
+export async function updateMcpServer(id: string, body: McpServerInput): Promise<McpServerRow> {
+  const res = await fetch(`${getApiBase()}/mcp-servers/${id}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await _mcpError(res, "save that server"));
+  return res.json();
+}
+
+/** Ratify one mutating tool. The declaration is pinned SERVER-side from the roster — this
+ *  client cannot state which declaration it is approving, because a client that could would
+ *  be able to approve one the server never made. */
+export async function grantMcpTool(
+  serverId: string, toolName: string, body: { granted_by?: string; note?: string } = {},
+): Promise<{ server: McpServerRow }> {
+  const res = await fetch(
+    `${getApiBase()}/mcp-servers/${serverId}/grants/${encodeURIComponent(toolName)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(await _mcpError(res, "grant that tool"));
+  return res.json();
+}
+
+/** Withdraw a ratification. The tool goes back to being listed and refused. */
+export async function revokeMcpTool(
+  serverId: string, toolName: string,
+): Promise<{ server: McpServerRow }> {
+  const res = await fetch(
+    `${getApiBase()}/mcp-servers/${serverId}/grants/${encodeURIComponent(toolName)}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await _mcpError(res, "revoke that grant"));
+  return res.json();
+}
+
+export async function deleteMcpServer(id: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/mcp-servers/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to remove that server");
+}
+
+/** Ask the server what it offers and replace its roster. Separate from creating it, and
+ *  deliberately: a POST that also went out and talked to the server would make "save this
+ *  address" and "run something against it" one gesture. */
+export async function discoverMcpServer(id: string): Promise<McpServerRow> {
+  const res = await fetch(`${getApiBase()}/mcp-servers/${id}/discover`, { method: "POST" });
+  if (!res.ok) throw new Error(await _mcpError(res, "reach that server"));
+  return res.json();
+}
+
+/** Start a person's sign-in. The API discovers the server's sign-in, registers itself with it and
+ *  answers with the page to open; the browser's return to the API's callback completes it. */
+export async function beginMcpSignIn(id: string): Promise<{ authorization_url: string; expires_in: number }> {
+  const res = await fetch(`${getApiBase()}/mcp-servers/${id}/oauth/begin`, { method: "POST" });
+  if (!res.ok) throw new Error(await _mcpError(res, "start the sign-in"));
+  return res.json();
+}
+
+/** Forget the person's sign-in. The server stays registered, and Sign in starts again. */
+export async function signOutMcpServer(id: string): Promise<McpServerRow> {
+  const res = await fetch(`${getApiBase()}/mcp-servers/${id}/oauth/sign-out`, { method: "POST" });
+  if (!res.ok) throw new Error(await _mcpError(res, "sign out"));
+  return res.json();
+}
+
+export async function mcpServerHealth(id: string): Promise<{
+  server_id: string; ok: boolean; reason: string;
+  tool_count: number; callable_count: number; detail?: string;
+}> {
+  const res = await fetch(`${getApiBase()}/mcp-servers/${id}/health`);
+  if (!res.ok) throw new Error(await _mcpError(res, "reach that server"));
+  return res.json();
+}
+
+/** The server's own sentence, not a status code. A 400 here is the model's transport rule
+ *  ("a stdio server needs a `command` to run") and a 502 is the third party being
+ *  unreachable — both are things a reader can act on, and "Request failed (502)" is not. */
+async function _mcpError(res: Response, what: string): Promise<string> {
+  try {
+    const body = await res.json();
+    const detail = body?.detail;
+    if (typeof detail === "string" && detail) return detail;
+  } catch {
+    /* fall through to the generic sentence */
+  }
+  return `Could not ${what} (${res.status})`;
+}
+
+export async function getIntegrationsCatalog(): Promise<{
+  providers: IntegrationProvider[]; redirect_uri: string;
+}> {
+  const res = await fetch(`${getApiBase()}/integrations/catalog`);
+  if (!res.ok) throw new Error(`Failed to load the catalog (${res.status})`);
+  return res.json();
+}
+
+export async function setupIntegrationApp(provider: string, body: {
+  client_id: string;
+  /** Blank on an update = keep the stored secret. It is encrypted at rest and masked on
+   *  every read, so requiring it back would force a rotation to fix a typo elsewhere. */
+  client_secret: string;
+  /** Blank = derive the callback from the request, as every deployment did before this
+   *  field existed. Set it when the API is REGISTERED at an address it is not currently
+   *  being reached at — the case every local Slack setup lands in. */
+  redirect_uri?: string;
+}): Promise<{ redirect_uri: string }> {
+  const res = await fetch(`${getApiBase()}/integrations/${provider}/app`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail = ""; try { detail = fastApiError(await res.json(), ""); } catch { /* non-JSON */ }
+    throw new Error(detail || `Could not save the app (${res.status})`);
+  }
+  return res.json();
+}
+
+/** Begin the dance. The caller sends the BROWSER to `authorize_url` — a fetch cannot
+ *  follow a consent screen. */
+export async function beginIntegrationConnect(provider: string, product?: string): Promise<string> {
+  const q = product ? `?product=${encodeURIComponent(product)}` : "";
+  const res = await fetch(`${getApiBase()}/integrations/${provider}/connect${q}`, { method: "POST" });
+  if (!res.ok) {
+    let detail = ""; try { detail = fastApiError(await res.json(), ""); } catch { /* non-JSON */ }
+    throw new Error(detail || `Could not start the connection (${res.status})`);
+  }
+  return (await res.json()).authorize_url;
+}
+
+export async function revokeIntegrationConnection(connId: string): Promise<{
+  connection: IntegrationConnection;
+  /** False ⇒ the provider offers no revocation endpoint (Microsoft): the grant must
+   *  also be removed on the account's own security page, and the UI must say so. */
+  provider_side: boolean;
+}> {
+  const res = await fetch(`${getApiBase()}/integrations/connections/${connId}/revoke`,
+    { method: "POST" });
+  if (!res.ok) throw new Error(`Could not revoke (${res.status})`);
+  return res.json();
+}
+
+/* ── DS-11 · what a grant may DO ────────────────────────────────────────────── */
+
+/** One declared, typed input to an operation. */
+export interface IntegrationOperationParam {
+  name: string;
+  label: string;
+  type: string;
+  required: boolean;
+  placeholder: string;
+  /** May a chain bind this input to an earlier step's output? False for the knobs on
+   *  the request itself (a page size), because an edge onto one draws dataflow nobody
+   *  meant. */
+  bindable: boolean;
+}
+
+/** One thing a connected account may be asked to do.
+ *
+ *  FETCHED, never mirrored — the ports, the published keys and `list_keys` are what a
+ *  step editor has to agree with the engine about, and this repo has already paid once
+ *  for a hand-copied contract that rotted. */
+export interface IntegrationOperation {
+  id: string;
+  provider: string;
+  label: string;
+  description: string;
+  /** Changes something at the provider ⇒ it passes the approval gate before it runs. */
+  writes: boolean;
+  params: IntegrationOperationParam[];
+  publishes: string[];
+  /** Which published keys are LISTS — the ones a `for_each` may fan over. The rule the
+   *  client used before DS-11 ("open set ⇒ fannable") cannot answer this: an integration
+   *  step publishes a CLOSED set that contains a list. */
+  list_keys: string[];
+  availability: "ready" | "needs_setup" | "unavailable";
+  reason: string;
+}
+
+/** The declared roster, optionally narrowed to what ONE grant can run. */
+export async function getIntegrationOperations(connectionId?: string):
+    Promise<IntegrationOperation[]> {
+  const qs = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${getApiBase()}/integrations/operations${qs}`);
+  if (!res.ok) throw new Error(`Failed to load integration operations (${res.status})`);
+  return (await res.json()).operations ?? [];
+}
+
+/** This user's own grants. The route filters by caller, so this can never list
+ *  somebody else's consent. */
+export async function getIntegrationConnections(): Promise<IntegrationConnection[]> {
+  const res = await fetch(`${getApiBase()}/integrations/connections`);
+  if (!res.ok) throw new Error(`Failed to load connected accounts (${res.status})`);
+  return (await res.json()).connections ?? [];
+}
+
+/** The Slack app manifest to paste at api.slack.com, plus the steps that follow it.
+ *
+ *  Rendered by the SERVER, never assembled here: the scopes and socket-mode settings have
+ *  to match what the running bot actually does, and a manifest a client re-types from a
+ *  README drifts from the code the first time either changes. */
+export interface SlackManifest {
+  manifest: Record<string, unknown>;
+  instructions: string[];
+}
+
+export async function getSlackBotManifest(params: {
+  name?: string; description?: string; agentId?: string; agentView?: boolean;
+}): Promise<SlackManifest> {
+  const qs = new URLSearchParams();
+  if (params.name) qs.set("name", params.name);
+  if (params.description) qs.set("description", params.description);
+  if (params.agentId) qs.set("agent_id", params.agentId);
+  if (params.agentView) qs.set("agent_view", "true");
+  const res = await fetch(`${getApiBase()}/slack-bots/manifest?${qs.toString()}`);
+  if (!res.ok) throw new Error(`Could not render the manifest (${res.status})`);
+  return res.json();
+}
+
+/** Create a bot record. The server VERIFIES every credential against Slack before the
+ *  record exists — a bot stored with a bad token is a socket that fails to open at 03:00
+ *  with nobody watching — so a rejection here is Slack's answer, not a local guess. */
+export async function createSlackBot(body: {
+  name: string; agent_id?: string; connection_id?: string;
+  bot_token: string; app_token: string; signing_secret: string; agent_view?: boolean;
+}): Promise<SlackBotSummary> {
+  const res = await fetch(`${getApiBase()}/slack-bots`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    // The server's own reason, verbatim — "invalid_auth" and "missing credential(s)" call
+    // for different fixes and a generic message would hide which one happened.
+    let detail = "";
+    try { detail = fastApiError(await res.json(), ""); } catch { /* non-JSON body */ }
+    throw new Error(detail || `Could not create the Slack bot (${res.status})`);
+  }
+  return res.json();
+}
+
+/** The bots an automation may post AS. Returns [] when the plane is off (404), so a
+ *  caller renders "no bots yet" rather than throwing — the same shape `getAutomations`
+ *  uses for the same reason. */
+/** The supervisor's key, minted server-side and returned ONCE. Every later read is a
+ *  status, never a disclosure — a lost key is re-issued, not recovered. */
+export async function issueSupervisorKey(): Promise<{
+  key: string; env_line: string; issued_at: string;
+  /** AO-2e — the key this one replaced keeps opening the door until then ("" on a first
+   *  issue), so the running supervisor is not dark between Regenerate and the restart. */
+  previous_valid_until: string; previous_valid_for_s: number;
+}> {
+  const res = await fetch(`${getApiBase()}/slack-bots/supervisor-key`, { method: "POST" });
+  if (!res.ok) throw new Error(`Could not issue a supervisor key (${res.status})`);
+  return res.json();
+}
+
+export async function getSupervisorKeyStatus(): Promise<{
+  issued: boolean; issued_at: string; previous_valid_until: string; grace_s: number;
+}> {
+  const res = await fetch(`${getApiBase()}/slack-bots/supervisor-key`);
+  if (!res.ok) return { issued: false, issued_at: "", previous_valid_until: "", grace_s: 0 };
+  return res.json();
+}
+
+export async function getSlackBots(): Promise<SlackBotSummary[]> {
+  const res = await fetch(`${getApiBase()}/slack-bots`);
+  if (res.status === 404) return [];
+  if (!res.ok) throw new Error("Failed to fetch Slack bots");
+  return (await res.json()).bots ?? [];
+}
+
+/** Update a record's plain fields. Whole-record semantics — see `SlackBotPatch`. The
+ *  server re-verifies against Slack only when a credential changed, so this never needs
+ *  Slack to be reachable; the supervisor re-opens the socket on its next reconcile when
+ *  the agent or connection changed, and leaves it alone on a rename. */
+export async function updateSlackBot(id: string, body: SlackBotPatch): Promise<SlackBotSummary> {
+  const res = await fetch(`${getApiBase()}/slack-bots/${encodeURIComponent(id)}`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = fastApiError(await res.json(), ""); } catch { /* non-JSON body */ }
+    throw new Error(detail || `Could not update the Slack bot (${res.status})`);
+  }
+  return res.json();
+}
+
+/** Delete a record. Its tokens go with it and the supervisor closes the socket on its
+ *  next reconcile; automations that post as it report "unknown Slack bot" until they
+ *  are re-pointed — the caller says so before asking. */
+/** AO-2d — Aughor creates the Slack app itself from ONE configuration token (used once,
+ *  never stored). The response says what is still by hand (`needs`), the install URL when
+ *  the deployment has a public HTTPS origin, and the steps in a person's words. */
+export interface SlackAppCreated {
+  bot: SlackBotSummary;
+  app_id: string;
+  /** API-relative: `/slack-bots/{id}/install`, or "" when no public HTTPS origin is set. */
+  install_url: string;
+  manage_url: string;
+  needs: string[];
+  oauth_available: boolean;
+  steps: string[];
+}
+
+export async function createSlackApp(body: {
+  config_token: string; name: string; description?: string;
+  agent_id?: string; connection_id?: string; agent_view?: boolean;
+}): Promise<SlackAppCreated> {
+  const res = await fetch(`${getApiBase()}/slack-bots/apps`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = fastApiError(await res.json(), ""); } catch { /* non-JSON body */ }
+    throw new Error(detail || `Could not create the Slack app (${res.status})`);
+  }
+  return res.json();
+}
+
+/** AO-2b — what the API knows about the supervisor it runs. `off` is a process that does not run it (serverless, no
+ *  clocks); `waiting` is one whose setup is missing — `waiting_on` says, in a sentence, what and how to add it. */
+export interface ManagedSupervisorStatus {
+  managed: boolean;
+  state: "off" | "waiting" | "starting" | "running" | "restarting" | "stopped" | "failed";
+  pid: number | null; started_at: string; restarts: number;
+  last_exit_code: number | null; last_error: string;
+  command: string[]; cwd: string; preconditions: string[];
+  /** "" once it runs; otherwise what is missing and where it is added. */
+  waiting_on: string;
+  /** AO-2b receipt — where the child's own output lands, and the freshest heartbeat any
+   *  supervisor sent (a running pid that never beat is not listening). */
+  log_path: string;
+  heartbeat: { supervisor_id: string; since: string; last_seen_at: string;
+               running: number; failed: number; fresh: boolean } | null;
+}
+
+export async function getManagedSupervisor(): Promise<ManagedSupervisorStatus> {
+  const res = await fetch(`${getApiBase()}/slack-bots/supervisor`);
+  if (!res.ok) throw new Error(`Could not read the supervisor's state (${res.status})`);
+  return res.json();
+}
+
+export async function restartManagedSupervisor(): Promise<ManagedSupervisorStatus> {
+  const res = await fetch(`${getApiBase()}/slack-bots/supervisor/restart`, { method: "POST" });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = fastApiError(await res.json(), ""); } catch { /* non-JSON body */ }
+    throw new Error(detail || `Could not restart the supervisor (${res.status})`);
+  }
+  return res.json();
+}
+
+/** AO-5 — every door into a custom agent, with its state (the Doors tab's data). */
+export interface AgentDoorsInfo {
+  mcp: { state: string; tool: string; how: string };
+  http: { state: string; key_issued_at: string; url: string; hint: string };
+  embed: { state: string; url: string };
+  webhook: { state: string; url: string };
+  a2a: { state: string; card: string; url: string };
+  teams: { state: string; bots: TeamsBotSummary[] };
+  /** Arc FA, FA-7 — the grounding read: what the agent would read, no model asked. */
+  grounding: { state: string; url: string; tool: string; how: string };
+}
+
+export interface TeamsBotSummary {
+  id: string; name: string; enabled: boolean; agent_id: string; connection_id: string;
+  app_id: string; app_password: string; tenant_id: string; created_at: string; updated_at: string;
+}
+
+export async function getAgentDoors(agentId: string): Promise<AgentDoorsInfo> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/doors`);
+  if (!res.ok) throw new Error((await res.text()) || `doors read failed (${res.status})`);
+  return res.json();
+}
+
+/** Mint the agent's HTTP-door key — returned ONCE, with the header and a curl to copy. */
+export async function issueAgentKey(agentId: string): Promise<{
+  key: string; issued_at: string; header: string; curl: string;
+}> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/key`, { method: "POST" });
+  if (!res.ok) throw new Error((await res.text()) || `key issue failed (${res.status})`);
+  return res.json();
+}
+
+export async function revokeAgentKey(agentId: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/key`, { method: "DELETE" });
+  if (!res.ok) throw new Error((await res.text()) || `key revoke failed (${res.status})`);
+}
+
+export async function createTeamsBot(body: {
+  name: string; agent_id: string; connection_id?: string; app_id: string; app_password: string; tenant_id?: string;
+}): Promise<{ bot: TeamsBotSummary; messaging_endpoint: string; needs: string[] }> {
+  const res = await fetch(`${getApiBase()}/teams-bots`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = fastApiError(await res.json(), ""); } catch { /* non-JSON body */ }
+    throw new Error(detail || `Could not create the Teams bot (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function deleteTeamsBot(id: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/teams-bots/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`Could not delete the Teams bot (${res.status})`);
+}
+
+/** AO-5b — the folded answer a headless door returns (also what the embed page renders). */
+export interface DoorAnswer {
+  agent_id: string; question: string; headline: string; sql: string;
+  columns: string[]; rows: unknown[][]; row_count: number | null;
+  receipt_id: string; investigation_id: string; error: string; truncated: boolean;
+}
+
+export async function askThroughDoor(agentId: string, key: string, body: {
+  question: string; asker?: string;
+}): Promise<DoorAnswer> {
+  const res = await fetch(`${getApiBase()}/doors/agents/${encodeURIComponent(agentId)}/ask`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = fastApiError(await res.json(), ""); } catch { /* non-JSON body */ }
+    throw new Error(detail || `the door said ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteSlackBot(id: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/slack-bots/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = fastApiError(await res.json(), ""); } catch { /* non-JSON body */ }
+    throw new Error(detail || `Could not delete the Slack bot (${res.status})`);
+  }
+}
+
+export interface AutoCondition { kind: ConditionKind; config: Record<string, unknown>; }
+
+/** W1 — one comparison in a step's guard. Either side may be a literal or a
+ *  `{"$from": "step1.answer"}` binding, resolved against the same chain context the
+ *  step's params are. The operators are FETCHED (`getAutomationVocabulary`), never
+ *  listed here: a picker offering an operator the engine cannot evaluate fails at
+ *  09:00, on a schedule, with nobody watching. */
+export interface GuardClause {
+  left: unknown;
+  op: string;
+  right?: unknown;
+}
+
+export interface AutoEffect {
+  kind: EffectKind;
+  /** VA-4a — this step's name, which `{"$from": "<alias>.<key>"}` bindings point AT.
+   *  Optional because the server defaults it to the step's 1-based position, and every
+   *  automation written before VA-4a has none. Declared here because a client that
+   *  cannot see the field is a client that drops it on save. */
+  alias?: string;
+  /** W1 — run this step ONLY IF the guard holds. Empty/absent = always, which is every
+   *  automation written before W1.
+   *
+   *  Declared for the reason `alias` above is, which this repo has already paid for
+   *  once: the authoring form rebuilt each effect as `{kind, config}` and silently
+   *  dropped the field it could not see, unwiring the chain it had just saved. Spread,
+   *  never rebuild.
+   *
+   *  Called **"Only if" on every surface** — the trigger node is already labelled
+   *  "When" on the canvas, and two Whens in one picture is a collision a reader pays
+   *  for. `when` is the wire's word; the boundary is where it is translated. */
+  when?: GuardClause[];
+  when_logic?: "all" | "any";
+  /** W2 — run this step once per item of a list instead of exactly once. Absent = the
+   *  single dispatch every automation written before W2 performs.
+   *
+   *  `source` is a literal list or a `{"$from": "step1.rows"}` binding, and each
+   *  iteration publishes its item under the reserved alias `item` — a dict item read
+   *  field-wise (`{"$from": "item.channel"}`), a scalar as `{"$from": "item.value"}`.
+   *
+   *  Called **"For each" on every surface**, which is also the wire's word. */
+  for_each?: { source: unknown } | null;
+  /** DS-6 — the route: run this step exactly when the named step's "Only if" was
+   *  evaluated and did NOT hold. Empty/absent = unrouted, which is every automation
+   *  written before DS-6. Declared for the reason `alias` above is: a client that
+   *  cannot see the field drops it on save.
+   *
+   *  Called **"Otherwise" on every surface**; `else_of` is the wire's word. */
+  else_of?: string;
+  config: Record<string, unknown>;
+}
+
+export interface Automation {
+  id: string;
+  conn_id: string;
+  name: string;
+  description: string;
+  conditions: AutoCondition[];
+  condition_logic: "all" | "any";
+  effects: AutoEffect[];
+  fallback_effect: AutoEffect | null;
+  enabled: boolean;
+  paused_until: string | null;
+  expires_at: string | null;
+  max_retries: number;
+  retry_backoff_seconds: number;
+  /** SP-13 — the clock the schedule triggers are read in ("" = UTC). */
+  timezone?: string;
+  created_at: string;
+  updated_at: string;
+  last_run_at: string | null;
+  last_status: string | null;
+  /** VA-9b — the agent this whole chain RUNS AS ("" = nobody in particular). On the wire
+   *  since VA-9b; undeclared here until DS-5 needed to ask which chains an agent
+   *  operates. A per-STEP delegation lives on the effect's own config instead. */
+  agent_id: string;
+  /** DS-7 — how the steps are scheduled: `ordered` (the sequential walk, the default)
+   *  or `parallel` (steps run as their arrows allow). */
+  scheduling: "ordered" | "parallel";
+  /** HB-2 — who declared this chain ("user:…", "pack:…"; "" = created before HB-2 or
+   *  with identity off). On the wire since HB-2; undeclared here until the hub map
+   *  needed an owner column. */
+  declared_by?: string;
+  /** HB-2 — a chain on probation sends into its declarer's queue until it graduates
+   *  at measured precision. */
+  probation?: boolean;
+  /** DS-14 — may an external MCP client invoke this chain? */
+  exposed_as_tool?: boolean;
+}
+
+export interface EffectOutcome {
+  kind: string;
+  target: string;
+  status: string;      // executed | failed | skipped | criterion_failed | approval_required | invalid_params | dispatch_error
+  message: string;
+  attempts: number;
+}
+
+export interface AutomationRun {
+  id: string;
+  automation_id: string;
+  automation_name: string;
+  conn_id: string;
+  started_at: string;
+  finished_at: string | null;
+  duration_ms: number;
+  // DS-8 — `paused` is the one NON-TERMINAL outcome: the run reached a governed write that
+  // needs a human and stopped mid-chain. It ends when its proposal resolves, in this same
+  // row. Readers that branch on "did it work" must not fold it in with `error`.
+  outcome: "fired" | "not_fired" | "gated" | "error" | "paused";
+  reason: string;
+  conditions_fired: string[];
+  effects: EffectOutcome[];
+  fallback_used: boolean;
+  error: string;
+  /** DS-8 — engine-internal resume state. Present only while `outcome === "paused"`. */
+  checkpoint?: Record<string, unknown>;
+  /** TC-3 — the version this run ran under. Absent from a server before versions; null when the
+   *  run kept none (it ran before versions were kept, or its version could not be kept). */
+  version?: number | null;
+}
+
+/** TC-3 — one kept version of an automation's definition. */
+export interface AutomationVersion {
+  version: number;
+  version_id: string;
+  /** `user:<id>`, or "" when no save recorded who (one kept before versions, or at a run). */
+  saved_by: string;
+  saved_at: string;
+  /** How it came to be kept: "saved", "in place when versions began" or "kept when it ran". */
+  source: string;
+  superseded_by: string;
+  definition: Record<string, unknown>;
+}
+
+export interface AutomationVersions {
+  automation_id: string;
+  versions: AutomationVersion[];
+  current_version: number | null;
+  current_kept: boolean;
+  why_not: string;
+}
+
+/** TC-3 — an automation's kept versions, newest first; null when there is no such automation and no version (404). */
+export async function getAutomationVersions(id: string): Promise<AutomationVersions | null> {
+  const res = await fetch(`${getApiBase()}/automations/${id}/versions`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw await refused(res, "Reading the automation's versions");
+  return res.json();
+}
+
+export type NewAutomation = {
+  conn_id: string;
+  name: string;
+  description?: string;
+  conditions: AutoCondition[];
+  condition_logic?: "all" | "any";
+  effects: AutoEffect[];
+  fallback_effect?: AutoEffect | null;
+  enabled?: boolean;
+  paused_until?: string | null;
+  expires_at?: string | null;
+  max_retries?: number;
+  retry_backoff_seconds?: number;
+  /** DS-7 — `ordered` (default: the sequential walk) or `parallel` (steps run as
+   *  their arrows allow). An authored field: every update payload must carry it, or
+   *  a rename silently re-serialises a parallel chain. */
+  scheduling?: "ordered" | "parallel";
+  /** SP-13 — the IANA clock the schedule is read in ("" = UTC). Sent on create from a draft
+   *  that carries one; an update that leaves it out keeps the stored clock. */
+  timezone?: string;
+  /** SP-8 — the agent a drafted chain runs as. Honoured on create only. */
+  agent_id?: string;
+};
+
+// ── HB-6 · the hub-wide map — every automation on one screen ──────────────────
+
+export interface HubDestination {
+  kind: string;
+  target: string;
+  /** A routed notify: the securable it routes about, and what route() resolved. */
+  routed_about?: string;
+  resolved?: { principal: string; channel_trigger_id: string; group_id: string; why: string[] }[];
+  channel?: string;
+  label?: string;
+  type?: string;
+  /** A monitor's channel that names no trigger: nothing is sent. */
+  missing?: boolean;
+}
+
+export interface HubGrant {
+  id: string;
+  action_id: string;
+  target_arg: string;
+  target_value: string;
+  use_count: number;
+  last_used_at: string | null;
+}
+
+/** A FLOOR, never a total — the server says so (`floor: true`) and carries the two
+ *  caveats that keep a $0.00 from reading as free. */
+export interface HubCost {
+  window_days: number;
+  runs: number;
+  deep_runs: number;
+  total_tokens: number;
+  cost_usd: number;
+  unpriced_calls: number;
+  calls_without_usage: number;
+  floor: boolean;
+}
+
+export interface HubProbation {
+  on: boolean;
+  marked: number;
+  counts: Record<string, number>;
+  unlanded: number;
+  /** null until anything is marked — "not measured", never 0%. */
+  precision: number | null;
+  graduates_at: { min_marked: number; precision: number };
+}
+
+export interface HubMapRow {
+  id: string;
+  /** A monitor runs through the engine as a virtual automation; it is edited under Monitors. */
+  kind: "automation" | "monitor";
+  conn_id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  state: "live" | "muted" | "expired" | "disabled";
+  trigger: string[];
+  destinations: HubDestination[];
+  grants: HubGrant[];
+  owner: { declared_by: string; agent_id: string };
+  last_run: { at: string | null; status: string | null };
+  cost: HubCost;
+  probation: HubProbation;
+  exposed_as_tool: boolean;
+  /** Arc TC, TC-5 — how often its runs failed over the map's failure window. */
+  failure_rate: HubFailureRate;
+}
+
+/** How often a node's runs failed over the window, as the server counted it. "no runs" is
+ *  never 0%, and "not permitted" carries no count: the node stays, its runs are withheld. */
+export interface HubFailureRate {
+  state: "measured" | "no_runs" | "not_permitted";
+  window_days: number;
+  label: string;
+  ran?: number;
+  failed?: number;
+  rate?: number | null;
+  /** Ticks that never started (disabled, expired, muted) — counted toward neither. */
+  gated?: number;
+  why?: string;
+}
+
+export interface HubMapResponse {
+  rows: HubMapRow[];
+  window_days: number;
+  generated_at: string;
+  totals: { automations: number; monitors: number; live: number; probation: number };
+  failure_window: { days: number; since: string };
+}
+
+/** HB-6 — the hub-wide map. Null when the door is absent (an older API), so the panel
+ *  renders "not here yet" instead of throwing. */
+export async function getHubMap(connId?: string): Promise<HubMapResponse | null> {
+  const qs = connId ? `?conn_id=${encodeURIComponent(connId)}` : "";
+  const res = await fetch(`${getApiBase()}/hub/map${qs}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error("Failed to fetch the hub map");
+  return res.json();
+}
+
+// ── HB-3 · filings — a ticket, thread, webhook or doc filed against an object ──
+
+/** One filing: what was filed, against what, and — once closed — what came of it. `object_ref`
+ *  is a securable string (`promise:…`, `process:…`, `finding:…`, `entity:…`). */
+export interface Filing {
+  id: string;
+  ts: string;
+  object_ref: string;
+  kind: "ticket" | "thread" | "webhook" | "doc";
+  ref: string;
+  url: string;
+  title: string;
+  source: string;
+  status: "open" | "closed";
+  outcome: string;
+  number_recovered: string;
+  closed_at: string | null;
+  closed_by: string;
+}
+
+/** Every filing in one state, newest first, whatever it was filed against. */
+export async function listFilings(status: "open" | "closed", limit = 200): Promise<Filing[]> {
+  const res = await fetch(`${getApiBase()}/links?status=${status}&limit=${limit}`);
+  if (!res.ok) throw new Error(`The filings could not be read (${res.status})`);
+  return (await res.json()).links ?? [];
+}
+
+/** Close a filing with what happened. `by` names the closer where no sign-in does. */
+export async function closeFiling(id: string, outcome: string, numberRecovered = "", by?: string): Promise<Filing> {
+  const res = await fetch(`${getApiBase()}/links/${encodeURIComponent(id)}/close`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ outcome, number_recovered: numberRecovered, by: by ?? "" }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err.detail === "string" ? err.detail : "The filing could not be closed");
+  }
+  return res.json();
+}
+
+// ── HB-2 · the departures ledger — what left, what was held, what a person owes ──
+
+/** `held_budget` (phase 2 of the 2027 study): a clean departure the attention budget held — the
+ *  addressee's week of slots was spent; nothing is wrong with the number. */
+export type DepartureState = "departed" | "held" | "held_probation" | "held_owner" | "held_budget";
+export type DepartureGuardOutcome =
+  "passed" | "held" | "asked" | "not_applicable" | "unavailable" | "exempt";
+
+/** Law 8 — the receipt the message carried: its source, definition, as-of, each guard's
+ *  outcome, and `line`, the exact sentence that travelled with it. */
+export interface DepartureReceipt {
+  departure_id?: string;
+  source?: string;
+  definition?: string;
+  as_of?: string;
+  guards?: Record<string, DepartureGuardOutcome>;
+  held_lines?: number;
+  link?: string;
+  line?: string;
+}
+
+/** Law 6 — what the owner is asked when the readings of a metric disagreed. */
+export interface DepartureQuestion {
+  subject?: string;
+  metric_label?: string;
+  metric_name?: string;
+  question?: string;
+  options?: string[];
+  previews?: string[];
+  readings?: { label: string; sql: string }[];
+}
+
+export interface Departure {
+  id: string;
+  ts: string;
+  org_id: string;
+  kind: string;
+  state: DepartureState;
+  conn_id: string;
+  automation_id: string;
+  automation_name: string;
+  actor: string;
+  target: string;
+  /** The declarer (probation) or the owner (a question) — "" when nobody is routable. */
+  addressed_to: string;
+  reasons: string[];
+  checks: Record<string, string>;
+  guards: Record<string, DepartureGuardOutcome>;
+  receipt: DepartureReceipt;
+  question: DepartureQuestion;
+  text_preview: string;
+  investigation_id: string;
+  source_kind: string;
+  source_id: string;
+  origin: string;
+  about: string;
+  as_of: string;
+  verdict: "" | "accept" | "correct" | "reject";
+  verdict_note: string;
+  verdict_at: string;
+  answer: string;
+  answered_by: string;
+  answered_at: string;
+  /** 2026-11-06 — what became of a departed message once it was sent. `state` is the gate's
+   *  verdict, taken before the send; this is the send's. "" when nothing reported (an older row,
+   *  a send that never reported back). Absent on an API older than it. */
+  delivery?: "" | "delivered" | "uncertain" | "not_delivered";
+  /** SP-15 — on a row that held or asked: the lead sentence and, per guard that held,
+   *  what it means, what to change and where. Served from ONE module beside the laws
+   *  (`aughor/govern/departure_remedies.py`), the same words Spotlight's `explain` cites.
+   *  Absent on a departed row, and on an API older than the wave. */
+  remedy?: DepartureRemedy;
+}
+
+/** The screens a remedy can open — handed down by the workspace, which owns the layers. */
+export type RemedyDoor = "automation" | "analysis" | "semantic" | "ask";
+
+export interface GuardRemedy {
+  guard: string;
+  label: string;
+  outcome: DepartureGuardOutcome;
+  /** The sentence the gate recorded for this guard on this departure. */
+  reason: string;
+  /** "law 1" … "law 8", or "" for a guard the docstring numbers no law for. */
+  law: string;
+  /** The law's own sentence, read from the gate module's docstring. */
+  law_sentence: string;
+  /** What the hold means, in the reader's words. */
+  meaning: string;
+  /** What to change, and that the next run is the send. */
+  action: string;
+  /** The screens that hold the fix, in the order to try them. */
+  doors: RemedyDoor[];
+}
+
+export interface DepartureRemedy {
+  /** The sentence every held row leads with — the wall, named. */
+  lead: string;
+  guards: GuardRemedy[];
+}
+
+export interface DepartureSummary {
+  by_state: Partial<Record<DepartureState, number>>;
+  total: number;
+  /** Unmarked probation departures plus unanswered owner questions. */
+  awaiting: number;
+}
+
+async function departureError(res: Response, fallback: string): Promise<Error> {
+  const body = await res.json().catch(() => ({}));
+  const detail = (body as { detail?: unknown }).detail;
+  return new Error(typeof detail === "string" && detail ? detail : `${fallback} (${res.status})`);
+}
+
+/** HB-2 — the departures ledger, newest first. Null when the door is absent (an older
+ *  API), so the screen says so instead of throwing. Rows are normalised: a ledger written
+ *  before the doors decoded their JSON columns still reads as structured data. */
+export async function getDepartures(opts: { awaiting?: boolean; limit?: number } = {}): Promise<Departure[] | null> {
+  const qs = new URLSearchParams({ limit: String(opts.limit ?? 200) });
+  if (opts.awaiting) qs.set("awaiting", "true");
+  const res = await fetch(`${getApiBase()}/departures?${qs.toString()}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw await departureError(res, "Failed to read the departures ledger");
+  const body = await res.json();
+  return ((body.departures ?? []) as Record<string, unknown>[]).map(normalizeDeparture);
+}
+
+/** HB-2 — departures by state and what a person still owes. Null on an older API. */
+export async function getDepartureSummary(): Promise<DepartureSummary | null> {
+  const res = await fetch(`${getApiBase()}/departures/summary`);
+  if (res.status === 404 || res.status === 422) return null;
+  if (!res.ok) throw await departureError(res, "Failed to read the departures summary");
+  return res.json();
+}
+
+/** HB-2 — the declarer marks a probation departure; graduation is measured server-side. */
+export async function markDeparture(
+  id: string, verdict: "accept" | "correct" | "reject", note = "",
+): Promise<{ departure: Departure; graduated: boolean }> {
+  const res = await fetch(`${getApiBase()}/departures/${encodeURIComponent(id)}/verdict`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ verdict, note }),
+  });
+  if (!res.ok) throw await departureError(res, "Failed to record the mark");
+  const body = await res.json();
+  return { departure: normalizeDeparture(body.departure), graduated: Boolean(body.graduated) };
+}
+
+/** HB-2 law 6 — the owner chooses a reading; the server remembers it for the next run. */
+export async function answerDeparture(
+  id: string, reading: string,
+): Promise<{ departure: Departure; resolutionId: string }> {
+  const res = await fetch(`${getApiBase()}/departures/${encodeURIComponent(id)}/answer`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reading }),
+  });
+  if (!res.ok) throw await departureError(res, "Failed to record the answer");
+  const body = await res.json();
+  return { departure: normalizeDeparture(body.departure), resolutionId: String(body.resolution_id ?? "") };
+}
+
+
+/** List automations. Returns [] when the plane is off (404) so a caller can render the
+ *  "not enabled" empty state instead of throwing. */
+export async function getAutomations(connId?: string): Promise<Automation[]> {
+  const qs = connId ? `?conn_id=${encodeURIComponent(connId)}` : "";
+  const res = await fetch(`${getApiBase()}/automations${qs}`);
+  if (res.status === 404) return [];
+  if (!res.ok) throw new Error("Failed to fetch automations");
+  return (await res.json()).automations;
+}
+
+/** DS-15 — describe an outcome, get a chain the canvas can render.
+ *
+ * Returns a VERDICT, not a chain: "nothing on this deployment can do that" is an answer
+ * to the question that was asked, and the caller renders the reason rather than an error.
+ * Nothing is saved — the draft becomes a seeded create form the person still has to arm.
+ */
+export type ChainProposal = {
+  verdict: "proposed" | "refused";
+  reason: string;
+  notes: string;
+  draft: NewAutomation | null;
+  dry_run?: Record<string, unknown>;
+};
+
+export async function proposeAutomation(outcome: string, conn_id: string): Promise<ChainProposal> {
+  const res = await fetch(`${getApiBase()}/automations/propose`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ outcome, conn_id }),
+  });
+  if (!res.ok) throw new Error("Could not reach the chain proposer");
+  return res.json();
+}
+
+/** The server's OWN reason a chain was refused, rather than a word standing in for it.
+ *
+ * The create path used to read `detail` purely to decide between two fixed strings —
+ * it looked at the reason and threw it away, so "step 'step2' refers to unknown step
+ * 'summary'" reached the user as "Invalid automation" and left them guessing which of
+ * their fields was wrong. Every refusal from this plane is authored to be actionable
+ * (`validate_chain` names the step AND the reference); discarding that is the client
+ * undoing the one thing the validator exists to provide.
+ *
+ * FastAPI's 422 nests its detail; a `detail` that is a list of field errors is folded
+ * into one line rather than rendered as "[object Object]".
+ */
+async function _automationError(res: Response, verb: "create" | "update"): Promise<string> {
+  const body = await res.json().catch(() => ({} as Record<string, unknown>));
+  const detail = (body as { detail?: unknown }).detail;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail
+      .map(d => (typeof d === "string" ? d : String((d as { msg?: string }).msg ?? "")))
+      .filter(Boolean);
+    if (parts.length) return parts.join("; ");
+  }
+  return `Failed to ${verb} automation`;
+}
+
+/** DS-16 — one translated node's fate, in the words the reader should see. */
+export interface ImportNodeReport {
+  node_id: string;
+  component: string;
+  disposition: "mapped" | "folded" | "dropped" | "refused";
+  detail: string;
+  step: string;
+}
+
+export interface ImportFlowResult {
+  verdict: "imported" | "nothing_mapped" | "unreadable";
+  source: string;
+  name: string;
+  draft: { conditions: AutoCondition[]; effects: AutoEffect[] } | null;
+  report: ImportNodeReport[];
+  suggested_agent: { name: string; instructions: string } | null;
+  reason: string;
+  /** Deployment-specific holes the create form still has to collect (e.g. bot_id). */
+  to_fill?: string[];
+}
+
+/** DS-16 — translate a Langflow/Flowise flow export. Nothing saved, nothing armed:
+ *  the draft seeds the canvas-first create view and the report is half the receipt. */
+export async function importForeignFlow(flow: unknown): Promise<ImportFlowResult> {
+  const res = await fetch(`${getApiBase()}/automations/import`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ flow }),
+  });
+  if (!res.ok) throw new Error((await res.text()) || `import failed (${res.status})`);
+  return res.json();
+}
+
+export async function createAutomation(data: NewAutomation): Promise<Automation> {
+  const res = await fetch(`${getApiBase()}/automations`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(await _automationError(res, "create"));
+  return res.json();
+}
+
+export async function updateAutomation(id: string, data: NewAutomation): Promise<Automation> {
+  const res = await fetch(`${getApiBase()}/automations/${id}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(await _automationError(res, "update"));
+  return res.json();
+}
+
+export async function deleteAutomation(id: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/automations/${id}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) throw new Error("Failed to delete automation");
+}
+
+export async function setAutomationEnabled(id: string, enabled: boolean): Promise<Automation> {
+  const res = await fetch(`${getApiBase()}/automations/${id}/enabled?enabled=${enabled}`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to toggle automation");
+  return res.json();
+}
+
+/* ── DS-17 · Deploy is a menu of doors ─────────────────────────────────────────── */
+
+/** One way into a chain from outside it, and whether it is open.
+ *
+ *  Four states, not the palette's three: a door has a POSITION. `open` means traffic
+ *  comes through now; `closed` means everything is in place and one gesture opens it.
+ *  `reason` is the server's sentence and is rendered verbatim — the alt-door rule lives
+ *  in those words (a Slack door that said "connect via OAuth" would be correctly SHAPED
+ *  and point a self-hosted install at a door Slack will not open for it), so a client
+ *  that re-worded them would be re-deciding what this deployment can do. */
+export interface AutomationDoor {
+  kind: "schedule" | "webhook" | "slack" | "mcp_tool";
+  label: string;
+  description: string;
+  icon: string;
+  priority: number;
+  state: "open" | "closed" | "needs_setup" | "unavailable";
+  reason: string;
+  detail: string;
+}
+
+export async function getAutomationDoors(
+  id: string,
+): Promise<{ doors: AutomationDoor[]; summary: string }> {
+  const res = await fetch(`${getApiBase()}/automations/${id}/doors`);
+  if (!res.ok) throw new Error("Failed to read the deploy doors");
+  return res.json();
+}
+
+/** The MCP-tool flag alone. A sibling of `setAutomationEnabled`, deliberately: sending the
+ *  whole record to flip one boolean is how `exposed_as_tool` was once accepted, echoed back
+ *  as true, and dropped on the way to the store. */
+export async function setAutomationExposed(id: string, exposed: boolean): Promise<Automation> {
+  const res = await fetch(`${getApiBase()}/automations/${id}/exposed?exposed=${exposed}`,
+    { method: "POST" });
+  if (!res.ok) throw new Error("Failed to toggle the MCP tool");
+  return res.json();
+}
+
+/** Mint (or rotate) this chain's webhook token. The plaintext is in THIS response and
+ *  nowhere else, ever — so a caller that drops it has rotated, not read. */
+export async function issueAutomationWebhook(
+  id: string,
+): Promise<{ automation_id: string; token: string; url: string; header: string }> {
+  const res = await fetch(`${getApiBase()}/automations/${id}/webhook`, { method: "POST" });
+  if (!res.ok) throw new Error((await res.text()) || "Failed to issue the webhook URL");
+  return res.json();
+}
+
+export async function revokeAutomationWebhook(id: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/automations/${id}/webhook`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to revoke the webhook URL");
+}
+
+export async function pauseAutomation(id: string, until: string | null): Promise<Automation> {
+  const res = await fetch(`${getApiBase()}/automations/${id}/pause`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ until }),
+  });
+  if (!res.ok) throw new Error("Failed to pause automation");
+  return res.json();
+}
+
+/** Run an automation now — through the same gates the heartbeat uses, so a gated automation
+ *  returns the REASON it did nothing rather than silence. */
+/** Run one automation now.
+ *
+ *  `runId` is DS-3's whole hinge: this request does not resolve until the chain has
+ *  finished, but every step writes a span under `trace_id == run_id` while it runs — so a
+ *  surface that wants to WATCH a run has to name it before asking for it. Omitted, the
+ *  engine mints one exactly as before. */
+export async function runAutomation(id: string, runId?: string): Promise<AutomationRun> {
+  const res = await fetch(`${getApiBase()}/automations/${id}/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ run_id: runId ?? null }),
+  });
+  if (!res.ok) throw new Error("Failed to run automation");
+  return res.json();
+}
+
+/** 2026-11-06 — what a Slack step would post, drawn from the chain's last run with the step's
+ *  settings as edited (`POST /automations/{id}/picture-preview`; read-only — nothing runs or sends). */
+export interface PicturePreview {
+  run_id: string;
+  run_at: string;
+  /** Why there is nothing to preview, when there is not. */
+  said: string;
+  words: string;
+  results: { claim: string; columns: string[]; rows: number }[];
+  /** kind → whether the first picture's result can be drawn as it, and why not. */
+  kinds: Record<string, { ok: boolean; why: string }>;
+  names: { labels?: Record<string, string>; y_title?: string };
+  pictures: { picture: string; kind: string; asked: string; title: string; note: string;
+              result: number; image: string }[];
+}
+
+export async function previewStepPicture(id: string, step: number,
+                                         config: Record<string, unknown>): Promise<PicturePreview> {
+  const res = await fetch(`${getApiBase()}/automations/${id}/picture-preview`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ step, config }),
+  });
+  if (!res.ok) throw new Error(`Preview failed (${res.status})`);
+  return res.json();
+}
+
+export async function getAutomationRuns(id: string, limit = 50): Promise<AutomationRun[]> {
+  const res = await fetch(`${getApiBase()}/automations/${id}/runs?limit=${limit}`);
+  if (!res.ok) throw new Error("Failed to fetch runs");
+  return (await res.json()).runs;
+}
+
+/** VA-4b — the automation as a graph. `run: "latest"` asks for Execution mode. */
+export interface AutomationGraphNode {
+  id: string; type: string; kind?: string; label: string; detail?: string;
+  status?: string; message?: string; produced?: string[];
+  agent_id?: string; delegated?: boolean;
+  duration_ms?: number; attempts?: number; investigation_id?: string;
+  fired?: string[]; at?: string;
+  /** W1 — the step's guard, already rendered as sentences by the server (paths and
+   *  authored literals only, never a value it read). Present on the STRUCTURE graph
+   *  too: whether a step will run at all is a design fact. */
+  when?: string[]; when_logic?: string;
+  /** W1 — this `skipped` step was held by its own GUARD, not by missing upstream data.
+   *  Same status, opposite meanings: one is the design working, the other is something
+   *  breaking. */
+  guarded?: boolean;
+  /** DS-6 — the step whose "Only if" this one runs OTHERWISE of. A design fact like
+   *  `when` above: an arm drawn without it reads as a step that always fires. */
+  else_of?: string;
+  /** DS-6 — this `skipped` step is a route's untaken arm: the design working, one
+   *  branch over. Distinct from `guarded` (its own guard) and from a bare skip
+   *  (missing upstream). */
+  not_taken?: boolean;
+}
+
+export interface AutomationRunSummary {
+  id: string; outcome: string; at: string;
+  duration_ms: number; steps: number; failed: number;
+}
+export interface AutomationGraphEdge {
+  from: string; to: string; type: string; label?: string;
+  /** W1 — this data edge feeds a GUARD: it decides whether the step runs, rather than
+   *  filling one of its fields. */
+  guard?: boolean;
+}
+export interface AutomationGraphData {
+  nodes: AutomationGraphNode[]; edges: AutomationGraphEdge[];
+  mode: string; name?: string; run_missing?: boolean;
+  run_outcome?: string; run_reason?: string; run_at?: string;
+  agent_id?: string; runs?: AutomationRunSummary[]; run_id?: string;
+  /** B2 — this graph is a PREVIEW: nothing in it happened. */
+  dry_run?: boolean;
+  /** DS-7 — how this automation schedules its steps, so the canvas can say it. */
+  scheduling?: string;
+}
+
+/** B2 — what this design WOULD do, dispatching nothing.
+ *
+ *  Returns the run AND the graph, because a dry run is never stored: there is no id for
+ *  `getAutomationGraph` to look up afterwards. The graph is the same shape an execution
+ *  view already renders, which is the whole reason a preview returns an `AutomationRun`
+ *  rather than a report of its own. */
+export interface AutomationDryRun {
+  run: AutomationRun;
+  graph: AutomationGraphData;
+}
+
+/** Preview a DRAFT — the unsaved one in the editor. The payload is `updatePayload`'s, so
+ *  a preview previews exactly what Save would send, never a second assembly of it. */
+/** `until` (DS-2) stops the walk after that step — the question a person actually has
+ *  while building is "what does the step I am looking at receive", and a whole-chain
+ *  preview buries that answer among the others. Omitted, it is B2's whole-chain walk. */
+export async function dryRunAutomationDraft(
+  body: NewAutomation, until?: string,
+): Promise<AutomationDryRun> {
+  const qs = until ? `?until=${encodeURIComponent(until)}` : "";
+  const res = await fetch(`${getApiBase()}/automations/dry-run${qs}`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const parsed = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(fastApiError(parsed, `Dry run failed (${res.status})`));
+  return parsed;
+}
+
+export async function getAutomationGraph(id: string, run = ""): Promise<AutomationGraphData> {
+  const qs = run ? `?run=${encodeURIComponent(run)}` : "";
+  const res = await fetch(`${getApiBase()}/automations/${id}/graph${qs}`);
+  if (!res.ok) throw new Error("Failed to fetch the automation graph");
+  return await res.json();
+}
+
+// ── Proposal inbox + standing grants (Wave A4) ───────────────────────────────────
+
+export interface StagedProposal {
+  id: string;
+  connection_id: string;
+  schema_name: string;
+  /** DS-11's completion — what accepting this RUNS. `declared_action` is every proposal
+   *  written before it and stays the default; `integration` means `action_id` names a
+   *  declared OPERATION and `grant_id` names the connected account whose consent it
+   *  spends. SP-3 added the platform-record drafts (`agent_draft`, `automation_draft`,
+   *  `automation_state`, `agent_grant`); SP-8 adds `agent_bundle` — params hold BOTH
+   *  records, and accept creates the agent then saves its chain, all or nothing.
+   *  Arc CT-5 adds `cockpit_draft`: params hold the cards to make and the spec that
+   *  arranges them; `detail.outline` is that arrangement in words. */
+  kind: "declared_action" | "integration" | "agent_draft" | "automation_draft"
+      | "agent_bundle" | "automation_state" | "agent_grant"
+      | "automation_edit" | "monitor_bundle" | "brief_draft" | "outbound_send"
+      | "agent_limit" | "cockpit_draft" | "cockpit_publish"
+    | "ontology_candidate";
+  /** The connected account an `integration` proposal would act as. "" otherwise. */
+  grant_id: string;
+  action_id: string;
+  params: Record<string, unknown>;
+  /** SP-9 — stage-time facts the card shows and params cannot carry: `to_fill` (the open
+   *  choices as sentences), `open_choices` ([{action, key}], the fillable fields),
+   *  `first_run` (ISO UTC), `dry_run_ok`, `runs_as`. Advisory — accept recomputes every
+   *  check it gates on. {} on rows staged before SP-9. */
+  detail: Record<string, unknown>;
+  reasoning: string;
+  proposer: string;
+  source: string;
+  status: "pending" | "accepted" | "rejected" | "executed" | "failed"
+        | "approval_required" | "uncertain" | "superseded";
+  status_message: string;
+  outcome: Record<string, unknown>;
+  created_at: string;
+  resolved_at: string | null;
+  resolved_by: string;
+}
+
+export interface StandingGrant {
+  id: string;
+  connection_id: string;
+  action_id: string;
+  target_arg: string;
+  target_value: string;
+  owner_kind: string;
+  owner_id: string;
+  created_by: string;
+  created_at: string;
+  use_count: number;
+  last_used_at: string | null;
+  /** A grant signed on the authority ladder cites the graduation receipt that licensed it, and
+   *  carries an expiry and a cap on uses (0 = no cap). A person's accept-time grant carries none. */
+  graduation_receipt?: string;
+  expires_at?: string | null;
+  max_uses?: number;
+}
+
+/** The inbox routes' one base path — spelled once. */
+const inboxUrl = (tail = "") => `${getApiBase()}/kinetic-actions/inbox${tail}`;
+
+/** Staged proposals for a connection. [] when the inbox is off (404). */
+export async function getProposals(connId: string, status?: string): Promise<StagedProposal[]> {
+  const qs = new URLSearchParams({ connection_id: connId });
+  if (status) qs.set("status", status);
+  const res = await fetch(inboxUrl(`?${qs}`));
+  if (res.status === 404) return [];
+  if (!res.ok) throw new Error("Failed to fetch proposals");
+  return (await res.json()).proposals;
+}
+
+export type AcceptResult = { status: string; action_id: string; outcome: Record<string, unknown>; granted_by: string; minted_grant: string };
+
+/** Accept a proposal → executes it exactly once (the accept is the approval). `mintGrant`
+ *  also mints a target-bound standing grant for future unattended runs. `fills` (SP-9) is
+ *  the approver's answers to the draft's OPEN choices — {"<action number>.<key>": value};
+ *  only an open choice may be filled, and the inbox refuses anything else whole. Returns
+ *  the outcome; a 409 (already resolved) or 422 (criterion failed) surfaces as a thrown
+ *  Error with the body. */
+export async function acceptProposal(id: string, actor: string, mintGrant = false,
+                                     fills?: Record<string, string>): Promise<AcceptResult> {
+  const res = await fetch(inboxUrl(`/${id}/accept`), {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ actor, mint_grant: mintGrant, ...(fills && Object.keys(fills).length ? { fills } : {}) }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.detail?.message || body?.detail || `accept failed (${res.status})`);
+  return body;
+}
+
+/** ONE staged proposal by id — the approval card's read (SP-9). Chat learns the id from
+ *  the turn that staged it; Attention from the needs-human strip. null on 404: a purged
+ *  or unknown proposal renders as "gone", never as a crash. */
+export async function getProposalById(id: string): Promise<StagedProposal | null> {
+  const res = await fetch(inboxUrl(`/${encodeURIComponent(id)}`));
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error("Failed to fetch the proposal");
+  return (await res.json()).proposal;
+}
+
+/** Resolve a pending draft as REPLACED (SP-11) — a person finished the same ask in
+ *  the real editor, so the staged draft must not sit beside the saved record looking
+ *  like separate work. False when it was already settled: a harmless no-op. */
+export async function supersedeProposal(id: string, actor: string, note = ""): Promise<boolean> {
+  const res = await fetch(inboxUrl(`/${id}/supersede`), {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ actor, note }),
+  });
+  if (!res.ok) throw new Error("Failed to supersede the draft");
+  return (await res.json()).superseded;
+}
+
+export async function rejectProposal(id: string, actor: string): Promise<boolean> {
+  const res = await fetch(inboxUrl(`/${id}/reject`), {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ actor }),
+  });
+  if (!res.ok) throw new Error("Failed to reject proposal");
+  return (await res.json()).rejected;
+}
+
+export async function getGrants(connId: string): Promise<StandingGrant[]> {
+  const res = await fetch(`${getApiBase()}/kinetic-actions/grants?connection_id=${encodeURIComponent(connId)}`);
+  if (res.status === 404) return [];
+  if (!res.ok) throw new Error("Failed to fetch grants");
+  return (await res.json()).grants;
+}
+
+export async function revokeGrant(id: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/kinetic-actions/grants/${id}/revoke`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to revoke grant");
+}
+
+// ── Action Hub triggers + finding share ─────────────────────────────────────────
+
+export interface ActionTrigger {
+  id: string;
+  name: string;
+  type: "webhook" | "slack" | "jira";
+  url: string;
+  headers: Record<string, string>;
+  enabled: boolean;
+  channel?: string | null;
+  project?: string | null;
+  issue_type?: string | null;
+}
+
+export async function getActionTriggers(): Promise<ActionTrigger[]> {
+  const res = await fetch(`${getApiBase()}/actions/triggers`);
+  if (!res.ok) throw new Error("Failed to fetch action triggers");
+  const data = await res.json();
+  return data.triggers ?? [];
+}
+
+export interface SendFindingResult {
+  /** HB-2 — `held`: the departure gate kept it on the screen; `error` says why. */
+  status: "ok" | "failed" | "timeout" | "held";
+  http_status: number | null;
+  error: string | null;
+  /** The departures-ledger row the gate recorded for this send. */
+  departure_id?: string;
+}
+
+/** Share a finding (Briefing/Hub insight) to a configured Action Hub trigger. `conn_id`
+ *  lets the departure gate re-run the finding's query before its numbers leave. */
+export async function sendFindingToTrigger(
+  triggerId: string,
+  body: { text: string; metric_name?: string; headline?: string; source_id?: string; conn_id?: string },
+): Promise<SendFindingResult> {
+  const res = await fetch(`${getApiBase()}/actions/triggers/${encodeURIComponent(triggerId)}/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("Failed to share finding");
+  return res.json();
+}
+
+// ── Scheduled Brief subscriptions ───────────────────────────────────────────────
+
+export interface BriefSubscription {
+  id: string;
+  conn_id: string;
+  name: string;
+  /** "month" | "year" send the Briefing written for the period (idea 3). */
+  period: "week" | "day" | "month" | "year";
+  send_cron: string;
+  /** What it sends: the alert summary (absent = "alert_summary", every row saved before idea 3) or
+   *  the Briefing written for its period. */
+  content?: "alert_summary" | "briefing";
+  trigger_id: string;
+  /** Arc BR-5 — a Slack bot and channel instead of a trigger; the scope; the automation it
+   *  replaces (paused after seven delivered mornings) and the mornings delivered so far. */
+  bot_id?: string;
+  channel?: string;
+  schema_name?: string;
+  supersedes?: string;
+  delivered?: number;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+  last_sent_at: string | null;
+  last_status: string | null;
+  last_error: string | null;
+}
+
+export async function getBriefSubscriptions(connId?: string): Promise<BriefSubscription[]> {
+  const qs = connId ? `?conn_id=${encodeURIComponent(connId)}` : "";
+  const res = await fetch(`${getApiBase()}/briefing/subscriptions${qs}`);
+  if (!res.ok) throw new Error("Failed to fetch brief subscriptions");
+  const data = await res.json();
+  return data.subscriptions ?? [];
+}
+
+export async function createBriefSubscription(
+  body: { conn_id: string; name: string; trigger_id: string; period?: BriefSubscription["period"]; send_cron?: string; enabled?: boolean; content?: "alert_summary" | "briefing" },
+): Promise<BriefSubscription> {
+  const res = await fetch(`${getApiBase()}/briefing/subscriptions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Failed to create brief subscription"));
+  return res.json();
+}
+
+export async function updateBriefSubscription(
+  id: string,
+  body: { conn_id: string; name: string; trigger_id: string; period?: BriefSubscription["period"]; send_cron?: string; enabled?: boolean; content?: "alert_summary" | "briefing" },
+): Promise<BriefSubscription> {
+  const res = await fetch(`${getApiBase()}/briefing/subscriptions/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("Failed to update brief subscription");
+  return res.json();
+}
+
+export async function deleteBriefSubscription(id: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/briefing/subscriptions/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete brief subscription");
+}
+
+export interface BriefDeliveryResult {
+  status: "ok" | "failed" | "timeout";
+  http_status: number | null;
+  error: string | null;
+  summary: string | null;
+  markdown: string | null;
+}
+
+export async function testBriefSubscription(id: string): Promise<BriefDeliveryResult> {
+  const res = await fetch(`${getApiBase()}/briefing/subscriptions/${encodeURIComponent(id)}/test`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to test brief subscription");
+  return res.json();
+}
+
+// ── Org Intelligence ──────────────────────────────────────────────────────────
+
+export interface OrgInsight {
+  id: string;
+  insight_id: string;
+  canvas_id: string;
+  text: string;
+  domain: string;
+  angle: string;
+  novelty: number;
+  promoted_by: string;
+  promoted_at: string;
+  /** Where it was promoted from — absent on one promoted before scoping existed. */
+  connection_id?: string;
+  schema?: string;
+}
+
+export async function getOrgIntelligence(connectionId?: string, schema?: string): Promise<OrgInsight[]> {
+  const qs = new URLSearchParams();
+  if (connectionId) qs.set("connection_id", connectionId);
+  if (schema) qs.set("schema", schema);
+  const res = await fetch(`${getApiBase()}/org-intelligence${qs.size ? `?${qs}` : ""}`);
+  if (!res.ok) throw new Error("Failed to fetch org intelligence");
+  return res.json();
+}
+
+export async function deleteOrgInsight(id: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`${getApiBase()}/org-intelligence/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete org insight");
+  return res.json();
+}
+
+// ── Schema Shape (M23b) ───────────────────────────────────────────────────────
+
+export interface TableProfileData {
+  table: string;
+  row_count: number;
+  grain_column: string | null;
+  grain_verified: boolean;
+  primary_timestamp: string | null;
+  date_range: [string, string] | null;
+  freshness_lag_hours: number | null;
+  computed_at: string;
+  /** AT-6 — quantities the table implies but does not store: the subtraction behind a 0/1
+   *  flag, the span between two timestamps, the product of a price and a count. Each note
+   *  already carries the support and the row count it was measured on. */
+  derived_quantities?: string[] | null;
+}
+
+export interface ColumnProfileData {
+  table: string;
+  column: string;
+  dtype: string;
+  semantic_type: string;
+  null_rate: number;
+  distinct_count: number;
+  is_low_cardinality: boolean;
+  value_range: [string | number, string | number] | null;
+  top_values: string[] | null;
+  is_fk: boolean;
+  /** AT-4 — what the column IS, agreed by witnesses from two or more evidence layers.
+   *  Separate from `semantic_type` (how to HANDLE it) and empty far more often, which is
+   *  the point. Below 0.5 the concept is a HINT — one witness — and must not be shown as a
+   *  finding; `conceptIfConfident` is the only read. */
+  concept?: string | null;
+  concept_confidence?: number | null;
+  /** One sentence per agreeing layer, each carrying the numbers it agreed on. */
+  concept_evidence?: string[] | null;
+  unit?: string | null;
+  value_interpretation?: string | null;
+}
+
+/** The one honest read of a concept — mirrors `aughor.tools.concept.concept_of`.
+ *  Reading `.concept` without its confidence is the "one witness spoke and the system
+ *  believed it" failure the whole contract exists to prevent, one level up at the UI. */
+export function conceptIfConfident(col: ColumnProfileData): string {
+  const c = (col.concept ?? "").trim();
+  const conf = col.concept_confidence ?? 0;
+  return c && conf >= 0.5 ? c : "";
+}
+
+export interface SchemaProfile {
+  available: boolean;
+  tables: TableProfileData[];
+  columns: ColumnProfileData[];
+}
+
+export async function getSchemaProfile(connectionId: string): Promise<SchemaProfile> {
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connectionId)}/schema/profile`);
+  if (!res.ok) throw new Error("Failed to fetch schema profile");
+  return res.json();
+}
+
+// ── Pattern Library (M23c) ────────────────────────────────────────────────────
+
+export interface Pattern {
+  id: string;
+  type: "angle" | "entity" | "convergence";
+  title: string;
+  description: string;
+  domains: string[];
+  evidence_count: number;
+  novelty: number;
+  entities: string[];
+  angles?: string[];
+  high_novelty_count?: number;
+  example_findings: string[];
+  computed_at: string;
+}
+
+export interface PatternsResponse {
+  patterns: Pattern[];
+  count: number;
+}
+
+export async function getPatterns(connectionId: string, refresh = false, schema?: string): Promise<PatternsResponse> {
+  const q = new URLSearchParams();
+  if (refresh) q.set("refresh", "true");
+  if (schema) q.set("schema", schema);
+  const qs = q.toString() ? `?${q.toString()}` : "";
+  const url = `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/patterns${qs}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Failed to fetch patterns");
+  return res.json();
+}
+
+/** Patterns scoped to a Canvas's curated tables (Hub scope consistency). */
+export async function getCanvasPatterns(canvasId: string, refresh = false): Promise<PatternsResponse> {
+  const qs = refresh ? "?refresh=true" : "";
+  const res = await fetch(`${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/patterns${qs}`);
+  if (!res.ok) throw new Error("Failed to fetch canvas patterns");
+  return res.json();
+}
+
+// ── Briefing Narrative (M24b) ─────────────────────────────────────────────────
+
+export interface BriefingCitation {
+  ref: string;          // "1", "2", "3" — matches [N] in narrative text
+  insight_id: string;
+  domain: string;
+  angle: string;
+  finding: string;
+  /** The cited finding's evidence, carried so a citation the Briefing's own list does not hold (a metric's move, a
+   *  range's segment) opens onto its query and its measured confidence — absent on a brief built before 2026-10-11. */
+  sql?: string;
+  confidence?: number | null;
+  novelty?: number | null;
+  generated_at?: string | null;
+  /** CB-6 — the declared goal this finding bears on, or "". */
+  priority?: string;
+  /** CB-7 — the one action beside this item, or null. */
+  action?: BriefAction | null;
+}
+
+/** CB-7 — the single best action beside a Briefing item: the first recommendation of the deep analysis the
+ * finding came from (executable through the inbox's gated door) or the playbook's best play (a suggestion). */
+export interface BriefAction {
+  kind: "recommendation" | "play";
+  text: string;
+  why: string;
+  executable: boolean;
+  inv_id?: string;
+  rec_index?: number;
+  id?: string;
+  when?: string;
+  success_rate?: number;
+}
+
+/** A candidate finding the trust gate kept out of the brief — surfaced as an audit trail.
+ *  severity 'implausible' = suppressed (impossible number); 'confound' = demoted (anti-causal). */
+export interface HeldBackSignal {
+  finding: string;
+  domain: string;
+  severity: "implausible" | "confound";
+  reason: string;
+  /** How many findings the gate held back for THIS reason (grouped server-side by
+   *  (severity, reason) — a reason derives from the SQL idiom, so one bad idiom suppresses
+   *  many findings identically). Absent on pre-grouping cached briefs → treat as 1. */
+  count?: number;
+  /** The domains this reason hit (grouped). */
+  domains?: string[];
+}
+
+export interface BriefingNarrativeResponse {
+  narrative: string;
+  headline_theme: string;
+  citations: BriefingCitation[];
+  held_back?: HeldBackSignal[];
+  currency_code?: string;
+  generated_at: string | null;
+  available: boolean;
+  /** The scope this brief was generated FOR (`conn:schema`, or `canvas:<id>`). The client
+   *  MUST refuse to paint a narrative whose scope_key ≠ the scope it is rendering under —
+   *  otherwise a retained brief from a previous schema is undetectable. Absent on briefs
+   *  cached before this field existed → the client falls back to not trusting them. */
+  scope_key?: string;
+  /** Present only on a period brief (idea 3), or a range brief (Arc BR-3 — `isRangeBlock`):
+   *  the window it covers and what it measured. */
+  period?: BriefingPeriodBlock | BriefingRangeBlock;
+  /** Why this scope has no Briefing: its schema — or, read whole, every schema of the connection — is turned off
+   *  for analysis. Nothing is written from what was found before. */
+  off?: BriefingOff;
+  /** The findings left out because they read a table turned off for analysis (they come back when it is turned on). */
+  left_out?: BriefingLeftOut;
+}
+
+export interface BriefingLeftOut {
+  count: number;
+  tables: string[];
+  said: string;
+}
+
+export interface BriefingOff {
+  schemas: string[];
+  reason: string;
+  declared_by: string;
+  said: string;
+}
+
+/** PENDING item 9 — the company-brain map: every store behind what Aughor knows, as a box with a
+ *  live count and its door; `count: null` means the store could not be read or is not built,
+ *  and `line` says which — never a zero that means "unknown". */
+export interface BrainBox {
+  id: string;
+  vault: "company" | "engagement" | "working_memory";
+  title: string;
+  door: string;
+  count: number | null;
+  unit: string;
+  line: string;
+  detail: Record<string, unknown>;
+}
+
+export interface BrainEdge { from: string; to: string; count: number; label: string }
+
+export interface BrainFact {
+  id: string;
+  kind: string;
+  label: string;
+  first_seen: string;
+  last_changed: string;
+  observed_at: string;
+  observed_basis: string;
+  history: { replaced_at: string; reason: string; label?: string; summary?: string; facts?: Record<string, unknown> }[];
+}
+
+export interface BrainMap {
+  connection_id: string;
+  boxes: BrainBox[];
+  edges: BrainEdge[];
+  vaults: { id: BrainBox["vault"]; title: string }[];
+}
+
+export async function getBrainMap(connectionId: string, workspaceId?: string): Promise<BrainMap> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (workspaceId) q.set("workspace_id", workspaceId);
+  const res = await fetch(`${getApiBase()}/brain/map?${q.toString()}`);
+  if (!res.ok) throw new Error("Failed to load the brain map");
+  return res.json();
+}
+
+/** Idea 5 — one re-check of a chat answer: its own query re-run and compared with what was said. */
+export interface AnswerRecheckChange {
+  label: Record<string, unknown>;
+  column: string;
+  old: number;
+  new: number;
+  /** null when the number moved from zero — a move from nothing has no percentage. */
+  rel: number | null;
+  day: string | null;
+  cause?: "late_rows" | "restated" | "unknown";
+}
+
+export interface AnswerRecheck {
+  checked_at: string;
+  status: "changed" | "unchanged" | "unchecked";
+  reason?: string;
+  changes: AnswerRecheckChange[];
+  changed?: number;
+  /** Rows the answer gave that the query no longer returns, and the first few of their labels. */
+  missing_rows?: number;
+  missing?: Record<string, unknown>[];
+  cause: "late_rows" | "restated" | "moving" | "rewrites" | "unknown" | "none";
+  /** What is true of a source never seen to settle, when that is why the numbers moved. */
+  settling_says?: string;
+  lag_days: number | null;
+  told?: { door?: string; status?: string; note?: string };
+}
+
+/** Re-run an answer's own statement now and compare it with what was said (idea 5). The server
+ *  refuses with its reason — re-checking is behind a flag — and that reason is what is thrown. */
+export async function recheckAnswer(investigationId: string): Promise<AnswerRecheck & { text?: string }> {
+  const res = await fetch(`${getApiBase()}/investigations/${encodeURIComponent(investigationId)}/recheck`, { method: "POST" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(typeof body?.detail === "string" ? body.detail : `The re-check failed (${res.status})`);
+  }
+  return res.json();
+}
+
+/** "history" is the standing Briefing; the rest are written for one complete period. */
+export type BriefingPeriod = "history" | "day" | "week" | "month" | "year";
+
+export interface BriefingPeriodMeasure {
+  name: string;
+  unit: string;
+  current: number;
+  previous: number | null;
+  /** null when no change is stated: no comparison rows, a zero base, or partial coverage. */
+  rel: number | null;
+  current_partial?: string | null;
+  previous_partial?: string | null;
+  /** Formatted by the server with the same rule the brief's own sentences use. */
+  current_text?: string;
+  previous_text?: string;
+}
+
+export interface BriefingPeriodBlock {
+  period: Exclude<BriefingPeriod, "history">;
+  label: string;
+  covers: string;
+  compared_with: string;
+  start: string;
+  last_day: string;
+  lag_days: number;
+  /** "beyond_horizon": a table was still moving at the oldest age read, so the lag is a floor. */
+  lag_source: "learned" | "beyond_horizon" | "default";
+  still_moving?: string[];
+  measured: BriefingPeriodMeasure[];
+  unmeasured: { name: string; reason: string }[];
+}
+
+/** Arc BR-3 — a Briefing for any range. "standing" is the view of
+ *  everything the platform knows; the presets resolve on the server against the connection's
+ *  settling lag; "custom" carries its first and last day (inclusive, ISO). */
+export type RangePreset =
+  | "yesterday" | "last_week" | "last_month" | "last_year"
+  | "month_to_date" | "year_to_date" | "custom"
+  /** The Cockpit's periods: the one under way and the one before, read to where the data ends. */
+  | "current_day" | "current_week" | "current_month" | "current_year"
+  | "previous_week" | "previous_month" | "previous_year";
+
+export interface BriefingRange {
+  preset: RangePreset;
+  start?: string;
+  end?: string;
+}
+
+/** BR-8 — the range before, as it stood at a figure's own age (`settling/parts.py`). */
+export interface EqualAgePrevious {
+  value: number;
+  as_of: string;
+  as_of_text: string;
+  start: string;
+  end: string;
+  /** The range before as it reads today, for comparison. */
+  value_now?: number | null;
+  settled_after?: number | null;
+}
+
+export interface BriefingRangeMeasure {
+  name: string;
+  metric: string;
+  unit: string;
+  time_kind: "flow" | "stock" | "cohort";
+  time_source?: string | null;
+  confirmed: boolean;
+  current: number | null;
+  previous: number | null;
+  last_year: number | null;
+  rel: number | null;
+  rel_last_year: number | null;
+  status: "final" | "provisional" | "to_date";
+  current_partial?: string | null;
+  previous_partial?: string | null;
+  current_text?: string;
+  previous_text?: string;
+  last_year_text?: string;
+  /** Week recipe: the mean of the four weeks before the comparison week. */
+  norm?: number | null;
+  rel_norm?: number | null;
+  /** Month recipe: the metric's declared target, when it has one. */
+  target?: number | null;
+  vs_target?: number | null;
+  /** Whether its comparison is read at the same age as the figure; `why` when it is not. `previous` (BR-8): the range
+   *  before read as it stood on `as_of`, at the figure's own age, from the daily readings — `previous` and `rel` are
+   *  that comparison; its usual range and a year earlier are still not at equal age, so `equal` stays false. */
+  equal_age?: { equal: boolean; why: string; previous?: EqualAgePrevious };
+  /** The income-statement line it reads on, when the connection's industry declares a statement. */
+  line?: { line: string; label: string } | null;
+  /** Arc MC — the area of the map it reads on: the industry's domain. The Briefing and the Metrics dashboard read by it. */
+  area?: { id: string; name: string; order?: number } | null;
+  /** Which way is good, where the guide or the industry's knowledge base says. Absent, nobody has said. */
+  better?: "up" | "down";
+  /** Set only on a figure stored before 2026-10-23, read over the period its data last covered instead of
+   *  the range; `ownFigures` reads it as not measured, as the server now says it. */
+  anchored?: { start: string; end: string; data_ends: string; covers: string; compared_with: string; why: string } | null;
+}
+
+/** A metric the range has no figure for, and why — with the day its data ends (`data_ends`) when it ENDED before
+ *  the range (the user, 2026-10-23: the period named is the one compared; another period's figure is never shown). */
+export interface BriefingRangeUnmeasured {
+  name: string;
+  reason: string;
+  metric?: string;
+  data_ends?: string;
+  /** The domain it reads in, when it was measured. */
+  area?: { id: string; name: string; order?: number } | null;
+}
+
+/** Arc BR-4 — a segment's move inside a metric (what moved). */
+export interface BriefingRangeMove {
+  metric: string;
+  name: string;
+  dimension: string;
+  group: string;
+  current: number | null;
+  previous: number | null;
+  change: number | null;
+  n: number;
+  share: boolean;
+  current_text?: string;
+  previous_text?: string;
+  change_text?: string;
+}
+
+export interface BriefingRangeBlock {
+  period: string;
+  key: string;
+  preset: RangePreset;
+  label: string;
+  start: string;
+  end: string;
+  last_day: string;
+  previous_start: string;
+  previous_end: string;
+  last_year_start: string | null;
+  last_year_end: string | null;
+  as_of: string;
+  lag_days: number;
+  lag_source: "learned" | "beyond_horizon" | "default" | "data_ended";
+  still_moving: string[];
+  /** The tables of `still_moving` whose source rewrites its history. */
+  rewrites?: string[];
+  /** What can be said of this source's days, from its own readings (`settling/answer.py`). */
+  settling?: { kind: "unknown" | "settles" | "moving" | "rewrites"; days: number | null; tables: string[]; says: string };
+  covers: string;
+  compared_with: string;
+  last_year_label: string | null;
+  /** The newest day whose data has arrived, when it was read. */
+  data_through?: string | null;
+  /** What where the data ends did to the range, in words; "" when it did nothing. */
+  edge_note?: string;
+  /** The period holding the range goes on past it: a period so far. */
+  under_way?: boolean;
+  /** The data ENDED (its newest day is more than a month old): the range was read as if today were
+   *  the day after `data_through`, and every figure in it is final. */
+  data_ended?: boolean;
+  /** The first day the data holds, when the edge was read. */
+  data_from?: string | null;
+  /** Why the range is not compared with the one before ("" when it is): the earlier range starts
+   *  before the data does. */
+  compare_withheld?: string;
+  measured: BriefingRangeMeasure[];
+  unmeasured: BriefingRangeUnmeasured[];
+  /** Why the data could not be reached, when it could not: nothing was measured, and no metric is at fault. */
+  unreachable?: string;
+  /** Arc BR-4 — the recipe that wrote it, and its own sections. */
+  recipe?: "day" | "week" | "month" | "year" | "custom";
+  sections?: string[];
+  moves?: BriefingRangeMove[];
+  thin?: BriefingRangeMove[];
+  why?: { segment: string; dimension: string; domain: string; id: string | null; finding: string }[];
+  early?: { start: string | null; end: string | null;
+            figures: { metric: string; name: string; value: number; value_text?: string; n: number }[] } | null;
+  recipe_error?: string;
+}
+
+/** BR-7 — one finding re-asked for a range: its own SQL over the range and the previous range,
+ *  the figure read from the result (`how`: the value of a one-row result, else the total or,
+ *  for a rate, the mean of `measure` over the rows). `rel` is the change, the range's scorecard. */
+export interface FindingReask {
+  id: string;
+  domain: string;
+  grain: string;
+  measure: string;
+  /** "value": one row · "row": the labelled row the finding's statement names (`row`) ·
+   *  "total"/"mean": a series of dates over the range. */
+  how: "value" | "row" | "total" | "mean" | "";
+  /** The labels of the row the finding names ("Shipped"), when its rows are labelled. */
+  row?: string[] | null;
+  current: number | null;
+  previous: number | null;
+  rel: number | null;
+  rows_current: number;
+  rows_previous: number;
+  /** The finding's own statement cut to the range: the rows `current` is read from. */
+  sql: string;
+  /** The same, cut to the compared range: the rows `previous` is read from. Absent from a
+   *  re-ask cached before it was carried. */
+  sql_previous?: string;
+}
+export interface FindingApart { id: string; domain: string; why: string }
+export interface FindingsReask {
+  covers: string;
+  compared_with: string;
+  key: string;
+  reasked: FindingReask[];
+  apart: FindingApart[];
+  capped: number;
+  /** Identical (id, SQL) pairs the aggregate view listed more than once — asked once. */
+  duplicates: number;
+  total: number;
+  profiled: boolean;
+  cached: boolean;
+}
+
+/** One story on the Briefing's desk (`aughor/briefing/desk.py`): read from the Record and the
+ *  metric registry, never written by a model. */
+export interface DeskItem {
+  kind: string;
+  title: string;
+  text?: string;
+  status?: string;
+  as_of?: string;
+  /** What a person can do about it; `kind` names where the button leads. */
+  action?: { verb: string; kind: "inquiry" | "metric"; ref: string };
+  source: { kind: string; ref: string; label: string };
+}
+
+export interface DeskColumn { items: DeskItem[]; more: number }
+
+/** The morning paper's three columns. A column a store could not fill is `null`, and `unread`
+ *  says which store and why — never an empty column that reads as "nothing to say". */
+export interface BriefingDesk {
+  connection_id: string;
+  schema: string | null;
+  as_of: string;
+  trends: DeskColumn | null;
+  gaps: DeskColumn | null;
+  decide: DeskColumn | null;
+  unread: Record<string, string>;
+  off?: BriefingOff;
+}
+
+export async function getBriefingDesk(
+  connectionId: string, range: BriefingRange | null, schema?: string, workspaceId?: string,
+): Promise<BriefingDesk> {
+  const q = new URLSearchParams();
+  if (range) {
+    if (range.preset === "custom") { if (range.start) q.set("start", range.start); if (range.end) q.set("end", range.end); }
+    else q.set("preset", range.preset);
+  }
+  if (schema) q.set("schema", schema);
+  if (workspaceId) q.set("workspace_id", workspaceId);
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/desk?${q}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err.detail === "string" ? err.detail : "The Briefing's desk could not be read");
+  }
+  return res.json();
+}
+
+export async function getFindingsReask(
+  connectionId: string, range: BriefingRange, schema?: string, workspaceId?: string,
+): Promise<FindingsReask> {
+  const q = new URLSearchParams();
+  if (range.preset === "custom") { if (range.start) q.set("start", range.start); if (range.end) q.set("end", range.end); }
+  else q.set("preset", range.preset);
+  if (schema) q.set("schema", schema);
+  if (workspaceId) q.set("workspace_id", workspaceId);
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/findings/reask?${q}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err.detail === "string" ? err.detail : "The findings could not be re-asked for this range");
+  }
+  return res.json();
+}
+
+export function isRangeBlock(p: BriefingPeriodBlock | BriefingRangeBlock | undefined | null): p is BriefingRangeBlock {
+  return !!p && typeof (p as BriefingRangeBlock).key === "string";
+}
+
+function rangeQuery(range: BriefingRange, schema?: string, workspaceId?: string, refresh = false): string {
+  const q = new URLSearchParams();
+  if (refresh) q.set("refresh", "true");
+  if (schema) q.set("schema", schema);
+  if (workspaceId) q.set("workspace_id", workspaceId);
+  if (range.preset === "custom") {
+    if (range.start) q.set("start", range.start);
+    if (range.end) q.set("end", range.end);
+  } else {
+    q.set("preset", range.preset);
+  }
+  return q.toString();
+}
+
+/** A READ never builds: the range's Briefing as last built, or `built: false`. */
+export async function readRangeBriefing(
+  connectionId: string, range: BriefingRange, schema?: string, workspaceId?: string,
+): Promise<BriefingNarrativeResponse & { built?: boolean }> {
+  const url = `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing?${rangeQuery(range, schema, workspaceId)}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to read the briefing for this range"));
+  }
+  return res.json();
+}
+
+// ── Arc BG · an edition written from the connection's Briefing guide, for one reader ─────────
+
+/** One segment of a figure against its own usual range. */
+export interface EditionCell {
+  group: string;
+  current: number | null;
+  usual: number | null;
+  delta: number | null;
+  rel: number | null;
+  n: number;
+  /** Fewer than 30 rows: too few to call. */
+  thin: boolean;
+  current_text: string | null;
+  usual_text: string | null;
+}
+
+/** One measured check: the range, the range before, a year earlier and the usual range. */
+export interface EditionFigure {
+  id: string;
+  label: string;
+  metric: string | null;
+  unit: string;
+  better: "up" | "down" | "none";
+  why: string;
+  current: number | null;
+  previous: number | null;
+  last_year: number | null;
+  rel: number | null;
+  rel_last_year: number | null;
+  n: number;
+  status: string;
+  /** False when the figure is not read against its usual range, with why; absent on an edition kept before that rule. */
+  equal_age?: { equal: boolean; why: string };
+  usual: { mean: number; low: number; high: number; n: number; mean_text: string | null;
+           low_text: string | null; high_text: string | null } | null;
+  z: number | null;
+  outside: boolean;
+  floor: boolean;
+  /** Null when the figure is not at equal age: a run of rises would be the same claim as a distance from usual. */
+  streak: number | null;
+  extreme: { which: "highest" | "lowest"; of: number } | null;
+  series: { label: string; start: string; value: number | null }[];
+  cells: Record<string, { cells: EditionCell[]; why: string }>;
+  current_text: string | null;
+  previous_text: string | null;
+  last_year_text: string | null;
+  like_for_like: string;
+  sql: string;
+}
+
+/** One block of an edition (Arc BC): its type decides which fields matter; it never carries a number. */
+export interface EditionBlock {
+  id: string;
+  type: string;
+  kicker?: string;
+  title?: string;
+  /** Words with citations written {words|source_id}. */
+  text?: string;
+  sub?: string;
+  source?: string;
+  chain?: string[];
+  label?: string;
+  value?: string;
+  compare?: string;
+  series?: string;
+  x?: string;
+  columns?: string[];
+  link?: string;
+  column?: string;
+  listens?: string;
+  mark?: { at: string; text: string } | null;
+  actions?: string[];
+  /** Added by code (the floor), or a drill written into the page. */
+  by_code?: boolean;
+}
+
+/** A governed query a block reads: its rows, its SQL, what the guards did. */
+export interface EditionSource {
+  id: string;
+  label: string;
+  /** Measured for the edition, or the platform's own work it read: an explorer finding, a deep analysis, a decision. */
+  kind: "check" | "breakdown" | "query" | "drill" | "answer" | "finding" | "analysis" | "decision" | "discussion";
+  columns: string[];
+  rows: unknown[][];
+  sql: string;
+  status: string;
+  facts: Record<string, unknown>;
+  receipts: Record<string, unknown>[];
+  caveats: string[];
+  note: string;
+  error: string;
+  unit: string;
+  better: "up" | "down" | "none" | string;
+}
+
+export interface BriefingEdition {
+  built: boolean;
+  scope_key: string;
+  period: Omit<BriefingRangeBlock, "measured"> & { measured?: EditionFigure[] };
+  reader?: { group_id: string; name: string } | string;
+  composed?: boolean;
+  blocks?: EditionBlock[];
+  sources?: Record<string, EditionSource>;
+  /** Sentences the gates kept off the page, each with why — withheld is said, never implied. */
+  withheld?: { block?: string; sentence: string; why: string }[];
+  /** Blocks the model wrote that could not be drawn, each with why. */
+  left_out?: string[];
+  /** Set when the model did not finish and code drew the edition from what was measured. */
+  drawn_by_code?: string;
+  drill_columns?: Record<string, string[]>;
+  not_read?: { label: string; reason: string; tables: string[] }[];
+  floor?: string[];
+  guide?: { version: number | null; state: string | null };
+  model_steps?: number;
+  queries?: number;
+  stop_reason?: string;
+  generated_at?: string;
+  /** The dataset's currency as a person confirmed it, or "" (plain amounts). */
+  currency_code?: string;
+  /** Present when the dataset's Briefing is turned off — said, never an empty page. */
+  off?: BriefingOff;
+  /** The decisions given to a team, each with what became of it — sent, held with why, or not sent. */
+  given?: EditionGiven[];
+  /** What the platform already knew that the edition read, and the deep analysis it started ("" = none). */
+  known?: { analyses: number; findings: number; decisions: number; discussions?: number; started: string };
+  /** Set when the learned lag has moved since the edition was written: the lag now (`period.lag_days` is the lag it
+   *  was written with). The edition is the same range's; its figures stand as they were then. */
+  lag_now?: number;
+  /** Read in a Data Canvas: the dataset's own edition (`own` false — a canvas on every table), or the canvas's own,
+   *  with which of the guide's checks read only its tables and which are left out. */
+  canvas?: EditionCanvas | null;
+}
+
+export interface EditionCanvas {
+  id: string;
+  own: boolean;
+  dataset: string;
+  tables: string[];
+  checks_inside: string[];
+  checks_outside: string[];
+}
+
+/** A decision on an edition given to a team: posted to the channel its function group binds, through the departure gate. */
+export interface EditionGiven {
+  block: string;
+  group_id: string;
+  name: string;
+  by: string;
+  at: string;
+  status: "sent" | "held" | "not_sent" | string;
+  note: string;
+  departure_id: string;
+  target: string;
+}
+
+/** Give a decision on the edition to a team — no model call; written into the edition under the decision. */
+export async function giveBriefingDecision(
+  connectionId: string, range: BriefingRange, reader: string | undefined, body: { block_id: string; group_id: string },
+  schema?: string, workspaceId?: string, canvasId?: string,
+): Promise<EditionGiven> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/edition/give?${editionQuery(range, reader, schema, workspaceId, canvasId)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) throw await refused(res, "Giving this decision to a team");
+  return res.json();
+}
+
+/** One level deeper on a block's source — compiled, no model. The page draws it in the card it came from. */
+export async function drillBriefingEdition(
+  connectionId: string, range: BriefingRange, reader: string | undefined,
+  body: { source_id: string; column: string; segment?: string | number | boolean | null },
+  schema?: string, workspaceId?: string, canvasId?: string,
+): Promise<{ block: EditionBlock; source: EditionSource }> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/edition/drill?${editionQuery(range, reader, schema, workspaceId, canvasId)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) throw await refused(res, "Drilling into this block");
+  return res.json();
+}
+
+/** The query a reader adds to an edition read or write: none = the person's own reader, "" = the organisation;
+ *  a Data Canvas's id reads and writes the canvas's own edition. */
+function editionQuery(range: BriefingRange, reader: string | undefined, schema?: string, workspaceId?: string,
+                      canvasId?: string): string {
+  const q = new URLSearchParams(rangeQuery(range, schema, workspaceId));
+  if (reader !== undefined) q.set("reader", reader);
+  if (canvasId) q.set("canvas_id", canvasId);
+  return q.toString();
+}
+
+/** A READ never writes: the range's edition for a reader as last written, or `built: false`. */
+export async function readBriefingEdition(
+  connectionId: string, range: BriefingRange, reader?: string, schema?: string, workspaceId?: string, canvasId?: string,
+): Promise<BriefingEdition> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/edition?${editionQuery(range, reader, schema, workspaceId, canvasId)}`);
+  if (!res.ok) throw await refused(res, "Reading this edition");
+  return res.json();
+}
+
+/** Write the range's edition for a reader: the guide's checks measured, then one model call. */
+export async function writeBriefingEdition(
+  connectionId: string, range: BriefingRange, reader?: string, schema?: string, workspaceId?: string, canvasId?: string,
+): Promise<BriefingEdition> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/edition?${editionQuery(range, reader, schema, workspaceId, canvasId)}`,
+    { method: "POST" });
+  if (!res.ok) throw await refused(res, "Writing this edition");
+  return res.json();
+}
+
+export interface GuideCheck {
+  id: string; label: string; metric: string; sql: string; tables: string[]; filters: string[];
+  time_column: string; time_kind: string; unit: string; better: string; dimensions: string[]; why: string;
+  evidence: string;
+}
+
+export interface GuideReader { group_id: string; name: string; watches: string; check_ids: string[] }
+
+export interface BriefingGuideDoc {
+  business: string;
+  ranges: { week: string; month: string; year: string; custom: string; day: string };
+  news: Record<string, number>;
+  comparisons: { text: string; exclude_from_last_year: { column: string; value: string; until: string } | null;
+                 evidence: string }[];
+  calendar: { name: string; when: string; source: string; evidence: string }[];
+  care: { text: string; tables: string[]; evidence: string }[];
+  checks: GuideCheck[];
+  dropped: { id: string; label: string; reason: string }[];
+  readers: GuideReader[];
+  proposed_readers: GuideReader[];
+}
+
+export interface GuideVersion { version: number; state: string; by: string; note: string; created_at: string; published_at: string }
+
+export interface BriefingGuideResponse {
+  available: boolean;
+  guide: BriefingGuideDoc | null;
+  version: GuideVersion | null;
+  /** The version editions read: the newest published one, else the newest draft. */
+  editions_read: { version: number; state: string } | null;
+  published_version: number | null;
+  versions: GuideVersion[];
+}
+
+/** The query a guide call carries — each call spells its own path, so the route contract check can read it. */
+function guideQuery(schema?: string, extra?: Record<string, string>): string {
+  const q = new URLSearchParams(extra);
+  if (schema) q.set("schema", schema);
+  return q.toString();
+}
+
+export async function readBriefingGuide(connectionId: string, schema?: string): Promise<BriefingGuideResponse> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/guide?${guideQuery(schema)}`);
+  if (!res.ok) throw await refused(res, "Reading the Briefing guide");
+  return res.json();
+}
+
+/** Draft the guide from what the exploration learned — one model call; kept as a draft. */
+export async function draftBriefingGuide(connectionId: string, schema?: string): Promise<BriefingGuideResponse> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/guide/draft?${guideQuery(schema)}`, { method: "POST" });
+  if (!res.ok) throw await refused(res, "Drafting the Briefing guide");
+  return res.json();
+}
+
+/** A person's edit, kept as a new draft under their name. */
+export async function saveBriefingGuide(connectionId: string, guide: BriefingGuideDoc, note: string, schema?: string): Promise<BriefingGuideResponse> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/guide?${guideQuery(schema)}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ guide, note }),
+  });
+  if (!res.ok) throw await refused(res, "Saving the Briefing guide");
+  return res.json();
+}
+
+export async function publishBriefingGuide(connectionId: string, schema?: string, version?: number): Promise<BriefingGuideResponse> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/guide/publish?${guideQuery(schema, version !== undefined ? { version: String(version) } : undefined)}`,
+    { method: "POST" });
+  if (!res.ok) throw await refused(res, "Publishing the Briefing guide");
+  return res.json();
+}
+
+/** Add a reader (a function group) to the guide: with the proposal's checks no model is called. */
+export async function addBriefingReader(
+  connectionId: string, body: { group_id: string; name: string; watches: string; check_ids?: string[] }, schema?: string,
+): Promise<BriefingGuideResponse> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/guide/readers?${guideQuery(schema)}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) throw await refused(res, "Adding the reader");
+  return res.json();
+}
+
+/** The range's approved metrics, measured — the Dashboard's default view. No narrative is written
+ *  and no model is called; a Briefing built for the same window inside its cache age hands back
+ *  its own figures (`from_briefing`), so the two pages cannot disagree about one. */
+export interface RangeMeasuresResponse {
+  period: BriefingRangeBlock;
+  from_briefing: boolean;
+  measured_at: string | null;
+  scope_key: string;
+}
+
+/** One of the Briefing's six editions, as "What each edition covers" lists it. */
+export interface EditionCover {
+  preset: RangePreset;
+  label: string;
+  /** Why the edition has no range or no figure; "" when it has both. */
+  why: string;
+  start?: string;
+  last_day?: string;
+  previous_start?: string;
+  previous_last_day?: string;
+  covers?: string;
+  compared_with?: string;
+  compare_withheld?: string;
+  current_text?: string | null;
+  previous_text?: string | null;
+  rel?: number | null;
+}
+
+export interface EditionCovers {
+  data_ended: boolean;
+  data_through: string | null;
+  data_from: string | null;
+  /** The lead approved metric each edition's figure is read for; null when none is approved. */
+  metric: { name: string; label: string } | null;
+  editions: EditionCover[];
+}
+
+/** What each of the six editions covers and the lead metric's figure for each — shown when the data
+ *  has ENDED. Measured now (warehouse queries, no model call), so it is a POST, as the measures door is. */
+/** One dataset's currency: the profile's proposal and a person's confirmation (2026-10-23). */
+export async function getDataCurrency(connectionId: string, schema?: string): Promise<import("./orgSettings").DataCurrency> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schema) q.set("schema_name", schema);
+  const res = await fetch(`${getApiBase()}/business-profile/currency?${q}`);
+  if (!res.ok) throw new Error(`The data's currency could not be read (${res.status})`);
+  return res.json();
+}
+
+/** A person confirms a dataset's currency (a three-letter ISO code), or clears it with "". */
+export async function confirmDataCurrency(connectionId: string, schema: string | undefined, code: string): Promise<import("./orgSettings").DataCurrency> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schema) q.set("schema_name", schema);
+  const res = await fetch(`${getApiBase()}/business-profile/currency?${q}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "The currency could not be confirmed"));
+  }
+  return res.json();
+}
+
+export async function readEditionCovers(connectionId: string, schema?: string, workspaceId?: string): Promise<EditionCovers> {
+  const q = new URLSearchParams();
+  if (schema) q.set("schema", schema);
+  if (workspaceId) q.set("workspace_id", workspaceId);
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/covers?${q}`, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "What each edition covers could not be read"));
+  }
+  return res.json();
+}
+
+export async function measureRange(
+  connectionId: string, range: BriefingRange, schema?: string, workspaceId?: string,
+): Promise<RangeMeasuresResponse> {
+  const url = `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/measures?${rangeQuery(range, schema, workspaceId)}`;
+  const res = await fetch(url, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "The metrics for this range could not be measured"));
+  }
+  return res.json();
+}
+
+/** One range of a metric's trend. `partial` says which days its rows cover when they cover less
+ *  than the range; the last point is the range itself. */
+export interface MetricTrendPoint {
+  start: string;
+  last_day: string;
+  label: string;
+  value: number | null;
+  value_text: string | null;
+  partial: string | null;
+  current: boolean;
+  /** Inside the days this source keeps changing: its figure may still move. */
+  settling?: boolean;
+}
+
+/** What a measured figure opens to: the metric over the range and the ranges before it, with how
+ *  it is defined and dated. `same_age` — a cohort's ranges are read at one age; a flow's as their
+ *  rows stand today. `why` says what stopped a read. */
+export interface MetricTrend {
+  metric: string;
+  found: boolean;
+  name: string;
+  unit: string;
+  definition: string;
+  tables: string[];
+  filters: string[];
+  caveats: string;
+  owner: string;
+  approved_by: string;
+  version: number;
+  time_kind: "flow" | "stock" | "cohort" | null;
+  time_source: string;
+  confirmed: boolean;
+  series: MetricTrendPoint[];
+  why: string;
+  same_age?: boolean;
+  /** What is true of a table this metric reads that has never been seen to settle; "" when there is none. */
+  never_settled?: string;
+  lag_days?: number;
+  /** Its usual range, by the Briefing's definition, and which side of it the range stands on. Null with too few readings. */
+  usual?: { mean: number; low: number; high: number; n: number; z: number; outside: "above" | "below" | "" } | null;
+  period: BriefingRangeBlock;
+}
+
+export async function readMetricTrend(
+  connectionId: string, metric: string, range: BriefingRange, schema?: string, workspaceId?: string, count?: number,
+): Promise<MetricTrend> {
+  const url = `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/metric/${encodeURIComponent(metric)}?${rangeQuery(range, schema, workspaceId)}${count ? `&count=${count}` : ""}`;
+  const res = await fetch(url, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "This metric could not be read"));
+  }
+  return res.json();
+}
+
+/** One send of a Briefing that left: the version it delivered, to whom, when, under which receipt.
+ *  `restated_since`: the Briefing's figures have moved since, so the page shows a later version. */
+export interface BriefingDelivery {
+  id: string;
+  version: number | null;
+  covers: string;
+  label: string;
+  scope_key: string;
+  sent_at: string;
+  to: string;
+  to_kind: "slack" | "trigger";
+  subscription_id: string;
+  subscription_name: string;
+  departure_id: string;
+  receipt_line: string;
+  held_lines: number;
+  restated_since: boolean;
+}
+
+/** A delivery opened: the Briefing as it was sent — the version it cites, not today's. */
+export interface BriefingDeliveryOpened extends BriefingDelivery {
+  connection_id: string;
+  as_of: string;
+  current_version: number | null;
+  briefing: (BriefingNarrativeResponse & { period?: BriefingRangeBlock | null }) | null;
+}
+
+/** Every delivery of the Briefing a page is showing — its scope and range — newest first. */
+export async function listBriefingDeliveries(
+  connectionId: string, covers: string, scopeKey: string, recipe: string,
+): Promise<{ deliveries: BriefingDelivery[]; current_version: number | null }> {
+  const q = new URLSearchParams({ conn_id: connectionId, covers, scope_key: scopeKey, recipe });
+  const res = await fetch(`${getApiBase()}/briefing/deliveries?${q.toString()}`);
+  if (!res.ok) throw new Error(`This Briefing's deliveries could not be read (${res.status})`);
+  return res.json();
+}
+
+export async function getBriefingDelivery(id: string): Promise<BriefingDeliveryOpened> {
+  const res = await fetch(`${getApiBase()}/briefing/deliveries/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error(`The delivery could not be read (${res.status})`);
+  return res.json();
+}
+
+/** What one metric is expected to read for the range after this one: a band from its own past,
+ *  booked as a prediction (`claim_id`) and scored once that range has settled. */
+export interface ExpectedBand {
+  claim_id: string;
+  low: number | null;
+  mid: number | null;
+  high: number | null;
+  text: string;
+  state: "open" | "scored" | string;
+  scored_against: "inside" | "above" | "below" | "cannot_tell" | null;
+  must_say: string[];
+  n: number;
+  /** How often this band's own method held on the metric's earlier ranges, of how many it could be tried on. */
+  held: number;
+  cases: number;
+  /** How often it says it will hold, as a share. */
+  coverage: number | null;
+}
+
+/** `target` is null — with `why` — for a range that has no next one to predict (a range to date).
+ *  An item with no `expected` says in `why` what stopped a band being stated. */
+export interface ExpectedNext {
+  target: { start: string; last_day: string; label: string; settles_on: string } | null;
+  why: string;
+  items: { metric: string; name: string; expected: ExpectedBand | null; why: string }[];
+}
+
+/** The band each approved metric is expected to fall in next. The first ask for a range measures
+ *  and books; later asks read the booked predictions back. No model call. */
+export async function readExpectedNext(
+  connectionId: string, range: BriefingRange, schema?: string, workspaceId?: string,
+): Promise<ExpectedNext> {
+  const url = `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing/expected?${rangeQuery(range, schema, workspaceId)}`;
+  const res = await fetch(url, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "What is expected next could not be read"));
+  }
+  return res.json();
+}
+
+/** Build (or return the fresh cached) Briefing for a range — runs its queries and one narrator call. */
+export async function buildRangeBriefing(
+  connectionId: string, range: BriefingRange, schema?: string, workspaceId?: string, refresh = false,
+): Promise<BriefingNarrativeResponse> {
+  const url = `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing?${rangeQuery(range, schema, workspaceId, refresh)}`;
+  const res = await fetch(url, { method: "POST" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to build the briefing for this range"));
+  }
+  return res.json();
+}
+
+export async function generateBriefingNarrative(
+  connectionId: string,
+  refresh = false,
+  schema?: string,
+  workspaceId?: string,
+): Promise<BriefingNarrativeResponse> {
+  const q = new URLSearchParams();
+  if (refresh) q.set("refresh", "true");
+  if (schema) q.set("schema", schema);
+  if (workspaceId) q.set("workspace_id", workspaceId);
+  const qs = q.toString() ? `?${q.toString()}` : "";
+  const url = `${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/briefing${qs}`;
+  const res = await fetch(url, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to generate briefing narrative");
+  return res.json();
+}
+
+/** Canvas-scoped briefing — reflects only the canvas's curated tables, not the whole
+ *  connection. Mirrors generateBriefingNarrative but hits the canvas endpoint. */
+export async function generateCanvasBriefingNarrative(
+  canvasId: string,
+  refresh = false,
+  workspaceId?: string,
+): Promise<BriefingNarrativeResponse> {
+  const q = new URLSearchParams();
+  if (refresh) q.set("refresh", "true");
+  if (workspaceId) q.set("workspace_id", workspaceId);
+  const qs = q.toString() ? `?${q.toString()}` : "";
+  const url = `${getApiBase()}/exploration/canvas/${encodeURIComponent(canvasId)}/briefing${qs}`;
+  const res = await fetch(url, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to generate canvas briefing narrative");
+  return res.json();
+}
+
+// ── Report export (PDF / PowerPoint) ────────────────────────────────────────────
+
+/** Download URL for a stored investigation's export. `narrate` prepends an
+ *  LLM-authored executive summary (best-effort). */
+export function investigationExportUrl(invId: string, fmt: "pdf" | "pptx", narrate = false): string {
+  const q = new URLSearchParams({ format: fmt });
+  if (narrate) q.set("narrate", "true");
+  return `${getApiBase()}/investigations/${encodeURIComponent(invId)}/export?${q.toString()}`;
+}
+
+/** Trigger a browser download of an investigation export. The endpoint replies
+ *  with Content-Disposition: attachment, so the file saves without navigating. */
+export function downloadInvestigationExport(invId: string, fmt: "pdf" | "pptx", narrate = false): void {
+  const a = document.createElement("a");
+  a.href = investigationExportUrl(invId, fmt, narrate);
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+// ── LLM inference provider config (Settings → Inference) ────────────────────────
+
+/** The vended capability profile for one role's bound model (PLATFORM_ARCHITECTURE.md §5b). */
+export interface LlmCapability {
+  cache_mode: "explicit_breakpoint" | "auto_prefix" | "auto_prefix_unverified" | "none";
+  tooling: "native_tools" | "none";
+  structured_output: "native" | "instructor_emulated";
+  token_accounting: "exact" | "estimated";
+  max_context: number;
+  privacy_class: "local" | "private_endpoint" | "public_api";  // governs what context may be sent
+  cost: "free" | "per_token" | "flat" | "unknown";   // "free" = the `:free` tier marker
+}
+
+export interface LlmConfig {
+  backend: string;
+  models: Record<string, string>;          // effective coder/narrator/fast
+  base_urls: Record<string, string>;       // effective ollama/lmstudio
+  keys_set: Record<string, boolean>;        // groq/together/anthropic — USABLE or not (never the value)
+  keys_state?: Record<string, "set" | "unset" | "unreadable">;  // "unreadable" = stored, undecryptable
+  capabilities: Record<string, LlmCapability>;  // per-role vended profile (§5b)
+  models_set: Record<string, string>;       // explicit overrides on disk
+  base_urls_set: Record<string, string>;
+  backends: string[];
+  needs_key: string[];
+  local_backends: string[];
+  default_models: Record<string, Record<string, string>>;
+  /** What the operator bound for each backend they have configured. Restored when the
+   *  provider is switched, so a previous choice is not retyped; the fallback chain
+   *  dispatches with the same values. Absent on a config written before this shipped. */
+  models_by_backend?: Record<string, Record<string, string>>;
+  /** Models the operator has pinned to JSON structured output instead of tool calling,
+   *  per backend. The deliberate counterpart to the `tools_unsupported` refusal. */
+  json_mode?: Record<string, string[]>;
+  /** Backends where that pin is actually honoured — the UI offers the control only
+   *  here, because a setting that silently does nothing is worse than an absent one. */
+  json_mode_backends?: string[];
+  /** Where calls go when the primary fails. `backend` is "" for the built-in order,
+   *  "none" for no fallback, else the one chosen link; `chain` is what will actually be
+   *  tried (an env pin outranks the choice); `active` is true when the primary is spent
+   *  and runs are landing on the fallback right now. */
+  fallback?: {
+    backend: string; model: string; chain: string[]; active: boolean;
+    /** AUGHOR_FALLBACK_BACKENDS is set and outranks the Settings choice. */
+    env_pinned: boolean;
+  };
+  /** The providers a person added — each an OpenAI-compatible endpoint, already in `backends`.
+   *  What it IS and whether its key is set; never the key. */
+  providers?: LlmAddedProvider[];
+}
+
+/** A provider a person added in Settings ▸ Inference. `id` is what every setting names it by. */
+export interface LlmAddedProvider {
+  id: string;
+  name: string;
+  base_url: string;
+  /** Model ids the person listed — offered in the picker where the provider lists none. */
+  models: string[];
+  /** "unset" is a keyless endpoint here, not a fault. */
+  key_state: "set" | "unset" | "unreadable";
+}
+
+export interface LlmProviderIn {
+  name: string;
+  base_url: string;
+  /** Write-only; "" or absent = a keyless endpoint. */
+  api_key?: string;
+  models?: string[];
+}
+
+export interface LlmProviderEdit {
+  base_url?: string;
+  /** Absent = unchanged; "" = remove the stored key (the endpoint takes none). */
+  api_key?: string;
+  /** Replaces the listed ids; [] clears them. */
+  models?: string[];
+}
+
+/** What a removal cleared, in sentences — the provider every role ran on, the fallback, an organisation's own. */
+export interface LlmProviderRemoved {
+  removed: string;
+  name: string;
+  said: string[];
+  config: LlmConfig;
+}
+
+export async function addLlmProvider(body: LlmProviderIn): Promise<LlmConfig> {
+  const res = await fetch(`${getApiBase()}/llm/providers`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(e, "Failed to add the provider"));
+  }
+  return res.json();
+}
+
+export async function editLlmProvider(id: string, body: LlmProviderEdit): Promise<LlmConfig> {
+  const res = await fetch(`${getApiBase()}/llm/providers/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(e, "Failed to save the provider"));
+  }
+  return res.json();
+}
+
+export async function removeLlmProvider(id: string): Promise<LlmProviderRemoved> {
+  const res = await fetch(`${getApiBase()}/llm/providers/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(e, "Failed to remove the provider"));
+  }
+  return res.json();
+}
+
+export interface LlmConfigPatch {
+  backend?: string;
+  models?: Record<string, string>;
+  base_urls?: Record<string, string>;
+  keys?: Record<string, string>;
+  /** {backend?, model?} — "" = built-in order, "none" = no fallback, else one backend. */
+  fallback?: { backend?: string; model?: string };
+  /** Free-by-default: required to bind a non-`:free` OpenRouter model. */
+  allow_paid?: boolean;
+  /** {backend: [model, …]} — per backend the list REPLACES; [] clears it. */
+  json_mode?: Record<string, string[]>;
+}
+
+export async function getLlmConfig(): Promise<LlmConfig> {
+  const res = await fetch(`${getApiBase()}/llm/config`);
+  if (!res.ok) throw new Error("Failed to load inference config");
+  return res.json();
+}
+
+export interface LlmModelEntry {
+  id: string;
+  /** where it came from: the backend itself, our curated floor, or the user */
+  source: "live" | "known" | "custom";
+  label?: string;
+  context?: number;
+  free?: boolean;
+}
+
+export interface LlmModelCatalog {
+  backend: string;
+  models: LlmModelEntry[];
+  custom: string[];
+  live: boolean;
+  live_count: number;
+  /** why the live fetch failed, when it did — shown rather than hidden, so a
+   *  stale fallback is never presented as though it were authoritative */
+  error: string;
+  defaults: Record<string, string>;
+}
+
+export async function getLlmModels(backend?: string, refresh = false): Promise<LlmModelCatalog> {
+  const q = new URLSearchParams();
+  if (backend) q.set("backend", backend);
+  if (refresh) q.set("refresh", "true");
+  const res = await fetch(`${getApiBase()}/llm/models?${q}`);
+  if (!res.ok) throw new Error("Failed to load model catalogue");
+  return res.json();
+}
+
+export async function addLlmModel(backend: string, model: string): Promise<{ backend: string; custom: string[] }> {
+  const res = await fetch(`${getApiBase()}/llm/models`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ backend, model }),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(e, "Failed to add model"));
+  }
+  return res.json();
+}
+
+export async function removeLlmModel(backend: string, model: string): Promise<{ backend: string; custom: string[] }> {
+  const q = new URLSearchParams({ backend, model });
+  const res = await fetch(`${getApiBase()}/llm/models?${q}`, { method: "DELETE" });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(e, "Failed to remove model"));
+  }
+  return res.json();
+}
+
+export async function setLlmConfig(patch: LlmConfigPatch): Promise<LlmConfig> {
+  const res = await fetch(`${getApiBase()}/llm/config`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(e, "Failed to save inference config"));
+  }
+  return res.json();
+}
+
+export interface LlmTestResult {
+  model: string;
+  ok: boolean;
+  ms?: number;
+  error?: string;
+  /** which roles / agents are bound to this model */
+  used_by: string[];
+}
+
+export interface LlmTestReport {
+  ok: boolean;
+  backend: string;
+  model?: string;          // the coder model — the headline
+  error?: string;          // the first failure, if any
+  results?: LlmTestResult[];
+  tested?: number;
+  failed?: number;
+}
+
+/** Test every DISTINCT model the deployment would use — all three role bindings,
+ *  plus per-agent pins with `includeAgents`. Pass `model` to test just one. */
+export async function testLlmConfig(
+  backend?: string, model?: string, includeAgents = false,
+  /** The role → model on the form, not saved yet: what the test tries. */
+  models?: Record<string, string>,
+): Promise<LlmTestReport> {
+  const res = await fetch(`${getApiBase()}/llm/config/test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ backend, model, include_agents: includeAgents, ...(models ? { models } : {}) }),
+  });
+  return res.json();
+}
+
+export interface CacheProbeResult {
+  ok: boolean;
+  backend: string;
+  model: string;
+  verdict?: "reuse_active" | "no_reuse" | "inconclusive";
+  ratio?: number;                 // warm/cold latency ratio
+  cache_mode?: string | null;     // the measured mode persisted to the capability
+  warm_median_ms?: number | null;
+  cold_median_ms?: number | null;
+  error?: string;
+}
+
+/** Measure prefix-cache reuse for the active binding and persist the verdict (§5b.3). */
+export async function cacheProbe(role?: string, rounds?: number): Promise<CacheProbeResult> {
+  const res = await fetch(`${getApiBase()}/llm/config/cache-probe`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role, rounds }),
+  });
+  return res.json();
+}
+
+// ── Explorer Control ────────────────────────────────────────────────────────────
+
+export interface ExplorerStatus {
+  connection_id: string;
+  phase: string;
+  paused: boolean;
+  tables_total: number;
+  columns_total: number;
+  joins_total: number;
+  null_meanings_resolved: number;
+  joins_verified: number;
+  lifecycles_mapped: number;
+  distributions_profiled: number;
+  insights_found: number;
+  queries_executed: number;
+  facts_discovered: number;
+  started_at: string | null;
+  completed_at: string | null;
+  error: string | null;
+  /** A run its own budget stopped is continued on its own after a day — when, or null. */
+  continues_at?: string | null;
+  /** True when Phase-8 domain intelligence was skipped because its prerequisite
+   *  ontology could not be built — distinguishes "couldn't generate" from "never ran". */
+  domain_intel_skipped?: boolean;
+  domain_intel_note?: string | null;
+  /** {schema: phase} for the 'All schemas' aggregate of a multi-schema connection. */
+  per_schema?: Record<string, string> | null;
+  /** The run stopped mid-phase and nothing is running it: its phase is where it stopped. */
+  interrupted?: boolean;
+}
+
+export async function getExplorerStatus(connectionId: string, schema?: string): Promise<ExplorerStatus> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/status${q}`);
+  if (!res.ok) throw new Error("Failed to fetch explorer status");
+  return res.json();
+}
+
+export async function startExplorer(connectionId: string, schema?: string): Promise<{ ok: boolean; reason?: string }> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await personRun(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/start${q}`,
+    "Failed to start explorer");
+  return res.json();
+}
+
+export async function stopExplorer(connectionId: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/stop`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to stop explorer");
+  return res.json();
+}
+
+export async function restartExplorer(connectionId: string): Promise<{ ok: boolean }> {
+  const res = await personRun(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/restart`,
+    "Failed to restart explorer");
+  return res.json();
+}
+
+export async function triggerDomainIntelligence(connectionId: string): Promise<{
+  ok: boolean;
+  reason?: string;
+  /** Per-schema fan-out outcomes — a multi-schema connection reports one row per schema,
+   *  and a refused schema carries its reason here (the top-level `ok` is any-schema-ok). */
+  results?: { schema?: string | null; ok: boolean; reason?: string }[];
+}> {
+  const res = await personRun(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/trigger-intel`,
+    "Failed to trigger domain intelligence");
+  return res.json();
+}
+
+// ── Platform monitoring ───────────────────────────────────────────────────────
+
+export interface PlatformMetrics {
+  uptime_seconds: number;
+  counters: Record<string, number>;
+  timings: Record<string, { total_ms: number; count: number; avg_ms: number }>;
+  derived: {
+    rag_hit_rate: number | null;
+    sql_correction_success_rate: number | null;
+  };
+}
+
+export async function getPlatformMetrics(): Promise<PlatformMetrics> {
+  const res = await fetch(`${getApiBase()}/dev/stats`);
+  if (!res.ok) throw new Error("Failed to fetch platform metrics");
+  return res.json();
+}
+
+export interface AuditStats {
+  total: number;
+  blocked: number;
+  allowed: number;
+  pii_redactions: number;
+  by_connection: Record<string, { total: number; blocked: number }>;
+}
+
+export async function getAuditStats(connectionId?: string): Promise<AuditStats> {
+  const params = new URLSearchParams();
+  if (connectionId) params.set("connection_id", connectionId);
+  const res = await fetch(`${getApiBase()}/security/audit/stats?${params}`);
+  if (!res.ok) throw new Error("Failed to fetch audit stats");
+  return res.json();
+}
+
+/** The explorer's own derivation of a finding, captured at emit time and carried
+ *  inside the finding artifact's payload. Lets the Evidence drawer render the full
+ *  trace (question → grounded cells → reasoning → structural ground) with zero
+ *  recompute, instead of re-running a deep analysis to reconstruct it. */
+export interface FindingDossier {
+  dossier_version: number;
+  /** "briefing" when the Briefing MEASURED it (a metric's move) rather than the explorer asking it. */
+  asked_by?: string;
+  question: string;
+  sql: string;
+  finding: string;
+  rationale: string;
+  result_cells: string;                                    // bounded, de-duped numeric evidence
+  grounding: { grounded: boolean; checked: number; ungrounded: string[] };
+  structural_ctx: {
+    null_meanings: Record<string, { meaning?: string; business_rule?: string; evidence_sql?: string }>;
+    joins: { from_table: string; from_col: string; to_table: string; to_col: string; orphan_count: number; verified: boolean; cardinality: string }[];
+    lifecycles: Record<string, { status_column?: string; states?: string[]; terminal_states?: string[]; active_states?: string[] }>;
+    distributions: Record<string, { shape?: string; p50?: number; pct_zero?: number }>;
+  };
+  generated_at: string;
+  data_fingerprint: string | null;
+  // Added post-emit: the briefing's "why it matters" framing (P5), and the last
+  // live re-validation stamp/status (P4).
+  narrative?: string;
+  revalidated_at?: string;
+  revalidation?: "confirmed" | "drifted" | "error";
+}
+
+/** Per-run compute a job/answer spent (R1). Honest signals only — tokens · calls ·
+ *  queries · rows · time. No fabricated $. */
+export interface RunCost {
+  llm_calls?: number;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  query_count?: number;
+  rows_returned?: number;
+  llm_ms?: number;
+  query_ms?: number;
+}
+
+// Per-run receipts stamped on the answer's Trust Receipt (Wave 1 · E4 learning, E3 activations).
+export interface LearningReceiptPayload {
+  readings_reused: number;
+  corrections_applied: number;
+  by_source: Record<string, number>;
+  resolutions_crystallized: number;
+}
+export interface ActivationReceiptEntry { capability: string; reason: string; count: number }
+
+export interface InsightReceipt {
+  artifact: { id: string; kind: string; version: number; created_at: string; payload: Record<string, unknown> & { dossier?: FindingDossier; learning?: LearningReceiptPayload; activations?: ActivationReceiptEntry[] } };
+  lineage: { relation: string; ref: string; detail: string | null }[];
+  job: { id: string; kind: string; state: string; started_at: string | null; finished_at: string | null; metrics?: RunCost | null } | null;
+  cost?: RunCost | null;
+}
+
+// ── The Fleet: kernel jobs as named agents (R2) ──────────────────────────────
+
+export interface FleetAgent { agent: string; blurb: string; icon: string }
+
+export interface FleetJob {
+  id: string;
+  kind: string;
+  state: string;            // PENDING | RUNNING | SUCCEEDED | FAILED | CANCELLED | PAUSED
+  conn_id: string | null;
+  canvas_id: string | null;
+  created_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  error: string | null;
+  agent: FleetAgent;
+  title: string;
+  cost: RunCost | null;
+  duration_ms: number | null;
+}
+
+/** One kernel job, as the pages that say what is running read it (Now, Agent runs) — the same row Agent Ops lists. */
+export type JobRow = FleetJob;
+/** The kernel job kind a deep analysis runs as — the backend's frozen spelling, named here once. */
+export const DEEP_ANALYSIS_JOB_KIND = "investigation";
+/** The chat's mode for a deep analysis — the frozen wire literal the chat route reads. */
+export const DEEP_ANALYSIS_MODE = "investigate" as const;
+
+export async function getJobs(params?: {
+  state?: string; conn_id?: string; kind?: string; limit?: number;
+  /** AO-3 — the shared window (`rangeParams`): a named range, or ISO-8601 UTC bounds on
+   *  `created_at`, half-open. Omit all three for no bound. */
+  range?: string; since?: string; until?: string;
+}): Promise<FleetJob[]> {
+  const q = new URLSearchParams();
+  if (params?.state) q.set("state", params.state);
+  if (params?.conn_id) q.set("conn_id", params.conn_id);
+  if (params?.kind) q.set("kind", params.kind);
+  if (params?.limit) q.set("limit", String(params.limit));
+  if (params?.range) q.set("range", params.range);
+  if (params?.since) q.set("since", params.since);
+  if (params?.until) q.set("until", params.until);
+  const res = await fetch(`${getApiBase()}/jobs${q.toString() ? `?${q}` : ""}`);
+  if (!res.ok) throw await refused(res, "Reading the jobs");
+  return res.json();
+}
+
+export async function cancelJob(jobId: string): Promise<{ job_id: string; cancelled: boolean }> {
+  const res = await fetch(`${getApiBase()}/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" });
+  if (!res.ok) return { job_id: jobId, cancelled: false };
+  return res.json();
+}
+
+// ── Agent registry + governance: manage the fleet (Phase 0) ──────────────────
+
+/** The wire's word for a built-in agent's row (`kind`), named once for files outside the roster. */
+export const BUILT_IN_AGENT_KIND = "charter" as const;
+
+export interface AgentGovernance {
+  enabled: boolean; token_budget: number | null; time_budget_s: number | null; model?: string | null;
+  /** Resolved values of the charter's declared knobs, by knob id — always every knob. */
+  limits?: Record<string, number>;
+}
+export interface AgentSpend { runs: number; total_tokens: number; query_count: number }
+/** One declared, governable LIMIT an agent's pipelines read at run time (the Curator's
+ *  warehouse-sized caps). The registry is the charter's; this is its wire shape. */
+export interface AgentKnob {
+  id: string; label: string; description: string;
+  default: number; min: number; max: number; unit: string;
+  /** Where it bites, in a reader's words — Spotlight's "what is where". */
+  applies_to: string;
+}
+export interface AgentRosterEntry {
+  id: string; name: string; role: string; goal: string;
+  lane: "background" | "interactive";
+  job_kinds: string[]; tools: string[]; icon: string; reserved: boolean;
+  default_budget: { token_budget: number | null; time_budget_s: number | null };
+  knobs?: AgentKnob[];
+  governance: AgentGovernance;
+  spend: AgentSpend;
+  /** AO-3 — the window `spend` was read over; the built-in agent's page captions it. */
+  window?: ReadWindow;
+  backend?: string;
+}
+
+/** AO-3 — throws on a failed read (it returned `[]`, which the roster rendered as "no
+ *  built-in agents"); takes the shared window, which rides back on every row. */
+export async function getAgents(
+  workspaceId?: string, params?: { range?: string; since?: string; until?: string },
+): Promise<AgentRosterEntry[]> {
+  const q = new URLSearchParams();
+  if (workspaceId) q.set("workspace_id", workspaceId);
+  if (params?.range) q.set("range", params.range);
+  if (params?.since) q.set("since", params.since);
+  if (params?.until) q.set("until", params.until);
+  const res = await fetch(`${getApiBase()}/agents${q.toString() ? `?${q}` : ""}`);
+  if (!res.ok) throw new Error((await res.text()) || `agents read failed (${res.status})`);
+  return res.json();
+}
+
+export async function patchAgent(
+  agentId: string,
+  body: {
+    enabled?: boolean; token_budget?: number; time_budget_s?: number; model?: string;
+    /** Declared-knob values by id; null clears one back to its default. */
+    limits?: Record<string, number | null>;
+    workspace_id?: string; allow_paid?: boolean;
+  },
+): Promise<{ agent_id: string; governance: AgentGovernance } | null> {
+  const res = await fetch(`${getApiBase()}/agents/${encodeURIComponent(agentId)}`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    // The registry's own sentence (an undeclared knob, an out-of-range value) is the
+    // message the operator should read — not a bare null.
+    const detail = await res.json().catch(() => null);
+    throw new Error(String(detail?.detail ?? `PATCH /agents/${agentId} failed (${res.status})`));
+  }
+  return res.json();
+}
+
+/** Live re-validation of a finding's dossier — re-runs the stored SQL and re-grounds
+ *  the claim. `confirmed` = numbers still hold; `drifted` = a number moved. */
+export interface RevalidateResult {
+  status: "confirmed" | "drifted" | "error";
+  grounded?: boolean;
+  checked?: number;
+  ungrounded?: string[];
+  stored_cells?: string;
+  fresh_cells?: string;
+  cells_changed?: boolean;
+  row_count?: number;
+  error?: string;
+  revalidated_at?: string;
+}
+
+export async function revalidateInsight(connId: string, insightId: string): Promise<RevalidateResult> {
+  const res = await fetch(
+    `${getApiBase()}/exploration/${encodeURIComponent(connId)}/findings/${encodeURIComponent(insightId)}/revalidate`,
+    { method: "POST" },
+  );
+  if (!res.ok) return { status: "error", error: `HTTP ${res.status}` };
+  return res.json();
+}
+
+/** K3 Trust Receipt — provenance for a finding (404 if it predates tracking). */
+export async function getInsightReceipt(connId: string, insightId: string): Promise<InsightReceipt | null> {
+  const res = await fetch(
+    `${getApiBase()}/exploration/${encodeURIComponent(connId)}/findings/${encodeURIComponent(insightId)}/receipt`,
+  );
+  if (!res.ok) return null;
+  return res.json();
+}
+
+// ── "Show the receipt" — ground a specific briefing number against live result cells ──
+
+export interface GroundedNumeral {
+  text: string;
+  value: number;
+  enforce: boolean;
+  grounded: boolean;
+  matched_cell: number | null;
+}
+
+export interface GroundingReceipt {
+  insight_id: string;
+  finding: string;
+  sql: string;
+  numerals: GroundedNumeral[];
+  columns: string[];
+  sample_rows: string[][];
+  error?: string;
+}
+
+/** Re-run a cited finding's query and ground a specific number ("show the receipt").
+ *  `text` is the exact token clicked in the brief; omit to ground the whole finding.
+ *  `insightIds` (all citations) lets the backend find the number's TRUE source, not just
+ *  the nearest citation. */
+export async function groundBriefingNumber(
+  connId: string,
+  insightId: string,
+  opts: { text?: string; schema?: string; insightIds?: string[] } = {},
+): Promise<GroundingReceipt> {
+  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connId)}/briefing/ground`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      insight_id: insightId,
+      insight_ids: opts.insightIds ?? [],
+      text: opts.text ?? "",
+      schema: opts.schema ?? null,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Grounding failed"));
+  }
+  return res.json();
+}
+
+// ── WP-10: the unified public Trust Receipt (GET /receipt/{id}) ─────────────────
+export interface PublicReceiptGuard { name: string; fired: boolean; action: string; caveat: string }
+export interface PublicReceiptSql { sql: string; label: string; duration_ms: number | null; row_count: number | null }
+export interface PublicReceipt {
+  receipt_version: number;
+  id: string;
+  created_at: string | null;
+  mode: string;                         // quick | deep | builder | explore | monitor | brief
+  question: string;
+  headline: string;
+  connection: { id: string | null; name: string | null; dialect: string | null };
+  executed_sql: PublicReceiptSql[];
+  input_tables: string[];
+  /** DE-4 — the columns the statement read, each with how it was resolved. `level` is
+   *  "column" (traced), "table" (fell back to tables, `note` says why) or null for a receipt
+   *  written before columns were traced — which is not the same as reading none. */
+  columns: {
+    level: "column" | "table" | null;
+    note: string | null;
+    columns: { table: string; column: string; roles: string[]; confidence: "certain" | "likely" | "possible" | null; as: string[] }[];
+    tables_only: { table: string; roles: string[]; as: string[]; note: string | null }[];
+  };
+  guards: PublicReceiptGuard[];          // each names a guard that FIRED, with its action
+  caveats: string[];
+  metrics: {
+    used: string[];
+    drifted: { metric: string; detail: string | null }[];
+    available: string[];
+    proposed: { metric: string; detail: string | null }[];
+  };
+  confidence: { level: string | null; capped_by: string | null };
+  data_trust: { window: string | null; coverage_notes: string | null };
+  model: { role: string; id: string | null };
+  /** Wave H2 — the user-defined persona this answer ran as, or null when unbound. */
+  agent: { id: string; name: string } | null;
+  /** Ambiguities this connection settled earlier that this answer applied (I6). */
+  resolved_readings: { reading: string; note: string }[];
+  /** What the closed loop learned on this run (Wave 1·E4), or null when it ran nothing. */
+  learning: LearningReceiptPayload | null;
+  /** Self-gating capabilities whose trigger fired this run (Wave 1·E3). */
+  activations: { capability: string; reason: string; count: number }[];
+  /** Wave P1 — ids of the graph nodes the planner was shown before writing the SQL.
+   *  Ids only, and signed: the labels/warrants resolve live via `getAnswerTrace`. */
+  grounded_in_graph: string[];
+  cost: Record<string, number | string> | null;
+  /** Phase 1 of the 2027 study — line two of the receipt, live as of this read: how often
+   *  answers of this kind have held, COUNTED with n (the `confidence` above is the model's own
+   *  word about itself), and who else was told. null on a receipt that is not an answer's. */
+  record: {
+    /** The run this receipt is for — what Re-perform re-runs. Absent on an API older than the screen. */
+    answer?: string;
+    claim: { id: string; key: string; version: number; tier: string; kind: string; as_of: string;
+             recorded_at: string; restated: boolean; warrants_this_receipt: boolean } | null;
+    confidence: { reference_class: string; hit_rate: number | null; n: number; scope: string; note: string } | null;
+    confidence_note: string;
+    told: { at: string; state: string; kind: string; target: string; addressed_to: string; by: string;
+            verdict: string; departure_id: string }[];
+    told_note: string;
+  } | null;
+  signature: string;                     // HMAC — server-issued proof
+}
+
+/** Resolve any answer's receipt id into the one signed public contract. 404 → null. */
+export async function getPublicReceipt(receiptId: string): Promise<PublicReceipt | null> {
+  const res = await fetch(`${getApiBase()}/receipt/${encodeURIComponent(receiptId)}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+// ── The answer trace (Wave P1 — GET /receipt/{id}/trace) ──────────────────────
+
+export interface TracedNode {
+  id: string;
+  kind: string;
+  label: string;
+  summary: string;
+  reason: "cited" | "read" | "metric" | "finding";
+  why: string;
+  /** False ⇒ the answer named it, but the graph does not (or no longer does) hold it. */
+  present: boolean;
+  warrant: CGWarrant | null;
+}
+export interface TracedEdge {
+  id: string; kind: string; from_id: string; to_id: string;
+  label: string; warrant: CGWarrant | null;
+}
+export interface AnswerTrace {
+  receipt_id: string;
+  available: boolean;
+  reason?: string;
+  connection_id?: string;
+  graph_version?: number;
+  nodes: TracedNode[];
+  edges: TracedEdge[];
+  counts?: { nodes: number; edges: number; unresolved: number };
+  has_unresolved?: boolean;
+}
+
+/** The knowledge-graph subgraph one answer stands on. A separate call from the receipt:
+ *  the receipt is signed and immutable, the trace resolves against the live graph. */
+export async function getAnswerTrace(receiptId: string): Promise<AnswerTrace | null> {
+  const res = await fetch(`${getApiBase()}/receipt/${encodeURIComponent(receiptId)}/trace`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+// ── Metastore: Volumes (the governed unstructured tier) ─────────────────────────
+
+export interface MetastoreVolume {
+  id: string;
+  org_id: string;
+  catalog_id: string;
+  name: string;
+  full_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MetastoreVolumeObject {
+  id: string;
+  org_id: string;
+  volume_id: string;
+  path: string;
+  name: string;
+  mime_type: string;
+  size_bytes: number;
+  extracted_text: string | null;
+  created_at: string;
+}
+
+export async function listVolumes(catalogId: string): Promise<MetastoreVolume[]> {
+  const res = await fetch(`${getApiBase()}/metastore/catalogs/${encodeURIComponent(catalogId)}/volumes`);
+  if (!res.ok) throw new Error("Failed to list volumes");
+  return (await res.json()).volumes ?? [];
+}
+
+export async function createVolume(catalogId: string, name: string): Promise<MetastoreVolume> {
+  const res = await fetch(`${getApiBase()}/metastore/catalogs/${encodeURIComponent(catalogId)}/volumes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(fastApiError(e, "Failed to create volume")); }
+  return res.json();
+}
+
+export async function listVolumeObjects(volumeId: string): Promise<MetastoreVolumeObject[]> {
+  const res = await fetch(`${getApiBase()}/metastore/volumes/${encodeURIComponent(volumeId)}/objects`);
+  if (!res.ok) throw new Error("Failed to list objects");
+  return (await res.json()).objects ?? [];
+}
+
+export async function uploadVolumeObject(volumeId: string, file: File): Promise<MetastoreVolumeObject> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${getApiBase()}/metastore/volumes/${encodeURIComponent(volumeId)}/objects`, { method: "POST", body: form });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(fastApiError(e, "Upload failed")); }
+  return res.json();
+}
+
+export function volumeObjectContentUrl(volumeId: string, objectId: string): string {
+  return `${getApiBase()}/metastore/volumes/${encodeURIComponent(volumeId)}/objects/${encodeURIComponent(objectId)}/content`;
+}
+
+export async function deleteVolumeObject(volumeId: string, objectId: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/metastore/volumes/${encodeURIComponent(volumeId)}/objects/${encodeURIComponent(objectId)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Delete failed");
+}
+
+// ── Metastore: Grants (explicit catalog access for a workspace) ─────────────────
+
+export async function listWorkspaceGrants(workspaceId: string): Promise<string[]> {
+  const res = await fetch(`${getApiBase()}/metastore/workspaces/${encodeURIComponent(workspaceId)}/grants`);
+  if (!res.ok) throw new Error("Failed to list grants");
+  return (await res.json()).catalogs ?? [];
+}
+
+export async function grantWorkspaceCatalog(workspaceId: string, catalogId: string): Promise<string[]> {
+  const res = await fetch(`${getApiBase()}/metastore/workspaces/${encodeURIComponent(workspaceId)}/grants`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ catalog_id: catalogId }),
+  });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(fastApiError(e, "Grant failed")); }
+  return (await res.json()).catalogs ?? [];
+}
+
+export async function revokeWorkspaceCatalog(workspaceId: string, catalogId: string): Promise<string[]> {
+  const res = await fetch(`${getApiBase()}/metastore/workspaces/${encodeURIComponent(workspaceId)}/grants/${encodeURIComponent(catalogId)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Revoke failed");
+  return (await res.json()).catalogs ?? [];
+}
+
+// ── Business Glossary (institutional knowledge: table/column descriptions) ───────
+
+export interface GlossaryColumn { description?: string; values?: string; caveats?: string; }
+export interface GlossaryTable {
+  description?: string;
+  grain?: string;
+  joins?: string[];
+  columns?: Record<string, GlossaryColumn>;
+}
+export interface Glossary { tables?: Record<string, GlossaryTable>; }
+
+/** Look up a table's glossary entry tolerantly, mirroring `semantic.glossary.lookup_table`.
+ *  The store is keyed by whatever the connector's `TABLE:` header carried, so it holds BOTH
+ *  bare and `schema.table` keys. Exact-first, then schema-tolerant: a qualified key only
+ *  answers for its own schema, while a bare key answers for any (the pre-scoping fallback). */
+export function lookupGlossaryTable(
+  g: Glossary | null | undefined, table: string, schema?: string | null,
+): GlossaryTable | undefined {
+  const tables = g?.tables ?? {};
+  const leaf = (n: string) => (n || "").split(".").pop()!.trim().replace(/"/g, "").toLowerCase();
+  const schemaOf = (n: string) => {
+    const parts = (n || "").split(".").map(x => x.trim().replace(/"/g, "")).filter(Boolean);
+    return parts.length >= 2 ? parts[parts.length - 2].toLowerCase() : null;
+  };
+  const want = schema && !table.includes(".") ? `${schema}.${table}` : table;
+  if (tables[want]) return tables[want];
+  const wantLeaf = leaf(want), wantSchema = schemaOf(want);
+  for (const [k, v] of Object.entries(tables)) {
+    if (leaf(k) !== wantLeaf) continue;
+    const ks = schemaOf(k);
+    if (ks && wantSchema && ks !== wantSchema) continue;   // never cross schemas
+    return v;
+  }
+  return undefined;
+}
+
+export async function getGlossary(): Promise<Glossary> {
+  const res = await fetch(`${getApiBase()}/glossary`);
+  if (!res.ok) return { tables: {} };
+  return res.json();
+}
+
+/** Partial table-level glossary patch. Every field the agent reads at query time:
+ *  description + grain + joins all flow into the schema context via apply_glossary(). */
+export async function updateTableGlossary(
+  table: string,
+  patch: { description?: string; grain?: string; joins?: string[] },
+  schema?: string | null,
+): Promise<void> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${getApiBase()}/glossary/${encodeURIComponent(table)}${q}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error("Failed to save table comment");
+}
+
+/** Partial column-level glossary patch (description + known values + caveats). */
+export async function updateColumnGlossary(
+  table: string,
+  column: string,
+  patch: { description?: string; values?: string; caveats?: string },
+  schema?: string | null,
+): Promise<void> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${getApiBase()}/glossary/${encodeURIComponent(table)}/${encodeURIComponent(column)}${q}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error("Failed to save column comment");
+}
+
+// ── Column notes — the note the agent reads on a column (data/ontology_column_config) ──────────
+/** One column's config entry: its note, who wrote it, and the notes it replaced. */
+export interface ColumnNoteEntry {
+  note: string;
+  source: string;
+  edited_at: string;
+  note_history?: { note: string; source: string; written_at: string; superseded_at: string; superseded_by: string }[];
+}
+
+/** Each table's columns' config entries, for one connection and schema. */
+export async function getColumnNotes(connectionId: string, schema?: string | null): Promise<Record<string, Record<string, ColumnNoteEntry>>> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schema) q.set("schema_name", schema);
+  const res = await fetch(`${getApiBase()}/ontology/column-config?${q}`);
+  if (!res.ok) throw new Error("Failed to load column notes");
+  return ((await res.json()).tables ?? {}) as Record<string, Record<string, ColumnNoteEntry>>;
+}
+
+/** Replace a column's note — "" clears it. The note it replaces is kept in the column's history. */
+export async function setColumnNote(connectionId: string, schema: string | null | undefined, table: string,
+                                    column: string, note: string): Promise<void> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schema) q.set("schema_name", schema);
+  const res = await fetch(`${getApiBase()}/ontology/column-config?${q}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ table, column, note }),
+  });
+  if (!res.ok) throw new Error("Failed to save the column note");
+}
+
+// ── Playbook (Governed Dives): version history ──────────────────────────────────
+
+export interface PlaybookVersion {
+  entry_id: string;
+  version: number;
+  receipt: string;
+  saved_at: string;
+  content: Record<string, unknown>;
+}
+
+export async function getPlaybookVersions(entryId: string): Promise<PlaybookVersion[]> {
+  const res = await fetch(`${getApiBase()}/playbook/${encodeURIComponent(entryId)}/versions`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+// ── Post-processing transforms (PoP / share / rolling / cumulative) ─────────────
+
+export type PostprocOp = "pop" | "contribution" | "rolling" | "cumulative";
+
+export async function applyPostproc(
+  columns: string[], rows: unknown[][], op: PostprocOp, valueCol: string,
+  window = 3, agg: "mean" | "sum" | "min" | "max" = "mean",
+): Promise<{ columns: string[]; rows: unknown[][] }> {
+  const res = await fetch(`${getApiBase()}/query/postproc`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ columns, rows, op, value_col: valueCol, window, agg }),
+  });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(fastApiError(e, "Transform failed")); }
+  return res.json();
+}
+
+// ── System feature flags (runtime override > env) ───────────────────────────────
+
+export type CapabilityState = "on" | "off" | "auto";
+export interface SystemFlag {
+  value: boolean;
+  // "default" = the code default decided (no env var, no override) — distinguished from
+  // "env" so a default-on flag never sends an operator hunting for a variable nobody set.
+  source: "run" | "runtime" | "env" | "default";
+  env_var: string;
+  label: string;
+  /** What the person gets — at most two short sentences, always shown. */
+  summary?: string;
+  /** What it costs and touches, drawn as chips (kinds: model · free · schedule · sends ·
+   *  warehouse · needs · private · route). */
+  facts?: Array<{ kind: string; text: string }>;
+  /** The rest, behind "Details" — ends by saying what Off means. */
+  description: string;
+  // Capabilities Auto-mode (Wave 1 · E3) — present on every flag:
+  state?: CapabilityState;          // effective tri-state
+  override?: boolean | null;        // the runtime override, or null when following env/Auto-mode
+  /** Always false since flag endgame Wave 3 dissolved the Auto-mode tier. Retained
+   *  for payload compatibility; nothing sets it true. */
+  auto_eligible?: boolean;
+  trigger?: string;                 // (auto-eligible only) the deterministic trigger, in words
+  // The disposition ratchet (flag strategy §5.1) — every flag declares its kind, so the
+  // Settings UI can group by it instead of rendering one flat toggle list:
+  disposition?: string;             // default_on | auto | intentionally_off | experiment | …
+  disposition_note?: string;        // the declared reason / exit for non-graduated kinds
+}
+
+export async function getSystemFlags(): Promise<Record<string, SystemFlag>> {
+  const res = await fetch(`${getApiBase()}/system/flags`);
+  if (!res.ok) throw await refused(res, "Reading the feature flags");
+  return res.json();
+}
+
+export async function setSystemFlag(name: string, value: boolean): Promise<SystemFlag> {
+  const res = await fetch(`${getApiBase()}/system/flags/${encodeURIComponent(name)}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value }),
+  });
+  if (!res.ok) throw await refused(res, "Changing the flag");
+  return res.json();
+}
+
+// ── RBAC (roles & permissions) ──────────────────────────────────────────────
+
+export interface MyAccess {
+  user_id: string | null;
+  /** Who what you do is recorded under: the signed-in person, else this install's own login. */
+  actor: string;
+  signed_in: boolean;
+  org_id: string;
+  roles: string[];
+  permissions: string[];
+}
+
+export interface RoleInfo {
+  name: string;
+  description: string;
+  permissions: string[];
+}
+
+export interface RoleAssignment {
+  org_id: string;
+  user_id: string;
+  role: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The caller's effective identity, roles and permissions (for gating admin UI). */
+export async function getMyAccess(): Promise<MyAccess> {
+  const res = await fetch(`${getApiBase()}/rbac/me`);
+  if (!res.ok) throw await refused(res, "Reading your access");
+  return res.json();
+}
+
+/** The built-in role catalogue + the permissions each grants. */
+export async function getRoleCatalogue(): Promise<RoleInfo[]> {
+  const res = await fetch(`${getApiBase()}/rbac/roles`);
+  if (!res.ok) throw await refused(res, "Reading the roles");
+  return res.json();
+}
+
+/** The org's role roster. Returns null when the caller can't manage roles (403) — that is an
+ *  answer, not a failure; any other refusal throws with the server's reason. */
+export async function getRoleAssignments(): Promise<RoleAssignment[] | null> {
+  const res = await fetch(`${getApiBase()}/rbac/assignments`);
+  if (res.status === 403) return null;
+  if (!res.ok) throw await refused(res, "Reading the role assignments");
+  return res.json();
+}
+
+export async function assignRole(userId: string, role: string): Promise<RoleAssignment> {
+  const res = await fetch(`${getApiBase()}/rbac/assignments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id: userId, role }),
+  });
+  if (!res.ok) throw await refused(res, "Assigning the role");
+  return res.json();
+}
+
+export async function revokeRole(userId: string, role: string): Promise<boolean> {
+  const q = `user_id=${encodeURIComponent(userId)}&role=${encodeURIComponent(role)}`;
+  const res = await fetch(`${getApiBase()}/rbac/assignments?${q}`, { method: "DELETE" });
+  if (!res.ok) throw await refused(res, "Revoking the role");
+  const data = await res.json();
+  return !!data.removed;
+}
+
+// ── Groups & level grants (HB-1, the routing half) ──────────────────────────
+
+export interface AccessGroup {
+  id: string;
+  name: string;
+  kind: "builtin" | "function";
+  description: string;
+  channel_trigger_id: string;
+  levels?: Record<string, string>; // built-in groups: default level per securable kind
+}
+
+export interface GroupsCatalogue {
+  ladder: string[];
+  builtin_groups: AccessGroup[];
+  groups: AccessGroup[];
+}
+
+export interface LevelGrant {
+  principal: string;   // user:… | group:… | agent:…
+  securable: string;   // metric:… | promise:… | domain:… | …
+  level: string;       // view | subscribe | edit | manage | own
+  created_at: string;
+}
+
+/** The ladder, the built-in groups and the org's function groups. */
+export async function getGroups(): Promise<GroupsCatalogue> {
+  const res = await fetch(`${getApiBase()}/groups`);
+  if (!res.ok) throw await refused(res, "Reading the groups");
+  return res.json();
+}
+
+export async function saveGroup(g: { id: string; name?: string; description?: string; channel_trigger_id?: string }): Promise<AccessGroup> {
+  const res = await fetch(`${getApiBase()}/groups`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(g),
+  });
+  if (!res.ok) throw await refused(res, "Saving the group");
+  return res.json();
+}
+
+export async function deleteGroup(groupId: string): Promise<boolean> {
+  const res = await fetch(`${getApiBase()}/groups/${encodeURIComponent(groupId)}`, { method: "DELETE" });
+  if (!res.ok) throw await refused(res, "Deleting the group");
+  return !!(await res.json()).removed;
+}
+
+/** A group's members. Null when the caller can't manage roles (403 — the list names people). */
+export async function getGroupMembers(groupId: string): Promise<string[] | null> {
+  const res = await fetch(`${getApiBase()}/groups/${encodeURIComponent(groupId)}/members`);
+  if (res.status === 403) return null;
+  if (!res.ok) return [];
+  return (await res.json()).members ?? [];
+}
+
+export async function addGroupMember(groupId: string, principal: string): Promise<string[]> {
+  const res = await fetch(`${getApiBase()}/groups/${encodeURIComponent(groupId)}/members`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ principal }),
+  });
+  if (!res.ok) throw await refused(res, "Adding the member");
+  return (await res.json()).members ?? [];
+}
+
+export async function removeGroupMember(groupId: string, principal: string): Promise<boolean> {
+  const res = await fetch(
+    `${getApiBase()}/groups/${encodeURIComponent(groupId)}/members?principal=${encodeURIComponent(principal)}`,
+    { method: "DELETE" });
+  if (!res.ok) throw await refused(res, "Removing the member");
+  return !!(await res.json()).removed;
+}
+
+/** The org's level grants. Null when the caller can't manage roles (403). */
+export async function getLevelGrants(filter?: { securable?: string; principal?: string }): Promise<LevelGrant[] | null> {
+  const params = new URLSearchParams();
+  if (filter?.securable) params.set("securable", filter.securable);
+  if (filter?.principal) params.set("principal", filter.principal);
+  const qs = params.toString();
+  const res = await fetch(`${getApiBase()}/access/grants${qs ? `?${qs}` : ""}`);
+  if (res.status === 403) return null;
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function addLevelGrant(principal: string, securable: string, level: string): Promise<LevelGrant> {
+  const res = await fetch(`${getApiBase()}/access/grants`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ principal, securable, level }),
+  });
+  if (!res.ok) throw await refused(res, "Adding the grant");
+  return res.json();
+}
+
+export async function removeLevelGrant(principal: string, securable: string, level: string): Promise<boolean> {
+  const q = `principal=${encodeURIComponent(principal)}&securable=${encodeURIComponent(securable)}&level=${encodeURIComponent(level)}`;
+  const res = await fetch(`${getApiBase()}/access/grants?${q}`, { method: "DELETE" });
+  if (!res.ok) throw await refused(res, "Removing the grant");
+  return !!(await res.json()).removed;
+}
+
+// ── Specialist packs (Domain Expertise Packs) ───────────────────────────────────
+
+export interface PackSummary {
+  id: string;
+  name?: string;
+  status?: string;
+  version?: number;
+  /** Which connections this pack is for: `*`, `engine:<type>`, or a connection id.
+   *  Half the reason a pack is or is not in play — status alone is the other half. */
+  scope?: string[];
+  domains?: string[];
+  metrics?: number;
+  roles?: number;
+  evals?: number;
+  ok: boolean;
+  errors?: string[];
+  warnings?: string[];
+  error?: string;
+  /** HB-6 — whether the pack ships an organisation function group to install. */
+  function?: boolean;
+  /** IP-1 — the knowledge layer a package carries ("industry" · "function" · "base"), or "". */
+  layer?: string;
+  /** IP-1 — the industry id an industry package carries ("retail", "food_delivery"), or "". */
+  industry?: string;
+  description?: string;
+}
+
+export async function getPacks(): Promise<{ enabled: boolean; packs: PackSummary[] }> {
+  const res = await fetch(`${getApiBase()}/packs`);
+  if (!res.ok) return { enabled: false, packs: [] };
+  return res.json();
+}
+
+export interface BindingCandidateDTO {
+  role: string; table?: string | null; column?: string | null;
+  value?: string | null; confidence: number; evidence: string; bound: boolean;
+}
+
+/** A package's roles and recipes, as the binding dialog reads them: each role's attributes with their types, and each
+ *  recipe's formula (`{{role.<role>.<attribute>}}` tokens). */
+export interface PackRoleAttribute { type: string; description: string }
+export interface PackRoleSpec { description: string; expects: Record<string, unknown>; attributes: Record<string, PackRoleAttribute> }
+export interface PackDetail {
+  manifest: { id?: string; name?: string };
+  entities: Record<string, PackRoleSpec>;
+  metrics: { name: string; title?: string; formula?: string; binds?: { required?: string[] } }[];
+}
+
+export async function getPackDetail(packId: string): Promise<PackDetail> {
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}`);
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The package could not be read"));
+  return res.json();
+}
+
+/** What a role is bound to on one connection: its table, and the column each attribute is read from. */
+export interface RoleBinding { table?: string | null; column?: string | null; columns?: Record<string, string>; [k: string]: unknown }
+
+/** The binding this connection has pinned for a package, or null when it has none. */
+export async function getPackBinding(
+  packId: string, connectionId: string, schema?: string,
+): Promise<{ bindings: Record<string, RoleBinding>; verified?: boolean } | null> {
+  const q = new URLSearchParams({ connection_id: connectionId, ...(schema ? { schema } : {}) });
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/binding?${q}`);
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The binding could not be read"));
+  return res.json();
+}
+
+export async function proposePackBindings(
+  packId: string, connectionId: string, schema?: string, businessModel = "",
+): Promise<{ fully_groundable: boolean; groundable_roles: number; total: number; proposals: Record<string, BindingCandidateDTO> }> {
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/propose-bindings`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, schema, business_model: businessModel }),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "propose failed"));
+  return res.json();
+}
+
+export async function bindPack(
+  packId: string, connectionId: string, bindings: Record<string, unknown>, schema?: string, version = 1,
+): Promise<{ verified: boolean; missing?: string[]; dry_run_errors?: string[] }> {
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/bind`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, bindings, schema, version }),
+  });
+  if (!res.ok) throw new Error("bind failed");
+  return res.json();
+}
+
+export async function evaluatePack(
+  packId: string, connectionId: string, schema?: string,
+): Promise<{ can_activate: boolean; pass_rate: number | null; reasons: string[];
+            results: { question: string; passed: boolean; detail: string }[];
+            deployed: boolean; verified: boolean;
+            /** "claims" when the package is a map and nothing else: its claims were measured, no question was asked. */
+            measured?: string; by_tier?: Record<string, number> }> {
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/evaluate`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, schema }),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "evaluate failed"));
+  return res.json();
+}
+
+/** Move a package between draft, active and deprecated. Activation is decided on a connection — by the package's
+ *  evals, or by its measured claims when it is a map and nothing else — and a refusal says why. */
+export async function setPackStatus(
+  packId: string, status: "draft" | "active" | "deprecated", connectionId: string, schema?: string,
+): Promise<{ id: string; status: string; partial: boolean }> {
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/status`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status, connection_id: connectionId, schema }),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The package's status could not be changed"));
+  return res.json();
+}
+
+export interface PackDeltaDTO {
+  id: number; kind: string; target: string; content: string; confidence: number; status: string;
+}
+
+export async function getPackDeltas(packId: string, status = "proposed"): Promise<PackDeltaDTO[]> {
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/deltas?status=${status}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function setPackDeltaStatus(deltaId: number, status: "accepted" | "dismissed"): Promise<boolean> {
+  const res = await fetch(`${getApiBase()}/packs/deltas/${deltaId}/status`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }),
+  });
+  return res.ok;
+}
+
+// ── Arc FA, FA-6 — the installed version and the upgrade ──────────────────────────────────────
+
+/** One thing a pack offers on a connection, as an upgrade's diff lists it (`aughor/packs/upgrade.py`). */
+export interface PackOfferedItem {
+  key: string;
+  kind: "term" | "alert" | "metric" | "structure";
+  label: string;
+  /** What it says now; `was` is what it said at the installed version, for a changed item. */
+  said: string;
+  was: string;
+  /** A person declined it: a term's tombstone, a rejected alert, a withdrawn structure proposal. */
+  declined: boolean;
+  /** The version it was declined in, or null when no record says. */
+  declined_in: number | null;
+  /** Whether the upgrade proposes it, and when not, why. */
+  will_offer: boolean;
+  why: string;
+}
+
+export interface PackUpgradeDiff {
+  pack: string;
+  connection_id: string;
+  schema: string;
+  installed: number;
+  available: number;
+  /** False for a binding made before installed versions were recorded: what it offered then is not known. */
+  recorded: boolean;
+  bound_by: string;
+  bound_at: string;
+  upgrade_available: boolean;
+  added: PackOfferedItem[];
+  changed: PackOfferedItem[];
+  removed: PackOfferedItem[];
+  /** Unchanged items a person declined: they stay declined. */
+  kept_declined: PackOfferedItem[];
+  will_offer: number;
+  /** A store that could not be read, with why — never read as "nothing declined". */
+  not_read: Record<string, string>;
+  note?: string;
+}
+
+export interface PackInstall {
+  connection_id: string;
+  schema: string;
+  installed: number;
+  recorded: boolean;
+  bound_by: string;
+  bound_at: string;
+  behind: boolean;
+}
+
+export interface PackUpgraded {
+  from: number;
+  to: number;
+  terms: { proposed?: number; note?: string };
+  alerts: { staged?: unknown[]; superseded?: string[]; note?: string };
+  kept_declined: number;
+  metrics: { added: number; changed: number; note: string };
+  structure: { added: number; changed: number; note: string };
+}
+
+/** Where a pack is bound and the version installed there — null while installed versions are off (the route 404s). */
+export async function getPackInstalls(packId: string): Promise<{ pack: string; available: number; installs: PackInstall[] }> {
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/installs`);
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Where the pack is installed could not be read"));
+  return res.json();
+}
+
+export async function getPackUpgrade(packId: string, connectionId: string, schema?: string): Promise<PackUpgradeDiff> {
+  const q = new URLSearchParams({ connection_id: connectionId, ...(schema ? { schema } : {}) });
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/upgrade?${q}`);
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "What the upgrade brings could not be read"));
+  return res.json();
+}
+
+export async function upgradePack(packId: string, connectionId: string, schema?: string): Promise<PackUpgraded> {
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/upgrade`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, schema: schema || null }),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The upgrade did not go through"));
+  return res.json();
+}
+
+// ── Arc FA, FA-6 — a pack's dashboard templates ─────────────────────────────────────────────────
+
+export interface PackTemplateCard { key: string; metric: string; title: string; ready: boolean; why: string }
+
+export interface PackTemplate {
+  pack: string;
+  pack_name: string;
+  version: number;
+  id: string;
+  title: string;
+  description: string;
+  sections: string[];
+  cards: PackTemplateCard[];
+  /** How many of its cards this connection can make. */
+  ready: number;
+  /** What a dashboard kept from it is kept with: `pack:<id>@<version> template`. */
+  source: string;
+}
+
+/** The templates of the packs bound on this connection. */
+export async function listPackTemplates(
+  connectionId: string, schema?: string,
+): Promise<{ templates: PackTemplate[]; waiting: Record<string, string> }> {
+  const q = new URLSearchParams({ connection_id: connectionId, ...(schema ? { schema } : {}) });
+  const res = await fetch(`${getApiBase()}/packs/templates?${q}`);
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The pack templates could not be read"));
+  return res.json();
+}
+
+export interface PackTemplateDrafted extends DashboardDrafted {
+  dashboard_id: string;
+  /** Cards left out, each with why — a metric this connection has not registered or approved. */
+  skipped: { key: string; metric: string; title: string; why: string }[];
+  source: string;
+  dropped_sections?: string[];
+}
+
+export async function draftFromPackTemplate(
+  packId: string, templateId: string, connectionId: string, schema?: string,
+): Promise<PackTemplateDrafted> {
+  const res = await fetch(`${getApiBase()}/packs/${encodeURIComponent(packId)}/templates/${encodeURIComponent(templateId)}/draft`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, schema: schema || null }),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "The template was not drafted"));
+  return res.json();
+}
+
+// ── User-defined agents (flag `agents.user_defined`) ──────────────────────────
+// CRUD over /agents/custom — the domain personas ("Gems on governed data").
+// GETs fail soft (routes 404 when the flag is off → empty roster, no error UI).
+
+export interface UserAgent {
+  id: string;
+  name: string;
+  instructions: string;
+  /** One line on what the agent is for; "" when its author left it blank. */
+  purpose?: string;
+  connection_id: string;
+  schema_scope: string;
+  doc_ids: string[];
+  pack_ids: string[];
+  /** VA-9c — declared actions this agent may PROPOSE (never execute). Stored since
+   *  2026-09-02; before that the field was a phantom and always []. */
+  tool_grants: string[];
+  owner: string;
+  enabled: boolean;
+  last_eval: { passed: number; total: number; at: string } | null;
+  /** Fingerprint of the fields that decide how this agent answers (Wave H6). */
+  config_rev: string;
+  /** Whether `last_eval` is about the agent as it is configured now. */
+  eval_basis: EvalBasis;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentRevision {
+  version: number;
+  at: string;
+  config_rev: string;
+  author: string;
+  name: string;
+  config: Record<string, unknown>;
+  /** Governing fields this revision moved, in declared order.
+   *
+   *  `[]` on revision 1 — it is the beginning, so nothing changed. `null` when the
+   *  predecessor exists but fell outside the requested window: unknown, which is NOT the
+   *  same as "this edit did nothing". */
+  changed: string[] | null;
+}
+
+/** VA-8 — what an agent may do with what it sees, and how much it may spend. */
+export interface AgentGuardrails {
+  /** `redact` is what the platform did before guardrails existed, so it is the default
+   *  and an unconfigured agent is unchanged. */
+  pii: "off" | "redact" | "block";
+  /** Tokens, not dollars. A cost ceiling can only be applied after a call is priced,
+   *  which is after it has been paid for — it could stop the NEXT run, never this one. */
+  max_tokens_per_run: number | null;
+}
+
+export async function getAgentGuardrails(
+  agentId: string,
+): Promise<{ guardrails: AgentGuardrails; is_default: boolean; modes: { pii: string[] } } | null> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${agentId}/guardrails`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function setAgentGuardrails(
+  agentId: string,
+  guardrails: AgentGuardrails,
+): Promise<{ guardrails: AgentGuardrails }> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${agentId}/guardrails`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(guardrails),
+  });
+  if (!res.ok) throw await refused(res, "Saving the guardrails");
+  return res.json();
+}
+
+export async function listAgentRevisions(
+  agentId: string,
+): Promise<{ current_rev: string; eval_basis: EvalBasis; revisions: AgentRevision[] }> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${agentId}/revisions`);
+  if (!res.ok) return { current_rev: "", eval_basis: "none", revisions: [] };
+  return res.json();
+}
+
+export async function restoreAgentRevision(
+  agentId: string,
+  version: number,
+): Promise<UserAgent> {
+  const res = await fetch(
+    `${getApiBase()}/agents/custom/${agentId}/revisions/${version}/restore`,
+    { method: "POST" },
+  );
+  if (!res.ok) throw await refused(res, "Restoring the revision");
+  return (await res.json()).agent as UserAgent;
+}
+
+export async function listUserAgents(): Promise<UserAgent[]> {
+  const res = await fetch(`${getApiBase()}/agents/custom`);
+  if (!res.ok) throw await refused(res, "Reading the custom agents");
+  return res.json();
+}
+
+/** A declared action as the ontology's actions door returns it — what a dashboard's button needs to run one (Arc OC-4). */
+export interface DeclaredAction {
+  id: string;
+  display_name: string;
+  description: string;
+  entity: string;
+  object_type: string;
+  kind: "annotate" | "side_effect" | "query";
+  risk: "read_only" | "low" | "high";
+  params: { name: string; display_name: string; data_type: string; required: boolean; default_value: string | null;
+            kind: "value" | "object"; object_type: string; description: string }[];
+  /** ON-4 — the properties an `annotate` action sets on the object it takes. */
+  edits: { object: string; property: string; value: string; note: string }[];
+}
+
+/** The side-effect kind that starts a deep analysis — the backend's frozen spelling, mirrored here. */
+export const DEEP_ANALYSIS_EFFECT = "trigger_investigation" as const;
+
+/** Where the declared actions are read and declared — the frozen path of the declare door. */
+export const DECLARED_ACTIONS = "/ontology/kinetic-actions";
+
+/** Every declared action on a scope, by id. Throws when the ontology cannot be read: a reader is told, never handed
+ *  an empty roster as if nothing were declared. */
+export async function getDeclaredActions(connId: string, schema?: string): Promise<Record<string, DeclaredAction>> {
+  const qs = new URLSearchParams({ connection_id: connId });
+  if (schema) qs.set("schema_name", schema);
+  const res = await fetch(`${getApiBase()}${DECLARED_ACTIONS}?${qs}`);
+  if (!res.ok) throw await refused(res, "Reading the declared actions");
+  return res.json();
+}
+
+/** VA-9c — the declared-action roster grants pick from (keys are the grantable ids).
+ *  Empty on any failure: a broken ontology read must not take the agent editor down,
+ *  and an empty roster renders as its own honest sentence. */
+export async function getActionRoster(
+  connId: string, schema?: string,
+): Promise<Record<string, { title?: string; description?: string }>> {
+  try {
+    return await getDeclaredActions(connId, schema);
+  } catch {
+    return {};
+  }
+}
+
+export async function createUserAgent(body: {
+  name: string; instructions?: string; purpose?: string; connection_id?: string;
+  schema_scope?: string; doc_ids?: string[]; pack_ids?: string[]; tool_grants?: string[];
+}): Promise<UserAgent> {
+  const res = await fetch(`${getApiBase()}/agents/custom`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.text()) || `create agent failed (${res.status})`);
+  return res.json();
+}
+
+/** A Domain Expertise Pack offered as an agent template (Wave H4). `suggested_goldens`
+ *  are SUGGESTIONS, not a seeded suite: a pack cannot supply a golden's reference SQL
+ *  (it does not know your schema), so each says what it still needs and the hired agent
+ *  starts with a stance rather than a pass chip it did not earn. */
+export interface AgentTemplate {
+  pack_id: string;
+  name: string;
+  persona: string;
+  domains: string[];
+  status: string;
+  instructions: string;
+  suggested_goldens: { question: string; needs: string }[];
+  metric_recipes: string[];
+}
+
+export async function listAgentTemplates(): Promise<AgentTemplate[]> {
+  const res = await fetch(`${getApiBase()}/agents/templates`);
+  if (!res.ok) return [];
+  return (await res.json()).templates ?? [];
+}
+
+/** What the platform drafted from a description, and why. Nothing is created. */
+export type AgentProposal = {
+  verdict: "proposed" | "refused";
+  reason: string;
+  draft: {
+    name?: string; purpose?: string; instructions?: string;
+    connection_id?: string; schema_scope?: string;
+    doc_ids?: string[]; pack_ids?: string[];
+  };
+  goldens: { question: string; why: string; reference_sql: string; certified: boolean }[];
+  /** Written by the BACKEND, not the model — render every one. */
+  disclosures: string[];
+  /** Which tables made it choose this scope, in the drafter's words. */
+  evidence: string;
+  notes: string;
+};
+
+/** One recorded definition of a metric, and who is behind it. */
+export type DefinitionSource = {
+  formula_sql: string;
+  source_asset: string;
+  source_kind: string;
+  author: string;
+  recorded_at: string;
+  use_count: number;
+  certified: boolean;
+  /** The formula BOUND against the live database. The only field here that is evidence
+   *  about the data rather than about people — and the reason it outranks the rest. */
+  verified: boolean;
+  verification_note: string;
+};
+
+export type MetricProvenance = {
+  metric_id: string;
+  display_name: string;
+  definitions: DefinitionSource[];
+  chosen: DefinitionSource | null;
+  /** The best claim that DISAGREES with the winner, if any. */
+  dissenter: DefinitionSource | null;
+  contested: boolean;
+  why: string;
+  known_divergent_calculations: string[];
+};
+
+export async function getMetricProvenance(
+  metricId: string, connectionId: string, schemaName?: string,
+): Promise<MetricProvenance> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(
+    `${getApiBase()}/ontology/metrics/${encodeURIComponent(metricId)}/provenance?${q}`);
+  if (!res.ok) throw new Error((await res.text()) || `provenance failed (${res.status})`);
+  return res.json();
+}
+
+export async function proposeUserAgent(body: {
+  description: string; connection_id: string;
+}): Promise<AgentProposal> {
+  const res = await fetch(`${getApiBase()}/agents/custom/propose`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.text()) || `draft failed (${res.status})`);
+  return res.json();
+}
+
+/** AO-1d — the pack path takes the scratch path's body: the creator's edited instructions,
+ *  purpose, documents and extra packs ride along (the template's pack is always bound by
+ *  the server). Before, only the first four fields were sent and the edits were dropped. */
+export async function createUserAgentFromTemplate(body: {
+  pack_id: string; name?: string; instructions?: string; purpose?: string;
+  connection_id?: string; schema_scope?: string;
+  doc_ids?: string[]; pack_ids?: string[]; tool_grants?: string[];
+}): Promise<{ agent: UserAgent; suggested_goldens: { question: string; needs: string }[] }> {
+  const res = await fetch(`${getApiBase()}/agents/custom/from-template`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.text()) || `hire from template failed (${res.status})`);
+  return res.json();
+}
+
+export async function patchUserAgent(agentId: string, body: {
+  name?: string; instructions?: string; purpose?: string; connection_id?: string;
+  schema_scope?: string; doc_ids?: string[]; pack_ids?: string[]; tool_grants?: string[];
+  enabled?: boolean;
+}): Promise<UserAgent> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.text()) || `update agent failed (${res.status})`);
+  return res.json();
+}
+
+/** AO-1e — what a delete MOVED besides the row: the server switches off the Slack bots that
+ *  fronted the agent (each now says why on its card), detaches the automations that ran as it
+ *  (they stay, bound to nobody), and keeps its configuration revisions. A step that could not
+ *  run is said in `*_error`, never folded into an empty list. */
+export interface AgentDeleteReceipt {
+  deleted: string;
+  name: string;
+  bots_disabled: { id: string; name: string }[];
+  automations_detached: { id: string; name: string }[];
+  revisions_kept: number;
+  bots_disabled_error?: string;
+  automations_detached_error?: string;
+  revisions_kept_error?: string;
+}
+
+export async function deleteUserAgent(agentId: string): Promise<AgentDeleteReceipt> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error((await res.text()) || `delete agent failed (${res.status})`);
+  return res.json();
+}
+
+/** One sentence for the receipt, for the roster to show once the agent is gone. */
+export function describeAgentDeleteReceipt(r: AgentDeleteReceipt): string {
+  const parts: string[] = [`Deleted “${r.name}”.`];
+  if (r.bots_disabled.length) {
+    parts.push(`${r.bots_disabled.length} Slack bot${r.bots_disabled.length === 1 ? "" : "s"} `
+      + `switched off (${r.bots_disabled.map(b => b.name).join(", ")}).`);
+  } else if (r.bots_disabled_error) {
+    parts.push(`Its Slack bots could not be switched off: ${r.bots_disabled_error}`);
+  }
+  if (r.automations_detached.length) {
+    parts.push(`${r.automations_detached.length} automation`
+      + `${r.automations_detached.length === 1 ? "" : "s"} now run as nobody `
+      + `(${r.automations_detached.map(a => a.name).join(", ")}).`);
+  } else if (r.automations_detached_error) {
+    parts.push(`Its automations could not be detached: ${r.automations_detached_error}`);
+  }
+  parts.push(r.revisions_kept_error
+    ? "Its configuration history could not be counted."
+    : `${r.revisions_kept} configuration revision${r.revisions_kept === 1 ? "" : "s"} kept.`);
+  return parts.join(" ");
+}
+
+// ── Measured agents: golden questions + evaluation ────────────────────────────
+
+export interface AgentGolden {
+  id: string;
+  agent_id: string;
+  question: string;
+  reference_sql: string;
+  created_at: string;
+  /** AO-6/AO-7 — `certified` (a person's SQL; the suite counts it) or `candidate`
+   *  (drafted from the catalogue, or an answer accepted in use; waiting for a person). */
+  status?: "certified" | "candidate";
+  source?: "person" | "use" | "synthetic";
+  from_investigation?: string;
+  /** For a candidate from use, what the answer said; for a drafted one, why it was drafted. */
+  headline?: string;
+  certified_at?: string;
+}
+
+export interface AgentEvalResult {
+  passed: number;
+  total: number;
+  at: string;
+  duration_ms?: number;
+  per_question: { golden_id: string; question: string; passed: boolean; error: string;
+                  /** The statement the production path framed, and on a mismatch the first rows
+                   *  of both sides — so a failure is readable where it is shown (2026-10-03). */
+                  generated_sql?: string; reference_rows?: string[][]; generated_rows?: string[][] }[];
+  /** AO-6/AO-7d — what changed since the previous stamp. */
+  diff?: {
+    before: { passed: number; total: number; at: string } | null;
+    newly_failing: string[];
+    newly_passing: string[];
+  };
+}
+
+/** AO-7d — the loop's receipt for one agent. */
+export interface AgentLearning {
+  agent_id: string;
+  loop_on: boolean;
+  centre_on: boolean;
+  verdicts: number;
+  corrections: number;
+  candidates_from_use: number;
+  candidates_synthetic: number;
+  certified_from_use: number;
+  certified_synthetic: number;
+  certified: number;
+  before: { passed: number; total: number; at: string } | null;
+  after: { passed: number; total: number; at: string } | null;
+}
+
+export async function getAgentLearning(agentId: string): Promise<AgentLearning> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/learning`);
+  if (!res.ok) throw new Error((await res.text()) || `learning read failed (${res.status})`);
+  return res.json();
+}
+
+/** AO-6/AO-7c — a person certifies a candidate with the SQL they say is right. */
+export async function certifyAgentGolden(agentId: string, goldenId: string, referenceSql: string): Promise<AgentGolden> {
+  const res = await fetch(
+    `${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/goldens/${encodeURIComponent(goldenId)}/certify`,
+    { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reference_sql: referenceSql }) });
+  if (!res.ok) throw new Error((await res.text()) || `certify failed (${res.status})`);
+  return res.json();
+}
+
+/** AO-6 — draft golden QUESTIONS from the catalogue and the purpose (one model call). The
+ *  server refuses with 409 while the testing centre's flag is off; the reason is the message. */
+export async function draftAgentGoldens(agentId: string): Promise<{ drafted: AgentGolden[] }> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/goldens/draft`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = fastApiError(await res.json(), ""); } catch { /* non-JSON body */ }
+    throw new Error(detail || `draft failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function listAgentGoldens(agentId: string): Promise<AgentGolden[]> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/goldens`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function createAgentGolden(agentId: string, body: {
+  question: string; reference_sql: string;
+}): Promise<AgentGolden> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/goldens`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.text()) || `add golden failed (${res.status})`);
+  return res.json();
+}
+
+export async function deleteAgentGolden(agentId: string, goldenId: string): Promise<boolean> {
+  const res = await fetch(
+    `${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/goldens/${encodeURIComponent(goldenId)}`,
+    { method: "DELETE" });
+  return res.ok;
+}
+
+export async function evaluateUserAgent(agentId: string): Promise<AgentEvalResult> {
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/evaluate`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error((await res.text()) || `evaluate failed (${res.status})`);
+  return res.json();
+}
+
+// ── Observability: per-agent run history + optional MLflow trace stats ─────────
+// The Agent Workspace overview. Run history always populates (from the history
+// store); trace_stats is null when MLflow tracing is off — the overview degrades to
+// history-only (the workspace works without a running MLflow server).
+
+export interface AgentRunSummary {
+  id: string;
+  question: string;
+  connection_id: string;
+  status: string;
+  started_at: string;
+  completed_at: string | null;
+  headline: string | null;
+  query_count: number;
+  agent_id: string;
+  /** "chat" (a quick conversation, rolled up per session) or "investigation" (a deep run). */
+  kind: string;
+}
+
+/** A user-defined PERSONA's model spend from the G3 usage store. Distinct from
+ *  `AgentSpend` above, which is a fleet CHARTER's (Scout/Analyst) run totals — same word,
+ *  different question: what kind of platform work ran, versus whose persona asked.
+ *  Recording is permanent (the flag was hardwired 2026-08-01), so a zero here is a
+ *  confident zero: the agent spent nothing. */
+export type UserAgentSpend = {
+  measured: true; calls: number; total_tokens: number;
+  cost_usd: number | null; cost_is_complete: boolean; failure_rate: number | null;
+  /** AO-3 — the counts behind `cost_is_complete`, so a tile can say "unpriced" rather
+   *  than `$0.00` when every call lacked a price. */
+  unpriced_calls: number; calls_without_usage: number;
+};
+
+/** The window a response's numbers were read over (AO-3): every tile captions it. */
+export interface ReadWindow { range: string; since: string; until: string }
+
+export interface AgentTraceStats {
+  trace_count: number;
+  error_count: number;
+  total_tokens: number;
+  total_cost: number;
+  latency_p50_ms: number | null;
+  latency_p90_ms: number | null;
+}
+
+export interface AgentObservability {
+  agent_id: string;
+  window: ReadWindow;
+  run_count: number;
+  /** How many of the agent's newest runs were scanned for the window; equal to a cap
+   *  (200) means a busier window than this page can count. */
+  runs_scanned: number;
+  runs: AgentRunSummary[];
+  trace_stats: AgentTraceStats | null;
+  spend: UserAgentSpend;
+}
+
+/** AO-3 — throws on a failed read (it returned `null`, and every caller rendered the
+ *  empty state for it). Takes the shared window; the server defaults to 24h. */
+export async function getAgentObservability(
+  agentId: string, params?: { range?: string; since?: string; until?: string },
+): Promise<AgentObservability> {
+  const q = new URLSearchParams();
+  if (params?.range) q.set("range", params.range);
+  if (params?.since) q.set("since", params.since);
+  if (params?.until) q.set("until", params.until);
+  const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}/observability`
+    + (q.toString() ? `?${q}` : ""));
+  if (!res.ok) throw new Error((await res.text()) || `observability read failed (${res.status})`);
+  return res.json();
+}
+
+// ── Learning / Memory layer (Wave 1 · E4) ───────────────────────────────────
+// The closed loop's accumulation, made visible: ambiguity-ledger burn-down, the
+// verdict acceptance economy, and trusted-asset counts/lists. See routers/learning.py.
+export interface LearningSummary {
+  connection_id: string | null;
+  ledger: { resolutions: number; by_source: Record<string, number>; served_total: number };
+  verdicts: { counts: Record<string, number>; total: number; acceptance_rate: number | null;
+              trend?: { week: string; total: number; acceptance_rate: number }[] };
+  trusted: { queries: number };
+}
+
+export interface TrustedAssets {
+  queries: { id: string; question: string; note?: string; tables?: string[]; tags?: string[] }[];
+}
+
+/** The Memory-layer headline (org-wide, or one connection). Null on failure — the panel degrades. */
+export async function getLearningSummary(connectionId?: string): Promise<LearningSummary | null> {
+  const q = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${getApiBase()}/learning/summary${q}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+/** The trusted assets themselves — curated queries. */
+export async function getTrustedAssets(connectionId?: string): Promise<TrustedAssets | null> {
+  const q = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${getApiBase()}/learning/trusted${q}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+// ── VA-10: the admin view across users (metadata only, §6.4) ─────────────────
+
+export interface AdminUser {
+  user_id: string; roles: string[];
+  calls: number; failures: number; total_tokens: number;
+  cost_usd: number; cost_is_complete: boolean;
+  mean_ms: number; failure_rate: number;
+}
+export interface AdminUsers {
+  org_id: string;
+  users: AdminUser[];
+  total_calls: number;
+  unattributed_calls: number;
+  /** Fraction of calls that carry a user id — 0 means identity is not flowing. */
+  coverage: number;
+  identity_required: boolean;
+  oidc_configured: boolean;
+}
+
+/** Null on failure or when the caller lacks org administration — the section hides. */
+export async function getAdminUsers(): Promise<AdminUsers | null> {
+  const res = await fetch(`${getApiBase()}/admin/users`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+// ── MI-3: the dataset plane ──────────────────────────────────────────────────
+// Corpus size per kind and the measured distance to MI-4's entry gates. The gate
+// report is served, never computed client-side — §3.9 made the arc falsifiable by
+// measurement, and one reader of one number is what keeps that honest.
+
+export interface DatasetGate {
+  /** `need` and `passes` are null on a tier that is reported but is not a gate (graded by execution or a guard). */
+  have: number; need: number | null; passes: boolean | null; note?: string;
+}
+export interface LearningDatasets {
+  /** Per kind (sft / dpo / golden): dataset and example counts. */
+  stats: Record<string, { datasets: number; examples: number }>;
+  /** Per kind: measured distance to MI-4's entry gate. */
+  gates: Record<string, DatasetGate>;
+}
+
+export async function getLearningDatasets(): Promise<LearningDatasets | null> {
+  const res = await fetch(`${getApiBase()}/learning/datasets`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+/** Run every exporter once (idempotent — an unchanged corpus registers nothing new). */
+export async function runLearningExport(): Promise<{ datasets: Record<string, unknown>; golden_suite_id: string | null; gates: LearningDatasets["gates"] }> {
+  const res = await fetch(`${getApiBase()}/learning/export`, { method: "POST" });
+  if (!res.ok) throw await refused(res, "The export");
+  return res.json();
+}
+
+// ── Grounding-context receipt (Rec 5) ───────────────────────────────────────
+// The input-side twin of the Trust Receipt: the exact grounding blocks the SQL
+// writer was given for a question. See routers/investigations.py GET /ask/context.
+/** `note` — why a block could not be produced, when it could not (a memory that was unreachable is not one that
+ *  had nothing). */
+export interface GroundingBlock { key: string; title: string; present: boolean; content: string; note?: string }
+export interface GroundingReceipt {
+  receipt: { question: string; connection_id: string; blocks: GroundingBlock[]; present_count: number };
+  markdown: string;
+}
+
+/** The grounding a question would receive on a connection. Null when the receipt
+ *  is disabled (flag ask.context_receipt off → 404) or on any failure — the
+ *  affordance simply hides. Fetched lazily on demand: it runs real retrievers. */
+export async function getGroundingContext(connectionId: string, question: string): Promise<GroundingReceipt | null> {
+  const qs = `?connection=${encodeURIComponent(connectionId)}&question=${encodeURIComponent(question)}`;
+  const res = await fetch(`${getApiBase()}/ask/context${qs}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+// ── Evals (Wave E) ──────────────────────────────────────────────────────────
+// The consolidated eval store (E3) + evaluator library (E2) + fidelity harness
+// (E4). Every route is gated on the Enterprise `eval.suite` capability, so a
+// 402 here surfaces the upsell modal via the global interceptor. A run is a
+// *band* (replicates + noise floor), never a single-run point — see EvalRunSummary.
+
+export interface EvalSuite {
+  id: string;
+  org_id?: string;
+  name: string;
+  description: string;
+  /** "reference" replays each case's own SQL with no model (the only API-runnable target today). */
+  target: string;
+  connection_id: string;
+  config: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface EvalCase {
+  id: string;
+  suite_id: string;
+  org_id?: string;
+  question: string;
+  /** The artifact the case is grounded in — for a reference target, the SQL that gets replayed. */
+  artifact: string;
+  expected: Record<string, unknown>;
+  tags: string[];
+  created_at: string;
+}
+
+/** The summary a run reduces to — `pass_rate` counts STABLE passes only (a flaky
+ *  case is its own outcome, never rounded into a percentage). `accuracy` and
+ *  `robustness` are null when no case declared the expectation they measure —
+ *  absent, not zero. */
+export interface EvalRunSummary {
+  run_id: string;
+  suite_id: string;
+  iterations: number;
+  total: number;
+  stable_pass: number;
+  stable_fail: number;
+  flaky: number;
+  pass_rate: number;
+  correct: number;
+  correctness_known: number;
+  accuracy: number | null;
+  errors: number;
+  fired_counts: Record<string, number>;
+  config: Record<string, unknown>;
+  robustness: number | null;
+}
+
+export interface EvalRun {
+  id: string;
+  suite_id: string;
+  org_id?: string;
+  status: "running" | "succeeded" | "failed" | string;
+  iterations: number;
+  started_at: string;
+  finished_at: string | null;
+  trace_id: string;
+  config: Record<string, unknown>;
+  summary: Partial<EvalRunSummary>;
+}
+
+export interface EvalResult {
+  run_id: string;
+  case_id: string;
+  iteration: number;
+  passed: boolean | null;
+  correct: boolean | null;
+  duration_ms: number | null;
+  error: string;
+  /** Names of evaluators that FAILED on this case (not passed, not skipped). */
+  fired: string[];
+  scores: Array<{
+    evaluator?: string;
+    passed?: boolean;
+    value?: number;
+    skipped?: boolean;
+    rationale?: string;
+    checks?: Array<{ name?: string; ok?: boolean; severity?: string; reason?: string; detail?: string }>;
+    detail?: Record<string, unknown>;
+  }>;
+}
+
+export interface EvalEvaluator {
+  name: string;
+  severity: string;
+  requires: string[];
+  deterministic: boolean;
+}
+
+export async function getEvalSuites(): Promise<EvalSuite[]> {
+  const res = await fetch(`${getApiBase()}/evals/suites`);
+  if (!res.ok) throw new Error("Failed to fetch eval suites");
+  return (await res.json()).suites;
+}
+
+export async function getEvalSuite(id: string): Promise<EvalSuite & { cases: EvalCase[] }> {
+  const res = await fetch(`${getApiBase()}/evals/suites/${id}`);
+  if (!res.ok) throw new Error("Failed to fetch suite");
+  return res.json();
+}
+
+export async function createEvalSuite(body: {
+  name: string; description?: string; target?: string;
+  connection_id?: string; config?: Record<string, unknown>;
+}): Promise<EvalSuite> {
+  const res = await fetch(`${getApiBase()}/evals/suites`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("Failed to create suite");
+  return res.json();
+}
+
+export async function deleteEvalSuite(id: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/evals/suites/${id}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) throw new Error("Failed to delete suite");
+}
+
+export async function addEvalCases(
+  suiteId: string,
+  cases: Array<{ question?: string; artifact?: string; expected?: Record<string, unknown>; tags?: string[] }>,
+): Promise<{ added: number }> {
+  const res = await fetch(`${getApiBase()}/evals/suites/${suiteId}/cases`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cases }),
+  });
+  if (!res.ok) throw new Error("Failed to add cases");
+  return res.json();
+}
+
+export async function deleteEvalCase(caseId: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/evals/cases/${caseId}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) throw new Error("Failed to delete case");
+}
+
+export async function runEvalSuite(
+  suiteId: string,
+  opts: { iterations?: number; evaluators?: string[] | null; persist?: boolean } = {},
+): Promise<EvalRunSummary> {
+  const res = await fetch(`${getApiBase()}/evals/suites/${suiteId}/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      iterations: opts.iterations ?? 1,
+      evaluators: opts.evaluators ?? null,
+      persist: opts.persist ?? true,
+    }),
+  });
+  if (!res.ok) {
+    // The API returns a 400 with a specific detail for a non-'reference' target or a
+    // suite missing a connection — surface it rather than a generic message.
+    let detail = "Failed to run suite";
+    try { detail = fastApiError(await res.json(), detail); } catch { /* keep default */ }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+export async function getEvalRuns(suiteId?: string, limit = 50): Promise<EvalRun[]> {
+  const qs = new URLSearchParams();
+  if (suiteId) qs.set("suite_id", suiteId);
+  qs.set("limit", String(limit));
+  const res = await fetch(`${getApiBase()}/evals/runs?${qs.toString()}`);
+  if (!res.ok) throw new Error("Failed to fetch runs");
+  return (await res.json()).runs;
+}
+
+export async function getEvalRun(runId: string): Promise<EvalRun & { results: EvalResult[] }> {
+  const res = await fetch(`${getApiBase()}/evals/runs/${runId}`);
+  if (!res.ok) throw new Error("Failed to fetch run");
+  return res.json();
+}
+
+export async function getEvaluators(): Promise<{ evaluators: EvalEvaluator[]; deterministic_count: number }> {
+  const res = await fetch(`${getApiBase()}/evals/evaluators`);
+  if (!res.ok) throw new Error("Failed to fetch evaluators");
+  return res.json();
+}
+
+// ── Experiments — A/B pairs DERIVED from the run history, never stored ────────
+// Two runs whose recorded requests (`config.cell_requested`) differ on exactly one
+// axis are an experiment; `a` is the baseline cell (flag OFF, or the older model).
+
+export interface ExperimentAxis {
+  kind: "flag" | "model" | string;
+  name: string | null;
+  a_model?: string | null;
+  b_model?: string | null;
+}
+export interface ExperimentRunBrief {
+  run_id: string; status: string; started_at: string; cell: string;
+  pass_rate: number | null; correct: number | null;
+  correctness_known: number | null; total: number | null;
+}
+export interface EvalExperiment {
+  suite_id: string; axis: ExperimentAxis;
+  a: ExperimentRunBrief; b: ExperimentRunBrief;
+}
+export interface ExperimentCompareRow {
+  case_id: string; question: string;
+  a: string; b: string; kind: "gained" | "lost" | "other" | string;
+  a_sql: string; b_sql: string; a_error: string; b_error: string;
+}
+export interface ExperimentCompare {
+  suite_id: string;
+  axis: ExperimentAxis | null;
+  a: ExperimentRunBrief; b: ExperimentRunBrief;
+  accuracy: {
+    a: { correct: number; known: number };
+    b: { correct: number; known: number };
+    paired: { cases: number; a_correct: number; b_correct: number };
+  };
+  flips: { same: number; gained: number; lost: number; other: number; unrun: number };
+  rows: ExperimentCompareRow[];
+  sql_available: boolean;
+}
+
+export async function getEvalExperiments(suiteId?: string, limit = 50): Promise<EvalExperiment[]> {
+  const qs = new URLSearchParams();
+  if (suiteId) qs.set("suite_id", suiteId);
+  qs.set("limit", String(limit));
+  const res = await fetch(`${getApiBase()}/evals/experiments?${qs.toString()}`);
+  if (!res.ok) throw new Error("Failed to fetch experiments");
+  return (await res.json()).experiments;
+}
+
+export async function compareEvalExperiment(a: string, b: string): Promise<ExperimentCompare> {
+  const qs = new URLSearchParams({ a, b });
+  const res = await fetch(`${getApiBase()}/evals/experiments/compare?${qs.toString()}`);
+  if (!res.ok) {
+    let detail = "Failed to compare runs";
+    try { detail = fastApiError(await res.json(), detail); } catch { /* keep default */ }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+// ── Control Room (Wave CR) ────────────────────────────────────────────────────
+// Views over stores that already exist. Recording is permanent, so an empty list
+// under `measured: true` means nothing happened — there is no "switched off" state
+// left to distinguish it from.
+
+/** One session event row (kernel ledger `session_events`). */
+export interface SessionEvent {
+  seq: number;
+  at: string;
+  trace_id: string;
+  kind: string;
+  name: string | null;
+  span_id: string | null;
+  parent_span_id: string | null;
+  ok: boolean | null;
+  duration_ms: number | null;
+  error_class: string | null;
+  investigation_id: string | null;
+  session_id: string | null;
+  user_id: string | null;
+  agent_id: string | null;
+  conn_id: string | null;
+  provider: string | null;
+  model: string | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  total_tokens: number | null;
+  row_count: number | null;
+  retries: number | null;
+  /** Migration 10 — which run, which agent charter, what the call was FOR, and whether the
+   *  primary backend refused. `fallback` is a TRI-state: a tool_call is not a call that
+   *  "did not fall back", so unknown stays null rather than arriving as a confident false. */
+  job_id: string | null;
+  charter_id: string | null;
+  role: string | null;
+  fallback: boolean | null;
+  payload: Record<string, unknown> | null;
+  /** Set only when the row carries prompt CONTENT (obs.prompt_capture was on). */
+  content_captured?: boolean;
+}
+
+/**
+ * The wire field naming the built-in agent that owned a run.
+ *
+ * The word the wire uses for it is retired product vocabulary — `docs/GLOSSARY.md` lists
+ * the six built-ins as agents and names that word as one not to say to a user, and the
+ * vocabulary ratchet enforces it across `web/`. This module is the one place exempted,
+ * because it exists to spell the wire exactly. So the translation happens HERE, at the
+ * boundary that already speaks both, and every surface above it addresses the field
+ * through this constant and reads it through `builtinAgentOf`.
+ */
+export const BUILTIN_AGENT_FIELD = "charter_id" as const;
+
+/** Which built-in agent owned this row — `analyst`, `explorer`, `watcher` — or null. */
+export function builtinAgentOf(
+  e: Pick<SessionEvent, typeof BUILTIN_AGENT_FIELD>,
+): string | null {
+  return e[BUILTIN_AGENT_FIELD] || null;
+}
+
+export interface TraceSummary {
+  trace_id: string;
+  started: string;
+  question: string;
+  events: number;
+  tool_calls: number;
+  llm_calls: number;
+  errors: number;
+  investigation_id: string | null;
+  session_id: string | null;
+  agent_id: string | null;
+  conn_id: string | null;
+  ok: boolean | null;
+  duration_ms: number | null;
+  /** Absent on a run recorded before the index carried these. */
+  user_id?: string | null;
+  ended_at?: string | null;
+  /** The final response's headline — the only answer text the log keeps. */
+  answer?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  /** A FLOOR, not a total: `unpriced_calls` is how many calls no rate covered, and
+   *  `calls_without_usage` how many reported no tokens at all. A $0.00 with either of
+   *  those non-zero means "unknown", never "free". */
+  cost_usd?: number;
+  unpriced_calls?: number;
+  calls_without_usage?: number;
+}
+
+export interface TraceSpan {
+  span_id: string;
+  parent_span_id: string | null;
+  name: string | null;
+  seq: number;
+  at: string;
+  kind: string; // payload.span_kind: "node" | "tool"
+  ok: boolean | null;
+  duration_ms: number | null;
+  error_class: string | null;
+  row_count: number | null;
+  children: TraceSpan[];
+}
+
+export type TraceList = {
+  measured: true; recording: boolean; traces: TraceSummary[];
+  /** How many runs MATCHED — not how many are on this page. */
+  total?: number;
+  limit?: number;
+  offset?: number;
+  /** How far back the fold reached. `total` is a total within this window. */
+  scanned_events?: number;
+};
+
+/** Everything the trace index can be narrowed by. Applied server-side, over the whole
+ *  scan window — narrowing a page in the browser looks the same to a reader and answers
+ *  a different question. */
+export interface TraceFilters {
+  limit?: number;
+  offset?: number;
+  investigation_id?: string;
+  agent_id?: string;
+  conn_id?: string;
+  /** "ok" | "error" | "running" */
+  status?: string;
+  user_id?: string;
+  q?: string;
+  since?: string;
+  until?: string;
+  min_duration_ms?: number;
+  max_duration_ms?: number;
+  min_tokens?: number;
+}
+
+/** VA-5 — one laid-out node on the waterfall. Assembled at READ time from every event
+ *  the run recorded, not only from rows that happen to carry a span id: `llm_call` never
+ *  carries one, so a span-keyed view omits the model entirely. */
+export interface TimelineNode {
+  id: string;
+  seq: number;
+  span_id: string | null;
+  parent_span_id: string | null;
+  name: string;
+  /** The stored event kind. */
+  event_kind: string;
+  /** What to draw it as: "model" | "tool" | "frame" | "error" | "event" | "delegation". */
+  kind: string;
+  /** VA-5 — set only on a delegated hop: which agent ran this, and how deep. */
+  delegation: {
+    path: string; depth: number | null; agent_id: string; agent_name: string;
+  } | null;
+  at: string | null;
+  ended_at: string | null;
+  /** Milliseconds from the run's first event — the bar's x position. */
+  offset_ms: number | null;
+  duration_ms: number | null;
+  ok: boolean | null;
+  error_class: string | null;
+  row_count: number | null;
+  model: string | null;
+  provider: string | null;
+  role: string | null;
+  fallback: boolean | null;
+  usage: { prompt_tokens: number | null; completion_tokens: number | null;
+           total_tokens: number | null } | null;
+  depth: number;
+  /** Dead time since the PREVIOUS node ended — a sequential reading, for the label drawn
+   *  between two bars. Never sum these: see `idle_ms`. */
+  gap_ms: number | null;
+  critical: boolean;
+}
+
+export interface TraceTimeline {
+  nodes: TimelineNode[];
+  started_at: string | null;
+  total_ms: number | null;
+  span_count: number;
+  model_calls: number;
+  usage: Record<string, number>;
+  /** Work time, over the UNION of node intervals. */
+  busy_ms: number;
+  /** Wall time minus busy. NOT a sum of `gap_ms` — that over-counts the moment a run
+   *  does anything in parallel. */
+  idle_ms: number;
+  wall_ms: number;
+  /** Nodes starting before the previous one ended. Non-zero means any sequential
+   *  reading of this run is wrong. */
+  concurrent_nodes: number;
+}
+
+export interface TraceFlowEdge {
+  from: string;
+  to: string;
+  /** Gap since the previous node ENDED. Carried on "next" edges only — a child runs
+   *  inside its parent, so a number on a "child" edge would be a duration posing as a
+   *  wait. */
+  latency_ms: number | null;
+  /** "child" = real nesting (the edges that make a run a graph); "next" = the
+   *  top-level flow between consecutive root nodes. */
+  kind: "child" | "next";
+}
+
+export type TraceDetail = {
+      measured: true; recording: boolean; trace_id: string; question: string;
+      investigation_id: string | null; conn_id: string | null; agent_id: string | null;
+      ok: boolean | null; duration_ms: number | null;
+      events: SessionEvent[]; spans: TraceSpan[];
+      timeline?: TraceTimeline; flow_edges?: TraceFlowEdge[];
+    };
+
+export async function getTraces(params?: TraceFilters): Promise<TraceList> {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params ?? {})) {
+    if (v !== undefined && v !== null && v !== "") qs.set(k, String(v));
+  }
+  const res = await fetch(`${getApiBase()}/traces?${qs.toString()}`);
+  if (!res.ok) throw new Error(`Failed to fetch traces (${res.status})`);
+  return res.json();
+}
+
+export async function getTrace(traceId: string): Promise<TraceDetail | null> {
+  const res = await fetch(`${getApiBase()}/traces/${encodeURIComponent(traceId)}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Failed to fetch trace (${res.status})`);
+  return res.json();
+}
+
+export type ActivityResponse =
+  | { measured: true; recording: boolean; events: SessionEvent[]; kinds: Record<string, number> };
+
+export interface FleetTiles {
+  active_jobs: number;
+  window_minutes: number;
+  runs_started: number;
+  runs_per_min: number;
+  p95_duration_ms: number | null;
+  p50_duration_ms: number | null;
+  error_rate: number | null;
+  failed_runs: number;
+  orphaned_runs: number;
+  tokens: {
+    total: number; metered_runs: number; unmetered_runs: number;
+    per_hour: number | null;
+  };
+  concurrency: { max_concurrent_jobs: number; unbounded_kinds: string[] };
+  /** What every figure above LEFT OUT — the automation engine's tick, counted apart. */
+  runner_runs: number;
+  include_runners: boolean;
+  /** True when a read filled its cap: every count in this object is then a floor, not a
+   *  total. The tile says so rather than presenting a truncated number as complete. */
+  truncated?: boolean;
+  window: TimeWindow;
+  /** Priced from the provider's own catalogue; `unpriced_calls` is why a small total is
+   *  not the same as a cheap day. */
+  cost: { usd: number | null; unpriced_calls: number | null; is_complete: boolean; calls: number };
+}
+
+/** A resolved window — the one time axis every panel on this surface buckets through. */
+export interface TimeWindow {
+  since: string;
+  until: string;
+  bucket_seconds: number;
+  buckets: number;
+  range: string;
+}
+
+/** A charter row (job-metering spend) — `kind` is the label the table must show. */
+export interface FleetCharterRow {
+  kind: "charter";
+  id: string;
+  name: string;
+  role: string;
+  icon: string;
+  lane: string;
+  enabled: boolean;
+  job_kinds: string[];
+  spend_source: "job_metering";
+  runs: number;
+  failed: number;
+  /** Runs that finished SUCCEEDED in the window; for a custom agent, traces with no failed call. */
+  succeeded?: number;
+  /** Mean run duration in the window, ms — null when nothing finished with both timestamps. */
+  avg_duration_ms?: number | null;
+  orphaned: number;
+  tokens: number;
+  queries: number;
+  metered_runs: number;
+  unmetered_runs: number;
+  last_run_at: string | null;
+  spark: number[];
+}
+
+/** A custom-agent row (session-log spend). Same table, same columns, different source —
+ *  its work is CALLS in the session log rather than jobs in the kernel, which is why the
+ *  row carries `spend_source` rather than pretending the two populations are one. */
+export interface FleetPersonaRow {
+  kind: "persona";
+  id: string;
+  name: string;
+  enabled: boolean;
+  connection_id: string;
+  last_eval: { passed: number; total: number; at?: string } | null;
+  eval_basis: EvalBasis;
+  spend_source: "session_log";
+  spend: { measured: true; calls: number; total_tokens: number; failure_rate: number | null };
+  runs: number;
+  failed: number;
+  /** Runs that finished SUCCEEDED in the window; for a custom agent, traces with no failed call. */
+  succeeded?: number;
+  /** Mean run duration in the window, ms — null when nothing finished with both timestamps. */
+  avg_duration_ms?: number | null;
+  orphaned: number;
+  tokens: number;
+  queries: number;
+  metered_runs: number;
+  unmetered_runs: number;
+  spark: number[];
+  last_run_at: string | null;
+}
+
+/** A background runner — the automation tick, eval experiments. Reported, never summed
+ *  into the agents: measured 2026-08-17 the tick was 98% of all jobs. */
+export interface FleetRunnerRow {
+  kind: "runner";
+  id: string;
+  name: string;
+  role: string;
+  icon: string;
+  lane: string;
+  enabled: boolean;
+  job_kinds: string[];
+  spend_source: "job_metering";
+  runs: number;
+  failed: number;
+  /** Runs that finished SUCCEEDED in the window; for a custom agent, traces with no failed call. */
+  succeeded?: number;
+  /** Mean run duration in the window, ms — null when nothing finished with both timestamps. */
+  avg_duration_ms?: number | null;
+  orphaned: number;
+  tokens: number;
+  queries: number;
+  metered_runs: number;
+  unmetered_runs: number;
+  last_run_at: string | null;
+  spark: number[];
+}
+
+export type FleetRow = FleetCharterRow | FleetPersonaRow;
+
+export interface FleetOverview {
+  tiles: FleetTiles;
+  rows: FleetRow[];
+  runners: FleetRunnerRow[];
+  window: TimeWindow;
+  edges: string[];
+  session_log_recording: boolean;
+}
+
+export async function getFleetOverview(params?: {
+  window_minutes?: number; spark_hours?: number;
+  range?: string; since?: string; until?: string; include_runners?: boolean;
+}): Promise<FleetOverview> {
+  const qs = new URLSearchParams();
+  if (params?.window_minutes) qs.set("window_minutes", String(params.window_minutes));
+  if (params?.spark_hours) qs.set("spark_hours", String(params.spark_hours));
+  if (params?.range) qs.set("range", params.range);
+  if (params?.since) qs.set("since", params.since);
+  if (params?.until) qs.set("until", params.until);
+  if (params?.include_runners) qs.set("include_runners", "true");
+  const res = await fetch(`${getApiBase()}/control-room/fleet?${qs.toString()}`);
+  if (!res.ok) throw new Error(`Failed to fetch fleet overview (${res.status})`);
+  return res.json();
+}
+
+export interface NeedsHumanRow {
+  source: "kinetic_inbox" | "paused_run" | "automation_approval" | "agent_alert"
+        | "automation_broken";
+  id: string;
+  title: string;
+  connection_id: string | null;
+  since: string | null;
+  since_basis?: "paused_event" | "started_at";
+  waiting_ms: number | null;
+  /** Agent alerts only: two rows can wait the same time and not be equally urgent. */
+  severity?: "info" | "warning" | "critical";
+  resolve: Record<string, string>;
+}
+
+export interface NeedsHuman {
+  count: number;
+  sources: {
+    kinetic_inbox: number;
+    paused_runs: number;
+    automation_approvals: number;
+    agent_alerts: number;
+    /** Optional because the key is newer than some deployed APIs — read it with `?? 0`
+     *  rather than rendering `undefined` where a count belongs. */
+    broken_automations?: number;
+  };
+  rows: NeedsHumanRow[];
+  /** The sources whose read failed, by their `sources` key — their count is not a zero. Optional: older APIs omit it. */
+  unread?: (keyof NeedsHuman["sources"])[];
+}
+
+export async function getNeedsHuman(limit = 100): Promise<NeedsHuman> {
+  const res = await fetch(`${getApiBase()}/control-room/needs-human?limit=${limit}`);
+  if (!res.ok) throw new Error(`Failed to fetch needs-human (${res.status})`);
+  return res.json();
+}
+
+// ── VA-6: agent alerts ───────────────────────────────────────────────────────────
+
+/** One rule that fired. The numbers travel with the row because a rule is editable and
+ *  an alert is a statement about a moment. */
+export interface AgentAlertEvent {
+  id: string;
+  rule_id: string;
+  rule_name: string;
+  metric: string;
+  severity: "info" | "warning" | "critical";
+  fired_at: string;
+  value: number | null;
+  threshold: number | null;
+  population: number;
+  window_minutes: number;
+  reason: string;
+  delivered: boolean;
+  delivery_detail: string;
+  acknowledged: boolean;
+}
+
+export interface AgentAlertRule {
+  id: string;
+  name: string;
+  metric: string;
+  comparator: "gt" | "gte" | "lt" | "lte";
+  threshold: number;
+  window_minutes: number;
+  debounce_minutes: number;
+  check_cron: string;
+  agent_id: string;
+  charter_id: string;
+  channel: string;
+  severity: "info" | "warning" | "critical";
+  enabled: boolean;
+  last_notified_at: string | null;
+}
+
+export async function listAgentAlertRules(enabledOnly = false): Promise<AgentAlertRule[]> {
+  const res = await fetch(
+    `${getApiBase()}/obs/agent-alerts/rules?enabled_only=${enabledOnly}`);
+  if (!res.ok) throw new Error(`Failed to fetch agent alert rules (${res.status})`);
+  return (await res.json()).rules;
+}
+
+/** The metric vocabulary, from the server. Never hardcoded here: a picker that offers a
+ *  metric the backend cannot measure is a control that silently does nothing. */
+export async function getAgentAlertVocabulary(): Promise<{ metrics: string[]; comparators: string[] }> {
+  const res = await fetch(`${getApiBase()}/obs/agent-alerts/metrics`);
+  if (!res.ok) throw new Error(`Failed to fetch alert metrics (${res.status})`);
+  return res.json();
+}
+
+export async function upsertAgentAlertRule(rule: Partial<AgentAlertRule>): Promise<AgentAlertRule> {
+  const res = await fetch(`${getApiBase()}/obs/agent-alerts/rules`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(rule),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(fastApiError(body, `save failed (${res.status})`));
+  return body;
+}
+
+export async function deleteAgentAlertRule(ruleId: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/obs/agent-alerts/rules/${ruleId}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(`delete failed (${res.status})`);
+}
+
+/** One verdict, right now. Returns whether it crossed AND the population it saw — "it did
+ *  not fire" is only useful with the number behind it. */
+export async function testAgentAlertRule(ruleId: string): Promise<{
+  verdict: { value: number | null; matched: boolean; should_notify: boolean;
+             population: number; reason: string };
+  event: AgentAlertEvent | null;
+}> {
+  const res = await fetch(`${getApiBase()}/obs/agent-alerts/rules/${ruleId}/test`,
+    { method: "POST" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(fastApiError(body, `test failed (${res.status})`));
+  return body;
+}
+
+export async function acknowledgeAgentAlert(eventId: string): Promise<AgentAlertEvent> {
+  const res = await fetch(`${getApiBase()}/obs/agent-alerts/events/${eventId}/ack`,
+    { method: "POST" });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(fastApiError(body, `acknowledge failed (${res.status})`));
+  return body;
+}
+
+// ── The shared time axis (W0) ────────────────────────────────────────────────────
+
+/** One stack/line of a timeseries: a key, one value per bucket, and its total. */
+export interface TimeSeries {
+  key: string;
+  label: string;
+  values: number[];
+  total: number;
+}
+
+export interface TimeSeriesResponse {
+  measured: boolean;
+  window: TimeWindow;
+  edges: string[];
+  group: string;
+  measure: string;
+  series: TimeSeries[];
+  scanned: number;
+  attributed: number;
+  /** Share of scanned rows that carried the grouping key. A top-N built from 3% of the
+   *  traffic is not a top-N, so this ships with every answer rather than on request. */
+  coverage: number | null;
+}
+
+export async function getObsTimeseries(params: {
+  group?: string; measure?: string; kind?: string;
+  /** `jobs` counts RUNS by the charter that owns each kind (complete, derived at read
+   *  time); `events` counts model CALLS by the charter stamped when they were written. */
+  source?: "jobs" | "events";
+  range?: string; since?: string; until?: string;
+}): Promise<TimeSeriesResponse> {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v) qs.set(k, String(v));
+  const res = await fetch(`${getApiBase()}/obs/timeseries?${qs}`);
+  if (!res.ok) throw new Error(`Failed to fetch timeseries (${res.status})`);
+  return res.json();
+}
+
+export interface UsageSummary {
+  measured: boolean;
+  window: TimeWindow;
+  calls: number;
+  /** Attempts the provider refused — no model ran, nothing billed, in no other figure here. */
+  refused_calls?: number;
+  /** Calls no run claimed (an `untraced:<origin>:<day>` trace) — counted in every figure, and said. */
+  untraced_calls?: number;
+  tokens: number;
+  cost_usd: number;
+  unpriced_calls: number;
+  cost_is_complete: boolean;
+  calls_without_usage: number;
+  usage_coverage: number | null;
+  /** Both halves of the rate: a denominator that is invisible gets read as "right now". */
+  fallback: { fell_back: number; of_attributed: number; rate: number | null };
+  models: Array<{
+    provider: string; model: string; calls: number; total_tokens: number;
+    failures: number; failure_rate: number; mean_ms: number;
+    cost_usd: number; cost_is_complete: boolean; calls_without_usage: number;
+  }>;
+  sites: Array<{
+    caller: string; calls: number; prompt_tokens: number; total_tokens: number;
+    calls_without_usage: number;
+  }>;
+  roles: Array<{ role: string; calls: number; total_tokens: number }>;
+}
+
+/** What a model call was for, read off the `caller` the provider stamps on every call
+ *  (`<module>:<function>`, served as `UsageSummary.sites`). The prefixes are the backend's own
+ *  module names, spelled verbatim like every other wire value in this file. A caller no prefix
+ *  names is `null`, and the Spend screen folds it into "Other" — counted, never dropped. The
+ *  first matching prefix wins, so the narrower one comes first. */
+export type CallerFeature = "deep_analysis" | "conversation" | "survey" | "exploration"
+  | "sql_repair" | "sql_writing" | "business_profile" | "semantic_layer" | "ontology";
+
+export const CALLER_FEATURES: ReadonlyArray<readonly [string, CallerFeature]> = [
+  ["aughor.agent.investigate:", "deep_analysis"],
+  ["aughor.agent.tool_loop:", "conversation"],
+  ["aughor.agent.explore:", "survey"],
+  ["aughor.explorer.", "exploration"],
+  ["aughor.sql.writer:fix", "sql_repair"],
+  ["aughor.sql.writer:", "sql_writing"],
+  ["aughor.business_profile.", "business_profile"],
+  ["aughor.semantic.", "semantic_layer"],
+  ["aughor.ontology.", "ontology"],
+];
+
+export function callerFeature(caller: string): CallerFeature | null {
+  return CALLER_FEATURES.find(([prefix]) => caller.startsWith(prefix))?.[1] ?? null;
+}
+
+export async function getUsageSummary(params?: {
+  range?: string; since?: string; until?: string;
+}): Promise<UsageSummary> {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params ?? {})) if (v) qs.set(k, String(v));
+  const res = await fetch(`${getApiBase()}/obs/usage-summary?${qs}`);
+  if (!res.ok) throw new Error(`Failed to fetch usage summary (${res.status})`);
+  return res.json();
+}
+
+/** The drill: every ranked list on the usage surface opens exactly its own rows. */
+export async function getActivityEvents(params?: {
+  kind?: string; agent_id?: string; conn_id?: string; model?: string; provider?: string;
+  charter?: string; job_id?: string; role?: string; trace_id?: string;
+  range?: string; since?: string; until?: string; errors_only?: boolean; limit?: number;
+}): Promise<{ measured: boolean; events: SessionEvent[]; kinds: Record<string, number>;
+              window: TimeWindow | null }> {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params ?? {})) {
+    if (v === undefined || v === null || v === "" || v === false) continue;
+    qs.set(k, String(v));
+  }
+  const res = await fetch(`${getApiBase()}/activity?${qs}`);
+  if (!res.ok) throw new Error(`Failed to fetch activity (${res.status})`);
+  return res.json();
+}
+
+export interface InvestigationGraph {
+  investigation_id: string;
+  status: string;
+  question: string;
+  /** Wire value from the backend graph endpoint — "ada" is its spelling, frozen. */
+  branch: "ada" | "explore" | "direct" | "unknown";
+  topology: string[];
+  phases: {
+    phase_id: string; phase_name: string; phase_icon?: string;
+    status: string; summary?: string; skipped_reason?: string;
+  }[];
+  sub_questions: unknown[];
+  interrupt: {
+    paused: boolean; gate: string | null; basis: string | null;
+    clarify_pending: unknown;
+  };
+  checkpoint: { exists: boolean; step: number | null; last_writers: string[] };
+  resume: { feedback: string } | null;
+}
+
+export async function getInvestigationGraph(invId: string): Promise<InvestigationGraph | null> {
+  const res = await fetch(`${getApiBase()}/investigations/${encodeURIComponent(invId)}/graph`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Failed to fetch investigation graph (${res.status})`);
+  return res.json();
+}
+
+export interface FindingVerdict {
+  id: number;
+  connection_id: string;
+  investigation_id: string;
+  verdict: string;
+  note: string;
+  headline: string;
+  created_at: string;
+}
+
+export async function getVerdicts(connectionId?: string, limit = 50): Promise<FindingVerdict[]> {
+  const qs = new URLSearchParams();
+  if (connectionId) qs.set("connection_id", connectionId);
+  qs.set("limit", String(limit));
+  const res = await fetch(`${getApiBase()}/verify/verdicts?${qs.toString()}`);
+  if (!res.ok) throw new Error(`Failed to fetch verdicts (${res.status})`);
+  return res.json();
+}
+
+export interface InvestigationListRow {
+  id: string;
+  question: string;
+  connection_id: string;
+  status: string;
+  started_at: string;
+  completed_at: string | null;
+  headline: string | null;
+  kind: string;
+  agent_id: string;
+}
+
+export async function getInvestigationsList(limit = 50): Promise<InvestigationListRow[]> {
+  const res = await fetch(`${getApiBase()}/investigations?limit=${limit}`);
+  if (!res.ok) throw new Error(`Failed to fetch investigations (${res.status})`);
+  return res.json();
+}
+
+/** One analysis's own summary — Home's lead card shows what the run found, in its words. */
+export async function getAnalysisSummary(id: string): Promise<{ headline: string; summary: string }> {
+  const res = await fetch(`${getApiBase()}/investigations/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error(`Failed to read the analysis (${res.status})`);
+  const row = await res.json() as { headline?: string; report?: { headline?: string; executive_summary?: string } | string };
+  const report = typeof row.report === "string" ? JSON.parse(row.report || "{}") : (row.report ?? {});
+  return { headline: row.headline || report.headline || "", summary: report.executive_summary || "" };
+}
+
+/** One finding of a deep analysis, as its report keeps it: what it claimed and the statement it ran. */
+export interface RunFinding {
+  finding_id?: string;
+  title?: string;
+  claim?: string;
+  sql?: string;
+  row_count?: number | null;
+  error?: string | null;
+}
+
+/** A deep analysis's report, as Agent runs' inspector says it — the run's own, nothing re-run. */
+export interface RunReport {
+  headline?: string;
+  executive_summary?: string;
+  confidence?: string;
+  confidence_justification?: string;
+  metric?: string | { stated?: string } | null;
+  period_as_measured?: { stated?: string; within_stated?: boolean } | null;
+  figures?: { label: string; value: string; note?: string }[];
+  data_gaps?: string[];
+  withheld?: { from: string; text: string; figures?: string[] }[];
+  phases?: { phase_id: string; phase_name: string; status: string; summary?: string; findings?: RunFinding[] }[];
+  recommendations?: unknown[];
+  frame?: { schema_name?: string } | null;
+}
+
+/** A run's own record: its report (parsed when it was kept as text), its trace id and its error. */
+export interface RunRecord {
+  id: string;
+  trace_id?: string | null;
+  error?: string | null;
+  report: RunReport | null;
+}
+
+/** Reads a deep analysis's record (`GET /investigations/{id}`) — a read; nothing is re-run. */
+export async function getRunRecord(id: string): Promise<RunRecord> {
+  const res = await fetch(`${getApiBase()}/investigations/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error(`Failed to read the run (${res.status})`);
+  const row = await res.json() as Omit<RunRecord, "report"> & { report?: RunReport | string | null };
+  let report: RunReport | null = null;
+  if (typeof row.report === "string") {
+    try { report = JSON.parse(row.report || "{}") as RunReport; } catch { report = null; }
+  } else report = row.report ?? null;
+  return { ...row, report };
+}
+
+/** VA-5 — a judgement on a RUN, keyed by trace id.
+ *
+ *  Distinct from `recordVerdict`, which judges a FINDING and needs an investigation id:
+ *  measured on this store, 256 of 263 runs have none, so that control silently did
+ *  nothing on 97% of them. A quick turn is still a run somebody can call unhelpful.
+ *  The vocabularies stay apart on purpose — "this run was unhelpful" is not "this
+ *  finding is wrong", and merging them would teach the closed loop to read a latency
+ *  complaint as a wrong answer. */
+export interface TraceFeedbackItem {
+  at: string;
+  verdict: "helpful" | "unhelpful";
+  note: string;
+  by: string;
+}
+
+export interface TraceFeedback {
+  trace_id: string;
+  count: number;
+  helpful: number;
+  unhelpful: number;
+  items: TraceFeedbackItem[];
+}
+
+export async function recordTraceFeedback(
+  traceId: string, verdict: "helpful" | "unhelpful", note = "",
+): Promise<{ ok: boolean; recorded: boolean }> {
+  const res = await fetch(`${getApiBase()}/traces/${encodeURIComponent(traceId)}/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ verdict, note }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to record feedback"));
+  }
+  return res.json();
+}
+
+export async function getTraceFeedback(traceId: string): Promise<TraceFeedback> {
+  const res = await fetch(`${getApiBase()}/traces/${encodeURIComponent(traceId)}/feedback`);
+  if (!res.ok) throw new Error(`Failed to fetch trace feedback (${res.status})`);
+  return res.json();
+}
+
+/** VA-5 — the kernel journal for one run.
+ *
+ *  The waterfall shows what the agent DID; this shows what the run SURVIVED. A
+ *  tolerated error is invisible in the waterfall by construction — the span it
+ *  happened inside succeeded — so the journal is the only place it exists. */
+export interface TraceLogLine {
+  at: string;
+  seq: number;
+  kind: string;
+  tolerated: boolean;
+  error: string | null;
+  reason: string | null;
+  counter: string | null;
+  payload: Record<string, unknown> | null;
+}
+
+export interface TraceLogs {
+  trace_id: string;
+  count: number;
+  tolerated_errors: number;
+  lines: TraceLogLine[];
+}
+
+export async function getTraceLogs(traceId: string, limit = 200): Promise<TraceLogs> {
+  const res = await fetch(
+    `${getApiBase()}/traces/${encodeURIComponent(traceId)}/logs?limit=${limit}`);
+  if (!res.ok) throw new Error(`Failed to fetch trace logs (${res.status})`);
+  return res.json();
+}
+
+// ── PX-3 · the intake lane (KI-1…4) ────────────────────────────────────────
+// Upload declared knowledge → a per-object PLAN against the live stores → human
+// verdicts → each accept applies through the target store's own governance.
+// Nothing auto-applies; identical objects arrive as `noop` and need no decision.
+
+export interface IntakeBundle {
+  id: string;
+  content_hash: string;
+  connection_id: string;
+  source: string;
+  uploaded_by: string;
+  uploaded_at: string;
+}
+
+export type IntakeVerdict = "new" | "changed" | "identical" | "conflict";
+export type IntakeStatus = "pending" | "accepted" | "dismissed" | "noop";
+
+export interface IntakeCandidate {
+  id: string;
+  bundle_id: string;
+  kind: string; // metric | synonym | glossary | rule | join | definition | trusted_query | pack
+  verdict: IntakeVerdict;
+  detail: string;
+  payload: Record<string, unknown>;
+  status: IntakeStatus;
+  resolved_by: string;
+  resolved_at: string;
+  edited_payload: Record<string, unknown> | null;
+  target_ref: string;
+  apply_result: Record<string, unknown> | null;
+}
+
+export interface IntakeSummary {
+  new: number;
+  changed: number;
+  identical: number;
+  conflict: number;
+}
+
+export interface IntakePlan {
+  bundle: IntakeBundle;
+  summary: IntakeSummary;
+  candidates: IntakeCandidate[];
+}
+
+/** Result of any staging door (bundle / file / sheet / prose / suggest). */
+export interface IntakeStageResult extends IntakePlan {
+  duplicate: boolean;
+  refused: string[];
+  mapped?: { file?: string; sheet?: string; ignored_headers: string[] };
+}
+
+async function intakeError(res: Response): Promise<never> {
+  const text = await res.text().catch(() => "");
+  try {
+    const detail = JSON.parse(text)?.detail;
+    if (detail) throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+  } catch (e) {
+    if (e instanceof Error && e.message && !e.message.startsWith("Unexpected")) throw e;
+  }
+  throw new Error(text || `HTTP ${res.status}`);
+}
+
+export async function listIntakeBundles(connectionId = ""): Promise<IntakeBundle[]> {
+  const q = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${getApiBase()}/intake/bundles${q}`);
+  if (!res.ok) await intakeError(res);
+  return (await res.json()).bundles;
+}
+
+export async function getIntakePlan(bundleId: string): Promise<IntakePlan> {
+  const res = await fetch(`${getApiBase()}/intake/bundles/${encodeURIComponent(bundleId)}`);
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+export async function uploadIntakeBundleYaml(args: {
+  yaml_text: string; connection_id: string; actor: string; source?: string;
+}): Promise<IntakeStageResult> {
+  const res = await fetch(`${getApiBase()}/intake/bundles`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ actor: args.actor, source: args.source ?? "",
+      connection_id: args.connection_id, yaml_text: args.yaml_text }),
+  });
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+export async function uploadIntakeFile(
+  file: File, connectionId: string, actor: string, source = "", schema = "",
+): Promise<IntakeStageResult> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("connection_id", connectionId);
+  form.append("actor", actor);
+  form.append("source", source);
+  // The dataset in view: a row of a metric file that names no dataset belongs to it.
+  if (schema) form.append("schema", schema);
+  const res = await fetch(`${getApiBase()}/intake/files`, { method: "POST", body: form });
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+/** One column of the metric file — what it holds and an example (`intake.mappers.METRIC_COLUMNS`). */
+export interface MetricFileColumn { column: string; required: boolean; meaning: string; example: string }
+
+export async function getMetricFileColumns(): Promise<MetricFileColumn[]> {
+  const res = await fetch(`${getApiBase()}/intake/metric-columns`);
+  if (!res.ok) throw await refused(res, "Reading the metric file's columns");
+  return res.json();
+}
+
+/** The metric file's template, every column and one example row — saved by the browser. */
+export async function downloadMetricTemplate(): Promise<void> {
+  const res = await fetch(`${getApiBase()}/intake/templates/metrics.csv`);
+  if (!res.ok) throw await refused(res, "Downloading the template");
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "aughor-metrics-template.csv";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+export async function uploadIntakeSheet(args: {
+  spreadsheet: string; sheet?: string; connection_id: string; actor: string; source?: string;
+}): Promise<IntakeStageResult> {
+  const res = await fetch(`${getApiBase()}/intake/sheets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ spreadsheet: args.spreadsheet, sheet: args.sheet ?? "",
+      connection_id: args.connection_id, actor: args.actor, source: args.source ?? "" }),
+  });
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+export interface IntakeSuggestResult extends Partial<IntakeStageResult> {
+  staged: boolean;
+  mined_at: string;
+  populations: Record<string, number>;
+  unresolved: unknown[];
+  note?: string;
+}
+
+/** Deterministic usage mining — validated runs → trusted-query proposals,
+ *  recurring guard fires → rule proposals. No model call. */
+export async function mineIntakeUsage(
+  connectionId: string, actor: string,
+): Promise<IntakeSuggestResult> {
+  const res = await fetch(`${getApiBase()}/intake/suggest`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, actor }),
+  });
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+export interface IntakeMapperStats {
+  candidates: number;
+  pending: number;
+  dismissed: number;
+  accepted_clean: number;
+  accepted_edited: number;
+  noop: number;
+  edit_rate: number | null;
+  threshold: number;
+}
+
+export interface IntakeProseResult extends Partial<IntakeStageResult> {
+  staged?: boolean;
+  mined_at: string;
+  note?: string;
+  mapper_stats: IntakeMapperStats;
+}
+
+/** The LLM prose mapper — the lane's ONE explicit model-spending door. */
+export async function uploadIntakeProse(args: {
+  connection_id: string; actor: string; text: string; source?: string;
+}): Promise<IntakeProseResult> {
+  const res = await fetch(`${getApiBase()}/intake/prose`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: args.connection_id, actor: args.actor,
+      text: args.text, source: args.source ?? "" }),
+  });
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+export async function getIntakeMapperStats(bundleId = ""): Promise<IntakeMapperStats> {
+  const q = bundleId ? `?bundle_id=${encodeURIComponent(bundleId)}` : "";
+  const res = await fetch(`${getApiBase()}/intake/mapper-stats${q}`);
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+export interface IntakeResolveOutcome {
+  id: string;
+  outcome: "accepted" | "dismissed" | "skipped" | "error";
+  reason?: string;
+  target_ref?: string;
+  [k: string]: unknown;
+}
+
+export interface IntakeResolveResult {
+  bundle: string;
+  accepted: number;
+  dismissed: number;
+  errors: number;
+  results: IntakeResolveOutcome[];
+}
+
+/** The human verdicts. Accepted candidates apply immediately through each target
+ *  store's own governance; a failed apply STAYS PENDING with the error attached. */
+export async function resolveIntakeBundle(bundleId: string, args: {
+  actor: string; accept?: string[]; dismiss?: string[];
+  edits?: Record<string, Record<string, unknown>>;
+}): Promise<IntakeResolveResult> {
+  const res = await fetch(
+    `${getApiBase()}/intake/bundles/${encodeURIComponent(bundleId)}/resolve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actor: args.actor, accept: args.accept ?? [],
+        dismiss: args.dismiss ?? [], edits: args.edits ?? {} }),
+    });
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+export interface IntakeExport {
+  bundle: Record<string, unknown>;
+  yaml_text: string;
+}
+
+/** This deployment's declared knowledge as a re-importable bundle. */
+export async function exportIntakeBundle(connectionId: string): Promise<IntakeExport> {
+  const res = await fetch(
+    `${getApiBase()}/intake/export/${encodeURIComponent(connectionId)}`);
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+// ── PX-2 · the governed-spend dashboard ──────────────────────────────────────
+// Caps (G4's store, formless until now), the usage rollup, per-model health,
+// the route mix, and the cross-cutting governance feed.
+
+export interface UsageCap {
+  scope: string;          // org | user
+  subject: string;        // "*" or a user id
+  metric: string;         // calls | total_tokens | cost_usd
+  limit: number;
+  window_hours: number;
+  action: string;         // alert | block
+  set_by?: string;
+  set_at?: string;
+  /** The metric's measured value over this cap's own window — served with the list. */
+  observed?: number | null;
+}
+
+export interface UsageCapsResponse {
+  caps: UsageCap[];
+  scopes: string[];
+  metrics: string[];
+  actions: string[];
+}
+
+export async function getUsageCaps(): Promise<UsageCapsResponse> {
+  const res = await fetch(`${getApiBase()}/governance/caps`);
+  if (!res.ok) throw new Error(`Failed to fetch caps (${res.status})`);
+  return res.json();
+}
+
+export async function putUsageCap(cap: {
+  scope: string; subject?: string; metric: string; limit: number;
+  window_hours?: number; action?: string;
+}): Promise<UsageCap> {
+  const res = await fetch(`${getApiBase()}/governance/caps`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(cap),
+  });
+  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+  return res.json();
+}
+
+export async function deleteUsageCap(cap: {
+  scope: string; metric: string; subject?: string; window_hours?: number;
+}): Promise<void> {
+  const q = new URLSearchParams({ scope: cap.scope, metric: cap.metric,
+    subject: cap.subject ?? "*", window_hours: String(cap.window_hours ?? 24) });
+  const res = await fetch(`${getApiBase()}/governance/caps?${q}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+}
+
+export interface UsageRow {
+  /** Attempts a model ran — billed, or failed after answering. */
+  calls: number;
+  failures: number;
+  /** Attempts the provider refused (no model ran, nothing billed): in no other figure. Absent before 2026-11-09. */
+  refused?: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  calls_without_usage: number;
+  unpriced_calls: number;
+  cost_usd: number;
+  cost_is_complete: boolean;
+  mean_ms: number;
+  failure_rate: number;
+  [axis: string]: unknown;   // the grouping axes ride the row (provider, model, …)
+}
+
+export interface UsageReport {
+  axes: string[];
+  total_calls: number;
+  /** Refused attempts, apart from `total_calls` (see `UsageRow.refused`). */
+  refused_calls?: number;
+  rows: UsageRow[];
+  unattributed: Record<string, number>;
+  [k: string]: unknown;
+}
+
+export async function getUsageReport(by = "provider,model"): Promise<UsageReport> {
+  const res = await fetch(`${getApiBase()}/usage?by=${encodeURIComponent(by)}`);
+  if (!res.ok) throw new Error(`Failed to fetch usage (${res.status})`);
+  return res.json();
+}
+
+export async function getCostSql(): Promise<{ sql: string; table: string; kind: string }> {
+  const res = await fetch(`${getApiBase()}/usage/cost-sql`);
+  if (!res.ok) throw new Error(`Failed to fetch the cost query (${res.status})`);
+  return res.json();
+}
+
+export interface AuditFeedEvent {
+  category: string;
+  kind: string;
+  at: string;
+  actor: string;
+  org_id: string;
+  conn_id: string;
+  summary: string;
+  detail: Record<string, unknown>;
+}
+
+/** Arc TC, TC-5 (`govern.justifications`) — the feed's window: from `since` (inclusive) to
+ *  before `until`, each a date or an ISO moment. Read by the server only while the flag is on. */
+export interface AuditFeedWindow { since?: string; until?: string; cursor?: string }
+
+export async function getAuditFeed(category = "", limit = 100, window?: AuditFeedWindow): Promise<{
+  categories: string[]; category: string | null; count: number; events: AuditFeedEvent[];
+  /** Present only while `govern.justifications` is on; null when the window is exhausted. */
+  next_cursor?: string | null; since?: string | null; until?: string | null;
+}> {
+  const q = new URLSearchParams();
+  if (category) q.set("category", category);
+  q.set("limit", String(limit));
+  for (const [k, v] of Object.entries(window ?? {})) if (v) q.set(k, v);
+  const res = await fetch(`${getApiBase()}/audit/feed?${q}`);
+  // A window the server cannot read is refused with why (a first date after the last, say).
+  if (!res.ok) throw window ? await refused(res, "Reading the governance feed")
+                            : new Error(`Failed to fetch the governance feed (${res.status})`);
+  return res.json();
+}
+
+/** Arc TC, TC-5 — the feed's whole window as a file, written by the server page by page (every
+ *  event, not the window held on screen), saved by the browser. */
+export async function downloadAuditFeed(format: "csv" | "jsonl",
+                                        filters: { category?: string; since?: string; until?: string }): Promise<void> {
+  const q = new URLSearchParams({ format });
+  for (const [k, v] of Object.entries(filters)) if (v) q.set(k, v);
+  const res = await fetch(`${getApiBase()}/audit/feed/export?${q}`);
+  if (!res.ok) throw await refused(res, "Exporting the governance feed");
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `aughor-governance-feed.${format}`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+export interface ModelUsageRow {
+  provider: string;
+  model: string;
+  calls: number;
+  failures: number;
+  total_tokens: number;
+  calls_without_usage: number;
+  retried_calls: number;
+  [k: string]: unknown;
+}
+
+export async function getModelUsage(): Promise<{ models: ModelUsageRow[] }> {
+  const res = await fetch(`${getApiBase()}/obs/model-usage`);
+  if (!res.ok) throw new Error(`Failed to fetch model usage (${res.status})`);
+  return res.json();
+}
+
+export async function getRouteMix(): Promise<Record<string, unknown>> {
+  const res = await fetch(`${getApiBase()}/obs/route-mix`);
+  if (!res.ok) throw new Error(`Failed to fetch route mix (${res.status})`);
+  return res.json();
+}
+
+// ── PX-4 · the learning write half + graduation evidence ───────────────────
+
+export interface TrustedQueryRow {
+  id: string;
+  connection_id: string;
+  question: string;
+  sql: string;
+  tables: string[];
+  note: string;
+  tags: string[];
+  status: string;        // draft | proposed | approved | deprecated
+  version: number;
+  proposed_by?: string;
+  verified_by?: string;
+  verified_at?: string;
+  verification?: Record<string, unknown> | null;
+  [k: string]: unknown;
+}
+
+export async function listTrustedQueries(connectionId = ""): Promise<TrustedQueryRow[]> {
+  const q = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${getApiBase()}/learning/trusted${q}`);
+  if (!res.ok) throw new Error(`Failed to fetch trusted queries (${res.status})`);
+  return (await res.json()).queries;
+}
+
+async function learningError(res: Response): Promise<never> {
+  const text = await res.text().catch(() => "");
+  try {
+    const detail = JSON.parse(text)?.detail;
+    if (detail) {
+      throw new Error(typeof detail === "string" ? detail
+        : String(detail.message ?? JSON.stringify(detail)));
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message && !e.message.startsWith("Unexpected")) throw e;
+  }
+  throw new Error(text || `HTTP ${res.status}`);
+}
+
+/** Seed one trusted query — verified NOW (executed + guard battery). Passing lands
+ *  `proposed`; failing lands `draft` with the report. Approval is a separate act. */
+export async function createTrustedQuery(body: {
+  connection_id: string; question: string; sql: string; actor: string;
+  tables?: string[]; note?: string; tags?: string[];
+}): Promise<Record<string, unknown>> {
+  const res = await fetch(`${getApiBase()}/learning/trusted`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tables: [], note: "", tags: [], source: "api", ...body }),
+  });
+  if (!res.ok) await learningError(res);
+  return res.json();
+}
+
+/** Edit re-verifies and RESETS the lifecycle — an approval covers what it approved. */
+export async function editTrustedQuery(id: string, body: {
+  actor: string; question?: string; sql?: string; tables?: string[];
+  note?: string; tags?: string[];
+}): Promise<{ trusted_query: TrustedQueryRow; verification: Record<string, unknown> }> {
+  const res = await fetch(`${getApiBase()}/learning/trusted/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) await learningError(res);
+  return res.json();
+}
+
+/** propose | approve | reject | deprecate. `propose` re-verifies first and refuses
+ *  (409, report attached) when verification fails. `approve` is what makes the entry
+ *  prompt-authoritative. */
+export async function transitionTrustedQuery(id: string, action: string, actor: string):
+  Promise<{ trusted_query: TrustedQueryRow; audit: Record<string, unknown> }> {
+  const res = await fetch(
+    `${getApiBase()}/learning/trusted/${encodeURIComponent(id)}/transition`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, actor }),
+    });
+  if (!res.ok) await learningError(res);
+  return res.json();
+}
+
+export async function deleteTrustedQuery(id: string, actor: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/learning/trusted/${encodeURIComponent(id)}?actor=${encodeURIComponent(actor)}`,
+    { method: "DELETE" });
+  if (!res.ok) await learningError(res);
+}
+
+export interface LearningDatasetDetail {
+  found: boolean;
+  name?: string;
+  dataset?: Record<string, unknown>;
+  lineage?: Record<string, unknown>[];
+  /** "present" · "purged" · "missing" — whether the rows can be read back; `note` says why when they cannot. */
+  bytes?: string;
+  note?: string;
+}
+
+export async function getLearningDataset(name: string): Promise<LearningDatasetDetail> {
+  const res = await fetch(`${getApiBase()}/learning/datasets/${encodeURIComponent(name)}`);
+  if (!res.ok) throw new Error(`Failed to fetch dataset (${res.status})`);
+  return res.json();
+}
+
+export interface EvalGraduation {
+  flag: string;
+  can_graduate: boolean;
+  pass_rate: number | null;
+  baseline_pass_rate: number | null;
+  bar: number | null;
+  reasons: string[];
+  run_id: string;
+  suite_id: string;
+  current_default: boolean;
+  already_default_on: boolean;
+  id?: string;
+  decided_at?: string;
+  [k: string]: unknown;
+}
+
+export async function getEvalGraduations(flag = ""): Promise<EvalGraduation[]> {
+  const q = flag ? `?flag=${encodeURIComponent(flag)}` : "";
+  const res = await fetch(`${getApiBase()}/evals/graduations${q}`);
+  if (!res.ok) throw new Error(`Failed to fetch graduations (${res.status})`);
+  return (await res.json()).graduations;
+}
+
+// ── PX-6 · the ontology's human-edit doors ─────────────────────────────────
+// Overrides could be APPLIED but never listed or reverted; routing proposals had
+// a review queue with no inbox; export/import existed for version control with
+// no button. These are those endpoints' clients.
+
+export interface OntologyOverrideRow {
+  target_kind: string;
+  target_id: string;
+  fields: Record<string, unknown>;
+  [k: string]: unknown;
+}
+
+function ontoScope(connectionId: string, schemaName?: string): string {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  return q.toString();
+}
+
+export async function listOntologyOverrides(
+  connectionId: string, schemaName?: string,
+): Promise<OntologyOverrideRow[]> {
+  const res = await fetch(`${getApiBase()}/ontology/overrides?${ontoScope(connectionId, schemaName)}`);
+  if (!res.ok) throw new Error(`Failed to list overrides (${res.status})`);
+  return (await res.json()).overrides;
+}
+
+/** Revert one human override; the auto-derived value returns on the next read. */
+export async function deleteOntologyOverride(
+  kind: string, targetId: string, connectionId: string, schemaName?: string,
+): Promise<{ removed: boolean }> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/overrides/${encodeURIComponent(kind)}/${targetId}?${ontoScope(connectionId, schemaName)}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+  return res.json();
+}
+
+export interface RoutingProposal {
+  entity_id?: string;
+  target_id?: string;
+  [k: string]: unknown;
+}
+
+export async function listRoutingProposals(
+  connectionId: string, schemaName?: string,
+): Promise<RoutingProposal[]> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/routing-proposals?${ontoScope(connectionId, schemaName)}`);
+  if (!res.ok) throw new Error(`Failed to list routing proposals (${res.status})`);
+  return (await res.json()).proposals;
+}
+
+/** The ONLY path from proposed to enforced — the human click. Refuses a proposal
+ *  whose table did not existence-bind. */
+export async function acceptRoutingProposal(
+  entityId: string, connectionId: string, schemaName?: string,
+): Promise<Record<string, unknown>> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/routing-proposal/accept?${ontoScope(connectionId, schemaName)}`,
+    { method: "POST" });
+  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+  return res.json();
+}
+
+export async function exportOntologyTree(
+  connectionId: string, schemaName?: string,
+): Promise<{ root: string; files: number }> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/export?${ontoScope(connectionId, schemaName)}`, { method: "POST" });
+  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+  return res.json();
+}
+
+export async function importOntologyTree(
+  connectionId: string, schemaName?: string,
+): Promise<Record<string, unknown>> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/import?${ontoScope(connectionId, schemaName)}`, { method: "POST" });
+  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+  return res.json();
+}

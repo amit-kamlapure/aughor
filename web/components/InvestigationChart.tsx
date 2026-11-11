@@ -1,0 +1,97 @@
+"use client";
+
+/**
+ * InvestigationChart — report/exploration/query-builder chart surface.
+ *
+ * It owns the *chrome* (card, title, the user-facing chart-type toggle, the
+ * data-labels button) but delegates all rendering to the single canonical
+ * <Chart> engine (chromeless mode). This is the convergence: chat and reports
+ * now build their charts from ONE engine — no more parallel spec-builders.
+ *
+ * Type vocab bridge: chartTypeInference emits hyphenated ChartType names; the
+ * <Chart> engine speaks underscore "hints". The shared TYPE_TO_HINT (in
+ * chartTypeInference — the single source of truth) maps between them. grouped-bar
+ * folds into combo (multi-measure comparison) and matrix into heatmap (a matrix IS
+ * a heatmap); both are kept out of the offered toggle options below.
+ */
+
+import { useState } from "react";
+import { ChartWrapper } from "@/components/charts/ChartWrapper";
+import { inferChartType, availableTypesFor, TYPE_TO_HINT, type ChartType } from "@/components/charts/chartTypeInference";
+import { Chart, type ChartCustom } from "@/components/Chart";
+import { Icon } from "@/components/ui/icon";
+import { Button } from "@/components/ui/button";
+
+interface Props {
+  columns: string[];
+  rows: unknown[][];
+  title?: string;
+  /** Controlled mode — an outer rail (the Query Builder Explore panel) owns the chart type
+   *  and data-labels, so the internal toggle/labels chrome is hidden here. */
+  controlled?: boolean;
+  typeOverride?: ChartType | "auto";
+  showLabels?: boolean;
+  custom?: ChartCustom | null;
+  /** Scale the chart height (e.g. 0.75 for compact briefing cards). */
+  heightScale?: number;
+  /** Click a mark to drill in — receives the datum behind the clicked bar/point. */
+  onSelect?: (datum: Record<string, unknown>) => void;
+}
+
+export function InvestigationChart({ columns, rows, title, controlled, typeOverride, showLabels: showLabelsProp, custom, heightScale, onSelect }: Props) {
+  const inferred = inferChartType(columns, rows);
+  const [overrideState, setOverride] = useState<ChartType | "auto">("auto");
+  const [showLabelsState, setShowLabels] = useState(false);
+
+  // Controlled mode: the outer rail owns type + labels; otherwise use the internal toggles.
+  const override = controlled ? (typeOverride ?? "auto") : overrideState;
+  const showLabels = controlled ? (showLabelsProp ?? false) : showLabelsState;
+
+  if (!inferred) return null;
+
+  const effectiveType: ChartType = override === "auto" ? inferred.type : override;
+  if (effectiveType === "table") return null;
+
+  // Toggle options — restricted to types the unified <Chart> engine renders.
+  const available: ChartType[] = availableTypesFor(inferred.type);
+
+  const chartTitle = title ?? (
+    effectiveType === "line" || effectiveType === "multi-line" ? "Trend" :
+    effectiveType === "heatmap" ? "Distribution" :
+    effectiveType === "combo" ? "Metrics" : "Breakdown"
+  );
+
+  // When the user hasn't overridden, let <Chart> use its own auto-inference
+  // (identical to chat); a manual pick forces that type.
+  const hint = override === "auto" ? "auto" : (TYPE_TO_HINT[override] ?? "auto");
+
+  return (
+    <ChartWrapper
+      title={chartTitle}
+      chartType={override}
+      availableTypes={available}
+      onChartTypeChange={controlled ? undefined : setOverride}
+      actions={controlled ? undefined : (
+        <Button
+          variant={showLabels ? "secondary" : "ghost"} size="icon-xs"
+          onClick={() => setShowLabels(s => !s)}
+          title={showLabels ? "Hide data labels" : "Show data labels"}
+        >
+          <Icon name="expand" size={14} />
+        </Button>
+      )}
+    >
+      <Chart
+        columns={columns}
+        rows={rows}
+        chartType={hint}
+        chrome={false}
+        showLabels={showLabels}
+        custom={custom}
+        title={chartTitle}
+        heightScale={heightScale}
+        onSelect={onSelect}
+      />
+    </ChartWrapper>
+  );
+}

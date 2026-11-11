@@ -1,0 +1,778 @@
+"use client";
+import { Confidence, confidenceTier } from "@/components/ui/trust";
+
+import { useState, useEffect, useCallback } from "react";
+import { Badge } from "@/components/ui/badge";
+import { SqlResultTable } from "@/components/AugTable";
+import { Separator } from "@/components/ui/separator";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import type { DataQualityNote, Finding, Hypothesis, QueryCitation, Report, StatResult, Verdict } from "@/lib/types";
+import { logOutcome, getInvestigationOutcomes, type RecOutcome, type RecStatus } from "@/lib/api";
+import { ResultChartCard } from "@/components/charts/ResultChartCard";
+import { SHARE_COL_PATTERN, buildColumnFormatter, compactNumber, pct } from "@/lib/format";
+import { H_PALETTES } from "@/lib/palette";
+import { StatusChip, chipTone, type ChipHue } from "@/components/brief/StatusChip";
+import { Button } from "@/components/ui/button";
+import { ReadFailed } from "@/components/ui/states";
+
+interface Props {
+  report: Report;
+  queryCount: number;
+  queryHistory?: QueryCitation[];
+  queryMode?: "direct" | "investigate" | null;
+  hypotheses?: Hypothesis[];
+  invId?: string | null;
+}
+
+// Semantic maps only — a verdict/signal → its hue + label/icon. The chip classes live
+// in the one StatusChip vocabulary (REC-U3), so a "confirmed"/"accepted" chip is the
+// same green everywhere and adding a status is a one-line entry here.
+const VERDICT_META: Record<Verdict, { label: string; hue: ChipHue }> = {
+  confirmed:    { label: "Confirmed",    hue: "positive" },
+  refuted:      { label: "Refuted",      hue: "negative" },
+  inconclusive: { label: "Inconclusive", hue: "caution"  },
+  untested:     { label: "Untested",     hue: "muted"    },
+};
+
+const STAT_META: Record<StatResult["type"], { icon: string; hue: ChipHue }> = {
+  anomaly:      { icon: "⚠", hue: "caution" },
+  trend:        { icon: "↗",  hue: "info"    },
+  comparison:   { icon: "⟺", hue: "accent"  },
+  distribution: { icon: "≈",  hue: "muted"   },
+};
+
+// ── Collapsible section (used in bottom report sections) ─────────────────────
+
+function CollapsibleSection({
+  title,
+  badge,
+  titleClass = "text-zinc-300",
+  children,
+}: {
+  title: string;
+  badge?: React.ReactNode;
+  titleClass?: string;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 w-full text-left group py-1"
+      >
+        <h3 className={`text-sm font-semibold uppercase tracking-wide ${titleClass}`}>{title}</h3>
+        {badge}
+        <span className="ml-auto text-zinc-500 group-hover:text-zinc-400 text-xs transition">
+          {open ? "▲" : "▼"}
+        </span>
+      </button>
+      {open && <div className="mt-3">{children}</div>}
+    </div>
+  );
+}
+
+// ── Statistical signal callout ────────────────────────────────────────────────
+
+function StatCallout({ stat }: { stat: StatResult }) {
+  const m = STAT_META[stat.type];
+  return (
+    <div className={`rounded border p-2.5 flex items-start gap-2.5 ${chipTone(m.hue, "soft").chip}`}>
+      <span className="text-xs shrink-0 mt-0.5 font-mono">{m.icon}</span>
+      <div className="min-w-0 space-y-0.5">
+        <p className="text-xs leading-snug">{stat.interpretation}</p>
+        {stat.sigma != null && (
+          <p className="aug-fs-xs text-zinc-500 font-mono">
+            {stat.sigma.toFixed(1)}σ{stat.p_value != null ? ` · p=${stat.p_value.toFixed(3)}` : ""}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Query result mini-table ───────────────────────────────────────────────────
+
+function QueryMiniTable({ columns, rows }: { columns: string[]; rows: unknown[][] }) {
+  return <SqlResultTable columns={columns} rows={rows} maxHeight={280} />;
+}
+
+// ── Single query evidence block ───────────────────────────────────────────────
+
+function QueryEvidence({
+  query,
+  index,
+  total,
+}: {
+  query: QueryCitation;
+  index: number;
+  total: number;
+}) {
+  const [sqlOpen, setSqlOpen] = useState(false);
+  const hasData = !query.error && (query.columns?.length ?? 0) > 0 && (query.rows?.length ?? 0) > 0;
+  const significantStats = (query.stats ?? []).filter(s => s.is_significant);
+
+  return (
+    <div className="p-4 space-y-3">
+      {/* Query header */}
+      <div className="flex items-center gap-2.5">
+        <span className="aug-fs-xs text-zinc-500 font-mono uppercase tracking-wide">
+          Query {index + 1}/{total}
+        </span>
+        {query.error
+          ? <span className="text-xs text-red-400 border border-red-500/20 bg-red-500/5 rounded px-1.5 py-0.5">✕ failed</span>
+          : <span className="aug-fs-xs text-zinc-500 font-mono">{query.row_count} row{query.row_count !== 1 ? "s" : ""}</span>
+        }
+      </div>
+
+      {/* Chart — grain-aware control strip + chart⇄table toggle (ResultChartCard) */}
+      {hasData && (
+        <ResultChartCard columns={query.columns!} rows={query.rows!} />
+      )}
+
+      {/* Table — always show when data fits; complements the chart */}
+      {hasData && (
+        <QueryMiniTable columns={query.columns!} rows={query.rows!} />
+      )}
+
+      {/* Error detail */}
+      {query.error && (
+        <pre className="text-xs text-red-400 bg-red-500/5 rounded border border-red-500/20 p-2.5 overflow-x-auto whitespace-pre-wrap font-code leading-relaxed">
+          {query.error}
+        </pre>
+      )}
+
+      {/* Statistical signals */}
+      {significantStats.length > 0 && (
+        <div className="space-y-1.5">
+          {significantStats.map((s, i) => <StatCallout key={i} stat={s} />)}
+        </div>
+      )}
+
+      {/* SQL toggle */}
+      <div>
+        <Button
+          variant="ghost" size="xs"
+          onClick={() => setSqlOpen(o => !o)}
+        >
+          <span className="aug-fs-xs">{sqlOpen ? "▼" : "▶"}</span> SQL
+        </Button>
+        {sqlOpen && (
+          <pre className="mt-1.5 text-xs text-zinc-400 bg-zinc-800 rounded border border-zinc-600/60 p-2.5 overflow-x-auto whitespace-pre-wrap font-code leading-relaxed">
+            {query.sql}
+          </pre>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Hypothesis accordion row ──────────────────────────────────────────────────
+
+function HypothesisAccordion({
+  index,
+  hypothesis,
+  queries,
+  linkedFinding,
+}: {
+  index: number;
+  hypothesis: Hypothesis;
+  queries: QueryCitation[];
+  linkedFinding: Finding | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const palette = H_PALETTES[index % H_PALETTES.length];
+  const vm = VERDICT_META[hypothesis.verdict];
+
+  return (
+    <div className="rounded-[var(--r3)] border overflow-hidden" style={palette.ring}>
+      {/* ── Header ── */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={`w-full text-left px-4 py-3 transition group ${open ? "" : "hover:bg-zinc-700/40"}`}
+        style={open ? palette.dimBg : undefined}
+      >
+        <div className="flex items-start gap-3">
+          {/* H-label badge */}
+          <span className="mt-0.5 shrink-0 text-xs font-mono font-semibold px-1.5 py-0.5 rounded border" style={palette.badge}>
+            H{index + 1}
+          </span>
+
+          {/* Description */}
+          <p className="text-sm text-zinc-200 flex-1 leading-snug text-left">
+            {hypothesis.description}
+          </p>
+
+          {/* Verdict + confidence + toggle */}
+          <div className="flex items-center gap-2 shrink-0 ml-2">
+            <StatusChip hue={vm.hue}>{vm.label}</StatusChip>
+            <Confidence value={hypothesis.confidence} />
+            <span className="text-zinc-500 aug-fs-xs group-hover:text-zinc-400 transition">
+              {open ? "▲" : "▼"}
+            </span>
+          </div>
+        </div>
+
+      </button>
+
+      {/* ── Expanded detail ── */}
+      {open && (
+        <div className="border-t divide-y divide-zinc-600/50" style={palette.ring}>
+
+          {/* 1. Key finding */}
+          <div className="px-4 py-3 space-y-1.5">
+            <p className="aug-fs-xs text-zinc-500 uppercase tracking-widest font-mono">Key Finding</p>
+            <p className="text-sm text-zinc-200 leading-relaxed">
+              {hypothesis.key_finding || "No finding recorded for this hypothesis."}
+            </p>
+          </div>
+
+          {/* 2. Queries — each with chart + table + stats + SQL */}
+          {queries.length === 0 ? (
+            <div className="px-4 py-3">
+              <p className="text-xs text-zinc-500 italic">No queries were executed for this hypothesis.</p>
+            </div>
+          ) : (
+            <div className={`divide-y divide-zinc-600/50`}>
+              {queries.map((q, i) => (
+                <QueryEvidence key={i} query={q} index={i} total={queries.length} />
+              ))}
+            </div>
+          )}
+
+          {/* 3. Synthesis link — if the final report references this hypothesis */}
+          {linkedFinding && (
+            <div className="px-4 py-3 space-y-2">
+              <p className="aug-fs-xs text-zinc-500 uppercase tracking-widest font-mono">Report Synthesis</p>
+              <blockquote className="border-l-2 border-emerald-500/40 pl-3 space-y-1">
+                <p className="text-sm text-zinc-200 leading-relaxed italic">&quot;{linkedFinding.claim}&quot;</p>
+                {linkedFinding.evidence && (
+                  <p className="text-xs text-zinc-500 leading-relaxed">{linkedFinding.evidence}</p>
+                )}
+              </blockquote>
+              <Badge
+                variant="outline"
+                className={linkedFinding.confidence >= 0.7
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                  : "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                }
+              >
+                {Math.round(linkedFinding.confidence * 100)}% confidence
+              </Badge>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Hypothesis panel ──────────────────────────────────────────────────────────
+
+function HypothesisPanel({
+  hypotheses,
+  queryHistory,
+  reportFindings,
+}: {
+  hypotheses: Hypothesis[];
+  queryHistory: QueryCitation[];
+  reportFindings: Finding[];
+}) {
+  const tested = hypotheses.filter(h => h.verdict !== "untested");
+  const confirmed = tested.filter(h => h.verdict === "confirmed").length;
+  const refuted = tested.filter(h => h.verdict === "refuted").length;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">
+          Hypotheses Tested
+        </h3>
+        <div className="flex items-center gap-2 aug-fs-xs font-mono">
+          {confirmed > 0 && <span className="text-emerald-400">{confirmed} confirmed</span>}
+          {confirmed > 0 && refuted > 0 && <span className="text-zinc-500">·</span>}
+          {refuted > 0 && <span className="text-red-400">{refuted} refuted</span>}
+          {(confirmed > 0 || refuted > 0) && tested.length - confirmed - refuted > 0 && <span className="text-zinc-500">·</span>}
+          {tested.length - confirmed - refuted > 0 && <span className="text-amber-400">{tested.length - confirmed - refuted} inconclusive</span>}
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        {hypotheses.map((h, i) => (
+          <HypothesisAccordion
+            key={h.id}
+            index={i}
+            hypothesis={h}
+            queries={queryHistory.filter(
+              q => q.hypothesis_id?.toUpperCase() === h.id?.toUpperCase()
+            )}
+            linkedFinding={
+              reportFindings.find(
+                f => f.hypothesis_id?.toUpperCase() === h.id?.toUpperCase()
+              ) ?? null
+            }
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Key Finding card ─────────────────────────────────────────────────────────
+
+function KeyFindingCard({
+  finding,
+  index,
+  hypotheses,
+}: {
+  finding: Finding;
+  index: number;
+  hypotheses: Hypothesis[];
+}) {
+  const [open, setOpen] = useState(false);
+  const linkedHypothesis = finding.hypothesis_id
+    ? hypotheses.find(h => h.id.toUpperCase() === finding.hypothesis_id!.toUpperCase())
+    : null;
+  const hypothesisIndex = linkedHypothesis
+    ? hypotheses.indexOf(linkedHypothesis)
+    : -1;
+  const palette = hypothesisIndex >= 0 ? H_PALETTES[hypothesisIndex % H_PALETTES.length] : null;
+
+  // The design system's thresholds (ui/trust confidenceTier), its hues as tokens.
+  const tier = confidenceTier(finding.confidence);
+  const confidenceLabel =
+    tier === "high" ? { text: "High confidence", color: "var(--grn4)", dot: "var(--grn3)" } :
+    tier === "mid"  ? { text: "Moderate confidence", color: "var(--amb4)", dot: "var(--amb3)" } :
+                      { text: "Low confidence", color: "var(--red4)", dot: "var(--red3)" };
+
+  return (
+    <div className="rounded-[var(--r3)] border border-zinc-600 bg-zinc-800/50 overflow-hidden">
+      {/* Header row */}
+      <div className="flex items-start gap-3 p-4">
+        {/* Index circle */}
+        <span className="shrink-0 flex h-6 w-6 items-center justify-center rounded-[var(--r-pill)] bg-zinc-800 border border-zinc-600 text-xs font-mono text-zinc-400 mt-0.5">
+          {index + 1}
+        </span>
+
+        <div className="flex-1 min-w-0 space-y-2">
+          {/* Claim */}
+          <p className="text-sm font-medium text-zinc-100 leading-snug">{finding.claim}</p>
+
+          {/* Meta row: confidence + hypothesis link */}
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Confidence — one subtle qualitative signal (dot + label), no repeated
+                bar/% on every finding. The reference shows none; we keep the level
+                at this altitude but drop the clutter. The exact % stays available in
+                the expandable evidence below. */}
+            <div className="flex items-center gap-1.5" title={`confidence ${finding.confidence.toFixed(2)}`}>
+              <span className="h-1.5 w-1.5 rounded-[var(--r-pill)] shrink-0" style={{ background: confidenceLabel.dot }} />
+              <span className="text-xs" style={{ color: confidenceLabel.color }}>{confidenceLabel.text}</span>
+            </div>
+            {/* Hypothesis chip */}
+            {palette && hypothesisIndex >= 0 && (
+              <span className="aug-fs-xs font-mono px-1.5 py-0.5 rounded border" style={palette.badge}>
+                H{hypothesisIndex + 1}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Expand toggle for evidence */}
+        {finding.evidence && (
+          <Button
+            variant="outline" size="xs"
+            onClick={() => setOpen(o => !o)}
+            className="shrink-0 mt-0.5"
+          >
+            {open ? "Less" : "Evidence"}
+          </Button>
+        )}
+      </div>
+
+      {/* Expandable evidence */}
+      {open && finding.evidence && (
+        <div className="px-4 pb-4 pt-0">
+          <div className="rounded border border-zinc-600/60 bg-zinc-800/50 p-3 space-y-1.5">
+            <p className="aug-fs-xs text-zinc-500 uppercase tracking-widest font-mono">Supporting Evidence</p>
+            <p className="text-sm text-zinc-300 leading-relaxed">{finding.evidence}</p>
+            {linkedHypothesis && (
+              <p className="text-xs text-zinc-500 mt-1 pt-1.5 border-t border-zinc-600">
+                From hypothesis: <span className="text-zinc-400 italic">&quot;{linkedHypothesis.description}&quot;</span>
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Outcome status styles ─────────────────────────────────────────────────────
+
+const STATUS_META: Record<RecStatus, { label: string; hue: ChipHue }> = {
+  accepted:    { label: "Accepted",    hue: "info"     },
+  implemented: { label: "Implemented", hue: "accent"   },
+  verified:    { label: "Verified",    hue: "positive" },
+  rejected:    { label: "Rejected",    hue: "negative" },
+  dismissed:   { label: "Dismissed",   hue: "muted"    },
+};
+
+function RecommendationCard({
+  action,
+  index,
+  invId,
+  existingOutcome,
+}: {
+  action: string;
+  index: number;
+  invId: string;
+  existingOutcome: RecOutcome | undefined;
+}) {
+  const [outcome, setOutcome] = useState<RecOutcome | undefined>(existingOutcome);
+  const [saving, setSaving] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const mark = useCallback(async (status: RecStatus) => {
+    setSaving(true);
+    setMenuOpen(false);
+    try {
+      const result = await logOutcome(invId, index, action, status);
+      setOutcome(result);
+    } catch {
+      /* silent */
+    } finally {
+      setSaving(false);
+    }
+  }, [invId, index, action]);
+
+  const current = outcome ? STATUS_META[outcome.status] : null;
+
+  return (
+    <div className="rounded-[var(--r3)] border border-violet-500/20 bg-violet-500/5 p-3 flex items-start gap-3">
+      <span className="shrink-0 flex h-5 w-5 items-center justify-center rounded-[var(--r-pill)] bg-violet-500/20 border border-violet-500/30 text-xs font-mono text-violet-300 mt-0.5">
+        {index + 1}
+      </span>
+      <p className="text-sm text-zinc-300 leading-relaxed flex-1">{action}</p>
+      <div className="shrink-0 relative">
+        {current ? (
+          <div className="flex items-center gap-1.5">
+            <StatusChip hue={current.hue}>{current.label}</StatusChip>
+            <Button
+              variant="ghost" size="icon-xs"
+              onClick={() => setMenuOpen(o => !o)}
+              title="Change status"
+            >
+              ▾
+            </Button>
+          </div>
+        ) : (
+          <Button
+            variant="outline" size="xs"
+            onClick={() => setMenuOpen(o => !o)}
+            disabled={saving}
+            className="whitespace-nowrap"
+          >
+            {saving ? "…" : "Mark"}
+          </Button>
+        )}
+        {menuOpen && (
+          <div className="absolute right-0 top-full mt-1 z-20 w-36 rounded-[var(--r3)] border border-zinc-600 bg-zinc-900 shadow-[var(--shadow-sm)] overflow-hidden">
+            {(["accepted", "implemented", "verified", "rejected", "dismissed"] as RecStatus[]).map(s => (
+              <button
+                key={s}
+                onClick={() => mark(s)}
+                className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 transition capitalize"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Main ReportView ───────────────────────────────────────────────────────────
+
+export function ReportView({ report, queryCount, queryHistory = [], queryMode, hypotheses = [], invId }: Props) {
+  const dqNotes = report.data_quality_notes ?? [];
+  const isDirect = queryMode === "direct";
+
+  const [outcomes, setOutcomes] = useState<RecOutcome[]>([]);
+  // A read of where the recommendations stand that failed is said under them — swallowed, every one read as unmarked.
+  const [outcomesError, setOutcomesError] = useState<string | null>(null);
+  const [outcomesRead, setOutcomesRead] = useState(0);
+  useEffect(() => {
+    if (!invId) return;
+    let alive = true;
+    getInvestigationOutcomes(invId)
+      .then(o => { if (alive) { setOutcomes(o); setOutcomesError(null); } })
+      .catch(e => { if (alive) setOutcomesError(String(e?.message || e)); });
+    return () => { alive = false; };
+  }, [invId, outcomesRead]);
+  const isQueryFailure = isDirect && !report.verdict && report.headline === "Query execution failed";
+
+  const directTable = isDirect
+    ? queryHistory.find(q => !q.error && q.columns?.length && q.rows?.length)
+    : undefined;
+
+  return (
+    <div className="space-y-6">
+      {/* 1. Verdict / Headline */}
+      <div className={`rounded-[var(--r3)] border p-5 ${isQueryFailure ? "border-red-500/30 bg-red-500/5" : "border-emerald-500/30 bg-emerald-500/5"}`}>
+        <p className={`text-xs font-medium uppercase tracking-widest mb-2 ${isQueryFailure ? "text-red-400" : "text-emerald-400"}`}>
+          {isQueryFailure ? "Query Failed" : isDirect ? "Top Finding" : "Verdict"}
+        </p>
+        <p className="text-lg font-semibold text-white leading-snug">{report.headline}</p>
+      </div>
+
+      {/* 2. Diagnosis / Executive Summary */}
+      {!isQueryFailure && (
+        <div className="space-y-4">
+          <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">
+            {isDirect ? "Executive Summary" : "Diagnosis"}
+          </h3>
+          <p className="text-sm text-zinc-300 leading-relaxed">{report.verdict}</p>
+
+          {/* Key findings — rich cards for both modes */}
+          {(report.key_findings ?? []).length > 0 && (
+            <div className="space-y-2 pt-1">
+              <p className="text-xs text-zinc-500 uppercase tracking-widest font-mono">Key Findings</p>
+              {(report.key_findings ?? []).map((f, i) => (
+                <KeyFindingCard key={i} finding={f} index={i} hypotheses={hypotheses} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 3. Hypothesis accordion — investigate mode (before separator) */}
+      {!isDirect && hypotheses.length > 0 && (
+        <HypothesisPanel
+          hypotheses={hypotheses}
+          queryHistory={queryHistory}
+          reportFindings={report.key_findings}
+        />
+      )}
+
+      {/* 4. Chart — direct mode (grain-aware controls + chart⇄table toggle) */}
+      {isDirect && !isQueryFailure && directTable?.columns && directTable?.rows && (
+        <ResultChartCard columns={directTable.columns} rows={directTable.rows} />
+      )}
+
+      {/* 5. KPI highlight — single-row scalar */}
+      {isDirect && !isQueryFailure && directTable && <KPIHighlight table={directTable} />}
+
+      {/* 6. Query results table — direct mode */}
+      {isDirect && !isQueryFailure && directTable && (
+        <DirectResultTable table={directTable} />
+      )}
+
+      <Separator />
+
+      {/* 7. Data Quality Issues */}
+      {dqNotes.length > 0 && (
+        <CollapsibleSection
+          title={isQueryFailure ? "Execution Error" : "Data Quality Issues"}
+          titleClass="text-orange-400"
+          badge={
+            <Badge variant="outline" className="border-orange-500/30 bg-orange-500/10 text-orange-400 text-xs">
+              {isQueryFailure ? "query failed" : `${dqNotes.length} found`}
+            </Badge>
+          }
+        >
+          <p className="text-xs text-zinc-500 mb-3">
+            {isQueryFailure
+              ? "The query was automatically corrected and retried but still could not execute successfully."
+              : "These structural issues were detected during the deep analysis and may affect analysis accuracy."}
+          </p>
+          <div className="space-y-3">
+            {dqNotes.map((note, i) => <DataQualityCard key={i} note={note} />)}
+          </div>
+        </CollapsibleSection>
+      )}
+
+      {/* 8. Risks */}
+      {(report.risks ?? []).length > 0 && (
+        <CollapsibleSection title="Risks & Considerations">
+          <div className="space-y-2">
+            {(report.risks ?? []).map((risk, i) => (
+              <div key={i} className="rounded-[var(--r3)] border border-amber-500/20 bg-amber-500/5 p-3 flex items-start gap-3 border-l-2 border-l-amber-500/50">
+                <span className="shrink-0 mt-0.5 text-amber-400 text-xs">⚠</span>
+                <p className="text-sm text-zinc-300 leading-relaxed">{risk}</p>
+              </div>
+            ))}
+          </div>
+        </CollapsibleSection>
+      )}
+
+      {/* 9. Recommended Actions */}
+      {(report.recommended_actions ?? []).length > 0 && (
+        <CollapsibleSection title="Recommended Actions">
+          <div className="space-y-2">
+            {invId && outcomesError && (
+              <ReadFailed what="where these stand" error={outcomesError} onRetry={() => setOutcomesRead(n => n + 1)} />
+            )}
+            {(report.recommended_actions ?? []).map((action, i) => (
+              invId ? (
+                <RecommendationCard
+                  key={i}
+                  action={action}
+                  index={i}
+                  invId={invId}
+                  existingOutcome={outcomes.find(o => o.rec_index === i)}
+                />
+              ) : (
+                <div key={i} className="rounded-[var(--r3)] border border-violet-500/20 bg-violet-500/5 p-3 flex items-start gap-3">
+                  <span className="shrink-0 flex h-5 w-5 items-center justify-center rounded-[var(--r-pill)] bg-violet-500/20 border border-violet-500/30 text-xs font-mono text-violet-300 mt-0.5">
+                    {i + 1}
+                  </span>
+                  <p className="text-sm text-zinc-300 leading-relaxed">{action}</p>
+                </div>
+              )
+            ))}
+          </div>
+        </CollapsibleSection>
+      )}
+
+      {/* 10. Excluded Causes */}
+      {(report.what_is_not_the_cause ?? []).length > 0 && (
+        <CollapsibleSection title="Excluded Causes" titleClass="text-zinc-500">
+          <ul className="space-y-1">
+            {(report.what_is_not_the_cause ?? []).map((item, i) => (
+              <li key={i} className="flex items-start gap-2 text-sm text-zinc-500 leading-relaxed">
+                <span className="mt-0.5 text-red-500/60 shrink-0">✕</span>
+                {item}
+              </li>
+            ))}
+          </ul>
+        </CollapsibleSection>
+      )}
+
+      <p className="text-xs text-zinc-500 text-center font-mono">
+        {queryCount} SQL quer{queryCount === 1 ? "y" : "ies"} executed
+      </p>
+    </div>
+  );
+}
+
+// ── Direct mode helpers ───────────────────────────────────────────────────────
+
+function KPIHighlight({ table }: { table: QueryCitation }) {
+  const columns = table.columns ?? [];
+  const rows = table.rows ?? [];
+  if (rows.length !== 1 || columns.length === 0) return null;
+
+  const row = rows[0] as unknown[];
+  const metrics = columns
+    .map((col, i) => ({ col, val: row[i] }))
+    .filter(({ val }) => val !== null && !isNaN(Number(val)) && Number(val) !== 0);
+
+  if (!metrics.length) return null;
+
+  const fmt = (col: string, v: unknown) => {
+    const n = Number(v);
+    if (SHARE_COL_PATTERN.test(col) && n >= 0 && n <= 1) return pct(n, 2);
+    // KPI headline — compact abbreviation (2dp preserves precision on small values).
+    return compactNumber(n, 2);
+  };
+
+  return (
+    <div className={`grid gap-3 ${metrics.length > 2 ? "grid-cols-3" : metrics.length === 2 ? "grid-cols-2" : "grid-cols-1"}`}>
+      {metrics.slice(0, 3).map(({ col, val }) => (
+        <div key={col} className="rounded-[var(--r3)] border border-zinc-600 bg-zinc-800/60 p-4 text-center space-y-1">
+          <p className="text-2xl font-mono font-semibold text-emerald-400 tracking-tight">{fmt(col, val)}</p>
+          <p className="text-xs text-zinc-500 uppercase tracking-wide">{col.replace(/_/g, " ")}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DirectResultTable({ table }: { table: QueryCitation }) {
+  const columns = table.columns ?? [];
+  const rows = table.rows ?? [];
+  const fmt = buildColumnFormatter(columns, rows as unknown[][]);
+  const VISIBLE_ROWS = 20;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Query Results</h3>
+        <span className="text-xs text-zinc-500 font-mono">
+          {table.row_count} row{table.row_count !== 1 ? "s" : ""}
+        </span>
+      </div>
+      <div className="rounded-[var(--r3)] border border-zinc-600 overflow-hidden">
+        <div className="overflow-x-auto overflow-y-auto max-h-[400px]">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                {columns.map(col => (
+                  <TableHead key={col} className="font-mono">
+                    {col}
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row, ri) => (
+                <TableRow key={ri}>
+                  {(row as unknown[]).map((cell, ci) => (
+                    <TableCell key={ci} className="font-mono">
+                      {cell === null || cell === undefined ? (
+                        <span className="text-zinc-500 italic">null</span>
+                      ) : (
+                        fmt(ci, cell)
+                      )}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+      <details className="group">
+        <summary className="text-xs text-zinc-500 cursor-pointer hover:text-zinc-400 transition list-none flex items-center gap-1">
+          <span className="group-open:hidden">▶</span>
+          <span className="hidden group-open:inline">▼</span>
+          SQL
+        </summary>
+        <pre className="mt-1 text-xs text-zinc-400 bg-zinc-800 rounded p-3 overflow-x-auto whitespace-pre-wrap font-code leading-relaxed">
+          {table.sql}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
+function DataQualityCard({ note }: { note: DataQualityNote }) {
+  const target = note.column ? `${note.table}.${note.column}` : note.table;
+  return (
+    <div className="rounded-[var(--r3)] border border-orange-500/20 bg-orange-500/5 p-4 space-y-2">
+      <div className="flex items-start justify-between gap-3">
+        <code className="text-xs font-code text-orange-300 bg-orange-500/10 px-2 py-0.5 rounded">
+          {target}
+        </code>
+      </div>
+      <p className="text-sm text-zinc-300 whitespace-pre-wrap font-mono text-xs leading-relaxed">{note.issue}</p>
+      <p className="text-xs text-zinc-500">
+        <span className="text-zinc-400 font-medium">Impact: </span>{note.impact}
+      </p>
+      <div className="border-t border-orange-500/10 pt-2">
+        <p className="text-xs text-zinc-500">
+          <span className="text-orange-400 font-medium">Fix: </span>{note.recommended_fix}
+        </p>
+      </div>
+    </div>
+  );
+}

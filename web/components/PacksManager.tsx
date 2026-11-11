@@ -1,0 +1,260 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { countNoun } from "@/lib/format";
+import {
+  getPacks, proposePackBindings, bindPack, evaluatePack, setPackStatus, getPackDeltas, setPackDeltaStatus,
+  getConnections, getCatalogTree,
+  type PackSummary, type BindingCandidateDTO, type PackDeltaDTO,
+} from "@/lib/api";
+import { PackInstalls } from "@/components/PackInstalls";
+import { SelectField } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+
+// Deploy console for Specialist Packs: propose → bind/verify → evaluate → activate, plus the
+// flywheel "expert changelog" (accept/dismiss proposed learnings). Self-contained.
+export function PacksManager() {
+  const [enabled, setEnabled] = useState(false);
+  const [packs, setPacks] = useState<PackSummary[]>([]);
+  const [sel, setSel] = useState<string | null>(null);
+
+  useEffect(() => {
+    getPacks().then(r => { setEnabled(r.enabled); setPacks(r.packs); }).catch(() => {});
+  }, []);
+
+  if (packs.length === 0) return null;
+
+  return (
+    <div className="mb-5">
+      <p className="aug-fs-xs uppercase tracking-widest text-zinc-500 mb-2">
+        Packs{enabled ? "" : " · flag off (gated)"}
+      </p>
+      <div className="bg-white/[0.03] rounded-[var(--r3)] divide-y divide-white/5">
+        {packs.map(p => (
+          <div key={p.id} className="px-3 py-2">
+            <Button variant="plain" size="xs" onClick={() => setSel(sel === p.id ? null : p.id)}
+              className="w-full flex items-center justify-between gap-3 text-left">
+              <span className="flex items-center gap-2">
+                <span className="text-xs text-zinc-200">{p.name || p.id}</span>
+                <Badge color={p.status === "active" ? "#46b06a" : p.status === "deprecated" ? "#888" : "#d4a72c"}>
+                  {p.status || "draft"}
+                </Badge>
+                <Badge color={p.ok ? "#46b06a" : "#e5534b"}>{p.ok ? "valid" : "invalid"}</Badge>
+                {scopeLabel(p.scope) && <Badge color="#888">{scopeLabel(p.scope)}</Badge>}
+                {layerLabel(p) && <Badge color="#888">{layerLabel(p)}</Badge>}
+              </span>
+              <span className="aug-fs-xs text-zinc-500">
+                {p.layer ? "" : `${countNoun(p.metrics ?? 0, "metric")} · ${countNoun(p.roles ?? 0, "role")} · ${countNoun(p.evals ?? 0, "eval")} `}
+                {sel === p.id ? "▾" : "▸"}
+              </span>
+            </Button>
+            {sel === p.id && (p.layer
+              // IP-1 — a knowledge package is reference every connection reads: there is
+              // nothing to bind or evaluate, so it says what it carries instead.
+              ? <p className="aug-fs-xs text-zinc-400 mt-2">{p.description || "Reference knowledge every connection reads."}</p>
+              : <PackDeploy packId={p.id} onStatus={status => setPacks(ps => ps.map(x => x.id === p.id ? { ...x, status } : x))} />)}
+            {/* Arc FA, FA-6 — where the pack is installed and what upgrading it brings */}
+            {sel === p.id && <PackInstalls packId={p.id} />}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** IP-1 — the knowledge layer a package carries, as the roster badges it. */
+function layerLabel(p: PackSummary): string {
+  if (!p.layer) return "";
+  return p.layer === "industry" && p.industry ? `industry · ${p.industry}` : p.layer;
+}
+
+/** An engine-scoped pack reads and steers only on connections of that engine, so the
+ *  roster has to say so. A pack scoped to every connection says nothing extra — that is
+ *  the default, and badging it would put a label on all of them. */
+function scopeLabel(scope?: string[]): string {
+  const stated = (scope ?? []).filter(s => s !== "*");
+  if (stated.length === 0) return "";
+  return stated.map(s => s.replace(/^engine:/, "")).join(", ");
+}
+
+function Badge({ children, color }: { children: React.ReactNode; color: string }) {
+  return (
+    <span className="text-[11px] font-mono px-1 py-0.5 rounded"
+      style={{ background: "var(--bg-1)", color }}>{children}</span>
+  );
+}
+
+function PackDeploy({ packId, onStatus }: { packId: string; onStatus: (status: string) => void }) {
+  const [conns, setConns] = useState<{ id: string; name: string }[]>([]);
+  const [conn, setConn] = useState("");
+  const [schemas, setSchemas] = useState<string[]>([]);
+  const [schema, setSchema] = useState("");
+  const [proposals, setProposals] = useState<Record<string, BindingCandidateDTO> | null>(null);
+  const [fullyGroundable, setFullyGroundable] = useState(false);
+  const [verified, setVerified] = useState<boolean | null>(null);
+  const [evalRes, setEvalRes] = useState<Awaited<ReturnType<typeof evaluatePack>> | null>(null);
+  const [deltas, setDeltas] = useState<PackDeltaDTO[]>([]);
+  const [activated, setActivated] = useState(false);
+  const [busy, setBusy] = useState("");
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    getConnections().then(cs => {
+      const list = cs.map(c => ({ id: c.id, name: c.name }));
+      setConns(list);
+      if (list[0]) setConn(list[0].id);
+    }).catch(() => {});
+    getPackDeltas(packId).then(setDeltas).catch(() => {});
+  }, [packId]);
+
+  useEffect(() => {
+    if (!conn) return;
+    getCatalogTree().then(tree => {
+      const entry = tree.sections.flatMap(s => s.entries).find(e => e.conn_id === conn);
+      const names = entry?.schemas.map(s => s.name) ?? [];
+      setSchemas(names);
+      setSchema(names[0] ?? "");
+    }).catch(() => setSchemas([]));
+  }, [conn]);
+
+  const run = async (label: string, fn: () => Promise<void>) => {
+    setBusy(label); setErr("");
+    try { await fn(); } catch (e) { setErr(e instanceof Error ? e.message : "failed"); }
+    setBusy("");
+  };
+
+  const propose = () => run("propose", async () => {
+    setVerified(null); setEvalRes(null);
+    const r = await proposePackBindings(packId, conn, schema || undefined, "");
+    setProposals(r.proposals); setFullyGroundable(r.fully_groundable);
+  });
+
+  const deploy = () => run("deploy", async () => {
+    const bindings: Record<string, unknown> = {};
+    for (const [role, c] of Object.entries(proposals || {})) {
+      bindings[role] = { table: c.table, column: c.column, value: c.value, confidence: c.confidence };
+    }
+    const r = await bindPack(packId, conn, bindings, schema || undefined);
+    setVerified(r.verified);
+  });
+
+  const evaluate = () => run("evaluate", async () => {
+    setEvalRes(await evaluatePack(packId, conn, schema || undefined));
+  });
+
+  const activate = () => run("activate", async () => {
+    const r = await setPackStatus(packId, "active", conn, schema || undefined);
+    setActivated(r.status === "active");
+    onStatus(r.status);
+  });
+
+  const judgeDelta = async (id: number, status: "accepted" | "dismissed") => {
+    await setPackDeltaStatus(id, status);
+    setDeltas(ds => ds.filter(d => d.id !== id));
+  };
+
+  const inp = "aug-fs-xs bg-[var(--bg-2)] border border-[var(--b1)] rounded px-2 py-1 text-zinc-300";
+  const btn = "aug-fs-xs px-2 py-1 rounded border border-zinc-700 text-zinc-300 hover:bg-white/5 disabled:opacity-40";
+
+  return (
+    <div className="mt-2 pl-1 space-y-3">
+      {/* Deploy controls */}
+      <div className="flex flex-wrap items-center gap-2">
+        <SelectField value={conn} onChange={e => setConn(e.target.value)} className={inp} aria-label="Connection">
+          {conns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </SelectField>
+        <SelectField value={schema} onChange={e => setSchema(e.target.value)} className={inp} aria-label="Schema">
+          {schemas.length === 0 && <option value="">(schema)</option>}
+          {schemas.map(s => <option key={s} value={s}>{s}</option>)}
+        </SelectField>
+        <Button variant="ghost" size="xs" className={btn} disabled={!conn || busy !== ""} onClick={propose}>
+          {busy === "propose" ? "Proposing…" : "1 · Propose bindings"}
+        </Button>
+        <Button variant="ghost" size="xs" className={btn} disabled={!proposals || busy !== ""} onClick={deploy}>
+          {busy === "deploy" ? "Binding…" : "2 · Bind + verify"}
+        </Button>
+        <Button variant="ghost" size="xs" className={btn} disabled={verified !== true || busy !== ""} onClick={evaluate}
+          title={verified !== true ? "Deploy first: run Bind + verify" : ""}>
+          {busy === "evaluate" ? "Evaluating…" : "3 · Evaluate"}
+        </Button>
+        <Button variant="ghost" size="xs" className={btn} disabled={!evalRes?.can_activate || activated || busy !== ""} onClick={activate}
+          title={evalRes?.can_activate ? "Make this package active" : "Evaluate first: activation is decided on a connection"}>
+          {busy === "activate" ? "Activating…" : activated ? "Active ✓" : "4 · Activate"}
+        </Button>
+      </div>
+      <p className="aug-fs-xs text-zinc-600">Deploy a package: propose → bind + verify → evaluate → activate. A package that is a map of entities and nothing else has no roles to bind and no questions to ask: it is evaluated by measuring its claims on the connection.</p>
+      {err && <p className="aug-fs-xs text-rose-400">{err}</p>}
+
+      {/* Step 1 — groundability (a PROPOSAL, not a deployment) */}
+      {proposals && (() => {
+        const total = Object.keys(proposals).length;
+        const groundable = Object.values(proposals).filter(c => c.bound).length;
+        return (
+          <div className="aug-fs-xs">
+            <div className="text-zinc-500 mb-1">
+              Proposed bindings — {fullyGroundable
+                ? <span className="text-emerald-400">all {total} roles groundable</span>
+                : <span className="text-amber-400">{groundable}/{total} roles groundable</span>}
+              {verified !== null && (verified
+                ? <span className="text-emerald-400"> · deployed ✓ verified</span>
+                : <span className="text-rose-400"> · pinned but not verified</span>)}
+            </div>
+            <div className="font-mono space-y-0.5">
+              {Object.entries(proposals).map(([role, c]) => (
+                <div key={role} className="flex justify-between gap-3">
+                  <span className="text-zinc-300">{role}</span>
+                  <span className={c.bound ? "text-zinc-400" : "text-rose-400"}>
+                    {c.value || `${c.table ?? "?"}.${c.column ?? "?"}`} <span className="text-zinc-600">({Math.round(c.confidence * 100)}%)</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Step 3 — evals (pass/fail) shown SEPARATELY from activation readiness */}
+      {evalRes && (
+        <div className="aug-fs-xs space-y-1">
+          <div className="text-zinc-500">
+            {evalRes.measured === "claims" ? "Claims measured" : "Evals"} — {evalRes.pass_rate != null
+              ? <span className={evalRes.pass_rate === 1 ? "text-emerald-400" : "text-amber-400"}>{Math.round(evalRes.pass_rate * 100)}% {evalRes.measured === "claims" ? "held" : "pass"}</span>
+              : evalRes.measured === "claims" ? "none could be measured" : "not run"}
+            {evalRes.measured === "claims" && evalRes.by_tier?.expected
+              ? <span className="text-zinc-600"> · {evalRes.by_tier.expected} could not be measured here</span> : null}
+          </div>
+          {evalRes.results.map((r, i) => (
+            <div key={i} className="flex gap-2">
+              <span className={r.passed ? "text-emerald-400" : "text-rose-400"}>{r.passed ? "✓" : "✗"}</span>
+              <span className="text-zinc-400">{r.question}</span>
+            </div>
+          ))}
+          <div className="text-zinc-500 pt-0.5">
+            Activation — {evalRes.can_activate
+              ? <span className="text-emerald-400">ready ✓</span>
+              : <span className="text-amber-400">blocked</span>}
+          </div>
+          {evalRes.reasons.map((r, i) => <p key={i} className="text-amber-400/80 pl-3">· {r}</p>)}
+        </div>
+      )}
+
+      {/* Flywheel changelog */}
+      {deltas.length > 0 && (
+        <div className="aug-fs-xs">
+          <div className="text-zinc-500 mb-1">Pack changelog — {deltas.length} proposed learning(s)</div>
+          {deltas.map(d => (
+            <div key={d.id} className="flex items-start justify-between gap-2 py-1 border-b border-white/5 last:border-0">
+              <span className="text-zinc-400">
+                <span className="text-zinc-500">[{d.kind}{d.target ? ` ${d.target}` : ""}]</span> {d.content}
+              </span>
+              <span className="shrink-0 flex gap-1">
+                <Button variant="ghost" size="xs" className={btn} onClick={() => judgeDelta(d.id, "accepted")}>Accept</Button>
+                <Button variant="ghost" size="xs" className={btn} onClick={() => judgeDelta(d.id, "dismissed")}>Dismiss</Button>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

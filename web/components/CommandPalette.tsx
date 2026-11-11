@@ -1,0 +1,803 @@
+"use client";
+
+/**
+ * CommandPalette — ⌘K global search overlay.
+ *
+ * Fuzzy-searches across:
+ *   • Nav actions   — static destinations within the app
+ *   • Investigations — recent history (fetched from /investigations)
+ *   • Tables         — schema tables for the selected connection
+ *   • Objects        — FA-1: an object by the name it goes by, across entities, fetched from
+ *                      the server as you type — outside the Fuse index, like the Spotlight row
+ *
+ * Keyboard: ↑↓ navigate, Enter activate, Escape close.
+ * Fuse.js powers all fuzzy matching with character-level highlights.
+ */
+
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { formatCount } from "@/lib/format";
+import { type FuseResult, type FuseResultMatch } from "fuse.js";
+import { buildPaletteIndex } from "@/lib/paletteSearch";
+import { getApiBase } from "@/lib/config";
+import { useRichSchema } from "@/lib/schema-context";
+import { consumePendingAsk, useCommands, useRegisterCommands, type AskFocus, type Command } from "@/lib/commandRegistry";
+import { Icon, type IconName } from "@/components/ui/icon";
+import { newSessionId, projectThread } from "@/lib/chatTurn";
+import { useAughorChat } from "@/lib/useAughorChat";
+import { PartsMessage } from "@/components/chat/PartsMessage";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { findObjects, type ObjectFindAnswer } from "@/lib/objects";
+import { objectHref } from "@/lib/objectLinks";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type ItemType = "command" | "action" | "investigation" | "table" | "canvas" | "object" | "spotlight";
+
+interface PaletteItem {
+  id: string;
+  label: string;
+  sublabel?: string;
+  keywords?: string;    // extra fuzzy-match terms (commands), not displayed
+  type: ItemType;
+  icon: string;         // from ICONS map below
+  accent?: string;      // CSS color for the icon dot
+  meta?: string;        // e.g. connection name, time ago
+  /** SP-2 — the Spotlight row switches the overlay into its answer pane; the
+   *  palette must NOT close on select the way every navigation row does. */
+  keepOpen?: boolean;
+  /** SP-2 — async commands keep the overlay open with the row busy until the
+   *  promise settles; a rejection surfaces as a visible error line. */
+  onSelect: () => void | Promise<void>;
+}
+
+// Section header order and display names
+const SECTION_ORDER: ItemType[] = ["command", "action", "investigation", "table", "canvas", "object", "spotlight"];
+const SECTION_LABELS: Record<ItemType, string> = {
+  command:       "Commands",
+  action:        "Navigation",
+  investigation: "Recent Agent runs",
+  table:         "Tables",
+  canvas:        "Canvases",
+  object:        "Objects",
+  spotlight:     "Spotlight",
+};
+
+// ── Icon primitives ───────────────────────────────────────────────────────────
+
+/** Palette glyphs, by role — drawings come from the platform set. */
+const ROLE: Record<string, IconName> = {
+  spark: "spark",
+  clock: "clock",
+  db: "db",
+  node: "node",
+  process: "process",
+  catalog: "catalog",
+  builder: "builder",
+  plug: "plug",
+  playbook: "playbook",
+  settings: "settings",
+  activity: "activity",
+  metric: "chart",
+  canvas: "canvas",
+  inbox: "inbox",
+  health: "health",
+  table: "table",
+};
+
+function PIcon({ name, size = 14, color = "currentColor" }: { name: string; size?: number; color?: string }) {
+  return (
+    <span style={{ color, display: "inline-flex", flexShrink: 0 }}>
+      <Icon name={ROLE[name] ?? "spark"} size={size} />
+    </span>
+  );
+}
+
+// ── Match highlight ───────────────────────────────────────────────────────────
+
+function Highlighted({ text, matches }: { text: string; matches?: readonly FuseResultMatch[] }) {
+  if (!matches || matches.length === 0) return <>{text}</>;
+  const match = matches.find(m => m.key === "label" || m.key === "sublabel");
+  if (!match?.indices?.length) return <>{text}</>;
+
+  const parts: React.ReactNode[] = [];
+  let cursor = 0;
+  const sorted = [...match.indices].sort((a, b) => a[0] - b[0]);
+  for (const [start, end] of sorted) {
+    if (start > cursor) parts.push(text.slice(cursor, start));
+    parts.push(
+      <mark key={start} style={{ background: "var(--blue2)", color: "var(--blue5)", borderRadius: 1, padding: "0 1px" }}>
+        {text.slice(start, end + 1)}
+      </mark>
+    );
+    cursor = end + 1;
+  }
+  if (cursor < text.length) parts.push(text.slice(cursor));
+  return <>{parts}</>;
+}
+
+// ── Time helper ───────────────────────────────────────────────────────────────
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h`;
+  return `${Math.floor(hrs / 24)}d`;
+}
+
+// ── Props ─────────────────────────────────────────────────────────────────────
+
+interface CommandPaletteProps {
+  open: boolean;
+  onClose: () => void;
+  selectedConn: string;
+  onNavigate: (tab: string) => void;
+  onGoToChat: (q?: string) => void;
+  /** SP-2 — the tab the palette was summoned over; rides every Spotlight ask as
+   *  one line of prompt orientation ("schedule this" knows what *this* is). */
+  surface?: string;
+  /** FA-1 — where an object found by name opens: its page. */
+  onOpenObject?: (href: string) => void;
+}
+
+/** The words a find answers for, spaced as the server reads them — an answer to an earlier query is never shown. */
+function findWords(q: string): string {
+  return q.trim().split(/\s+/).join(" ");
+}
+
+/** FA-1 — what the Objects group says it read: "searched 9 of 14 entities", and what it could not show. */
+function findSaid(found: ObjectFindAnswer): string {
+  const parts = [found.said];
+  // each entity by the name a reader knows it by, as its hits are labelled — never its identifier
+  const label = (type: string) => found.hits.find(h => h.type === type)?.entity_label || type;
+  if (found.more.length) parts.push(`more in ${found.more.map(label).join(", ")}`);
+  if (found.withheld.length || found.masked.length) parts.push("some withheld from you");
+  return parts.join(" · ");
+}
+
+/** Every entity the search did not read, with why, and what a row policy kept from the reader — the group's tooltip. */
+function findDetail(found: ObjectFindAnswer): string {
+  return [...found.skipped.map(s => `${s.entity}: ${s.why}`), ...found.withheld_said].join("\n");
+}
+
+/**
+ * GlobalCommands — registers the always-available action verbs for the ⌘K palette.
+ * Renders nothing; mount it once (next to <CommandPalette/>). Handlers are held in
+ * refs so the command closures stay stable yet always call the latest callback.
+ */
+export function GlobalCommands({ onNavigate, onGoToChat, onAddSource }: {
+  onNavigate: (t: string) => void;
+  onGoToChat: (q?: string) => void;
+  /** PX-0 — opens the Add Connection form. Before this, "Add a data source" navigated
+   *  to `connections`, a tab with no render branch, and landed on a blank pane. */
+  onAddSource?: () => void;
+}) {
+  const navRef = useRef(onNavigate);
+  const chatRef = useRef(onGoToChat);
+  const addRef = useRef(onAddSource);
+  useEffect(() => { navRef.current = onNavigate; chatRef.current = onGoToChat; addRef.current = onAddSource; });
+
+  const commands = useMemo<Command[]>(() => [
+    { id: "cmd-ask",         label: "Ask a question",     sublabel: "Start a new Agent run",       icon: "spark",    accent: "var(--blue3)", keywords: "new chat investigate ask question analyze", run: () => chatRef.current() },
+    { id: "cmd-new-canvas",  label: "New Data Canvas",    sublabel: "Create or browse Data Canvases",  icon: "canvas",   accent: "var(--blue3)", keywords: "create canvas new workspace",             run: () => navRef.current("canvases") },
+    { id: "cmd-new-monitor", label: "New monitor",        sublabel: "Watch a metric for threshold, drift or staleness", icon: "activity", accent: "var(--grn3)", keywords: "create alert watch threshold notify", run: () => navRef.current("monitors") },
+    { id: "cmd-new-query",   label: "Build a query",      sublabel: "Open the visual Query Builder",   icon: "builder",  accent: "var(--t2)",    keywords: "sql query builder new compose",           run: () => navRef.current("builder") },
+    { id: "cmd-add-source",  label: "Add a data source",  sublabel: "Connect or upload data",          icon: "plug",     accent: "var(--grn3)", keywords: "connect connection upload csv source database", run: () => { (addRef.current ?? (() => navRef.current("catalog")))(); } },
+  ], []);
+
+  useRegisterCommands("global", commands);
+  return null;
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoToChat, surface = "",
+                                onOpenObject = (href) => window.location.assign(href) }: CommandPaletteProps) {
+  const [query, setQuery] = useState("");
+  const [cursor, setCursor] = useState(0);
+  // ── SP-2: the Spotlight answer pane ──────────────────────────────────────
+  // One conversation per palette lifetime (follow-ups compose); "search" is the
+  // deterministic fast path and stays the default on every open.
+  const [mode, setMode] = useState<"search" | "spotlight">("search");
+  const [spotQ, setSpotQ] = useState("");
+  const [followUp, setFollowUp] = useState("");
+  const [spotlightSession] = useState(() => newSessionId());
+  const spotScrollRef = useRef<HTMLDivElement>(null);
+  const { messages, sendMessage, status, error } = useAughorChat({
+    connectionId: selectedConn,
+    sessionId: spotlightSession,
+    // depth:"quick" keeps the overlay snappy (the router honours it with no model
+    // call); `surface` is the summoned-from tab, sanitized server-side.
+    body: { depth: "quick", surface },
+  });
+  const streaming = status === "submitted" || status === "streaming";
+  const spotTurns = useMemo(() => projectThread(messages, {
+    streaming,
+    transportError: status === "error" ? (error?.message ?? "The turn failed.") : null,
+  }), [messages, streaming, status, error]);
+  const ask = useCallback((q: string, focus: AskFocus | null = null) => {
+    const question = q.trim();
+    if (!question || streaming) return;
+    setMode("spotlight");
+    setSpotQ(question);
+    // SP-15 — a row's "Ask Spotlight" hands its object structurally: the backend opens
+    // the turn on that object's live state instead of parsing an id out of the prose.
+    void sendMessage({ text: question, metadata: { mode: "ask" } },
+                     focus ? { body: { focus } } : undefined);
+  }, [streaming, sendMessage]);
+  // A ref so the open-effect can consume a parked in-context question without
+  // re-firing on every identity change of `ask`.
+  const askRef = useRef(ask);
+  useEffect(() => { askRef.current = ask; });
+  // SP-2 — async command state: the row that is running, and a run's surfaced error.
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [runError, setRunError] = useState("");
+  const activate = useCallback((item: PaletteItem) => {
+    if (busyId) return;                       // one async command at a time
+    setRunError("");
+    let out: void | Promise<void>;
+    try {
+      out = item.onSelect();
+    } catch (e) {
+      setRunError(e instanceof Error ? e.message : "The command failed.");
+      return;
+    }
+    if (out && typeof (out as Promise<void>).then === "function") {
+      setBusyId(item.id);
+      (out as Promise<void>).then(
+        () => { setBusyId(null); if (!item.keepOpen) onClose(); },
+        (e) => {
+          setBusyId(null);
+          setRunError(e instanceof Error ? e.message : "The command failed.");
+        });
+    } else if (!item.keepOpen) {
+      onClose();
+    }
+  }, [busyId, onClose]);
+  const [investigations, setInvestigations] = useState<Array<{ id: string; question: string; started_at: string; status: string }>>([]);
+  const [tables, setTables] = useState<Array<{ name: string; row_count: string }>>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef  = useRef<HTMLDivElement>(null);
+  const commands = useCommands();   // contextual + global action verbs (registry)
+
+  // Reset + fetch on open
+  useEffect(() => {
+    if (!open) return;
+    setQuery("");
+    setCursor(0);
+    setMode("search");
+    setRunError("");
+    setTimeout(() => inputRef.current?.focus(), 30);
+
+    // SP-2 — an in-context handle parked a question (askSpotlight): consume it
+    // and go straight to the answer pane; the deterministic search stays the
+    // default on every plain open.
+    const seeded = consumePendingAsk();
+    if (seeded.question) setTimeout(() => askRef.current(seeded.question, seeded.focus), 0);
+
+    // Fetch recent investigations
+    fetch(`${getApiBase()}/investigations`)
+      .then(r => r.json())
+      .then(d => setInvestigations(Array.isArray(d) ? d.slice(0, 20) : []))
+      .catch(() => {});
+
+  }, [open, selectedConn]);
+
+  // Schema tables for the quick-jump, from the shared per-connection cache. It must be
+  // /schema/rich — plain /schema returns {schema: <string>} with no tables key, which
+  // once left this list permanently empty. Only fetched while the palette is open.
+  const { schema: paletteSchema } = useRichSchema(open ? selectedConn : null);
+  useEffect(() => {
+    // `row_count` is `string | null` on the wire; this list has always declared it
+    // non-null and got away with it because the old raw `r.json()` was untyped. The
+    // shared hook is typed, so the coercion becomes explicit rather than accidental.
+    setTables((paletteSchema?.tables ?? []).map(t => ({ ...t, row_count: t.row_count ?? "" })));
+  }, [paletteSchema]);
+
+  // ── FA-1: objects found by name ──────────────────────────────────────────
+  // Read from two characters, a beat after the last keystroke; a newer query aborts the one in flight.
+  const [found, setFound] = useState<ObjectFindAnswer | null>(null);
+  useEffect(() => {
+    const words = findWords(query);
+    if (!open || mode !== "search" || words.length < 2) return;   // an answer to other words is never shown
+    const ctl = new AbortController();
+    const t = setTimeout(() => {
+      findObjects(words, selectedConn, undefined, ctl.signal)
+        .then(a => { if (!ctl.signal.aborted) setFound(a.path === "found" ? a : null); })
+        .catch(() => { if (!ctl.signal.aborted) setFound(null); });
+    }, 250);
+    return () => { clearTimeout(t); ctl.abort(); };
+  }, [query, open, mode, selectedConn]);
+  const foundNow = found && found.q === findWords(query) && (!selectedConn || found.connection_id === selectedConn)
+    ? found : null;
+  const openObjectRef = useRef(onOpenObject);
+  useEffect(() => { openObjectRef.current = onOpenObject; });
+  const objectRows = useMemo<FuseResult<PaletteItem>[]>(() => {
+    if (!foundNow) return [];
+    const seen = new Set<string>();
+    return foundNow.hits.flatMap(h => {
+      const id = `object-${h.type}-${h.key}`;
+      if (seen.has(id)) return [];
+      seen.add(id);
+      const item: PaletteItem = {
+        id, label: h.title || h.key, sublabel: `${h.entity_label} · ${h.key}`, type: "object", icon: "node",
+        accent: "var(--grn3)",
+        onSelect: () => openObjectRef.current(objectHref(h.type, h.key, selectedConn, foundNow.schema_name || undefined)),
+      };
+      return [{ item, refIndex: 0, matches: [] }];
+    });
+  }, [foundNow, selectedConn]);
+
+  // Escape backs out one level: spotlight → search → closed.
+  useEffect(() => {
+    if (!open) return;
+    const fn = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (mode === "spotlight") { setMode("search"); setTimeout(() => inputRef.current?.focus(), 30); }
+      else onClose();
+    };
+    window.addEventListener("keydown", fn);
+    return () => window.removeEventListener("keydown", fn);
+  }, [open, onClose, mode]);
+
+  // ── Static nav action items ───────────────────────────────────────────────
+
+  // PX-0 — every sidebar destination is findable here, under the sidebar's own word
+  // for it (naming drift between the two was how surfaces got "lost": the sidebar
+  // said "Agent runs" while this list said "Agent history").
+  const NAV_ACTIONS: Omit<PaletteItem, "onSelect">[] = [
+    { id: "nav-home",        label: "Home",                 sublabel: "Ask, get started, recent activity", type: "action", icon: "home",     accent: "var(--t3)" },
+    { id: "nav-canvases",    label: "Data Canvas",           sublabel: "Browse and open Data Canvases",     type: "action", icon: "canvas",   accent: "var(--blue3)" },
+    { id: "nav-briefing",    label: "Briefing",             sublabel: "The connection's intelligence digest", type: "action", icon: "brief",  accent: "var(--blue3)" },
+    { id: "nav-recents",     label: "Agent runs",           sublabel: "View all past analyses",            type: "action", icon: "clock",    accent: "var(--t3)" },
+    { id: "nav-inbox",       label: "Inbox",                sublabel: "Act on Aughor's recommendations",   type: "action", icon: "inbox",    accent: "var(--amb3)" },
+    { id: "nav-documents",   label: "Documents",            sublabel: "Upload and review knowledge documents", type: "action", icon: "folder", accent: "var(--t2)" },
+    { id: "nav-intel",       label: "Profile",              sublabel: "Per-domain findings and coverage",  type: "action", icon: "process",  accent: "var(--cyn3)" },
+    { id: "nav-ontology",    label: "Ontology",             sublabel: "Entity graph and lifecycle states", type: "action", icon: "node",     accent: "var(--grn3)" },
+    // The rows the seven destinations gave the Briefing's former tabs (2026-11-10) — each findable by its row's word.
+    { id: "nav-dashboards",  label: "Dashboards",           sublabel: "Your own dashboards and the pieces you keep watching", type: "action", icon: "gauge", accent: "var(--blue3)" },
+    { id: "nav-declared-actions", label: "Actions",         sublabel: "Declared actions on objects: what each changes, its risk, who approves", type: "action", icon: "spark", accent: "var(--vio3)" },
+    { id: "nav-graph",       label: "Graph",                sublabel: "The connection's knowledge graph",   type: "action", icon: "kgraph",   accent: "var(--grn3)" },
+    { id: "nav-memory",      label: "Memory",               sublabel: "What the agents keep between runs",  type: "action", icon: "memory",   accent: "var(--vio3)" },
+    { id: "nav-org",         label: "Org",                  sublabel: "Findings promoted to every connection of the organisation", type: "action", icon: "users", accent: "var(--t2)" },
+    { id: "nav-evidence",    label: "Evidence",             sublabel: "The claim ledger and the feedback on it", type: "action", icon: "check", accent: "var(--grn3)" },
+    { id: "nav-brain",       label: "Brain map",            sublabel: "Every store behind what Aughor knows, with live counts", type: "action", icon: "compass", accent: "var(--t2)" },
+    { id: "nav-health",      label: "Health",               sublabel: "Business metric targets and status",type: "action", icon: "activity", accent: "var(--grn3)" },
+    { id: "nav-agentic-ops", label: "Agent Ops",            sublabel: "Overview, roster, attention, activity, automations, hub map, departures", type: "action", icon: "process", accent: "var(--vio3)" },
+    { id: "create-agent",    label: "Create agent",          sublabel: "Define a custom agent: its scope, its stance, and how you'll know it works", type: "action", icon: "spark",   accent: "var(--grn3)" },
+    { id: "nav-playbook",    label: "Playbook",             sublabel: "Settings ▸ Organization",             type: "action", icon: "playbook", accent: "var(--t2)" },
+    { id: "nav-catalog",     label: "Catalog",              sublabel: "Browse tables, columns, row counts", type: "action", icon: "db",       accent: "var(--blue3)" },
+    { id: "nav-builder",     label: "SQL Editor",           sublabel: "Write SQL, or compose visually, with live results",type: "action", icon: "builder", accent: "var(--t2)" },
+    { id: "nav-semantic",    label: "Semantic Layer",       sublabel: "Annotations, knowledge, metrics, import", type: "action", icon: "layers", accent: "var(--amb3)" },
+    { id: "nav-connections", label: "Connections",          sublabel: "Data source connections live in the Catalog", type: "action", icon: "plug", accent: "var(--grn3)" },
+    { id: "nav-metrics",     label: "Metrics Catalog",      sublabel: "Semantic KPI definitions",           type: "action", icon: "metric",   accent: "var(--amb3)" },
+    { id: "nav-monitors",    label: "Monitors",             sublabel: "Thresholds, drift and staleness watches", type: "action", icon: "activity", accent: "var(--grn3)" },
+    { id: "nav-actions",     label: "Notifications",        sublabel: "Webhooks, Slack, Jira integrations", type: "action", icon: "inbox",    accent: "var(--vio3)" },
+    { id: "nav-integrations", label: "Integrations",        sublabel: "Settings ▸ Integrations: OAuth accounts, Slack apps, MCP servers", type: "action", icon: "plug",  accent: "var(--grn3)" },
+    { id: "nav-spend",       label: "Spend",                sublabel: "Model usage, cost, caps and the governance feed", type: "action", icon: "scales", accent: "var(--amb3)" },
+    { id: "nav-security",    label: "Security & Audit",     sublabel: "Query audit, approvals, guardrail activity", type: "action", icon: "shield", accent: "var(--red3)" },
+    { id: "nav-evals",       label: "Evals",                sublabel: "Suites, runs and experiments",       type: "action", icon: "flask",    accent: "var(--cyn3)" },
+    { id: "nav-settings",    label: "Settings",             sublabel: "Theme, model, system configuration", type: "action", icon: "settings", accent: "var(--t3)" },
+    // The Record's pages and the two Operations layers the 2027 study added — under the rail's words.
+    { id: "nav-now",         label: "Now",                  sublabel: "What used a slot this week, what waits on you, what was held", type: "action", icon: "bell", accent: "var(--amb3)" },
+    { id: "nav-inquiries",   label: "Inquiries",            sublabel: "What is established, what is open and what would settle it", type: "action", icon: "idea", accent: "var(--blue3)" },
+    { id: "nav-decisions",   label: "Decisions",            sublabel: "What was chosen, what was expected and what became of it", type: "action", icon: "bookmark", accent: "var(--blue3)" },
+    { id: "nav-missions",    label: "Missions",             sublabel: "Each objective against its baseline, and what it cost", type: "action", icon: "target", accent: "var(--grn3)" },
+    { id: "nav-claims",      label: "Claims",               sublabel: "What is held true about a thing, as of any date", type: "action", icon: "list", accent: "var(--t2)" },
+    { id: "nav-corrections", label: "Corrections",          sublabel: "What the platform was wrong about, and what replaced it", type: "action", icon: "history", accent: "var(--amb3)" },
+    { id: "nav-action-centre", label: "Action centre",      sublabel: "Every declared action, the level it may run at, and its record", type: "action", icon: "key", accent: "var(--vio3)" },
+    { id: "nav-developer",   label: "Developer",            sublabel: "Packs, doors, service principals, kits and the agent contract", type: "action", icon: "terminal", accent: "var(--t2)" },
+  ];
+
+  const NAV_DISPATCH: Record<string, () => void> = {
+    "nav-home":        () => onNavigate("home"),
+    "nav-canvases":    () => onNavigate("canvases"),
+    "nav-briefing":    () => onNavigate("intelligence"),
+    "nav-recents":     () => onNavigate("recents"),
+    "nav-inbox":       () => onNavigate("inbox"),
+    "nav-documents":   () => onNavigate("documents"),
+    "nav-intel":       () => onNavigate("intel"),
+    "nav-ontology":    () => onNavigate("ontology"),
+    "nav-dashboards":  () => onNavigate("dashboards"),
+    "nav-declared-actions": () => onNavigate("declared-actions"),
+    "nav-graph":       () => onNavigate("graph"),
+    "nav-memory":      () => onNavigate("memory"),
+    "nav-org":         () => onNavigate("org-intel"),
+    "nav-evidence":    () => onNavigate("evidence"),
+    "nav-brain":       () => onNavigate("brain"),
+    "nav-health":      () => onNavigate("health"),
+    "nav-agentic-ops": () => onNavigate("agentic-ops"),
+    // Deep-links into the creation flow. `onNavigate` only carries a tab, so the intent
+    // rides the URL — which also makes "create an agent" a linkable place, not just a
+    // button somebody has to already be standing next to.
+    "create-agent":    () => {
+      try {
+        const u = new URL(window.location.href);
+        u.searchParams.set("create", "agent");
+        window.history.replaceState(null, "", u);
+      } catch { /* a URL we cannot parse still navigates; it just lands on the workspace */ }
+      onNavigate("agentic-ops");
+    },
+    "nav-playbook":    () => onNavigate("playbook"),
+    "nav-catalog":     () => onNavigate("catalog"),
+    "nav-builder":     () => onNavigate("builder"),
+    "nav-semantic":    () => onNavigate("semantic"),
+    // "connections" resolves to the Catalog on every path now (PX-0) — this entry
+    // exists so someone TYPING "connections" still finds the place they mean.
+    "nav-connections": () => onNavigate("connections"),
+    "nav-metrics":     () => onNavigate("metrics"),
+    "nav-monitors":    () => onNavigate("monitors"),
+    "nav-actions":     () => onNavigate("actions"),
+    "nav-integrations": () => onNavigate("integrations"),
+    "nav-spend":       () => onNavigate("spend"),
+    "nav-security":    () => onNavigate("security"),
+    "nav-evals":       () => onNavigate("evals"),
+    "nav-settings":    () => onNavigate("settings"),
+    "nav-now":         () => onNavigate("now"),
+    "nav-inquiries":   () => onNavigate("inquiries"),
+    "nav-decisions":   () => onNavigate("decisions"),
+    "nav-missions":    () => onNavigate("missions"),
+    "nav-claims":      () => onNavigate("claims"),
+    "nav-corrections": () => onNavigate("corrections"),
+    "nav-action-centre": () => onNavigate("action-centre"),
+    "nav-developer":   () => onNavigate("developer"),
+  };
+
+  // ── Build full item list ──────────────────────────────────────────────────
+
+  const allItems = useMemo<PaletteItem[]>(() => {
+    const cmdItems: PaletteItem[] = commands.map(c => ({
+      id: c.id,
+      label: c.label,
+      sublabel: c.sublabel,
+      keywords: c.keywords,
+      type: "command" as ItemType,
+      icon: c.icon ?? "spark",
+      accent: c.accent ?? "var(--vio3)",
+      keepOpen: c.keepOpen,
+      onSelect: c.run,
+    }));
+
+    const navItems: PaletteItem[] = NAV_ACTIONS.map(a => ({ ...a, onSelect: NAV_DISPATCH[a.id] ?? (() => {}) }));
+
+    const invItems: PaletteItem[] = investigations.map(inv => ({
+      id: `inv-${inv.id}`,
+      label: inv.question,
+      sublabel: `${timeAgo(inv.started_at)} ago · ${inv.status}`,
+      type: "investigation" as ItemType,
+      icon: "spark",
+      accent: inv.status === "complete" ? "var(--grn3)" : inv.status === "failed" ? "var(--red3)" : "var(--t3)",
+      onSelect: () => onGoToChat(inv.question),
+    }));
+
+    const tableItems: PaletteItem[] = tables.map(t => ({
+      id: `table-${t.name}`,
+      label: t.name,
+      sublabel: t.row_count ? `${formatCount(Number(t.row_count))} rows` : undefined,
+      type: "table" as ItemType,
+      icon: "table",
+      accent: "var(--cyn3)",
+      onSelect: () => onGoToChat(`Tell me about the ${t.name} table`),
+    }));
+
+    return [...cmdItems, ...navItems, ...invItems, ...tableItems];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commands, investigations, tables]);
+
+  // ── Fuse fuzzy search ─────────────────────────────────────────────────────
+
+  // The options live in lib/paletteSearch so the latency receipt measures the
+  // exact pipeline this overlay runs (SP-2).
+  const fuse = useMemo(() => buildPaletteIndex(allItems), [allItems]);
+
+  const results: FuseResult<PaletteItem>[] = useMemo(() => {
+    if (!query.trim()) {
+      // No query — show defaults: all commands, top nav, then a few recents + tables.
+      const defaults = [
+        ...allItems.filter(i => i.type === "command"),
+        ...allItems.filter(i => ["nav-canvases","nav-recents","nav-catalog","nav-builder"].includes(i.id)),
+        ...allItems.filter(i => i.type === "investigation").slice(0, 4),
+        ...allItems.filter(i => i.type === "table").slice(0, 4),
+      ];
+      return defaults.map(item => ({ item, refIndex: 0, matches: [] }));
+    }
+    return fuse.search(query).slice(0, 20);
+  }, [query, fuse, allItems]);
+
+  const shownResults: FuseResult<PaletteItem>[] = useMemo(() => {
+    const q = query.trim();
+    if (!q) return results;
+    const row: PaletteItem = {
+      id: "spotlight-ask",
+      label: "Ask Spotlight",
+      sublabel: q,
+      type: "spotlight",
+      icon: "spark",
+      accent: "var(--vio3)",
+      keepOpen: true,
+      onSelect: () => ask(q),
+    };
+    return [...results, ...objectRows, { item: row, refIndex: 0, matches: [] }];
+  }, [results, query, ask, objectRows]);
+
+  // Group results by type preserving section order
+  const grouped = useMemo(() => {
+    const map = new Map<ItemType, FuseResult<PaletteItem>[]>();
+    for (const r of shownResults) {
+      const t = r.item.type;
+      if (!map.has(t)) map.set(t, []);
+      map.get(t)!.push(r);
+    }
+    return SECTION_ORDER.filter(t => map.has(t)).map(t => ({ type: t, items: map.get(t)! }));
+  }, [shownResults]);
+
+  // Flat list of all rendered items (for keyboard nav).
+  //
+  // 🔴 It must be built from `grouped`, NOT from `shownResults`. The list is RENDERED
+  // grouped by section (SECTION_ORDER) while `shownResults` is in Fuse's relevance
+  // order, and the highlight is `globalIdx`, counted down the rendered rows. Reading
+  // the cursor into the un-grouped array therefore selected a different row from the
+  // one under the highlight whenever the two orders disagreed — which is most of the
+  // time, since commands rank below navigation in Fuse but render above it. Measured:
+  // typing "add connection" highlighted "Add a data source" and Enter ran "Connections"
+  // (navigate to the catalog), so the keyboard path silently did something else than
+  // the mouse path on the same visible row.
+  const flatResults = useMemo(
+    () => grouped.flatMap(g => g.items.map(r => r.item)), [grouped]);
+
+  // ── Keyboard navigation ───────────────────────────────────────────────────
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setCursor(c => Math.min(c + 1, flatResults.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setCursor(c => Math.max(c - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const item = flatResults[cursor];
+      if (item) activate(item);
+    }
+  }, [flatResults, cursor, activate]);
+
+  // Reset cursor on query change
+  useEffect(() => setCursor(0), [query]);
+
+  // Scroll active item into view
+  useEffect(() => {
+    const el = listRef.current?.querySelector(`[data-idx="${cursor}"]`);
+    el?.scrollIntoView({ block: "nearest" });
+  }, [cursor]);
+
+  // Follow the Spotlight stream unless the reader scrolled up to re-read.
+  const spotTurnCount = spotTurns.length;
+  useEffect(() => {
+    const el = spotScrollRef.current;
+    if (!el) return;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 240) el.scrollTop = el.scrollHeight;
+  }, [spotTurnCount, streaming]);
+
+  if (!open) return null;
+
+  let globalIdx = 0;
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        onClick={onClose}
+        style={{ position: "fixed", inset: 0, background: "var(--scrim)", backdropFilter: "blur(3px)", zIndex: 200 }}
+      />
+
+      {/* Palette — no entrance: it is summoned from the keyboard, many times a day, so it paints
+          in the frame the keystroke lands. */}
+      <div style={{
+        position: "fixed", top: "14%", left: "50%", transform: "translateX(-50%)",
+        zIndex: 201, width: "100%", maxWidth: 580,
+        background: "var(--bg-2)", border: "1px solid var(--b2)",
+        borderRadius: "var(--r3)", overflow: "hidden",
+        boxShadow: "var(--shadow-xl)",
+      }}>
+        {/* Input row (search) / identity row (spotlight) */}
+        {mode === "spotlight" ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderBottom: "1px solid var(--b1)" }}>
+            <Button
+              variant="ghost" size="xs"
+              onClick={() => setMode("search")}
+              aria-label="Back to search"
+            >
+              ← <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)" }}>Back</span>
+            </Button>
+            <span className="aug-fs-xs" style={{ fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--vio3)" }}>Spotlight</span>
+            <span className="aug-fs-sm" style={{ flex: 1, color: "var(--t2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{spotQ}</span>
+            <kbd
+              onClick={() => setMode("search")}
+              className="aug-fs-xs"
+              style={{ padding: "2px 6px", background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", cursor: "pointer", fontFamily: "var(--font-mono)" }}
+            >
+              ESC
+            </kbd>
+          </div>
+        ) : (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderBottom: "1px solid var(--b1)" }}>
+          <PIcon name="spark" size={13} color="var(--t3)" />
+          <Input bespoke
+            ref={inputRef}
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Search — or ask Spotlight anything…"
+            style={{ flex: 1, background: "transparent", border: "none", outline: "none", fontSize: 13, color: "var(--t1)", fontFamily: "var(--font-ui)" }}
+          />
+          <kbd
+            onClick={onClose}
+            style={{ fontSize: 11, padding: "2px 6px", background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", cursor: "pointer", fontFamily: "var(--font-mono)" }}
+          >
+            ESC
+          </kbd>
+        </div>
+        )}
+
+        {/* Spotlight answer pane */}
+        {mode === "spotlight" && (
+          <>
+            <div ref={spotScrollRef} style={{ maxHeight: 400, minHeight: 140, overflowY: "auto", padding: "12px 14px" }}>
+              {spotTurns.length === 0 ? (
+                <div className="aug-fs-sm" style={{ color: "var(--t3)", lineHeight: 1.6 }}>
+                  Asking Spotlight…
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  {spotTurns.map(({ turn, assistantMsg }) => (
+                    <PartsMessage
+                      key={turn.id}
+                      turn={turn}
+                      message={assistantMsg}
+                      connectionId={selectedConn}
+                      onFollowUp={(q: string) => { if (!streaming) void sendMessage({ text: q, metadata: { mode: "ask" } }); }}
+                      onDeeper={(q: string) => { onGoToChat(q); onClose(); }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={{ padding: "10px 14px", borderTop: "1px solid var(--b0)", display: "flex", gap: 8 }}>
+              <Input bespoke
+                value={followUp}
+                onChange={e => setFollowUp(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter" && !e.shiftKey && followUp.trim() && !streaming) {
+                    e.preventDefault();
+                    setSpotQ(followUp.trim());
+                    void sendMessage({ text: followUp.trim(), metadata: { mode: "ask" } });
+                    setFollowUp("");
+                  }
+                }}
+                placeholder={streaming ? "Answering…" : "Ask a follow-up — answers stay in this overlay"}
+                disabled={streaming}
+                className="aug-fs-sm"
+                style={{ flex: 1, background: "var(--bg-3)", border: "1px solid var(--b1)", borderRadius: "var(--r1)", outline: "none", color: "var(--t1)", fontFamily: "var(--font-ui)", padding: "7px 10px" }}
+              />
+            </div>
+          </>
+        )}
+
+        {/* Results */}
+        {mode === "search" && (
+        <div ref={listRef} style={{ maxHeight: 380, overflowY: "auto" }}>
+          {runError && (
+            <div className="aug-fs-xs" role="alert"
+              style={{ padding: "6px 14px", color: "var(--red4)", borderTop: "1px solid var(--b0)" }}>
+              {runError}
+            </div>
+          )}
+          {shownResults.length === 0 ? (
+            <div style={{ padding: "28px 0", textAlign: "center", fontSize: 12, color: "var(--t3)" }}>
+              No results for &ldquo;{query}&rdquo;
+            </div>
+          ) : (
+            grouped.map(({ type, items }) => (
+              <div key={type}>
+                {/* Section header */}
+                <div style={{ padding: "8px 14px 4px", fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--t3)", borderTop: "1px solid var(--b0)", ...(type === "object" ? { display: "flex", gap: 8 } : {}) }}>
+                  {SECTION_LABELS[type]}
+                  {type === "object" && foundNow && (
+                    <span data-testid="objects-said" title={findDetail(foundNow)}
+                      style={{ marginLeft: "auto", fontWeight: 400, letterSpacing: 0, textTransform: "none" }}>
+                      {findSaid(foundNow)}
+                    </span>
+                  )}
+                </div>
+
+                {/* Items */}
+                {items.map(result => {
+                  const item = result.item;
+                  const idx = globalIdx++;
+                  const isFocused = cursor === idx;
+                  return (
+                    <button
+                      key={item.id}
+                      data-idx={idx}
+                      // The highlight, as an attribute. `isFocused` was only ever a
+                      // background colour, so nothing could assert that the keyboard
+                      // cursor and the visible highlight agree — and for a long time
+                      // they did not (see CommandPalette.keynav.test.tsx).
+                      data-active={isFocused ? "true" : undefined}
+                      onClick={() => activate(item)}
+                      onMouseEnter={() => setCursor(idx)}
+                      style={{
+                        width: "100%", display: "flex", alignItems: "center", gap: 10,
+                        padding: "8px 14px", background: isFocused ? "var(--bg-sel)" : "none",
+                        border: "none", cursor: "pointer", transition: "background .08s", textAlign: "left",
+                        borderLeft: isFocused ? "2px solid var(--blue3)" : "2px solid transparent",
+                      }}
+                    >
+                      {/* Icon */}
+                      <div style={{
+                        width: 28, height: 28, borderRadius: "var(--r1)", flexShrink: 0,
+                        background: `color-mix(in srgb, ${item.accent ?? "var(--t3)"} 12%, transparent)`,
+                        border: `1px solid color-mix(in srgb, ${item.accent ?? "var(--t3)"} 25%, transparent)`,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>
+                        <PIcon name={item.icon} size={13} color={item.accent ?? "var(--t3)"} />
+                      </div>
+
+                      {/* Text */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          <Highlighted text={item.label} matches={result.matches?.filter(m => m.key === "label")} />
+                          {busyId === item.id && <span style={{ color: "var(--t3)" }}> · running…</span>}
+                        </div>
+                        {item.sublabel && (
+                          <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            <Highlighted text={item.sublabel} matches={result.matches?.filter(m => m.key === "sublabel")} />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Enter hint on focused item */}
+                      {isFocused && (
+                        <kbd style={{ fontSize: 11, padding: "1px 5px", background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>
+                          ↵
+                        </kbd>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            ))
+          )}
+          {foundNow && foundNow.hits.length === 0 && (
+            <div data-testid="objects-none" title={findDetail(foundNow)} className="aug-fs-xs"
+              style={{ padding: "6px 14px", color: "var(--t3)", borderTop: "1px solid var(--b0)" }}>
+              No object is named &ldquo;{foundNow.q}&rdquo; — {findSaid(foundNow)}
+            </div>
+          )}
+        </div>
+        )}
+
+        {/* Footer hints */}
+        <div style={{ padding: "6px 14px", borderTop: "1px solid var(--b0)", display: "flex", gap: 14, alignItems: "center" }}>
+          {(mode === "spotlight"
+            ? [["ESC", "Back to search"], ["↵", "Ask follow-up"]]
+            : [["↑↓", "Navigate"], ["↵", "Select"], ["ESC", "Close"]]
+          ).map(([k, l]) => (
+            <span key={k} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <kbd style={{ fontSize: 11, padding: "1px 5px", background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>{k}</kbd>
+              <span style={{ fontSize: 11, color: "var(--t3)" }}>{l}</span>
+            </span>
+          ))}
+          <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--t3)" }}>
+            {mode === "spotlight"
+              ? (streaming ? "answering…" : "grounded by tool calls")
+              : `${shownResults.length} result${shownResults.length !== 1 ? "s" : ""}`}
+          </span>
+        </div>
+      </div>
+    </>
+  );
+}

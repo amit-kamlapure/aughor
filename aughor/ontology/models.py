@@ -1,0 +1,1297 @@
+"""
+Ontology data models — M12a (structural, no LLM).
+
+Four core types:
+  OntologyEntity       — a business object with identity, lifecycle, and business rules
+  OntologyRelationship — a typed, directional relationship between two entities
+  OntologyMetric       — a computable KPI defined in terms of entities
+  QueryTemplate        — a parameterized SQL template with business-rule enforcement
+
+All fields are JSON-serialisable so the graph can be cached as plain JSON.
+Pydantic is used for construction-time validation only — the store serialises
+via model_dump() and deserialises via model_validate().
+"""
+from __future__ import annotations
+
+import re
+
+from datetime import datetime, timezone
+from typing import Literal, Optional
+
+from pydantic import AliasChoices, BaseModel, Field, computed_field, model_validator
+
+
+class ComputedProperty(BaseModel):
+    id: str                  # snake_case: "days_since_last_order"
+    label: str               # human-readable: "Days Since Last Order"
+    formula_sql: str         # SELECT-clause expression, e.g. "DATEDIFF('day', MAX(created_at), NOW())"
+    unit: str = ""           # "days", "%", "$", etc.
+    # Self-validation (M24c): executed against the live DB by ontology.validator.
+    # Only verified formulas are injected into the NL2SQL prompt with authority.
+    verified: bool = False
+    verification_note: str = ""   # why it failed, when not verified
+
+
+class SemiAdditive(BaseModel):
+    """PENDING item 27 — a property that is a reading AT a moment (a balance, a stock level, a headcount), taken
+    ``over`` a time property: summed within one moment it is a total, summed across moments it counts the same stock
+    once per reading. Declared by a person (PUT /ontology/entities/{id}/semiadditive/{property}); the compiler refuses a
+    SUM of it that spans more than one value of ``over``. O5's word for the kind (`window_measures`): semiadditive."""
+    over: str
+    note: str = ""
+    #: Which reading stands for a period — O5's `semiadditive: first | last` (`window_measures.SEMIADDITIVE`). Declared,
+    #: a sum across moments is answered at each group's last (or first) moment — a month-end stock per month —
+    #: instead of refused; "" (the default) says nothing, and a sum across moments stays refused with how to ask.
+    take: Literal["", "first", "last"] = ""
+
+
+class ExpressionProperty(BaseModel):
+    """2026-09-22 (ON-1b's deferred half) — a typed property a person mapped to a SQL EXPRESSION over the type's own
+    row (`days_to_ship = date_diff('day', order_date, shipped_at)`), declared through
+    PUT /ontology/entities/{id}/expressions/{name}. Verified against the data at declaration (the expression runs on
+    one row), and read by the object door, the framing and the pages like any column: each verified one is minted
+    into the type's `properties` as a derived property so every reader finds it by name. Not a metric — an
+    expression is per object, and its only aggregates read one to-many link's rows (PENDING item 29: the latest moment
+    across a link, how many linked objects a condition admits), never the type's own."""
+    expression: str
+    semantic_type: Literal["measure", "dimension"] = "measure"
+    data_type: str = ""
+    unit: str = ""
+    description: str = ""
+    verified: Optional[bool] = None
+    note: str = ""
+    source: str = "human"
+    #: PENDING item 29 — what offered it, when the platform did (`ontology.link_formulas`), stamped by the expression
+    #: door when a person declares the formula it offered; "" for one a person wrote. Never a model's.
+    provenance: str = ""
+
+    def as_property(self, name: str) -> "EntityProperty":
+        return EntityProperty(name=name, display_name=name.replace("_", " "), data_type=self.data_type,
+                              semantic_type=self.semantic_type, description=self.description or f"= {self.expression}",
+                              is_derived=True, unit=self.unit)
+
+
+class Segment(BaseModel):
+    """A saved, named filter over one entity's rows.
+
+    Examples:
+      - "Active Orders"    filter_sql="order_status NOT IN ('canceled', 'delivered')"
+      - "Delivered Orders" filter_sql="order_status = 'delivered'"
+      - "All Orders"       filter_sql=""  (no filter — full table)
+
+    Segments complement active_filter (which remains the single fast-path SQL fragment
+    used by the investigation pipeline). The default segment's filter_sql is always
+    kept in sync with active_filter on the parent entity.
+    """
+    id: str                      # snake_case: "active_orders", "delivered_orders"
+    display_name: str            # "Active Orders"
+    description: str = ""
+    filter_sql: str = ""         # WHERE-clause fragment; empty string = all rows
+    is_default: bool = False     # the primary view; filter_sql mirrors entity.active_filter
+    source: Literal["lifecycle", "exploration", "manual"] = "manual"
+    # Self-validation (M24c): filter_sql executed as WHERE against the live DB.
+    # Empty filter_sql (all rows) is trivially verified.
+    verified: bool = False
+    verification_note: str = ""
+
+
+class EntityProperty(BaseModel):
+    """First-class property on an entity.
+
+    Sourced from ColumnProfile at build time; description enriched from glossary.
+    A property is the semantic label on a column — not the raw column itself.
+    """
+    name: str                           # column name as-is: "order_id", "created_at"
+    display_name: str = ""             # human-readable: "Order ID", "Created At"
+    data_type: str = ""                # dtype from profiler: "INTEGER", "VARCHAR", "TIMESTAMP"
+    semantic_type: str = ""            # profiler semantic: "identifier", "measure", "timestamp", "dimension"
+    description: str = ""             # from glossary column annotations; LLM may enrich
+    is_primary_key: bool = False
+    is_foreign_key: bool = False
+    is_nullable: bool = False          # null_rate > 0
+    null_rate: float = 0.0             # fraction of nulls in the column
+    null_meaning: str = ""            # from phase-3 exploration: "event not yet occurred", "unknown", etc.
+    is_derived: bool = False           # True for computed/formula columns, not raw source columns
+    value_interpretation: str = ""    # "currency", "fraction 0-1", "count", "duration_days"
+    measure_grain: str = ""            # additivity: "per_unit" (×qty for a line total) | "per_line" | ""
+    unit: str = ""                     # "USD", "days", "%"
+    sample_values: list[str] = Field(default_factory=list)   # top_values from profiler (dimensions only)
+    # Distribution stats from phase-6 exploration (numeric columns only)
+    distribution_shape: str = ""      # "normal", "skewed_right", "skewed_left", "uniform", "bimodal"
+    p25: Optional[float] = None       # 25th percentile
+    p50: Optional[float] = None       # median
+    p75: Optional[float] = None       # 75th percentile
+    #: Arc NV-1 — the notation a TEXT column writes its dates in ("YYYYMMDD", "DD/MM/YYYY"), inferred from every
+    #: distinct value by the profiler (`aughor.tools.date_format`): a fact about the whole column, never a guess
+    #: from its first rows. "" for a typed date, a non-date, or an AMBIGUOUS column (every day ≤ 12 parses both
+    #: DD/MM and MM/DD) — then `format_note` says so, and the ENTITY MODEL block prints the note: withheld is said.
+    format: str = ""
+    format_note: str = ""
+
+
+class Junction(BaseModel):
+    """Arc NV-2 — an entity that only joins two others: a measured fact, never a guess.
+
+    A table whose every non-key column is a foreign key with a MEASURED overlap to another entity, and which carries
+    no measure of its own, exists to relate those entities — `order_products`, `user_groups`. The builder marks it
+    (`aughor.ontology.junction.mark_junctions`) after the join edges were value-verified and the cardinalities
+    counted, then declares ONE N:N link between the two far entities THROUGH it (`OntologyRelationship.via`) with
+    both overlaps on record. The ENTITY MODEL block says "junction between X and Y"; the object compiler still
+    refuses an N:N hop — that change waits for a live table that qualifies (the study's falsifier).
+    """
+    between: list[str] = Field(default_factory=list)   # the two far entity ids, sorted
+    through: list[str] = Field(default_factory=list)   # the junction's FK columns, in the same order
+    overlaps: list[float] = Field(default_factory=list)  # each FK's measured containment, in the same order
+    verified: bool = False                              # every FK edge measured (none unprobed or declared-only)
+    note: str = ""
+
+
+def snake_name(name: str) -> str:
+    """`OrderItem` → `order_item`: the stable spelling an api_name defaults to."""
+    s = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name or "")
+    s = re.sub(r"[^A-Za-z0-9]+", "_", s).strip("_").lower()
+    return s or "object"
+
+
+class DisplayProperty(BaseModel):
+    """ON-3b — the property whose value names one object of a type: a customer's `full_name`, a
+    warehouse's `name`, an order's own key when nothing else names it.
+
+    DECLARED on the type, never guessed per read: proposed from the profile when the builder leaves it
+    empty (`propose_display_property`), or set by a person through the overrides tree — and MEASURED
+    like every other claim since ON-0a: `rows`, `non_null` and `distinct` counted over the backing, the
+    verdict and its evidence in `verified` and `note` (`aughor.ontology.display`). A refuted proposal
+    gives way to the key; a person's declaration stands, its measurement shown beside it.
+    """
+    name: str = ""
+    source: Literal["proposed", "human"] = "proposed"
+    rows: Optional[int] = None
+    non_null: Optional[int] = None
+    distinct: Optional[int] = None
+    verified: Optional[bool] = None
+    note: str = ""
+
+
+#: Property-name fragments that say a column names an instance, in preference order.
+_NAME_HINTS = ("full_name", "display_name", "name", "title", "label")
+
+
+def propose_display_property(entity: "OntologyEntity") -> DisplayProperty:
+    """The display property the profile proposes: a text or dimension property named after the type itself
+    (`brand` on Brand), else one whose name says it is a name (`full_name`, `product_name`, `title`), else
+    the key. Deterministic and from the profile alone; whether it names objects is measured afterwards."""
+    key = (entity.backing.primary_key if entity.backing is not None else "") or entity.identity_key
+    candidates = [p for p in (entity.properties or {}).values()
+                  if (p.semantic_type or "") in ("dimension", "text") and not p.is_primary_key
+                  and (p.null_rate or 0.0) <= 0.5]
+    type_words = {snake_name(entity.id), entity.api_name}
+    for p in candidates:
+        if p.name.lower() in type_words:
+            return DisplayProperty(name=p.name, note=f"proposed: {p.name} is named after the type")
+    for hint in _NAME_HINTS:
+        for p in candidates:
+            if hint in p.name.lower():
+                return DisplayProperty(name=p.name, note=f"proposed: its name says {p.name} names an instance")
+    return DisplayProperty(name=key, note="proposed: no property names an instance, so the key does")
+
+
+class Backing(BaseModel):
+    """What an object type is read FROM (ON-1: the noun decouples from the table).
+
+    `table` today — the default every existing consumer reads, byte-identically — or a
+    keyed SELECT (`kind="query"`) a human sets through the overrides tree, whose rows are
+    the object's instances. `primary_key` is the column unique per instance; `verified`
+    says the data agreed (COUNT(DISTINCT key) == COUNT(key) over the backing's rows) —
+    measured, never assumed, like every other claim since ON-0a.
+    """
+    #: Arc OC-6 — ``platform``: the type's objects live in the platform's own edit layer, made and changed by declared
+    #: actions only, every change kept (`ontology.platform_objects`); no warehouse holds them.
+    kind: Literal["table", "query", "platform"] = "table"
+    table: Optional[str] = None
+    sql: Optional[str] = None
+    primary_key: str = ""
+    verified: Optional[bool] = None
+    verification_note: str = ""
+    #: ON-3b: the rows the backing held when its key was measured — the "rows" fact the entity-type map
+    #: shows. None until measured (POST /ontology/measure), never estimated from a profile.
+    rows: Optional[int] = None
+    #: ON-8 — the connection these rows live on, in an organisation's ontology, whose types may be read from any
+    #: connection the organisation holds. "" means the graph's own connection: every graph built per connection
+    #: reads that, so each loads unchanged.
+    connection_id: str = ""
+
+    def from_clause(self, alias: str = "b") -> str:
+        """The FROM fragment a consumer queries this object through."""
+        if self.kind == "query" and self.sql:
+            return f"({self.sql.strip().rstrip(';')}) AS {alias}"
+        return self.table or ""
+
+
+class Frame(BaseModel):
+    """ON-5 — a declared frame over a timeseries binding's readings (ROADMAP §3.15).
+
+    ON-5's first slice reads a timeseries binding as each object's LATEST row. That answers "what is this
+    product's price" and nothing about how it got there: "the average of its last three readings", "everything
+    it has been charged to date", "what it read before this" are frames over the same readings, and O5's
+    `window_measures` has compiled every one of them since the day it was written — nothing could ASK for one
+    through the object door.
+
+    A frame is per-object by construction: it is computed inside the binding's own partition, then read at the
+    object's latest row, so it arrives as ONE value per object and joins exactly as the latest value does. What
+    the frame means across an object SET is therefore the same question as for any other property — a SUM of
+    per-object trailing averages is a sum of per-object trailing averages — and the compiler treats it as one.
+    """
+    #: The binding's own column the frame reads.
+    column: str
+    #: How the readings in the frame are reduced to one number. Ignored — and refused — when `offset` is set:
+    #: "the reading before this one" is a value, not an aggregate.
+    agg: Literal["sum", "avg", "min", "max", "count"] = "avg"
+    #: The frame's extent, in `window_measures`' vocabulary.
+    range: Literal["current", "cumulative", "trailing", "leading", "all"] = "trailing"
+    #: How many readings, for trailing/leading — INCLUDING the current one.
+    window: Optional[int] = None
+    #: Readings back, for "what it read before this": compiles to LAG, never to an aggregate.
+    offset: Optional[int] = None
+
+    def describe(self) -> str:
+        """The frame in words, for a property's description and a plan line."""
+        if self.offset:
+            return f"{self.column} {self.offset} reading{'s' if self.offset > 1 else ''} back"
+        if self.range == "trailing":
+            return f"the {self.agg} of {self.column} over the trailing {self.window} readings"
+        if self.range == "leading":
+            return f"the {self.agg} of {self.column} over the next {self.window} readings"
+        if self.range == "cumulative":
+            return f"the {self.agg} of {self.column} over every reading up to this one"
+        if self.range == "all":
+            return f"the {self.agg} of {self.column} over every reading"
+        return f"the {self.agg} of {self.column} on this reading"
+
+
+class Rollup(BaseModel):
+    """ON-7 — how ONE property of a type is rolled up from a DETAIL binding's rows (ROADMAP §3.15, the second
+    movement).
+
+    A detail binding holds many rows per object with no clock — an order's lines, a customer's tickets — so none
+    of its columns is a property of the object as it stands. A rollup names the one number that is: the sum of
+    the lines' quantity, how many lines there are, the largest unit price. It is computed inside the object's own
+    partition (GROUP BY the binding's key) BEFORE the join, so it arrives as one value per object and joins under
+    the same law a static binding does — it can never multiply the object set. What a rollup means across an
+    object SET is then the same question as for any other property, and the compiler treats it as one.
+    """
+    #: The binding's own column the rollup reads.
+    column: str
+    #: How the rows are reduced to one value per object.
+    agg: Literal["sum", "avg", "min", "max", "count"] = "sum"
+
+    def describe(self, part: str = "") -> str:
+        """The rollup in words, for a property's description and a plan line."""
+        rows = f"each object's {part} rows" if part else "each object's rows"
+        if self.agg == "count":
+            return f"how many of {rows} carry {self.column}"
+        return f"the {self.agg} of {self.column} over {rows}"
+
+
+class Binding(BaseModel):
+    """ON-1b — a further source an object type's properties are read from (ROADMAP §3.15, amended 2026-09-11).
+
+    The type's first binding IS its `backing`: the rows that are its objects. A further binding is a table or a
+    keyed SELECT joined to the object on its key, with the properties it supplies, and a kind — `static` (one row
+    per object) or `timeseries` (many rows per object over `time_column`). Its claim is MEASURED the ON-0a way
+    (`aughor.ontology.bindings`): a static binding's key must be unique over its rows and reach objects that exist;
+    a timeseries binding's key must reach objects that exist, its coverage recorded. A person sets one through the
+    overrides tree; the data proposes one where another table carries the type's key, kept apart on
+    `OntologyEntity.proposed_bindings` so a proposal changes nothing until a person binds it.
+    """
+    name: str
+    #: `static` — one row per object; `timeseries` — many rows per object over `time_column` (ON-5); `detail` —
+    #: many rows per object with no clock, read at the object's grain only through its `rollups` (ON-7).
+    kind: Literal["static", "timeseries", "detail"] = "static"
+    table: Optional[str] = None
+    sql: Optional[str] = None
+    #: The binding's column that holds the object's key.
+    key: str = ""
+    #: Timeseries only: the column that places a row in time.
+    time_column: str = ""
+    #: Property name → the property it supplies.
+    properties: dict[str, EntityProperty] = Field(default_factory=dict)
+    #: Property name → the binding's column it is read from, for a property renamed to be free on the type (its
+    #: `status` supplied as `payment_status`). A property not listed is read from the column of its own name.
+    columns: dict[str, str] = Field(default_factory=dict)
+    #: Columns the binding has but does not supply, each with why — a name the type already uses.
+    skipped: dict[str, str] = Field(default_factory=dict)
+    #: ON-5 — property name → the frame over the readings it is computed from. Timeseries bindings only; the
+    #: name is a property of the type like any other, and its column exists only in the reduction.
+    frames: dict[str, Frame] = Field(default_factory=dict)
+    #: ON-7 — property name → the rollup it is computed by. Detail bindings only; the name is a property of the
+    #: type like any other, and its column exists only in the pre-aggregation.
+    rollups: dict[str, Rollup] = Field(default_factory=dict)
+    #: `human` — a person bound it; `model` — an explorer proposed it and bound it through the same door (ON-7b), read
+    #: like any other binding and tiered proposed until a person confirms or removes it; `proposed` — the data proposes
+    #: it on `OntologyEntity.proposed_bindings`, and nothing reads it until someone binds it.
+    source: Literal["human", "proposed", "model"] = "human"
+    #: ON-7b — who said it, for a binding an explorer proposed: `model:<id>@<version>`, kept after a person confirms it.
+    provenance: str = ""
+    #: ON-8 — the connection the binding's source lives on when it is not the object's own: an order's shipments read
+    #: from the logistics warehouse onto an Order whose rows are in the commerce one. "" means the object's connection.
+    connection_id: str = ""
+    #: Measured — None until counted: the binding's rows, its rows with a key, its distinct keys, the objects it
+    #: was measured against, how many of them it covers, and the distinct keys that reach no object.
+    rows: Optional[int] = None
+    non_null: Optional[int] = None
+    distinct: Optional[int] = None
+    objects: Optional[int] = None
+    covered: Optional[int] = None
+    orphans: Optional[int] = None
+    verified: Optional[bool] = None
+    note: str = ""
+
+    @property
+    def reads(self) -> str:
+        """``query`` when the binding is a keyed SELECT, ``table`` otherwise."""
+        return "query" if (self.sql or "").strip() else "table"
+
+
+class RowPolicy(BaseModel):
+    """Arc OC-7 — which objects of an entity one group may see: those its ``conditions`` admit (each on the entity's own
+    property, ANDed). Once an entity declares any, a reader sees only the objects a policy of one of their groups admits
+    — none when they are in none of those groups, and they are told so. ``group`` "*" is everyone."""
+    group: str
+    conditions: list[dict] = Field(default_factory=list)
+    note: str = ""
+
+
+class Sensitivity(BaseModel):
+    """Arc OC-7 — a property only some groups may read: masked for everyone else on every object door, with why. ``level``
+    names the kind (pii, confidential, …); ``visible_to`` the groups that read it ("*" — everyone)."""
+    level: str = "confidential"
+    visible_to: list[str] = Field(default_factory=list)
+    note: str = ""
+
+
+class EditStateMachine(BaseModel):
+    """Arc OC-6 — the moves a property the EDIT LAYER holds may make (a review flag, a case's status): its states, the
+    moves between them, and the state an object starts in before any edit sets one (``initial``, "" for none). The
+    action engine ENFORCES it — an action whose edit would make a move not declared is refused before it runs, with the
+    moves allowed — where a source column's lifecycle can only be measured."""
+    states: list[str] = Field(default_factory=list)
+    #: Each a pair ``[from, to]``; ``from`` may be ``initial``.
+    moves: list[list[str]] = Field(default_factory=list)
+    initial: str = ""
+
+    def allows(self, current: str, new: str) -> bool:
+        return current == new or [current, new] in [list(m) for m in self.moves]
+
+    def from_here(self, current: str) -> list[str]:
+        return [m[1] for m in self.moves if m and m[0] == current]
+
+
+class OntologyEntity(BaseModel):
+    id: str                                    # PascalCase: "Order", "Customer"
+    display_name: str                          # human-readable business name, set/corrected by enricher
+    description: str = ""                     # from glossary; LLM enriches in M12b
+    source_tables: list[str]                  # tables that materialise this entity
+    identity_key: str                          # canonical PK column, e.g. "order_id"
+    grain_verified: bool                       # COUNT(*) == COUNT(DISTINCT identity_key)
+    #: ON-1: the stable name the API, packs and playbooks bind to — never the table's name.
+    #: Filled from the id (`OrderItem` → `order_item`) when the builder leaves it empty.
+    api_name: str = ""
+    #: The shape a PERSON chose for it on the Business Atlas (`packs.ontology_map.shape_role` names the shapes): a depot,
+    #: a cluster, a contract. It says how the entity is drawn and, through the shape, what it does there; it changes
+    #: nothing an agent reads. "" — nobody chose: a deployed package's word is used, else it is drawn plain.
+    drawn_as: str = ""
+    #: ON-1: what this object is read FROM — one table by default (`source_tables[0]` +
+    #: `identity_key`), a keyed SELECT when a human sets one. Consumers that read the
+    #: table directly are unchanged; the validator and ON-2's compiler read the backing.
+    backing: Optional[Backing] = None
+    #: ON-3b: the property that names one instance (see DisplayProperty) — proposed from the profile when
+    #: the builder leaves it empty, so every graph built before carries one; measured on the measure door.
+    display_property: Optional[DisplayProperty] = None
+    #: ON-1b: the further bindings a person set — tables or keyed SELECTs joined to the object on its key, each
+    #: supplying properties the backing does not carry (see Binding). The first binding is `backing`; this list
+    #: holds the rest, and is empty on every graph built before, which therefore loads unchanged.
+    bindings: list[Binding] = Field(default_factory=list)
+    #: ON-1b: the bindings the data proposes — another table carrying this type's key, measured one row per
+    #: object. Kept apart so a proposal changes no query, no page and no answer until a person binds it.
+    proposed_bindings: list[Binding] = Field(default_factory=list)
+    #: PENDING item 27 — the properties that must not be summed across time, each with the time property its
+    #: readings are taken over (see SemiAdditive). Empty on every graph built before, which loads unchanged.
+    semiadditive: dict[str, SemiAdditive] = Field(default_factory=dict)
+    #: Arc OC-6 — the declared moves of the properties the edit layer holds (see EditStateMachine), by property.
+    edit_states: dict[str, EditStateMachine] = Field(default_factory=dict)
+    #: Arc OC-7 — who sees which of its objects (see RowPolicy) and which properties are masked for whom (see
+    #: Sensitivity). Enforced at the object doors and a connection's own door; empty on every graph built before.
+    row_policies: list[RowPolicy] = Field(default_factory=list)
+    sensitive: dict[str, Sensitivity] = Field(default_factory=dict)
+    #: ON-7 — where this type came from: `table` (the builder minted it from a profiled table — a PROPOSAL the
+    #: business keeps, absorbs or renames), `human` (declared through POST /ontology/entities), `model` (an
+    #: explorer's proposal, ON-7b). Every graph built before reads `table`, so it loads unchanged.
+    origin: Literal["table", "human", "model"] = "table"
+    #: ON-7 — the id of the type this one is a PART of: an order line is a part of Order, a return's logistics
+    #: row a part of Return. Set by a person (or through the bind door's `absorb`); it HOLDS only while the
+    #: parent carries a binding over this type's own table (`aughor.ontology.parts.part_of`), so removing that
+    #: binding releases the part without a second edit. A part stays a type — its objects, links and pages keep
+    #: working by its name — and is hidden from the map and listed under its parent instead.
+    absorbed_into: Optional[str] = None
+    #: ON-7b — who said a declared type exists, when a model did: `model:<id>@<version>` (J4). A person's declaration
+    #: carries none; a proposal a person confirms keeps the model that first proposed it while `origin` becomes human.
+    provenance: str = ""
+
+    # Domain grouping (e.g. "Commerce", "Customer", "Operations") — set by enricher
+    domain: Optional[str] = None
+
+    # Entity classification (set by enricher; heuristic fallback in builder)
+    # reference_data  — master/lookup data referenced by others (Customer, Product, Category)
+    # business_object — operational entity with state transitions (Order, Contract, Ticket)
+    # event           — append-only record or line-item (Payment, OrderItem, LogEntry)
+    # standalone      — no inbound or outbound relationships
+    entity_type: Literal[
+        "reference_data", "business_object", "event", "standalone"
+    ] = "business_object"
+
+    # Lifecycle — derived from status/state columns
+    has_lifecycle: bool = False
+    lifecycle_column: Optional[str] = None    # e.g. "order_status"
+    lifecycle_states: list[str] = Field(default_factory=list)
+    terminal_states: list[str] = Field(default_factory=list)
+    active_filter: Optional[str] = None       # SQL fragment: "order_status NOT IN ('canceled')"
+    #: ON-0a: the lifecycle MEASURED against the data. None until measured; False when the
+    #: data contradicts it (an observed state the lists never named, or a claimed terminal
+    #: state whose timestamp is set on rows now in another state); True otherwise. The note
+    #: carries the evidence, and the end-state names the core expects but the terminal set
+    #: omits are reported there as UNCONFIRMED — a snapshot cannot prove a state is final.
+    lifecycle_verified: Optional[bool] = None
+    lifecycle_note: str = ""
+
+    #: Arc NV-2 — set when this entity's table only relates two others (see `Junction`). None for every other
+    #: entity, and for every graph built before: a missing mark reads as "not a junction", which is the default.
+    junction: Optional[Junction] = None
+
+    # Routing guidance (Wave 2 / Layer 1.1) — "for questions of this shape, query
+    # {table} rather than this entity's own table". Human-authored only: it arrives
+    # through the override store, which existence-binds the named table first, and an
+    # unbound value is never enforced. Shape: {"table", "scope", "reason"}. Advisory
+    # by construction — enforcement ADDS the preferred table to the schema the model
+    # sees and never removes the deprecated one, because scope matching is fuzzy and
+    # adding information is safe where removing it is not.
+    use_instead: Optional[dict] = None
+
+    # Named segments — composable, reusable saved filters over this entity's rows.
+    # Auto-generated from lifecycle states; enriched by exploration findings.
+    # Keyed by Segment.id for fast lookup.
+    #
+    # `object_sets` stays a VALIDATION alias so every ontology already cached as JSON
+    # (data/ontology_cache.json, written before the rename) still deserialises into
+    # `segments` instead of silently coming back empty.
+    segments: dict[str, Segment] = Field(
+        default_factory=dict,
+        validation_alias=AliasChoices("segments", "object_sets"),
+    )
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def object_sets(self) -> dict[str, Segment]:
+        """Deprecated copy of ``segments`` — RETAINED FOR ONE RELEASE.
+
+        Emitted by ``model_dump()`` so every consumer of the entity payload (the HTTP
+        views, the JSON cache, an out-of-tree client) keeps reading the old key while it
+        migrates. Delete this property — and the ``object_sets`` validation alias above —
+        in the release after the one that introduced ``segments``.
+        """
+        return self.segments
+
+    # Temporal
+    created_at_col: Optional[str] = None      # primary event-time column
+
+    # Business rules — extracted from glossary caveats
+    default_filters: list[str] = Field(default_factory=list)
+    exclude_when: list[str] = Field(default_factory=list)  # human-readable descriptions
+
+    # First-class properties — one entry per column on the source table(s).
+    # Keyed by column name. Sourced from ColumnProfile at build time;
+    # description enriched from glossary.
+    properties: dict[str, EntityProperty] = Field(default_factory=dict)
+
+    # Per-entity derived KPIs (LLM-generated, one SELECT-clause expression each)
+    computed_properties: list[ComputedProperty] = Field(default_factory=list)
+    # 2026-09-22 — typed properties a PERSON mapped to an expression over the type's own row (see ExpressionProperty),
+    # keyed by property name; each verified one is also minted into `properties`.
+    expressions: dict[str, ExpressionProperty] = Field(default_factory=dict)
+
+    # Interfaces this entity implements — set by the builder's interface detector.
+    # e.g. ["HasTimestamp", "HasMonetaryValue", "HasLifecycle"]
+    implements: list[str] = Field(default_factory=list)
+
+    # Top insights from phase-8 exploration, sorted by novelty desc.
+    # Each entry is a plain-English finding sentence (e.g. "32 % of orders
+    # never reach a terminal state — possible data pipeline gap").
+    exploration_insights: list[str] = Field(default_factory=list)
+
+
+    @model_validator(mode="after")
+    def _fill_object_defaults(self) -> "OntologyEntity":
+        if not self.api_name:
+            self.api_name = snake_name(self.id)
+        if self.backing is None:
+            self.backing = Backing(kind="table", table=self.source_tables[0] if self.source_tables else None,
+                                   primary_key=self.identity_key)
+        if self.display_property is None:
+            self.display_property = propose_display_property(self)
+        return self
+
+class OntologyInterface(BaseModel):
+    """A shared structural shape implemented by multiple entity types.
+
+    Interfaces let you write polymorphic queries across entity types without
+    knowing specific table schemas.  Examples:
+      HasTimestamp  — any entity that records event time (created_at, updated_at)
+      HasMonetaryValue — any entity that carries a financial amount
+      HasLifecycle  — any entity with a named status / state machine
+
+    Auto-detected by the ontology builder from property name patterns and entity flags.
+    """
+    id: str                                  # "HasTimestamp", "HasMonetaryValue"
+    display_name: str                        # "Has Timestamp"
+    description: str = ""
+    property_patterns: list[str] = Field(default_factory=list)   # human-readable pattern descriptions
+    implementing_entities: list[str] = Field(default_factory=list)  # entity ids
+
+
+class OntologyRelationship(BaseModel):
+    id: str                                    # "Order_RELATES_TO_Customer"
+    from_entity: str                           # FK-holder entity: "Order"
+    to_entity: str                             # PK-target entity: "Customer"
+    verb: str = "RELATES_TO"                  # placeholder; LLM enriches in M12b
+    cardinality: Literal["1:1", "1:N", "N:1", "N:N"]
+    join_sql: str                              # "orders.customer_id = customer.customer_id"
+    from_table: str
+    from_col: str
+    to_table: str
+    to_col: str
+    # DE-3c: "declared" — the engine's own foreign key, read from its catalog; still checked
+    # against values, and kept with its measured overlap even when the values disagree.
+    join_confidence: Literal["exact", "inferred", "verified", "declared"] = "inferred"
+    nullable: bool = False                     # FK col has null rows
+    # Value-verification (joinable_with): the max containment fraction the two keys actually
+    # SHARE, probed at build time. None = unprobed; ~1.0 = a real FK; a value-DISJOINT name
+    # coincidence (≈0) is dropped from the graph entirely, never persisted as a relationship.
+    value_overlap: Optional[float] = None
+    #: The cardinality MEASURED against the data (ON-0a): a side is "1" when its key is unique
+    #: over its non-null rows. None until measured. When it contradicts the authored label,
+    #: `cardinality` is replaced by it and the authored value survives in `cardinality_note` —
+    #: the block renders what the data says, never a verified-looking guess.
+    measured_cardinality: Optional[Literal["1:1", "1:N", "N:1", "N:N"]] = None
+    cardinality_note: str = ""
+    #: ON-1: a link has a stable name on EACH side (`order_item_to_order` / `order_to_order_item`),
+    #: filled from the entity ids when the builder leaves them empty.
+    api_name: str = ""
+    reverse_api_name: str = ""
+    #: ON-3b: the business-verb link name a PERSON set through the overrides tree (`shipment_ships_order`).
+    #: Empty means the name is proposed from the verb at read time (`business_name`), so an enriched verb
+    #: renames the link without leaving a stale copy; the mechanical pair above stays the stable fallback
+    #: every query and page still accepts.
+    name: str = ""
+    #: ON-7 — `join_map` (the builder found the join), `human` (declared through POST /ontology/links), `model`
+    #: (an explorer's proposal). Every graph built before reads `join_map`.
+    origin: Literal["join_map", "human", "model"] = "join_map"
+    #: ON-7b — who said a declared link exists, when a model did: `model:<id>@<version>`, kept after a person confirms.
+    provenance: str = ""
+    #: 2026-09-22 — who set `name`: `human` (a person, through PUT /ontology/links/{id}), `model` (the explorer's
+    #: proposal, PROPOSED until a person confirms it), "" (no business name set). A name recorded before this field
+    #: existed was a person's — only the person's door wrote names then — and reads `human` through the overrides.
+    name_origin: Literal["", "human", "model"] = ""
+    name_provenance: str = ""
+    #: ON-8 — `join` when both types are read from one connection, so one statement joins them; `cross-source` when
+    #: they live on two, and the compiler reads the far side by key through the batched-foreach engine instead. Stamped
+    #: from the two types' connections (`aughor.ontology.domains.stamp_traversals`) by the law the compiler follows,
+    #: so a graph built before reads `join`.
+    traversal: Literal["join", "cross-source"] = "join"
+    #: Arc NV-2 — the junction entity this link goes THROUGH, when it is the N:N the builder declared between a
+    #: junction's two far entities: `join_sql` then holds both hops. "" for a direct link, and for every graph built
+    #: before. The relationship block names it, and the compiler reads it as the N:N it already refuses.
+    via: str = ""
+
+    @model_validator(mode="after")
+    def _fill_link_names(self) -> "OntologyRelationship":
+        if not self.api_name:
+            self.api_name = f"{snake_name(self.from_entity)}_to_{snake_name(self.to_entity)}"
+        if not self.reverse_api_name:
+            self.reverse_api_name = f"{snake_name(self.to_entity)}_to_{snake_name(self.from_entity)}"
+        return self
+
+    def business_name(self) -> str:
+        """The link's business-verb name, read from→to: the person's when set, else `<from>_<verb>_<to>` from
+        the verb on record — or "" while the verb is still the placeholder that names nothing."""
+        if self.name:
+            return self.name
+        verb = snake_name(self.verb or "")
+        if not (self.verb or "").strip() or verb in _PLACEHOLDER_VERBS:
+            return ""
+        return f"{snake_name(self.from_entity)}_{verb}_{snake_name(self.to_entity)}"
+
+    def business_name_source(self) -> str:
+        """``human`` when a person named the link, ``model`` when the explorer proposed the name and no person has
+        confirmed it yet, ``proposed`` when its verb names it at read time, "" when nothing names it."""
+        if self.name:
+            return "model" if self.name_origin == "model" else "human"
+        return "proposed" if self.business_name() else ""
+
+
+#: ON-3b — the verb the builder writes before enrichment names nothing, so no link name is proposed from it.
+_PLACEHOLDER_VERBS = frozenset({"relates_to"})
+#: A business-verb link name is a path segment: snake_case, bounded.
+LINK_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,79}$")
+
+
+class DefinitionSource(BaseModel):
+    """One place a definition for a metric was found, and whose it is.
+
+    Ported from the warehouse-vendor context layer studied 2026-09-08: a business
+    definition is not a fact the warehouse holds, it is a CLAIM some asset makes and some
+    person is behind. When two dashboards disagree about "revenue", the useful question is
+    not which string is prettier — it is which claim came from where, who stands behind
+    it, and how many things already rely on it.
+
+    🔑 What we do NOT port is ranking by authority alone. That design weighs source
+    authority, reliance and freshness; we already do something strictly stronger for the
+    part that matters, which is EXECUTE the formula against the live database. So
+    `verified` is a tier, not a tiebreak: a verified definition outranks an unverified one
+    no matter who wrote it or how popular it is. Authority only orders candidates that are
+    equally verified. Popularity is evidence about people; execution is evidence about the
+    data. See :mod:`aughor.ontology.authority`.
+    """
+    #: What THIS source says the metric is. May disagree with its siblings — that
+    #: disagreement is the thing worth surfacing, not a conflict to silently resolve.
+    formula_sql: str = ""
+    #: The asset the claim came from, by name: "DAIS 2026 Sales Dashboard",
+    #: "rpt_summit_registration", a saved query's title, a document.
+    source_asset: str = ""
+    source_kind: Literal["dashboard", "query", "table", "pipeline",
+                         "document", "manual", "unknown"] = "unknown"
+    #: WHOSE definition. Empty is honest — an unattributed claim is weaker evidence, and
+    #: `authority` scores it that way rather than inventing an owner.
+    author: str = ""
+    recorded_at: str = ""
+    #: How many things already rely on this definition. Reliance is evidence about people.
+    use_count: int = 0
+    #: The SOURCE is a blessed/certified asset (not: the formula is correct).
+    certified: bool = False
+    #: THIS formula executed successfully against the live database. The only field here
+    #: that is evidence about the DATA, which is why it outranks all the others.
+    verified: bool = False
+    verification_note: str = ""
+
+
+class OntologyMetric(BaseModel):
+    id: str                                    # "revenue", "customer_ltv"
+    display_name: str
+    description: str = ""
+    entity: str                                # which entity this belongs to
+    formula_sql: str                           # canonical SQL expression
+    grain: str = ""
+    unit: str = ""
+    tables: list[str] = Field(default_factory=list)
+    known_divergent_calculations: list[str] = Field(default_factory=list)
+    # Health scorecard fields (M13a)
+    target_value: Optional[float] = None
+    warning_threshold: Optional[float] = None   # yellow zone boundary
+    critical_threshold: Optional[float] = None  # red zone boundary
+    target_period: Optional[str] = None         # "monthly", "quarterly", "ytd"
+    benchmark_source: Optional[str] = None      # "internal: FY2025 plan", "industry: ecommerce"
+    # Self-validation (M24c): formula_sql executed against the live DB. Unverified
+    # formulas are demoted (never injected with "use this exact expression").
+    verified: bool = False
+    verification_note: str = ""
+    #: Every definition we have SEEN for this metric, with its provenance — including the
+    #: ones that lost. `known_divergent_calculations` records THAT the warehouse disagrees
+    #: with itself; this records WHERE each disagreeing claim came from and who is behind
+    #: it, which is what a person needs to settle it. Additive and defaulted: every graph
+    #: written before this field loads unchanged with an empty list.
+    definitions: list[DefinitionSource] = Field(default_factory=list)
+
+
+#: ON-9 — a process, a stage, a promise or a rule is named by a path segment: snake_case, bounded.
+PROCESS_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+
+
+class Promise(BaseModel):
+    """ON-9 — what the business promises about reaching one stage of a process (ROADMAP §3.15, the second movement).
+
+    Two shapes. A FIXED duration — `within_days`: the stage is reached within N calendar days of the previous one
+    ("dispatched within two days"); `within_hours`: within N hours of the previous one's moment ("packed within 24
+    hours" — the hours that pass, not the calendar days they touch). A per-object DEADLINE — `deadline`: a date or
+    timestamp property of the object
+    that carries it (an order line's `shipping_limit_date`, an order's `order_estimated_delivery_date`), broken when
+    the stage's moment falls after it. A deadline promise is kept per object of its `grain` — the type the deadline
+    is a property of — which reaches the process's type through measured to-one links (`via`), so a marketplace's
+    per-line limit is measured per line, with each line's seller and product one hop away.
+
+    Measured, never assumed (`aughor.ontology.processes`): the objects that reached the stage with the promise in
+    force, how many broke it, how many have not reached the stage and how many of those are already past it. A
+    promise the data never breaks, or always breaks, is FLAGGED — a deadline read from the wrong column breaks
+    nothing or everything. From a measured promise the object door derives, by construction, a segment
+    (`late_<name>`), a computed property (`<name>_lag_days`) and a metric (`<name>_breach_rate`), so what "late"
+    means is declared once and executed the same way everywhere.
+    """
+    #: The promise's own name — the noun the derived names are built from (`dispatch` → `late_dispatch`). Defaults to
+    #: the stage's name.
+    name: str = ""
+    within_days: Optional[int] = None
+    #: Hours from the previous stage's moment, counted to the second. Exactly one of `within_days`, `within_hours` and
+    #: `deadline` is set.
+    within_hours: Optional[int] = None
+    deadline: str = ""
+    #: The type the promise is kept per — the one its deadline is a property of. Empty: the process's own type.
+    grain: str = ""
+    #: The link path from `grain` to the process's type, every hop to-one and measured (`order_item_to_order`). Resolved
+    #: and recorded when the promise is declared; empty when `grain` is the process's type.
+    via: str = ""
+    #: The share of objects the business expects to keep the promise (0–1). The derived breach-rate metric's target is
+    #: its complement; empty means no tolerance was declared, and none is invented.
+    target: Optional[float] = None
+    #: Measured — None until counted: the promise's objects, those that reached the stage with the promise in force,
+    #: those that broke it and kept it, those that have not reached the stage, and those of them already past the
+    #: deadline as of `as_of` (the latest moment of the stage in the data — the data's own clock, never the server's).
+    objects: Optional[int] = None
+    reached: Optional[int] = None
+    breached: Optional[int] = None
+    kept: Optional[int] = None
+    open: Optional[int] = None
+    open_overdue: Optional[int] = None
+    breach_rate: Optional[float] = None
+    as_of: str = ""
+    verified: Optional[bool] = None
+    #: What the measurement found worth a person's eye without refuting the promise: never broken, always broken, and
+    #: objects counted as kept although their lag is impossible (reached this stage before the one before it).
+    flags: list[str] = Field(default_factory=list)
+    note: str = ""
+
+
+class ProcessStage(BaseModel):
+    """ON-9 — one stage of a process, anchored to the moment an object reaches it (`timestamp`: a date or timestamp
+    property path from the process's type, through to-one links only) or to the lifecycle state(s) that place an
+    object in it (`state`, read from `property`, default the type's lifecycle column). A state has no clock, so a
+    stage anchored to one is counted but never timed, and carries no promise."""
+    name: str
+    display_name: str = ""
+    timestamp: str = ""
+    state: list[str] = Field(default_factory=list)
+    property: str = ""
+    promise: Optional[Promise] = None
+    #: Measured — the stage: how many of the process's objects reached it (a set moment, or a listed state).
+    reached: Optional[int] = None
+    verified: Optional[bool] = None
+    note: str = ""
+    #: Measured — the transition from the previous stage, when both carry a moment: objects holding both, objects that
+    #: reached this stage with no moment for the previous one, objects whose moment here comes BEFORE the previous
+    #: one, and the calendar days between the two moments at the 50th, 90th and 95th percentile.
+    both: Optional[int] = None
+    skipped: Optional[int] = None
+    out_of_order: Optional[int] = None
+    p50_days: Optional[float] = None
+    p90_days: Optional[float] = None
+    p95_days: Optional[float] = None
+    #: Arc OC-5 — measured against EVERY earlier stage that carries a moment, not only the previous one: earlier
+    #: stage → how many objects reached this stage before it. A timestamp is checked before it is believed.
+    precedes: dict[str, int] = Field(default_factory=dict)
+
+
+class ProcessTransition(BaseModel):
+    """Arc OC-5 — one move between two stages of a process, or out of it (``to_stage`` "left"). DECLARED, the moves the
+    business expects (none declared: each stage to the next, and leaving from any); MEASURED from the stages' moments —
+    an object moved from one stage to another when it carries both moments and none of a stage between them. What the
+    data does that nobody declared, and what was declared and never happens, are both said (`Process.conformance`)."""
+    from_stage: str
+    to_stage: str
+    declared: bool = False
+    objects: Optional[int] = None
+
+
+class ProcessExit(BaseModel):
+    """Arc OC-4 — how an object leaves a process before its last stage, as a person declares it: its `property` holds
+    one of `values` ("an order leaves fulfilment when its status is Cancelled"). One that left still counts toward
+    the stages it reached and the promises it kept or broke; it is no longer open, and never overdue. Measured on
+    declaration: how many objects left, each value no object holds (a spelling the data does not use), and how many
+    hold no value at all — those cannot be read as having left or not, and the open counts leave them out, said."""
+    property: str
+    values: list[str] = Field(default_factory=list)
+    #: Measured — None until counted.
+    left: Optional[int] = None
+    missing: list[str] = Field(default_factory=list)
+    unknown: Optional[int] = None
+    note: str = ""
+
+
+class Process(BaseModel):
+    """ON-9 — a business process one object type goes through, end to end: ordered stages (see ProcessStage), and
+    on a stage the promise the business makes about reaching it (see Promise). DECLARED — by a person, a pack or an
+    explorer's proposal — and MEASURED like every other claim since ON-0a: a stage no object reaches, a promise the
+    data never breaks, a stage whose moment precedes the one before it are reported with the numbers, never hidden.
+    Lives in the overrides tree (`process/<id>.yaml`) with what its measurement recorded, and is rebuilt at read time
+    with no database in hand. None of it is rendered into a prompt: it reaches an answer through the object door,
+    which compiles what it derives."""
+    id: str
+    display_name: str = ""
+    description: str = ""
+    #: The object type that goes through the process — an entity id.
+    entity: str
+    stages: list[ProcessStage] = Field(default_factory=list)
+    #: Who stands behind the definition. Empty is honest.
+    owner: str = ""
+    origin: Literal["human", "model", "pack"] = "human"
+    provenance: str = ""
+    #: Arc OC-4 — how an object leaves the process (see ProcessExit). None: no object leaves it.
+    leaves: Optional[ProcessExit] = None
+    #: Arc OC-5 — the moves declared between its stages (see ProcessTransition); empty: each stage to the next.
+    transitions: list[ProcessTransition] = Field(default_factory=list)
+    #: Measured: every move seen between stages that carry a moment, and out of the process, with its objects.
+    observed: list[ProcessTransition] = Field(default_factory=list)
+    #: Measured: ``{"seen_only_in_data": ["placed → delivered", …], "never_observed": [...], "untimed": [...]}``.
+    conformance: dict[str, list[str]] = Field(default_factory=dict)
+    #: Measured: the process's objects, the verdict over every stage and promise, and when it was counted.
+    objects: Optional[int] = None
+    verified: Optional[bool] = None
+    note: str = ""
+    measured_at: str = ""
+
+
+class BusinessRule(BaseModel):
+    """ON-9 — a named, owned definition a business holds that its data does not: "DACH is DE, AT and CH" (a
+    `value_set` — the values of one property the business groups under one name, which the packs' `aliases` declare
+    and leave empty) or "a fulfilled order excludes the cancelled and the unavailable" (a `condition` — the object
+    door's own filters, named). Measured on declaration and on every measure pass: how many objects it admits, and
+    for a value set how many rows hold each value, a value no row holds FLAGGED (a spelling the data does not use).
+    The object door reads it as a segment of its type named by the rule's id."""
+    id: str
+    display_name: str = ""
+    description: str = ""
+    owner: str = ""
+    #: The object type the rule is about — an entity id.
+    entity: str
+    kind: Literal["value_set", "condition"] = "condition"
+    #: value_set: the property the values are read from, and the values.
+    property: str = ""
+    values: list[str] = Field(default_factory=list)
+    #: condition: filters in the object door's shape (`{path, op, value | values | value_path}`), all of which hold.
+    conditions: list[dict] = Field(default_factory=list)
+    #: The metrics the rule SCOPES — each a verified metric on its type, read within the rule wherever the object door
+    #: reads it ("revenue excludes the cancelled and the refunded").
+    scopes: list[str] = Field(default_factory=list)
+    origin: Literal["human", "model", "pack"] = "human"
+    provenance: str = ""
+    #: Measured: the type's objects, those the rule admits, rows per declared value, declared values no row holds.
+    objects: Optional[int] = None
+    admitted: Optional[int] = None
+    observed: dict[str, int] = Field(default_factory=dict)
+    missing: list[str] = Field(default_factory=list)
+    #: Measured: each scoped metric's value as the door reads it without the rule and within it (text, as counted).
+    scoped: dict[str, dict] = Field(default_factory=dict)
+    verified: Optional[bool] = None
+    flags: list[str] = Field(default_factory=list)
+    note: str = ""
+
+
+class Impact(BaseModel):
+    """Arc OC-5 — what one promise does to another, declared with its mechanism and measured (the study's §8.4).
+
+    ``upstream`` and ``downstream`` each name a promise as ``<process id>.<promise noun>``
+    (``order_fulfilment.dispatch``). The mechanism is said, never implied:
+
+    * **influence** — an association, MEASURED: of the downstream promise's objects (its lead object, the type it is
+      kept per) that reached its stage with it in force, the share that broke it when the upstream promise broke on
+      them, against when it was kept — with how many objects each share is of, the lag between the two moments, and
+      the window read. The upstream promise is reached from the lead object through the graph's links: a to-one link
+      reads the one upstream object, a to-many link reads "at least one of them broke it" (an order whose lines missed
+      dispatch), so nothing is counted twice;
+    * **validated** — an influence a person promoted on recorded evidence (``evidence``: a decision's outcome or an
+      intervention in the Record). It is measured exactly as an influence is;
+    * **formula** — exact by definition (``formula``, in words): not an association, so nothing is measured, and a
+      reader is told so.
+
+    An association is never a cause: the platform words it by mechanism wherever it is read, and the departure gate
+    already holds causal language that has no licence. Lives in the overrides tree (``impact/<id>.yaml``) with what its
+    measurement recorded, like a process.
+    """
+    id: str
+    display_name: str = ""
+    description: str = ""
+    owner: str = ""
+    upstream: str
+    downstream: str
+    mechanism: Literal["influence", "validated", "formula"] = "influence"
+    formula: str = ""
+    evidence: str = ""
+    #: Read only the downstream objects whose moment falls in the last N days of the data (its own clock). None: all.
+    window_days: Optional[int] = None
+    origin: Literal["human", "model", "pack"] = "human"
+    provenance: str = ""
+    #: Resolved on declaration: the downstream promise's lead object, and the link path from it to the upstream
+    #: promise's (empty when both are kept per the same object), and whether that path crosses a to-many link.
+    lead: str = ""
+    path: str = ""
+    to_many: bool = False
+    #: Measured (influence and validated) — None until counted. ``objects``: the lead objects that reached the
+    #: downstream stage with its promise in force (in the window); of them ``upstream_broke`` and ``upstream_kept``,
+    #: each with its downstream breach rate; ``lag_days``: the median days from the upstream stage's moment to the
+    #: downstream's, when both are moments of the lead object.
+    objects: Optional[int] = None
+    upstream_broke: Optional[int] = None
+    upstream_kept: Optional[int] = None
+    rate_when_broke: Optional[float] = None
+    rate_when_kept: Optional[float] = None
+    lag_days: Optional[float] = None
+    window: str = ""
+    as_of: str = ""
+    verified: Optional[bool] = None
+    flags: list[str] = Field(default_factory=list)
+    note: str = ""
+    measured_at: str = ""
+
+
+class ActionParameter(BaseModel):
+    """A typed, named input to a QueryTemplate *or* to a declared, governed write action.
+
+    Deliberately NOT renamed alongside QueryTemplate: this one type is shared by the
+    read-side template (``QueryTemplate.parameters``) and the write-surface unit's
+    ``params`` (the declared-action model below), and "action" is still the right word
+    for the latter. Naming it ``QueryTemplateParameter`` would mislabel every declared
+    write-action parameter.
+
+    Parameters are extracted from {placeholder} tokens in the sql_template.
+    Data type is inferred from column profiles where possible; falls back to VARCHAR.
+    """
+    name: str                           # matches {name} in sql_template
+    display_name: str = ""             # "Customer ID", "Start Date"
+    data_type: str = "VARCHAR"         # SQL type: "INTEGER", "VARCHAR", "DATE", "NUMERIC"
+    required: bool = True
+    description: str = ""
+    default_value: Optional[str] = None  # serialised as string; cast at runtime
+    #: ON-4 — ``value`` is a typed scalar. ``object`` names ONE object of ``object_type`` (an ON-1
+    #: object type), passed as ``"<Type>:<key>"``; it is read live when the action is validated or
+    #: run, and its properties reach the submission criteria as ``<param>.<property>``.
+    kind: Literal["value", "object"] = "value"
+    object_type: str = ""
+
+
+class QueryTemplate(BaseModel):
+    """A reusable, governed SQL template over one entity — read-only, never a write.
+
+    Was ``OntologyAction``. It never acted on anything: it is a parameterized SELECT with
+    business rules attached, which is what the planner reuses instead of re-deriving the
+    query. "Action" now means exactly one thing (a governed write to the data), so this
+    type had to give the word back — the declared-action model below is the write surface.
+
+    The persisted spelling is frozen: these live under ``OntologyGraph.actions`` in the
+    JSON cache and under ``data/learned_actions.json``, and ``action_type`` / ``origin``
+    are stored values. Only the Python symbol moved.
+    """
+    id: str                                    # "get_active_orders"
+    display_name: str
+    description: str
+    entity: str                                # entity this template queries
+    action_type: Literal["filter", "compute", "traverse", "aggregate", "validate"]
+    sql_template: str                          # SQL with optional {param} placeholders
+    parameters: list[ActionParameter] = Field(default_factory=list)
+    business_rules_enforced: list[str] = Field(default_factory=list)
+    returns: str                               # description of what the SQL returns
+    source_table: str                          # primary table this queries
+
+    # Provenance — how this template came to exist.  Additive, non-breaking:
+    #   structural — derived by the ontology builder from schema shape (default)
+    #   learned    — crystallized from a repeated high-confidence investigation
+    #   manual     — authored/edited by a user
+    # Learned templates live in a separate {conn}:{schema}-keyed store
+    # (data/learned_actions.json) that survives ontology rebuilds, and are
+    # overlaid into the graph at read time.
+    origin: Literal["structural", "learned", "manual"] = "structural"
+    # How many times a learned skill has been reused — feeds per-skill autonomy.
+    usage_count: int = 0
+
+
+# ── Wave K: declared, governed actions (the kinetic plane) ───────────────────────────
+# A KineticAction is DISTINCT from QueryTemplate (above, a read-side SQL-template shortcut)
+# and from the notification ActionTrigger (an outbound webhook). It is the write-surface unit:
+# typed parameters + submission criteria + graduated approval, composing the other two. It
+# never mutates source data — its `kind` is an annotation, a side effect, or a governed read
+# query. Declared by a human in the per-connection ontology overlay (overrides.py), not built.
+
+class SubmissionCriterion(BaseModel):
+    """A deterministic precondition on a KineticAction's parameters.
+
+    ``expr`` is a restricted predicate over the action's params, evaluated DETERMINISTICALLY by
+    the Wave-K executor (K2) — never by a model. ``message`` is the AUTHORED failure text shown
+    VERBATIM to the human AND the LLM when the criterion fails, so it is a required, non-empty
+    string that must never be paraphrased anywhere in the pipeline. A criterion missing either
+    field fails validation, which rejects the whole action at parse — it never reaches the graph."""
+    expr: str = Field(min_length=1)
+    message: str = Field(min_length=1)
+
+
+class SideEffect(BaseModel):
+    """A declared consequence of a KineticAction, dispatched by the executor (K2) through an
+    existing primitive: ``notify`` with a ``destination`` → a destination saved in Notifications, through
+    ``notifications.fire_action`` (its delivery log is the platform's record of it); ``notify`` with a ``url``, and
+    ``webhook`` → AUGHOR's envelope posted to that URL; ``trigger_investigation`` → ``runners.investigation`` (H5),
+    which submits it as a supervised kernel job. ``config`` is
+    opaque here; the executor validates it per kind — for ``trigger_investigation`` it carries the
+    ``question`` (``{param}`` placeholders filled from the action's declared parameters) and
+    optionally ``connection_id`` / ``schema_name`` / ``agent_id``."""
+    #: DS-13 — ``http`` is the declarative custom component: a real call to a vendor's own
+    #: API, described rather than coded. ``webhook`` posts AUGHOR's envelope
+    #: (``{action, kind, params, config}``) to a URL, which is right for a receiver written
+    #: for us and useless for one that was not — PagerDuty wants PagerDuty's body. ``http``
+    #: carries method, headers, an encrypted auth header and a body TEMPLATE, so the same
+    #: plane that governs a declared write can now perform one against a service nobody
+    #: here wrote an adapter for. Still no ``exec``: a template is filled, never evaluated.
+    kind: Literal["notify", "webhook", "trigger_investigation", "http"]
+    config: dict = Field(default_factory=dict)
+    #: Arc OC-6 — ``writeback``: the one call that must succeed BEFORE the action's edits are written (its failure
+    #: leaves everything unwritten); ``after`` (default): sent once the edits are written — through the outbox.
+    lane: Literal["after", "writeback"] = "after"
+
+
+#: DS-13 — the config keys of an ``http`` side effect that hold a CREDENTIAL.
+#:
+#: Encrypted on the way into an override file and masked on the way out, which is the same
+#: arrangement `ProviderApp.client_secret` and the Slack bot tokens already use. It matters
+#: more here than in either: an ontology override is a FILE, and files in this repo are
+#: tracked. Ciphertext under ``AUGHOR_SECRET_KEY`` — which is not in git — is what makes a
+#: declared PagerDuty component safe to commit alongside the entity it belongs to.
+HTTP_SECRET_FIELDS = ("auth_secret",)
+
+
+def encrypt_action_secrets(fields: dict, previous: Optional[dict] = None) -> dict:
+    """Encrypt the credentials in an authored action, carrying forward unchanged ones.
+
+    A form that shows a masked secret sends the MASK back when the person edits the
+    description and not the key. Storing that would replace the credential with a row of
+    bullets and break the component at 03:00 — the edit-form trap this codebase has met on
+    every secret-bearing record it owns. A masked or empty incoming value therefore keeps
+    what is already stored, and only a genuinely new value is encrypted.
+    """
+    from aughor.secretvault import encrypt_secret, is_encrypted, is_masked
+
+    prior = {}
+    for se in (previous or {}).get("side_effects", []) or []:
+        if isinstance(se, dict):
+            prior[str(se.get("kind", ""))] = se.get("config") or {}
+
+    out = dict(fields)
+    effects = []
+    for se in out.get("side_effects", []) or []:
+        if not isinstance(se, dict) or se.get("kind") != "http":
+            effects.append(se)
+            continue
+        cfg = dict(se.get("config") or {})
+        for key in HTTP_SECRET_FIELDS:
+            value = cfg.get(key)
+            if value is None or is_masked(value) or value == "":
+                kept = (prior.get("http") or {}).get(key)
+                if kept:
+                    cfg[key] = kept
+                else:
+                    cfg.pop(key, None)
+            elif not is_encrypted(value):
+                cfg[key] = encrypt_secret(str(value))
+        effects.append({**se, "config": cfg})
+    if "side_effects" in out:
+        out["side_effects"] = effects
+    return out
+
+
+def mask_action_secrets(dumped: dict) -> dict:
+    """The API-facing form of a declared action: credentials masked, never returned.
+
+    Masked rather than dropped, unlike `Connection`'s token fields, and the difference is
+    the surface: this feeds an EDIT form, which must be able to show that a credential is
+    set without being able to read it. A dropped field would make "no key" and "a key you
+    may not see" look identical, and the author would re-enter it every time.
+    """
+    from aughor.secretvault import mask_secret
+
+    out = dict(dumped)
+    effects = []
+    for se in out.get("side_effects", []) or []:
+        if not isinstance(se, dict) or se.get("kind") != "http":
+            effects.append(se)
+            continue
+        cfg = dict(se.get("config") or {})
+        for key in HTTP_SECRET_FIELDS:
+            if cfg.get(key):
+                cfg[key] = mask_secret(str(cfg[key]))
+        effects.append({**se, "config": cfg})
+    if "side_effects" in out:
+        out["side_effects"] = effects
+    return out
+
+
+class ObjectEdit(BaseModel):
+    """ON-4 — one property an ``annotate`` action sets on an object it takes.
+
+    Written to the edits overlay keyed ``(object_type, key, property)`` and merged onto that object
+    at read time; the source row is never touched. ``value`` and ``note`` are templates filled from
+    the action's declared parameters (``{reason}``), so what an accept writes is declared by the
+    author, never improvised by whoever proposed it."""
+    object: str = Field(min_length=1)        # the action's `object` parameter this edit lands on
+    property: str = Field(min_length=1, pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
+    value: str = ""
+    note: str = ""
+
+
+class Verification(BaseModel):
+    """Phase 4 of the 2027 study (§M) — the READ that proves a declared action's change took effect:
+    a statement over the action's declared parameters (``{order_id}``), run through the ordinary
+    query door after dispatch. ``expects`` says how its result is read: ``rows`` (the read returns
+    at least one row), ``no_rows`` (it returns none), or ``value`` (its first cell equals ``value``,
+    compared as text). A side-effect action with no verification cannot be declared."""
+    sql: str = Field(min_length=1)
+    expects: Literal["rows", "no_rows", "value"] = "rows"
+    value: str = ""
+    note: str = ""
+
+
+class Undo(BaseModel):
+    """Phase 4 (§M) — the compensating action and its window: ``action_id`` names another declared
+    action that reverses or compensates this one, ``window_hours`` how long the undo stays open
+    (0 = no limit), ``params`` how this action's parameters map onto the undo's (templates over
+    the declared parameters). An action declared without an undo is declared ``irreversible`` by
+    name, and an irreversible action never passes L3."""
+    action_id: str = Field(min_length=1)
+    window_hours: float = 0.0
+    params: dict = Field(default_factory=dict)
+    note: str = ""
+
+
+class KineticAction(BaseModel):
+    """A declared, governed action — the Wave K write-surface unit (see the block comment above)."""
+    id: str
+    display_name: str = ""
+    description: str = ""
+    entity: str = ""                              # optional owning entity id
+    kind: Literal["annotate", "side_effect", "query"]
+    params: list[ActionParameter] = Field(default_factory=list)
+    rule: str = ""                                # SQL template (kind="query"); empty otherwise
+    submission_criteria: list[SubmissionCriterion] = Field(default_factory=list)
+    side_effects: list[SideEffect] = Field(default_factory=list)
+    # Risk tier for the graduated-approval gate; K2 maps this to ``govern.ActionRisk``. Default
+    # HIGH is fail-safe: an unclassified declared action requires approval, never auto-fires.
+    risk: Literal["read_only", "low", "high"] = "high"
+    # Wave R5 — may two runs of this action proceed CONCURRENTLY? Default False, and
+    # fail-safe for the same reason `risk` defaults to high: an undeclared action is not
+    # dispatchable inside a fan-out. The failure this prevents is not a crash — it is two
+    # refunds, or a webhook delivered twice, with no error anywhere and no SQL for the
+    # read-only gate to inspect. Only a genuinely independent action (a pure query, an
+    # idempotent annotate) should declare True. Checked in exactly one place:
+    # `aughor.kernel.parallel_safety.assert_dispatchable`, called from the executor.
+    parallel_safe: bool = False
+    origin: Literal["manual", "learned", "structural"] = "manual"
+    #: ON-4 — the object type this action is about, and the overlay properties an ``annotate``
+    #: action sets on the objects it takes (see ObjectEdit).
+    object_type: str = ""
+    edits: list[ObjectEdit] = Field(default_factory=list)
+    #: Arc OC-6 — a platform-owned type (backing ``platform``) a press MAKES one new object of; the action's edits on the
+    #: object ``created`` set it up ("Open a case" on an order creates a Case about it).
+    creates: str = ""
+    #: Phase 4 of the 2027 study (§M) — every declared action carries its reversibility class, the
+    #: read that verifies it and the undo that compensates it. Optional on the MODEL so an ontology
+    #: declared before phase 4 still loads; REQUIRED at the declare door for a side-effect action
+    #: (`actions/authority.declaration_problem`): "an action with no verification statement cannot
+    #: be declared", and one with no undo is declared irreversible by name or refused.
+    reversibility: Literal["", "undoable", "compensable", "irreversible"] = ""
+    verification: Optional[Verification] = None
+    undo: Optional[Undo] = None
+
+    @model_validator(mode="after")
+    def _objects_hold_together(self):
+        taken = {p.name for p in self.params if p.kind == "object"}
+        loose = [p.name for p in self.params if p.kind == "object" and not p.object_type.strip()]
+        if loose:
+            raise ValueError(f"object parameter {', '.join(loose)} must name its object_type")
+        if self.edits and self.kind not in ("annotate", "side_effect"):
+            raise ValueError("only an annotate or a side-effect action declares edits")
+        if sum(1 for se in self.side_effects if se.lane == "writeback") > 1:
+            raise ValueError("an action names at most one writeback — the call its edits wait on")
+        for edit in self.edits:
+            if edit.object == "created" and self.creates:
+                continue
+            if edit.object not in taken:
+                raise ValueError(f"the edit setting '{edit.property}' lands on '{edit.object}', "
+                                 "which is not one of this action's object parameters")
+        return self
+
+
+class CoreClaim(BaseModel):
+    """One claim from an industry map (a pack's `ontology.yaml`), evaluated against THIS
+    graph and data (§3.15 ON-0a). Tiers: `expected` (declared, not yet measurable here),
+    `measured-true`, `measured-false` (the data contradicts the core — the data wins),
+    `human` (an override settled it). Only a `measured-true` claim of a pack deployed on the
+    connection reaches a prompt (the explorer's source catalogue); every other tier is shown in
+    the panel and rendered nowhere — see `aughor/packs/ontology_map.py`."""
+    #: ON-9 adds `process` (a process the core expects the type to go through) and `rule` (a definition the core
+    #: expects the business to hold — its values left for the business to fill).
+    #: 2026-10-10 adds `action` — an action the industry usually takes, offered only on an object this data holds,
+    #: inert until a person declares it (`aughor/packs/ontology_map.action_claims`).
+    kind: Literal["object", "link", "lifecycle", "alias", "process", "rule", "action"]
+    subject: str
+    expected: str
+    measured: Optional[str] = None
+    tier: Literal["expected", "measured-true", "measured-false", "human"] = "expected"
+    provenance: str = ""                       # "pack:<id>"
+    note: str = ""
+
+
+class OntologyGraph(BaseModel):
+    connection_id: str
+    schema_name: str = ""          # DB schema this ontology covers (e.g. "analytics", "public")
+    schema_fingerprint: str
+    #: ON-8 — `org/domain` when this is an organisation's ontology, whose types may live on several connections
+    #: (`aughor.ontology.domains.domain_graph`); "" for the graph the builder makes of one connection's schema, which
+    #: is the SOURCE CATALOGUE a business ontology draws on.
+    scope: str = ""
+    generated_at: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+    enriched: bool = False                     # True after M12b LLM enrichment pass
+    enrichment_version: int = 0               # bump when enrichment prompt/schema changes
+    validated: bool = False                    # True after M24c semantic self-validation pass
+    validation_version: int = 0               # bump when validator logic changes
+
+    entities: dict[str, OntologyEntity] = Field(default_factory=dict)
+    relationships: dict[str, OntologyRelationship] = Field(default_factory=dict)
+    #: ON-0a: the industry map's claims, evaluated here (see CoreClaim). Kept beside the
+    #: graph so a UI can show what the core expected and what the data said, per tier.
+    core_claims: list[CoreClaim] = Field(default_factory=list)
+    metrics: dict[str, OntologyMetric] = Field(default_factory=dict)
+    # Key frozen as `actions`: it is a persisted JSON key in data/ontology_cache.json and
+    # the shape of GET /ontology/actions. The TYPE is a QueryTemplate (see above).
+    actions: dict[str, QueryTemplate] = Field(default_factory=dict)
+    # Wave K: human-declared governed actions, overlaid at read time (kept separate from the
+    # read-side `actions` dict above so the two "action" concepts never collide). Additive —
+    # defaults empty, so an old JSON-cached graph deserialises unchanged.
+    kinetic_actions: dict[str, KineticAction] = Field(default_factory=dict)
+    interfaces: dict[str, OntologyInterface] = Field(default_factory=dict)
+    #: ON-9 — the processes the business declared over this graph's types (see Process) and its named rules (see
+    #: BusinessRule), overlaid at read time from the overrides tree with what their measurement recorded. Additive —
+    #: an old cached graph deserialises with both empty.
+    processes: dict[str, Process] = Field(default_factory=dict)
+    rules: dict[str, BusinessRule] = Field(default_factory=dict)
+    #: Arc OC-5 — what one declared promise does to another (see Impact), overlaid the same way. Additive.
+    impacts: dict[str, Impact] = Field(default_factory=dict)
+
+    # Fast-lookup reverse maps
+    entity_to_tables: dict[str, list[str]] = Field(default_factory=dict)
+    table_to_entity: dict[str, str] = Field(default_factory=dict)
+    relationship_index: dict[str, list[str]] = Field(default_factory=dict)
+
+    def entity_for_table(self, table: str) -> Optional[OntologyEntity]:
+        eid = self.table_to_entity.get(table)
+        return self.entities.get(eid) if eid else None
+
+    def actions_for_entity(self, entity_id: str) -> list[QueryTemplate]:
+        return [a for a in self.actions.values() if a.entity == entity_id]
+
+    def declared_actions(self) -> list:
+        """The human-declared governed actions overlaid on this graph, in id order — the write
+        surface's roster, read without reaching into the dict every consumer used to spell out."""
+        declared = self.kinetic_actions
+        return [declared[action_id] for action_id in sorted(declared)]

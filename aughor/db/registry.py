@@ -1,0 +1,560 @@
+"""
+ConnectionRegistry — persists named DB connections to SQLite.
+
+Credentials (DSN strings) are encrypted at rest with Fernet symmetric
+encryption. The key is derived from a secret stored in .aughor_key next
+to the database, or from AUGHOR_SECRET_KEY env var.
+"""
+from __future__ import annotations
+
+import json
+import re
+import os
+import sqlite3
+import uuid
+from pathlib import Path
+
+from cryptography.fernet import Fernet, InvalidToken
+
+from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
+from aughor.db import keyfile as _keyfile
+from aughor.db.sqlite_util import resolve_db_path
+from aughor.org.context import DEFAULT_ORG_ID, current_org_id
+
+# AUGHOR_REGISTRY_DB overrides the connections registry path (mirrors the ledger's
+# AUGHOR_SYSTEM_DB). Tests point it at a temp path so the suite can NEVER mutate the real
+# data/connections.db — the harness gap that let a full-suite run empty live connections.
+# Through resolve_db_path (same semantics as the direct environ.get it replaces) so the
+# Postgres backend can name this store's schema from its default (db/backend.py).
+REGISTRY_DB = resolve_db_path(
+    "AUGHOR_REGISTRY_DB", Path(__file__).parent.parent.parent / "data" / "connections.db")
+# IN-4 — the `KEY_FILE` constant that stood here is GONE rather than re-pointed. It had no
+# readers left once `_get_fernet` moved to the shared resolver, and keeping it would have been
+# a name that lies twice: it bound at IMPORT, so it snapshotted an anchor the resolver
+# re-decides on every call, and it named one candidate path out of four. `aughor.db.keyfile`
+# owns the question; ask `keyfile.key_file()` for the answer.
+
+BUILTIN_ID = "fixture"
+POSTGRES_BUILTIN_ID = "mydb"
+SAMPLES_ID = "samples"
+WORKSPACE_ID = "workspace"  # default DuckDB-backed scratch space for file uploads
+AUGHOR_OPS_ID = "aughor_ops"  # Aughor-on-Aughor: the platform's own task_history/jobs/events
+#: Arc SH — the sheets people make, as one connection (`aughor/sheets/connection.py`).
+SHEETS_ID = "sheets"
+#: The builtin connections: their ids are the same on every install.
+_BUILTIN_IDS = frozenset({BUILTIN_ID, POSTGRES_BUILTIN_ID, SAMPLES_ID, WORKSPACE_ID, AUGHOR_OPS_ID, SHEETS_ID})
+
+
+def is_live(conn_id: str) -> bool:
+    """Whether a connection is LIVE: people edit its rows, at any age, so none of its days ever settles and no reading of
+    it may stand in for reading it again (Arc SH, SH-6: "a sheet is live: it never settles, and caches read it fresh").
+    The Sheets connection, alone. The one answer the result cache, the Briefing's range and its measures read."""
+    return conn_id == SHEETS_ID
+
+
+def _aughor_ops_available() -> bool:
+    """The self-investigation connection exists only when the span table is being
+    written (flag ``obs.task_table``) — no point pointing an investigator at an
+    always-empty table. Reads through the runtime flag so an operator toggle
+    surfaces/hides it live."""
+    try:
+        return True
+    except Exception:
+        return False
+
+
+def _postgres_builtin_dsn() -> str:
+    """Read at call time so .env loaded by the API startup is picked up."""
+    return os.getenv("AUGHOR_DEFAULT_POSTGRES_DSN", "")
+
+
+def _get_fernet() -> Fernet:
+    key_env = os.getenv("AUGHOR_SECRET_KEY")
+    if key_env:
+        return Fernet(key_env.encode())
+    # One resolver, shared with `secretvault` — the two used to compute this path separately,
+    # from anchors a different number of `.parent` hops apart, with no override on either.
+    return Fernet(_keyfile.read_or_create_key())
+
+
+def _encrypt(value: str) -> str:
+    return _get_fernet().encrypt(value.encode()).decode()
+
+
+class ConnectionKeyMismatch(Exception):
+    """A registered connection's stored credentials cannot be decrypted with the current key.
+
+    The operator's error, not an internal one — the same shape as `llm.provider.NoModelConfigured`.
+    Measured 2026-09-21: `.env` lost its `AUGHOR_SECRET_KEY`, every one of 7 connections became
+    undecryptable, and each request that opened one came back `500 {"error": "internal_error"}` —
+    correct to fail, but it hid the one cause the operator could fix behind a request id.
+
+    Deliberately NOT a `KeyError`: routes turn `KeyError` into "404 Connection not found", which
+    would send the operator looking for a connection that is right there. The message names the
+    connection and the fix and carries no secret — never the key, never the DSN.
+    """
+
+    def __init__(self, conn_id: str, name: str = "") -> None:
+        self.conn_id, self.name = conn_id, name
+        label = f"{name!r} ({conn_id})" if name else repr(conn_id)
+        super().__init__(
+            f"Connection {label} has stored credentials that cannot be decrypted: the encryption "
+            "key does not match the one they were saved with. Restore the original "
+            "AUGHOR_SECRET_KEY (or data/.aughor_key); a changed key makes saved connections "
+            "undecryptable.")
+
+
+def _decrypt(value: str) -> str:
+    return _get_fernet().decrypt(value.encode()).decode()
+
+
+# Schema evolution runs through the versioned migration framework (DATA-05). The
+# base table below is v1; each later change is a Migration(version>=2). Migrations
+# must stay ADDITIVE (see aughor/db/migrations.py) so a code rollback is always safe.
+_MIGRATIONS = [
+    Migration(2, "tenant key: org_id on connections",
+              lambda c: add_column_if_missing(
+                  c, "connections", "org_id", f"TEXT NOT NULL DEFAULT '{DEFAULT_ORG_ID}'")),
+]
+
+
+def _db() -> sqlite3.Connection:
+    from aughor.db.backend import connect_store
+    conn = connect_store(REGISTRY_DB)
+    conn.row_factory = sqlite3.Row
+    conn.execute(f"""
+        CREATE TABLE IF NOT EXISTS connections (
+            id         TEXT PRIMARY KEY,
+            name       TEXT NOT NULL,
+            conn_type  TEXT NOT NULL,
+            dsn_enc    TEXT NOT NULL,
+            meta       TEXT DEFAULT '{{}}',
+            org_id     TEXT NOT NULL DEFAULT '{DEFAULT_ORG_ID}'
+        )
+    """)
+    run_migrations(conn, _MIGRATIONS, store="registry")
+    return conn
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
+
+def _hidden_builtins() -> set:
+    return set(_load_settings().get("hidden_builtins", []))
+
+
+def is_registered(conn_id: str) -> bool:
+    """Whether ``conn_id`` names a connection this install holds — a builtin, or a saved one in any org. A removed
+    connection is not; what it left behind is ``purge.residue_of``'s to say."""
+    if conn_id in _BUILTIN_IDS:
+        return True
+    with _db() as conn:
+        return conn.execute("SELECT 1 FROM connections WHERE id = ?", [conn_id]).fetchone() is not None
+
+
+def list_connections(org_id: str | None = None) -> list[dict]:
+    """Return all saved connections (DSN redacted).
+
+    When identity is enforced (DATA-06), the DB-stored connections are scoped to a
+    single org: pass ``org_id`` explicitly (the caller-facing endpoint reads it from
+    the authenticated principal, which is reliable across the sync-endpoint boundary
+    where the ``current_org_id()`` contextvar is not); direct/internal callers fall
+    back to the contextvar. Shared builtins are always included."""
+    hidden = _hidden_builtins()
+    rows = []
+
+    # Always include the Workspace — a DuckDB-backed catalog that folds in the
+    # sample (ecommerce) demo tables read-only AND lets users upload their own
+    # files (CSV/Parquet/Excel/JSON) as new tables/schemas. This replaces the
+    # former separate "Sample Catalog" built-in.
+    if WORKSPACE_ID not in hidden:
+        rows.append({
+            "id": WORKSPACE_ID,
+            "name": "Workspace",
+            "conn_type": "local_upload",
+            "dsn_preview": "local://workspace/",
+            "schema_name": None,
+            "meta": {"builtin_workspace": True},
+            "builtin": True,
+        })
+
+    # Include the built-in demo fixture unless the user has removed it — and only once
+    # it has actually been seeded. Nothing creates it at boot any more (the demo is
+    # opt-in via `aughor seed`), and advertising a connection whose file is missing
+    # hands the user one that raises IOException the moment it is opened.
+    from aughor.demo.setup import fixture_db_path
+    fixture_path = fixture_db_path()
+    if BUILTIN_ID not in hidden and fixture_path.exists():
+        rows.append({
+            "id": BUILTIN_ID,
+            "name": "Fixture DB (demo)",
+            "conn_type": "duckdb",
+            "dsn_preview": str(fixture_path),
+            "meta": {},
+            "builtin": False,
+        })
+
+    # Aughor-on-Aughor — the platform's own operational tables as a queryable
+    # connection, present only while spans are being recorded (flag obs.task_table).
+    if AUGHOR_OPS_ID not in hidden and _aughor_ops_available():
+        rows.append({
+            "id": AUGHOR_OPS_ID,
+            "name": "Aughor Ops (self-investigation)",
+            "conn_type": "aughor_ops",
+            "dsn_preview": "aughor://ops/task_history",
+            "schema_name": "aughor_ops",
+            "meta": {"builtin_aughor_ops": True, "schema_name": "aughor_ops"},
+            "builtin": True,
+        })
+
+    # Arc SH — the sheets people make in Spreadsheets, as one connection.
+    if SHEETS_ID not in hidden:
+        rows.append({
+            "id": SHEETS_ID,
+            "name": "Sheets",
+            "conn_type": "sheets",
+            "dsn_preview": "sheets://",
+            "schema_name": None,
+            "meta": {"builtin_sheets": True},
+            "builtin": True,
+        })
+
+    # Include default Postgres if configured and not removed
+    if POSTGRES_BUILTIN_ID not in hidden and _postgres_builtin_dsn():
+        rows.append({
+            "id": POSTGRES_BUILTIN_ID,
+            "name": "mydb (default)",
+            "conn_type": "postgres",
+            "dsn_preview": "postgresql://***",
+            "meta": {},
+            "builtin": False,
+        })
+
+    # Tenant scoping (DATA-06): when identity is enforced, a caller sees only their
+    # own org's saved connections. The shared builtins above stay visible to all.
+    # OFF by default → current_org_id() is 'default' and every row is 'default', so
+    # the filter is a no-op and behaviour is unchanged.
+    from aughor.security.authz import require_identity_enabled
+    if require_identity_enabled():
+        _scope_org = org_id if org_id is not None else current_org_id()
+        _where, _params = "WHERE org_id = ?", [_scope_org]
+    else:
+        _where, _params = "", []
+    with _db() as conn:
+        for row in conn.execute(
+            f"SELECT id, name, conn_type, meta FROM connections {_where} ORDER BY rowid", _params
+        ):
+            meta = json.loads(row["meta"] or "{}")
+            rows.append({
+                "id": row["id"],
+                "name": row["name"],
+                "conn_type": row["conn_type"],
+                "dsn_preview": _dsn_preview(row["conn_type"]),
+                "schema_name": meta.get("schema_name") or None,
+                "meta": meta,
+                "builtin": False,
+            })
+    return rows
+
+
+def _encrypt_meta(conn_type: str, meta: dict | None) -> dict:
+    """Encrypt secret connector fields that live in meta (API tokens, SA-JSON path,
+    …) — the DSN is encrypted separately. Non-secret keys pass through untouched."""
+    from aughor.connectors.registry import secret_field_keys
+    from aughor.secretvault import encrypt_secret
+    keys = secret_field_keys(conn_type)
+    return {k: (encrypt_secret(v) if k in keys and isinstance(v, str) else v)
+            for k, v in (meta or {}).items()}
+
+
+def _decrypt_meta(meta: dict | None) -> dict:
+    """Decrypt any encrypted values in meta. Legacy plaintext (and non-secret) values
+    round-trip unchanged, so this is safe on every read with no migration."""
+    from aughor.secretvault import decrypt_secret, is_encrypted
+    return {k: (decrypt_secret(v) if is_encrypted(v) else v) for k, v in (meta or {}).items()}
+
+
+def add_connection(name: str, conn_type: str, dsn: str, meta: dict | None = None,
+                   workspace_id: str | None = None) -> str:
+    conn_id = str(uuid.uuid4())[:8]
+    with _db() as conn:
+        conn.execute(
+            "INSERT INTO connections (id, name, conn_type, dsn_enc, meta, org_id) VALUES (?, ?, ?, ?, ?, ?)",
+            [conn_id, name, conn_type, _encrypt(dsn), json.dumps(_encrypt_meta(conn_type, meta)), current_org_id()],
+        )
+        conn.commit()
+    # Membership is what makes the connection VISIBLE: `accessible_catalog_ids()`
+    # skips any connection no workspace tracks, so without this the catalogue stays
+    # empty until something calls `GET /workspaces`. Placed here, beside the INSERT,
+    # for the same reason the delete-side cleanup lives in `delete_connection` — it
+    # covers every add path rather than only the HTTP route.
+    try:
+        from aughor.workspace.store import join_connection
+        join_connection(conn_id, workspace_id)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "workspace membership on add is best-effort; the startup "
+                      "ensure_default_workspace repairs what this misses",
+                 counter="registry.workspace.membership")
+    return conn_id
+
+
+def get_meta(conn_id: str) -> dict:
+    """Return the metadata dict stored for a connection (e.g. schema_name)."""
+    if conn_id == SAMPLES_ID:
+        return {"builtin_samples": True, "schema_name": "ecommerce"}
+    if conn_id == AUGHOR_OPS_ID:
+        return {"builtin_aughor_ops": True, "schema_name": "aughor_ops"}
+    if conn_id == SHEETS_ID:
+        return {"builtin_sheets": True}
+    if conn_id == WORKSPACE_ID:
+        from aughor.demo.setup import samples_db_path
+        samples_path = samples_db_path()
+        meta = {"builtin_workspace": True}
+        if samples_path.exists():
+            # Fold the sample ecommerce tables into the Workspace (read-only).
+            meta["seed_duckdb"] = str(samples_path)
+        return meta
+    if conn_id in (BUILTIN_ID, POSTGRES_BUILTIN_ID):
+        # Builtins store settings in the settings file
+        return _load_settings().get(conn_id, {})
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT meta FROM connections WHERE id = ?", [conn_id]
+        ).fetchone()
+    if not row:
+        return {}
+    return _decrypt_meta(json.loads(row["meta"] or "{}"))
+
+
+def get_connection_org(conn_id: str) -> str | None:
+    """The org that owns a connection, or None when unknown (builtins / missing id).
+
+    Ownership of derived resources (investigations, canvases) resolves THROUGH the
+    connection's org — the investigations table itself carries no org_id (DATA-06).
+    Returns None for the shared builtins (fixture/samples/workspace), which are not
+    org-scoped, so an owner-check over them is a no-op.
+    """
+    if not conn_id:
+        return None
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT org_id FROM connections WHERE id = ?", [conn_id]
+        ).fetchone()
+    return row["org_id"] if row else None
+
+
+from aughor.db.home import rehome as _rehome  # noqa: E402 — IN-4: the data home, once migrated
+_SETTINGS_PATH = Path(os.environ.get("AUGHOR_CONNECTION_SETTINGS")
+                      or _rehome(Path(__file__).parent.parent.parent / "data" / "connection_settings.json"))
+
+
+def _load_settings() -> dict:
+    try:
+        if _SETTINGS_PATH.exists():
+            return json.loads(_SETTINGS_PATH.read_text())
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "connection-settings read is best-effort; empty defaults used",
+                 counter="registry.settings.read")
+    return {}
+
+
+def _save_settings(s: dict) -> None:
+    try:
+        _SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _SETTINGS_PATH.write_text(json.dumps(s, indent=2))
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "connection-settings write is non-fatal; retried on next update",
+                 counter="registry.settings.write")
+
+
+#: PENDING item 14 — a connection's SCOPE KEY: a stable, readable name ("luxexperience", "olist")
+#: that shipped declarations are filed under, so they reach the connection whatever random id this
+#: install minted for it. Lowercase letters, digits, "_" and "-"; never "=" (the overrides tree's
+#: `org=` / `key=` segments are how a non-connection scope can never collide with one).
+SCOPE_KEY_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+
+
+def scope_key_of(conn_id: str) -> str:
+    """The connection's scope key, or "" when it has none. A person sets it in the connection's
+    settings (`PUT /connections/{id}/settings`); a builtin connection's id already is stable, so it
+    needs none."""
+    if not conn_id or conn_id in _BUILTIN_IDS:
+        return ""
+    key = str(get_connection_settings(conn_id).get("scope_key") or "").strip().lower()
+    return key if SCOPE_KEY_PATTERN.match(key) else ""
+
+
+def scope_keys() -> dict[str, str]:
+    """Every connection this install holds that has a scope key → that key. A removed connection's settings can
+    outlive it until its purge's residue sweep; it is not listed."""
+    out: dict[str, str] = {}
+    for conn_id, settings in _load_settings().items():
+        if not isinstance(settings, dict):
+            continue                                   # `hidden_builtins` and the like, not a connection's
+        key = scope_key_of(conn_id)
+        if key and is_registered(conn_id):
+            out[conn_id] = key
+    return out
+
+
+def get_connection_settings(conn_id: str) -> dict:
+    """Return per-connection settings (refresh schedule, etc.)."""
+    return _load_settings().get(conn_id, {})
+
+
+def update_connection_settings(conn_id: str, updates: dict) -> dict:
+    """Merge updates into per-connection settings and persist."""
+    settings = _load_settings()
+    existing = settings.get(conn_id, {})
+    existing.update(updates)
+    settings[conn_id] = existing
+    _save_settings(settings)
+    # Settings can change schema/DSN behaviour — drop pooled connections.
+    try:
+        from aughor.db.pool import evict_conn
+        evict_conn(conn_id)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "pool eviction after settings change is best-effort; stale conn self-heals",
+                 counter="registry.pool.evict")
+    return existing
+
+
+def get_conn_type(conn_id: str) -> str:
+    """The connector TYPE for a connection, without decrypting anything.
+
+    `get_dsn` is the only way this was previously askable, and it does two things a caller
+    that wants the type alone should not have to pay for: it decrypts the DSN (which needs
+    `AUGHOR_SECRET_KEY`, so a metadata question fails on an install that never set one), and
+    it raises for a builtin that is present-but-unavailable. Neither condition changes what
+    TYPE a connection is — `aughor_ops` is an `aughor_ops` connection whether or not the
+    task table is enabled — so this answers the narrow question narrowly.
+
+    Raises `KeyError` for an id that does not exist, matching `get_dsn`.
+    """
+    builtin = {
+        SAMPLES_ID: "duckdb",
+        WORKSPACE_ID: "local_upload",
+        AUGHOR_OPS_ID: "aughor_ops",
+        SHEETS_ID: "sheets",
+        BUILTIN_ID: "duckdb",
+        POSTGRES_BUILTIN_ID: "postgres",
+    }.get(conn_id)
+    if builtin:
+        return builtin
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT conn_type FROM connections WHERE id = ?", [conn_id]
+        ).fetchone()
+    if not row:
+        raise KeyError(f"Connection {conn_id!r} not found")
+    return str(row["conn_type"])
+
+
+def get_dsn(conn_id: str) -> tuple[str, str]:
+    """Return (conn_type, plain_dsn) for the given connection ID."""
+    if conn_id == SAMPLES_ID:
+        from aughor.demo.setup import samples_db_path
+        return "duckdb", str(samples_db_path())
+    if conn_id == WORKSPACE_ID:
+        return "local_upload", "local://"
+    if conn_id == SHEETS_ID:
+        return "sheets", "sheets://"
+    if conn_id == AUGHOR_OPS_ID:
+        if not _aughor_ops_available():
+            raise KeyError("aughor_ops is available only when obs.task_table is enabled")
+        from aughor.kernel.ledger import Ledger
+        return "aughor_ops", str(Ledger.default().path)
+    if conn_id == BUILTIN_ID:
+        from aughor.demo.setup import fixture_db_path
+        return "duckdb", str(fixture_db_path())
+    if conn_id == POSTGRES_BUILTIN_ID:
+        if not _postgres_builtin_dsn():
+            raise KeyError("Default Postgres connection is not configured (set AUGHOR_DEFAULT_POSTGRES_DSN)")
+        return "postgres", _postgres_builtin_dsn()
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT conn_type, dsn_enc, name FROM connections WHERE id = ?", [conn_id]
+        ).fetchone()
+    if not row:
+        raise KeyError(f"Connection {conn_id!r} not found")
+    try:
+        dsn = _decrypt(row["dsn_enc"])
+    except InvalidToken as exc:
+        raise ConnectionKeyMismatch(conn_id, row["name"] or "") from exc
+    return row["conn_type"], dsn
+
+
+def delete_connection(conn_id: str) -> bool:
+    """Delete a connection, or *hide* a builtin (which is restorable). Returns True
+    when the row was genuinely removed — the caller's signal that the connection's
+    derived intelligence should be purged (a hidden builtin keeps its artifacts)."""
+    if conn_id == SAMPLES_ID:
+        raise ValueError("The Sample Catalog cannot be deleted.")
+    if conn_id == WORKSPACE_ID:
+        raise ValueError("The Workspace cannot be deleted.")
+    if conn_id == SHEETS_ID:
+        raise ValueError("The Sheets connection holds every sheet; remove a sheet from Spreadsheets instead.")
+    deleted = conn_id not in (BUILTIN_ID, POSTGRES_BUILTIN_ID)
+    if not deleted:
+        # Hide the builtin so it won't reappear on restart
+        settings = _load_settings()
+        hidden = set(settings.get("hidden_builtins", []))
+        hidden.add(conn_id)
+        settings["hidden_builtins"] = list(hidden)
+        _save_settings(settings)
+    else:
+        with _db() as conn:
+            conn.execute("DELETE FROM connections WHERE id = ?", [conn_id])
+            conn.commit()
+    # Evict any cached profiles for this connection. Emitted via the platform
+    # ingestion/event seam so this module (platform db) never imports the agent;
+    # the agent registers the "connection_invalidated" sink (profile-cache evict).
+    try:
+        from aughor.kernel.registries.ingestion import ingest
+        ingest("connection_invalidated", conn_id=conn_id)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "profile-cache invalidation on delete is best-effort; stale entries expire",
+                 counter="registry.profile_cache.invalidate")
+    # Drop materialized-cache rows for this connection — they can never be served
+    # again once the connection is gone, and would otherwise linger until TTL.
+    try:
+        from aughor.db.matcache import invalidate as _matcache_invalidate
+        _matcache_invalidate(conn_id)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "matcache invalidation on delete is best-effort; rows expire on schedule",
+                 counter="registry.matcache.invalidate")
+    # Evict pooled physical connections — the connection no longer exists.
+    try:
+        from aughor.db.pool import evict_conn
+        evict_conn(conn_id)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "pool eviction on delete is best-effort; the connection no longer exists",
+                 counter="registry.pool.evict")
+    # Drop the id from every workspace that held it. Membership referenced the
+    # registry and nothing removed it here, so a deleted connection stayed a member
+    # forever — and since every workspace-scoped picker intersects membership with
+    # the live registry, those ghosts are invisible until they are ALL that is left,
+    # at which point the workspace renders as having no connections at all.
+    # Only on a genuine delete: hiding a builtin keeps its artifacts, and its
+    # membership should survive a later restore.
+    if deleted:
+        try:
+            from aughor.workspace.store import drop_connection_everywhere
+            drop_connection_everywhere(conn_id)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "workspace membership cleanup on delete is best-effort; "
+                          "the startup prune repairs what this misses",
+                     counter="registry.workspace.membership")
+    return deleted
+
+
+def _dsn_preview(conn_type: str) -> str:
+    from aughor.connectors.registry import DSN_PREVIEWS
+    return DSN_PREVIEWS.get(conn_type, conn_type)

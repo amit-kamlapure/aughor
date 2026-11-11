@@ -1,0 +1,176 @@
+"""Org / workspace settings — identity, localization, and appearance.
+
+Aughor is single-tenant with a multi-Workspace model. These settings follow a
+HYBRID scope: an app-wide ``OrgSettings`` singleton holds the defaults, and any
+Workspace may override a subset (workspace override > app default > model default).
+The same model shape is used for the singleton AND for the resolved *effective*
+settings of a workspace.
+
+Override-wins over inference: ``industry`` here, WHEN SET, is authoritative over the
+per-connection value ``BusinessProfile`` infers from the data (the user's "org setting
+is authoritative" choice). It defaults to ``""`` ( = "not set — use the inferred value")
+so merely having a settings object never silently clobbers good inference.
+
+``currency_code`` is the ONE exception, narrowed 2026-09-23. It stays authoritative for
+everything that DESCRIBES the organisation — ``org_context`` still says "reports in EUR" —
+but it no longer decides the symbol printed against a figure read out of a warehouse.
+Nothing in this tree converts currency, so a reporting preference applied to an
+unconverted number is a relabel, and a EUR workspace put euro signs on theLook's dollars.
+``store.data_currency`` has the rule (a person's confirmation per dataset labels a figure); when a converter exists this can be revisited.
+"""
+from __future__ import annotations
+
+from typing import Literal, Optional
+
+from pydantic import BaseModel, Field, field_validator
+
+
+class Priority(BaseModel):
+    """CB-6 — one thing the organisation is trying to do this quarter, written by a person: the
+    metric it names, the target, which way is good, by when. Triage counts a finding that bears
+    on one; the Briefing says so. Never inferred — people write these (§6 item 20's rule)."""
+    metric: str = Field(description="The metric the goal names, as people say it: 'return rate', 'net revenue'")
+    target: str = Field(default="", description="The target, as written: '< 8%', '£1.2M', 'down 10%'")
+    direction: Literal["", "up", "down"] = Field(default="", description="Which way is good")
+    by: str = Field(default="", description="By when, as written: 'Q4', '2026-12-31'")
+    note: str = Field(default="", description="Why it matters, one line")
+
+
+class OrgSettings(BaseModel):
+    """App-wide organization settings (the singleton) and the shape of a
+    workspace's resolved effective settings."""
+
+    # ── Identity ──
+    company_name: str = Field(default="", description="Display name of the company/organization")
+    website: str = Field(default="", description="Primary website URL, e.g. 'https://acme.com'")
+    hq_location: str = Field(default="", description="HQ location, e.g. 'London, UK' or 'United States'")
+    industry: str = Field(
+        default="",
+        description=(
+            "Industry/vertical. When set, AUTHORITATIVE over the industry that "
+            "BusinessProfile infers per connection. Empty = use the inferred value."
+        ),
+    )
+
+    # ── Localization ──
+    currency_code: str = Field(
+        default="",
+        description=(
+            "ISO 4217 reporting currency, e.g. 'GBP'. Describes the ORGANISATION and is "
+            "stated as such (org_context: 'reports in GBP'). It does NOT relabel figures "
+            "read from a warehouse — nothing converts; a figure carries the currency a "
+            "person confirmed for its dataset (store.data_currency). Empty = unset."
+        ),
+    )
+    timezone: str = Field(default="", description="IANA timezone, e.g. 'Europe/London'. Empty = UTC.")
+    date_format: str = Field(
+        default="",
+        description="Display date format token, e.g. 'DD/MM/YYYY', 'MM/DD/YYYY', 'YYYY-MM-DD'. Empty = auto.",
+    )
+    fiscal_year_start_month: int = Field(
+        default=1, ge=1, le=12, description="Month the fiscal year starts (1=January)"
+    )
+
+    # ── Appearance ──
+    chart_palette: str = Field(
+        default="", description="Named chart palette (e.g. 'tableau', 'colorblind'); empty = theme default"
+    )
+    chat_first_home: bool = Field(
+        default=False,
+        description=(
+            "Land on the conversation instead of the workbench (CA-5 / CI-6b). Off by "
+            "default: an org that navigates by the workbench should not have its entry "
+            "point moved out from under it by an upgrade."
+        ),
+    )
+
+
+    # ── Exploration (the exploration principles §7, 2026-10-08) ──
+    exploration_monthly_tokens: int = Field(
+        default=0, ge=0,
+        description=(
+            "The organisation's monthly budget for what the Explorer spends on its own initiative, "
+            "in model tokens; 0 = none. A connection may set its own; the tighter holds. A person's "
+            "own Start is capped at what is left, and past it runs only when they say to run it anyway."
+        ),
+    )
+
+    # ── The Briefing (Arc MC, MC-6) ──
+    briefing_metric_cap: int = Field(
+        default=0, ge=0, le=60,
+        description=(
+            "How many approved headline metrics a Briefing measures, read by area in the map's order; 0 = the "
+            "platform's default, 24. Each metric costs three warehouse queries per Briefing."
+        ),
+    )
+
+    # ── What Aughor may do (ROADMAP §3.65, 2026-10-28) ──
+    # The choices an organisation rightly makes differently — data leaving the install, model work nobody asked for, a
+    # governance posture. They were flags; an admin sets them here. Unset (None) reads the environment variable of the
+    # flag each replaced (`aughor.orgsettings.allows`), so an install that ran one that way keeps it until an admin
+    # decides; set, the setting is the answer.
+    share_aggregates: Optional[bool] = Field(
+        default=None,
+        description="Share summary statistics with other installs — how often packs' claims held, never names, ids "
+                    "or values. Off by default.",
+    )
+    outside_row_model: Optional[bool] = Field(
+        default=None,
+        description="Send row text to an outside, cheaper model (TypeSafe's Jev) to judge rows before your own strong "
+                    "model. Row text leaves the install. Off by default.",
+    )
+    reason_to_read_runs: Optional[bool] = Field(
+        default=None,
+        description="Ask for a reason, recorded with who read it, before anyone reads a run's details or exports the "
+                    "ledger. Off by default.",
+    )
+    scheduled_model_work: Optional[bool] = Field(
+        default=None,
+        description="Let Aughor make model calls nobody pressed for: nightly runs of each custom agent's checked test "
+                    "questions, re-tests after reviews, and a Briefing guide redrafted after an exploration that "
+                    "ran on its own. Off by default.",
+    )
+    # Arc NV-3 (ROADMAP §3.68, 2026-11-04) — a whole-workspace read of what everyone ran there is a connection
+    # admin's choice, not the platform's: the SQL text of other people's statements is read, never their rows.
+    read_query_history: Optional[bool] = Field(
+        default=None,
+        description="Read each warehouse's own query history — the SQL people ran there — and mine it for joins, "
+                    "filters and formulas to propose. Statement text is read, never rows; nothing reaches a prompt "
+                    "until a person confirms it and it binds. Off by default.",
+    )
+    # Track D1 (2026-11-06) — a cross-source join over a source the federation engine cannot read in place (an
+    # upload, an API mirror, a bucket) COPIES that source's rows into DuckDB for the length of the session. Data
+    # stays in the warehouse by default; a copy is an admin's choice, said on the result's door trail when taken.
+    copy_rows_across_sources: Optional[bool] = Field(
+        default=None,
+        description="Copy a source's rows into the federation engine for cross-source joins, where it cannot be "
+                    "read in place. Rows leave their source for the session. Off by default.",
+    )
+
+    # ── Working memory (CB-6) ──
+    priorities: list[Priority] = Field(
+        default_factory=list,
+        description="What the organisation is trying to do this quarter — written by people, never inferred.",
+    )
+    @field_validator("priorities")
+    @classmethod
+    def _written(cls, v: list[Priority]) -> list[Priority]:
+        """A row nobody wrote in is no priority. Saving the currency on 2026-10-02 stored the Settings
+        page's empty row, and the Briefing's narrator was handed an empty "DECLARED PRIORITIES" block.
+        Dropped wherever settings are read, so a stored one goes too."""
+        return [p for p in v or [] if any(str(x).strip() for x in p.model_dump().values())]
+
+    @field_validator("currency_code")
+    @classmethod
+    def _norm_currency(cls, v: str) -> str:
+        v = (v or "").strip().upper()
+        if v and (len(v) != 3 or not v.isalpha()):
+            raise ValueError("currency_code must be a 3-letter ISO 4217 code (or empty)")
+        return v
+
+    @field_validator(
+        "company_name", "website", "hq_location", "industry", "timezone", "date_format", "chart_palette"
+    )
+    @classmethod
+    def _strip(cls, v: str) -> str:
+        return (v or "").strip()

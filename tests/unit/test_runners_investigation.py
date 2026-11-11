@@ -1,0 +1,555 @@
+"""Wave H5 — the neutral runner, and the seam it finally lets kinetic close.
+
+Two things are being pinned, and they are different kinds of claim.
+
+**Behavioural**: one runner drives the real ask path, refuses a bad persona binding BEFORE
+spending anything, submits without waiting, and never invents an id it could not know. The
+inline path — the only one that waits — is now the only one that can report a failure, and it
+does: before H5 the drained error was computed and discarded, so an inline run that errored was
+filed as ``executed``.
+
+**Structural**: this is the actual point of H5. ``automations`` and ``kinetic`` both start
+investigations; A already routes its ``kinetic_action`` effect through K's executor, so pointing
+K's ``trigger_investigation`` branch at A's engine would have inverted the dependency. The runner
+lives where neither can own it, and the tests below fail if that erodes — in either direction.
+
+Hermetic: ``build_ask_stream`` and the kernel submit seam are both faked, so no investigation, no
+LLM and no warehouse are touched.
+"""
+from __future__ import annotations
+
+import ast
+import json
+from pathlib import Path
+
+import pytest
+
+from aughor.actions.executor import execute_kinetic_action
+from aughor.ontology.models import ActionParameter, KineticAction, SideEffect
+from aughor.runners import InvestigationRequest, run_investigation
+from aughor.runners.investigation import DISPATCH_EVENT
+from aughor.custom_agents import create_agent, delete_agent, list_agents
+
+REPO = Path(__file__).resolve().parents[2]
+AUGHOR = REPO / "aughor"
+
+
+@pytest.fixture(autouse=True)
+def _clean_agents():
+    yield
+    for a in list_agents():
+        delete_agent(a.id)
+
+
+@pytest.fixture(autouse=True)
+def _agents_flag_on(monkeypatch):
+    import aughor.kernel.flags as flags
+    monkeypatch.setattr(flags, "flag_enabled",
+                        lambda name: name in ("agents.user_defined", "kinetic.actions"))
+
+
+def _frames(*payloads: dict) -> list[str]:
+    return [f"data: {json.dumps(p)}\n\n" for p in payloads]
+
+
+def _fake_ask(monkeypatch, *payloads: dict):
+    """Fake the one ask door; returns the list the drained AskRequest lands in."""
+    seen: list = []
+
+    def fake_stream(req, request):
+        seen.append(req)
+
+        async def _gen():
+            for frame in _frames(*payloads):
+                yield frame
+
+        return _gen()
+
+    monkeypatch.setattr("aughor.routers.investigations.build_ask_stream", fake_stream)
+    return seen
+
+
+def _capture_submit(monkeypatch, *, job_id="job-1"):
+    """Capture the work instead of running it — the submitted path."""
+    captured: list = []
+
+    def fake_submit(kind, work, *, conn_id="", idempotency_key="", **kw):
+        captured.append({"kind": kind, "work": work, "conn_id": conn_id,
+                         "idem": idempotency_key})
+        return job_id
+
+    monkeypatch.setattr("aughor.kernel.jobs.submit_background_tick", fake_submit)
+    return captured
+
+
+def _no_loop(monkeypatch):
+    """No live loop — submit declines and the caller runs the work inline."""
+    monkeypatch.setattr("aughor.kernel.jobs.submit_background_tick",
+                        lambda *a, **kw: None)
+
+
+def _req(**kw) -> InvestigationRequest:
+    base = dict(question="why did refunds spike?", connection_id="conn-h5")
+    base.update(kw)
+    return InvestigationRequest(**base)
+
+
+# ── the runner drives the ONE ask path ───────────────────────────────────────────
+
+def test_the_work_drains_the_real_ask_door_at_deep_depth(monkeypatch):
+    submitted = _capture_submit(monkeypatch)
+    seen = _fake_ask(monkeypatch)
+
+    run = run_investigation(_req(), idempotency_key="k")
+    submitted[0]["work"]()
+
+    assert run.status == "executed" and run.job_id == "job-1"
+    assert submitted[0]["kind"] == "investigation"      # a supervised, metered kernel job
+    assert submitted[0]["conn_id"] == "conn-h5"
+    assert seen[0].question == "why did refunds spike?"
+    assert seen[0].depth == "deep"
+
+
+def test_a_submitted_run_reports_the_job_and_invents_no_receipt(monkeypatch):
+    """The honest asymmetry: at submit time the investigation does not exist yet, so its id
+    and receipt are not knowable. `basis` says so rather than the fields quietly reading as
+    'there wasn't one'."""
+    _capture_submit(monkeypatch)
+    _fake_ask(monkeypatch)
+
+    run = run_investigation(_req(), idempotency_key="k")
+
+    assert run.basis == "submitted" and run.job_id == "job-1"
+    assert run.investigation_id == "" and run.receipt_id == ""
+
+
+def test_the_inline_path_returns_the_real_ids(monkeypatch):
+    _no_loop(monkeypatch)
+    _fake_ask(monkeypatch,
+              {"type": "start", "investigation_id": "inv-77"},
+              {"type": "receipt_id", "receipt_id": "rcpt-88"})
+
+    run = run_investigation(_req(), idempotency_key="k")
+
+    assert run.status == "executed" and run.basis == "inline"
+    assert (run.investigation_id, run.receipt_id) == ("inv-77", "rcpt-88")
+
+
+def test_an_inline_run_that_errored_is_a_failure_not_an_executed_tick(monkeypatch):
+    """The defect the lift exposed: the drained error used to be computed and thrown away."""
+    _no_loop(monkeypatch)
+    _fake_ask(monkeypatch,
+              {"type": "start", "investigation_id": "inv-77"},
+              {"type": "error", "message": "connection 'conn-h5' is unreachable"})
+
+    run = run_investigation(_req(), idempotency_key="k")
+
+    assert run.status == "failed" and not run.ok
+    assert "unreachable" in run.message
+
+
+def test_an_inline_run_the_RECORD_calls_failed_is_a_failure_even_with_no_error_event(
+        monkeypatch):
+    """The Sep 6 briefing, reproduced.
+
+    An `error` event is one way a run reports failure, not the only one. Measured live:
+    an investigation hit its 900s budget, was persisted `failed` with no headline and
+    ZERO queries, and emitted NO error event — so the inline path returned `executed`
+    with an empty summary, the Slack step skipped for missing upstream data, and the run
+    was filed `fired` with failed=0. A briefing that never arrived, recorded as a success.
+
+    The stream is a proxy. The investigation row is the measure, and this path waited for
+    it, so it is already terminal by the time we look.
+    """
+    _no_loop(monkeypatch)
+    _fake_ask(monkeypatch, {"type": "start", "investigation_id": "inv-900"})
+    monkeypatch.setattr("aughor.db.history.get_investigation",
+                        lambda i: {"status": "failed", "query_count": 0})
+
+    run = run_investigation(_req(), idempotency_key="k")
+
+    assert run.status == "failed" and not run.ok
+    assert "ended failed" in run.message
+    # The row's `query_count` is written only on COMPLETION, so on a failed row it is
+    # always 0 — quoting it told the 09-16 reader "0 queries" about runs that issued dozens.
+    assert "queries" not in run.message
+
+
+@pytest.mark.parametrize("status", ["failed", "timed_out", "interrupted"])
+def test_every_non_answering_terminal_status_is_a_failure(monkeypatch, status):
+    _no_loop(monkeypatch)
+    _fake_ask(monkeypatch, {"type": "start", "investigation_id": "inv-t"})
+    monkeypatch.setattr("aughor.db.history.get_investigation",
+                        lambda i: {"status": status, "query_count": 0})
+    assert run_investigation(_req(), idempotency_key="k").status == "failed"
+
+
+def test_a_completed_record_stays_an_executed_tick(monkeypatch):
+    """The guard must not invert: a run that finished is not made a failure by this."""
+    _no_loop(monkeypatch)
+    _fake_ask(monkeypatch,
+              {"type": "start", "investigation_id": "inv-ok"},
+              {"type": "headline", "headline": "Refunds rose 4%"})
+    monkeypatch.setattr("aughor.db.history.get_investigation",
+                        lambda i: {"status": "complete", "query_count": 7})
+
+    run = run_investigation(_req(), idempotency_key="k")
+    assert run.status == "executed" and run.ok
+
+
+def test_an_unreadable_history_store_never_invents_a_failure(monkeypatch):
+    """Best-effort in ONE direction: this may only ADD a failure the stream missed. A
+    store that cannot be read must not turn a completed run into a reported one."""
+    _no_loop(monkeypatch)
+    _fake_ask(monkeypatch,
+              {"type": "start", "investigation_id": "inv-x"},
+              {"type": "headline", "headline": "Refunds rose 4%"})
+
+    def _boom(_i):
+        raise RuntimeError("history store unreadable")
+    monkeypatch.setattr("aughor.db.history.get_investigation", _boom)
+
+    run = run_investigation(_req(), idempotency_key="k")
+    assert run.status == "executed" and run.ok
+
+
+def test_the_stream_error_still_wins_and_is_reported_verbatim(monkeypatch):
+    """The record is a SECOND source, not a replacement: a stream error is more specific
+    than 'ended failed', so it is the one the reader gets."""
+    _no_loop(monkeypatch)
+    _fake_ask(monkeypatch,
+              {"type": "start", "investigation_id": "inv-e"},
+              {"type": "error", "message": "connection 'conn-h5' is unreachable"})
+    monkeypatch.setattr("aughor.db.history.get_investigation",
+                        lambda i: {"status": "failed", "query_count": 0})
+
+    run = run_investigation(_req(), idempotency_key="k")
+    assert run.status == "failed" and "unreachable" in run.message
+
+
+# ── the join a submitted run cannot return ───────────────────────────────────────
+
+def test_the_dispatch_join_is_recorded_so_a_submitted_run_is_still_traceable(monkeypatch):
+    from aughor.kernel.ledger import Ledger
+    agent = create_agent(name="Refund Analyst")
+    submitted = _capture_submit(monkeypatch)
+    _fake_ask(monkeypatch,
+              {"type": "start", "investigation_id": "inv-77"},
+              {"type": "receipt_id", "receipt_id": "rcpt-88"})
+
+    run_investigation(_req(agent_id=agent.id), idempotency_key="k",
+                      caller="automation:auto-1")
+    submitted[0]["work"]()
+
+    ev = Ledger.default().events(kind=DISPATCH_EVENT, limit=1)[0]
+    p = ev["payload"]
+    assert p["caller"] == "automation:auto-1" and p["agent_id"] == agent.id
+    assert p["investigation_id"] == "inv-77" and p["receipt_id"] == "rcpt-88"
+    assert p["ok"] is True
+
+
+# ── fail-closed: a refused persona spends nothing ────────────────────────────────
+
+def test_a_conflicting_agent_binding_refuses_before_anything_is_submitted(monkeypatch):
+    agent = create_agent(name="Finance Analyst", connection_id="conn-other")
+    submitted = _capture_submit(monkeypatch)
+    _fake_ask(monkeypatch)
+
+    run = run_investigation(_req(agent_id=agent.id), idempotency_key="k")
+
+    assert run.status == "refused" and not run.ok
+    assert "conn-other" in run.message and "conn-h5" in run.message
+    assert submitted == [], "a refused binding still submitted the work"
+
+
+# ── the kinetic seam, closed ─────────────────────────────────────────────────────
+
+def _ki_action(config: dict, **kw) -> KineticAction:
+    base = dict(
+        id="investigate_refunds", kind="side_effect",
+        params=[ActionParameter(name="order_id", data_type="VARCHAR", required=True)],
+        submission_criteria=[],
+        side_effects=[SideEffect(kind="trigger_investigation", config=config)],
+        risk="low",
+    )
+    base.update(kw)
+    return KineticAction(**base)
+
+
+def _refused(result) -> str:
+    """The press, when its one call was refused (Arc OC-6, the outbox): the action ran, the call is kept and never sent
+    again by itself, and its check waits for a person, saying why. Returns the call's error — the words a refusal says."""
+    [send] = result.outcome["outbox"]
+    assert (result.status, send["status"], result.verification["status"]) == ("executed", "dead", "waits_for_a_person")
+    assert send["error"] in result.verification["why"]
+    return send["error"]
+
+
+def test_a_declared_action_starts_an_investigation_through_the_runner(monkeypatch):
+    submitted = _capture_submit(monkeypatch, job_id="job-k")
+    seen = _fake_ask(monkeypatch)
+    action = _ki_action({"question": "why was order {order_id} refunded?"})
+
+    result = execute_kinetic_action(action, {"order_id": "A-9"}, scope="conn-h5")
+    submitted[0]["work"]()
+
+    assert result.status == "executed" and result.ok
+    out = result.outcome["side_effects"][0]
+    assert out["job_id"] == "job-k" and out["basis"] == "submitted"
+    # The declared parameter reached the question — one investigation about order A-9.
+    assert out["question"] == "why was order A-9 refunded?"
+    assert seen[0].question == "why was order A-9 refunded?"
+    assert seen[0].connection_id == "conn-h5"
+
+
+def test_two_orders_are_two_investigations(monkeypatch):
+    submitted = _capture_submit(monkeypatch)
+    _fake_ask(monkeypatch)
+    action = _ki_action({"question": "why was order {order_id} refunded?"})
+
+    execute_kinetic_action(action, {"order_id": "A-9"}, scope="conn-h5")
+    execute_kinetic_action(action, {"order_id": "B-2"}, scope="conn-h5")
+
+    assert submitted[0]["idem"] != submitted[1]["idem"], \
+        "two orders deduplicated onto one investigation"
+
+
+def test_a_question_referencing_an_undeclared_parameter_fails_loudly(monkeypatch):
+    submitted = _capture_submit(monkeypatch)
+    _fake_ask(monkeypatch)
+    action = _ki_action({"question": "why was {customer_id} refunded?"})
+
+    result = execute_kinetic_action(action, {"order_id": "A-9"}, scope="conn-h5")
+
+    assert "customer_id" in _refused(result)
+    assert submitted == [], "a question that could not be built still ran"
+
+
+def test_an_action_with_no_connection_refuses_instead_of_submitting_a_doomed_job(monkeypatch):
+    """A job submitted against connection "" would 'succeed' at submit and then quietly never
+    answer — the failure lands minutes later, inside a background job, on nobody's screen."""
+    submitted = _capture_submit(monkeypatch)
+    _fake_ask(monkeypatch)
+
+    result = execute_kinetic_action(_ki_action({"question": "q"}), {"order_id": "A-9"}, scope="")
+
+    assert "connection" in _refused(result)
+    assert submitted == []
+
+
+def test_a_refused_persona_reaches_the_caller_verbatim(monkeypatch):
+    """The K2 property: an action that could not do what it declared says so, in the
+    authored words — it does not quietly investigate as nobody."""
+    agent = create_agent(name="Finance Analyst", connection_id="conn-other")
+    submitted = _capture_submit(monkeypatch)
+    _fake_ask(monkeypatch)
+    action = _ki_action({"question": "why did refunds spike?", "agent_id": agent.id})
+
+    result = execute_kinetic_action(action, {"order_id": "A-9"}, scope="conn-h5")
+
+    said = _refused(result)
+    assert "conn-other" in said and "conn-h5" in said
+    assert submitted == []
+
+
+def test_an_investigation_cannot_be_declared_read_only(monkeypatch):
+    """H5's risk decision: starting a deep run spends the LLM budget, so `read_only` is not a
+    truthful tier for it however the overlay declares it. The floor is LOW, and the audit
+    ledger — not a comment — is where that is checked."""
+    from aughor.govern.actions import recent_audit
+    _capture_submit(monkeypatch)
+    _fake_ask(monkeypatch)
+
+    execute_kinetic_action(_ki_action({"question": "q"}, risk="read_only"),
+                           {"order_id": "A-9"}, scope="conn-h5")
+    assert recent_audit(limit=1)[0]["risk"] == "low"
+
+    # A side effect that spends nothing keeps the tier its author declared.
+    execute_kinetic_action(
+        KineticAction(id="ping", kind="annotate", risk="read_only", side_effects=[]),
+        {"table": "t", "body": "b"}, scope="conn-h5")
+    assert recent_audit(limit=1)[0]["risk"] == "read_only"
+
+
+# ── the structural claim: neither package owns the runner ────────────────────────
+
+def _imported_aughor_modules(path: Path) -> set[str]:
+    """Every `aughor.*` module this file imports, however the import is spelled."""
+    out: set[str] = set()
+    tree = ast.parse(path.read_text())
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("aughor"):
+            out.add(node.module)
+        elif isinstance(node, ast.Import):
+            out.update(a.name for a in node.names if a.name.startswith("aughor"))
+    return out
+
+
+def _py(pkg: str) -> list[Path]:
+    return [p for p in (AUGHOR / pkg).rglob("*.py") if "__pycache__" not in p.parts]
+
+
+def test_the_runner_imports_neither_of_its_callers():
+    """If this fails, the runner has grown a caller's concern and stopped being neutral —
+    the exact state H5 exists to leave behind."""
+    for path in _py("runners"):
+        offending = {m for m in _imported_aughor_modules(path)
+                     if m.startswith(("aughor.automations", "aughor.actions"))}
+        assert not offending, f"{path.name} imports its own caller: {sorted(offending)}"
+
+
+def test_kinetic_never_imports_automations():
+    """The inversion H5 refused to make. A depends on K (its `kinetic_action` effect runs
+    through K's executor); K reaching back for A's engine would close the cycle."""
+    for path in _py("actions"):
+        offending = {m for m in _imported_aughor_modules(path)
+                     if m.startswith("aughor.automations")}
+        assert not offending, (
+            f"aughor/actions/{path.name} imports {sorted(offending)} — A already depends on K, "
+            f"so this closes the cycle. Call aughor.runners instead.")
+
+
+def test_both_callers_go_through_the_runner():
+    """The other half: a private copy of the drain reappearing in either package would pass
+    the two tests above while defeating the point."""
+    for module in (AUGHOR / "automations" / "engine.py", AUGHOR / "actions" / "executor.py"):
+        assert any(m.startswith("aughor.runners") for m in _imported_aughor_modules(module)), \
+            f"{module.name} no longer runs investigations through the neutral runner"
+
+
+def test_a_streamed_headline_is_captured_from_deltas(monkeypatch):
+    """The deep path types its sentence: `headline_delta` frames with replace semantics,
+    and on some branches no plain `headline` ever follows. A drain that listened for only
+    the plain one waited for the whole run, spent the tokens, and reported no answer —
+    which reads downstream as "upstream data unavailable" and skips the step that needed
+    it. Found live, on a chain whose investigation record HAD the headline."""
+    _no_loop(monkeypatch)
+    _fake_ask(monkeypatch,
+              {"type": "start", "investigation_id": "inv-1"},
+              {"type": "headline_delta", "headline": "Order volume"},
+              {"type": "headline_delta", "headline": "Order volume dropped 93.1%"})
+
+    run = run_investigation(InvestigationRequest(question="how were sales?",
+                                                 connection_id="conn-a", wait=True))
+    assert run.status == "executed"
+    assert run.headline == "Order volume dropped 93.1%"     # the LAST delta, whole
+
+
+def test_a_plain_headline_still_wins_when_the_path_sends_one(monkeypatch):
+    """Both events mean the same thing; neither may shadow the other."""
+    _no_loop(monkeypatch)
+    _fake_ask(monkeypatch,
+              {"type": "headline_delta", "headline": "partial"},
+              {"type": "headline", "headline": "the whole answer"})
+
+    run = run_investigation(InvestigationRequest(question="q", connection_id="c",
+                                                 wait=True))
+    assert run.headline == "the whole answer"
+
+
+def test_the_investigate_paths_answer_report_carries_the_headline(monkeypatch):
+    """A deep run emits no headline frame at all — it finishes with one `answer_report`
+    and the sentence lives inside it. Two live runs (102s and 96s) came back with "" for
+    exactly this, and the step that needed the answer was skipped as if nothing upstream
+    had produced anything."""
+    _no_loop(monkeypatch)
+    _fake_ask(monkeypatch,
+              {"type": "start", "investigation_id": "inv-9"},
+              {"type": "answer_report", "investigation_id": "inv-9",
+               "answer_report": {"headline": "51 orders vs a 740.9 prior average",
+                                 "sections": []}})
+
+    run = run_investigation(InvestigationRequest(question="how were sales?",
+                                                 connection_id="conn-a", wait=True))
+    assert run.status == "executed"
+    assert run.headline == "51 orders vs a 740.9 prior average"
+    assert run.summary == "", "no executive_summary in the report means no summary — not None, not a fabrication"
+
+
+def test_the_answer_reports_executive_summary_rides_along(monkeypatch):
+    """The headline is a title; the report's executive summary is the content — the trust
+    warnings and the numbers. Measured live: a nightly briefing posted 71 characters of
+    'Revenue Analysis: …' while the ⚠ metric-drift warning sat in a 20KB report Slack
+    never saw. The drain must hand back both so a chain can post the one worth reading."""
+    _no_loop(monkeypatch)
+    _fake_ask(monkeypatch,
+              {"type": "start", "investigation_id": "inv-9"},
+              {"type": "answer_report", "investigation_id": "inv-9",
+               "answer_report": {"headline": "Revenue Analysis: September 1st",
+                                 "executive_summary": "⚠ A trust check flagged the "
+                                 "evidence… revenue was $3,405.74, a 97.98% decrease.",
+                                 "sections": []}})
+
+    run = run_investigation(InvestigationRequest(question="what changed?",
+                                                 connection_id="conn-a", wait=True))
+    assert run.status == "executed"
+    assert run.headline == "Revenue Analysis: September 1st"
+    assert run.summary.startswith("⚠ A trust check")
+
+
+def test_a_headline_only_stream_reports_no_summary(monkeypatch):
+    """`headline`/`headline_delta` frames are a sentence being typed, not a report — a
+    path that never sent an `answer_report` has no summary, and inventing one from the
+    headline would defeat the absent-means-skip contract downstream."""
+    _no_loop(monkeypatch)
+    _fake_ask(monkeypatch,
+              {"type": "headline", "headline": "the whole answer"})
+
+    run = run_investigation(InvestigationRequest(question="q", connection_id="c",
+                                                 wait=True))
+    assert run.headline == "the whole answer"
+    assert run.summary == ""
+
+
+def test_a_typed_delta_never_overwrites_the_finished_answer(monkeypatch):
+    """A report is the finished sentence; a delta is one being typed. Order on the wire
+    must not decide which survives."""
+    _no_loop(monkeypatch)
+    _fake_ask(monkeypatch,
+              {"type": "answer_report", "answer_report": {"headline": "the whole answer"}},
+              {"type": "headline_delta", "headline": "the wh"})
+
+    run = run_investigation(InvestigationRequest(question="q", connection_id="c",
+                                                 wait=True))
+    assert run.headline == "the whole answer"
+
+
+# ── the record race: a drain ending is not a reconcile committed ────────────────────────────
+
+def test_record_failure_waits_out_the_reconcile_race(monkeypatch):
+    """Measured 2026-09-22: a 900s budget kill closed the stream while the row still read
+    `running`; the runner asked once, got nothing, and filed the killed run as `executed`.
+    The verdict must WAIT for a terminal row — and then quote it."""
+    from aughor.runners import investigation as ri
+    reads = {"n": 0}
+
+    def slow_reconcile(inv_id):
+        reads["n"] += 1
+        if reads["n"] < 3:
+            return {"status": "running"}
+        return {"status": "failed",
+                "error": "Stopped at the Analyst's 900s time budget before answering."}
+    monkeypatch.setattr("aughor.db.history.get_investigation", slow_reconcile)
+    monkeypatch.setattr(ri, "_RECORD_POLL_S", 0.0)
+    why = ri.record_failure("inv1")
+    assert reads["n"] == 3, "the runner must poll past `running`, not trust the first read"
+    assert "900s time budget" in why
+
+
+def test_record_failure_still_reads_a_completed_run_as_success(monkeypatch):
+    """The wait must not manufacture failures: a completed row answers on the first read."""
+    from aughor.runners import investigation as ri
+    monkeypatch.setattr("aughor.db.history.get_investigation",
+                        lambda inv_id: {"status": "completed"})
+    assert ri.record_failure("inv2") == ""
+
+
+def test_record_failure_gives_up_at_the_deadline_without_inventing_a_verdict(monkeypatch):
+    """A row that never turns terminal inside the window yields no failure — the stream's
+    own reading stands, and nothing is fabricated."""
+    from aughor.runners import investigation as ri
+    monkeypatch.setattr("aughor.db.history.get_investigation",
+                        lambda inv_id: {"status": "running"})
+    monkeypatch.setattr(ri, "_RECORD_POLL_S", 0.0)
+    monkeypatch.setattr(ri, "_RECORD_TERMINAL_WAIT_S", 0.05)
+    assert ri.record_failure("inv3") == ""

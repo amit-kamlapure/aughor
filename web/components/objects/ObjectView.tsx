@@ -1,0 +1,828 @@
+"use client";
+
+/**
+ * ON-3 — the Standard Object View (ROADMAP §3.15): one object, read live through its backing.
+ *
+ * Zero configuration: everything on the page is what the object's type already declares and what
+ * the warehouse answers now — its properties; its links, a to-one link opening the linked object
+ * and a to-many link counted and listed a page at a time; the verified metrics compiled with this
+ * object as the filter; the findings and answers whose SQL names its key; the notes on its row;
+ * and the declared actions that take it, the key filled in. Nothing is inferred: a link the
+ * compiler refuses says why and is not followed, a refused metric shows no number, and an action
+ * is OFFERED here, never run from here (acting on objects is ON-4).
+ */
+import React, { useCallback, useEffect, useReducer, useState } from "react";
+import Link from "next/link";
+
+import { SqlResultTable } from "@/components/AugTable";
+import {
+  objectLinkRender, useKeyTitles, useObjectColumnLinks, useObjectKeyColumns,
+} from "@/components/objects/objectColumnLinks";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Masked } from "@/components/objects/Masked";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Icon } from "@/components/ui/icon";
+import { SkeletonRows } from "@/components/ui/motion";
+import { countNoun, displayCellValue, endedDay, formatCount, formatMetricValue, formatMoney, formatTableNumber, relTime } from "@/lib/format";
+import type { RetiringMark } from "@/lib/objectTypes";
+import { currencyFromColumn, currencySymbol, effectiveCurrencySymbol, isMoneyColumn, orgSettingsSnapshot, setOrgSettingsCache, subscribeOrgSettings } from "@/lib/orgSettings";
+import { getOrgSettings } from "@/lib/api";
+import { declaredActionsHref, objectHref } from "@/lib/objectLinks";
+import {
+  getEditHistory,
+  getLinkedObjects,
+  getObjectPage,
+  type EditHistoryRow,
+  type LinkedObjectsPage,
+  type ObjectAction,
+  type ObjectActionParam,
+  type ObjectCitation,
+  type ObjectLink,
+  type ObjectMetric,
+  type ObjectMissing,
+  type ObjectWithheld,
+  type ObjectNote,
+  type ObjectPage,
+  type ObjectReferrer,
+  type ObjectRefusal,
+  type ObjectTimeseries,
+  withdrawEdit,
+} from "@/lib/objects";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+
+interface Scope {
+  connectionId?: string;
+  schemaName?: string;
+}
+
+const LINKED_PAGE = 25;
+const NO_COLUMNS: string[] = [];
+const RISK_TAG: Record<string, string> = { low: "aug-tag-green", medium: "aug-tag-amber", high: "aug-tag-red" };
+
+const ROW_RULE = "1px solid var(--b1)";
+const MONO: React.CSSProperties = { fontFamily: "var(--font-mono)" };
+
+function errorText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
+/** SQL NULL arrives as the text "NULL" on the display path — no value, never the word (PENDING item 25). */
+function cellText(value: unknown): string {
+  return value == null || value === "NULL" ? "—" : displayCellValue(value);
+}
+
+// ── One currency per page ─────────────────────────────────────────────────────────
+// A metric or property is MONEY when its declared unit says so (an ISO code, a symbol, the
+// word), or when its name reads as money the way a column's does. Its currency is the one it
+// DECLARES — a unit or a name suffix like `_chf` — else the organisation's reporting currency,
+// and when the organisation has declared none the figure carries no symbol and the card says so
+// once. Before this the page printed `114.98999977111816 USD` beside `114.99 EUR` and `114.99 $`
+// for one value: three readings of one number (docs/UI_UX_STUDY_2026-09-25.md §2.6).
+const ISO_CODE_RE = /\b(USD|EUR|GBP|CHF|JPY|CNY|INR|AUD|CAD|SEK|NOK|DKK|SGD|HKD|NZD|BRL|ZAR|MXN|PLN|AED)\b/i;
+const MONEY_UNIT_RE = /[$€£¥₹]|\b(?:currency|money)\b/i;
+// A bare symbol in a unit is a declaration too: `$` says USD as plainly as the code does.
+const SYMBOL_CODE: Record<string, string> = { "$": "USD", "€": "EUR", "£": "GBP", "¥": "JPY", "₹": "INR" };
+
+function moneyOf(unit: string | null | undefined, name: string): { money: boolean; code: string | null } {
+  const u = (unit || "").trim();
+  const iso = u.match(ISO_CODE_RE);
+  if (iso) return { money: true, code: iso[1].toUpperCase() };
+  const sym = u.match(/[$€£¥₹]/);
+  if (sym) return { money: true, code: SYMBOL_CODE[sym[0]] ?? null };
+  if (MONEY_UNIT_RE.test(u)) return { money: true, code: currencyFromColumn(name) };
+  if (!u && isMoneyColumn(name)) return { money: true, code: currencyFromColumn(name) };
+  return { money: false, code: null };
+}
+
+/** The symbol a money figure wears: its own currency's, else the organisation's — "" when neither. */
+function moneySymbol(code: string | null): string {
+  return code ? currencySymbol(code) : effectiveCurrencySymbol();
+}
+
+/** Re-render when the organisation's settings land or change. The object page is its own route,
+ *  outside the shell that loads them, so it loads them itself the first time it needs them. */
+function useOrgSettingsTick(): void {
+  const [, tick] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    const off = subscribeOrgSettings(tick);
+    if (!orgSettingsSnapshot()) getOrgSettings().then(setOrgSettingsCache).catch(() => {});
+    return off;
+  }, []);
+}
+
+/** The one line a card says about currency, or null when it has nothing to say: which currency
+ *  the organisation reports in when a figure fell back to it, or that none is declared. */
+function currencyNote(items: { unit?: string | null; name: string }[]): string | null {
+  const fallbacks = items.filter(it => { const m = moneyOf(it.unit, it.name); return m.money && !m.code; });
+  if (fallbacks.length === 0) return null;
+  const code = orgSettingsSnapshot()?.currency_code || "";
+  return code
+    ? `Money is shown in ${code}, the organisation's reporting currency.`
+    : "The organisation has not declared a reporting currency, so these amounts carry no symbol.";
+}
+
+/** "a customer", "an order" — the noun as a sentence reads it. */
+function withArticle(noun: string): string {
+  return `${/^[aeiou]/i.test(noun) ? "an" : "a"} ${noun}`;
+}
+
+/** ON-3b — which property titles this page, and on what warrant: a person's declaration, a proposal from the
+ *  profile, or the key when nothing else names the object (a refuted proposal says so on hover). */
+function DisplayChip({ display }: { display: NonNullable<ObjectPage["display"]> }) {
+  const warrant = display.source === "human" ? "declared" : display.source === "proposed" ? "proposed" : "the key";
+  const measured = display.verified === true ? "measured: it names objects"
+    : display.verified === false ? "measured: it does not name objects" : "not yet measured";
+  const detail = [`Titled by ${display.property} — ${warrant}${display.source === "key" ? "" : `, ${measured}`}`, display.note]
+    .filter(Boolean).join(". ");
+  return (
+    <span className="aug-tag aug-tag-gray" title={detail} data-testid="object-display-property"
+      style={{ whiteSpace: "nowrap" }}>
+      named by <span style={MONO}>{display.source === "key" ? "its key" : display.property}</span>
+    </span>
+  );
+}
+
+/** Arc FA, FA-3 — the object's entity is marked retiring: it still reads, and the page says what replaces it and when
+ *  ("Product is retiring on Tue 1 Dec 2026 — use Brand instead"; after the day, "past its retiring date"). */
+export function RetiringChip({ typeName, mark }: { typeName: string; mark: RetiringMark }) {
+  const day = endedDay(mark.on);
+  const said = `${typeName} is ${mark.past ? `past its retiring date, ${day}` : `retiring on ${day}`} — use ${mark.successor_name} instead`;
+  return (
+    <span className="aug-fs-xs" data-testid="object-retiring" title={mark.note ? `${said}. ${mark.note}` : said}
+      style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, color: "var(--t2)", whiteSpace: "nowrap",
+               overflow: "hidden", textOverflow: "ellipsis" }}>
+      <span className="aug-tag aug-tag-amber">{mark.past ? "past its retiring date" : "retiring"}</span>
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{said}</span>
+    </span>
+  );
+}
+
+export function ObjectView({ objectType, pk, connectionId, schemaName }: {
+  objectType: string;
+  pk: string;
+  connectionId?: string;
+  schemaName?: string;
+}) {
+  const [loaded, setLoaded] = useState<ObjectPage | ObjectRefusal | ObjectMissing | ObjectWithheld | null>(null);
+  const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let live = true;
+    setLoaded(null);
+    setError("");
+    getObjectPage(objectType, pk, connectionId, schemaName)
+      .then((page) => { if (live) setLoaded(page); })
+      .catch((e: unknown) => { if (live) setError(errorText(e)); });
+    return () => { live = false; };
+  }, [objectType, pk, connectionId, schemaName, attempt]);
+
+  useEffect(() => {
+    if (loaded?.path === "object") document.title = `${loaded.type_name} ${loaded.title ?? loaded.pk} · Aughor`;
+  }, [loaded]);
+
+  const reload = useCallback(() => setAttempt((n) => n + 1), []);
+  const workbench = connectionId ? `/?conn=${encodeURIComponent(connectionId)}` : "/";
+  const toWorkbench = (
+    <Link href={workbench}><Button variant="outline" size="sm">Open the workbench</Button></Link>
+  );
+
+  let body: React.ReactNode;
+  if (error) {
+    body = (
+      <EmptyState icon="alert" title="This object could not be read"
+        action={<Button variant="outline" size="sm" onClick={() => setAttempt((n) => n + 1)}>Try again</Button>}>
+        {error}
+      </EmptyState>
+    );
+  } else if (!loaded) {
+    body = <div style={{ padding: 24 }}><SkeletonRows rows={8} /></div>;
+  } else if (loaded.path === "missing") {
+    body = <EmptyState icon="search" title={`No ${objectType} ${pk}`} action={toWorkbench}>{loaded.detail}</EmptyState>;
+  } else if (loaded.path === "withheld") {
+    body = (
+      <EmptyState icon="lock" title={`${objectType} ${pk} is withheld from you`}>
+        {/* the server's words open with the title's own; the reason after them is what this adds */}
+        {loaded.detail.replace(/^.*? is withheld from you — /, "")}
+      </EmptyState>
+    );
+  } else if (loaded.path === "refused") {
+    body = (
+      <EmptyState icon="info" title={`No entity “${objectType}” here`} action={toWorkbench}>
+        {loaded.refused}
+        {loaded.available.length > 0 && <> Entities: {loaded.available.join(", ")}.</>}
+      </EmptyState>
+    );
+  } else {
+    body = <ObjectBody page={loaded} scope={{ connectionId, schemaName }} reload={reload} />;
+  }
+
+  return (
+    <div style={{ height: "100dvh", display: "flex", flexDirection: "column", background: "var(--bg-0)", overflow: "hidden" }}>
+      <div className="aug-content-header" style={{ minWidth: 0, overflow: "hidden" }}>
+        <Link href={workbench} title="Back to the workbench">
+          <Button variant="ghost" size="xs"><Icon name="back" size={14} />Workbench</Button>
+        </Link>
+        {loaded?.path === "object" ? (
+          <>
+            <span className="aug-tag aug-tag-blue">{loaded.type_name}</span>
+            <span className="aug-fs-ui"
+              style={{ color: "var(--t1)", fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {loaded.title ?? loaded.pk}
+            </span>
+            <span className="aug-fs-xs" style={{ ...MONO, color: "var(--t3)", whiteSpace: "nowrap" }}>
+              {loaded.key} = {loaded.pk}
+            </span>
+            {loaded.display && <DisplayChip display={loaded.display} />}
+            {loaded.retiring && <RetiringChip typeName={loaded.type_name} mark={loaded.retiring} />}
+          </>
+        ) : (
+          <span className="aug-fs-ui" style={{ color: "var(--t2)" }}>{objectType} {pk}</span>
+        )}
+        <div style={{ flex: 1 }} />
+        {loaded && loaded.path !== "missing" && loaded.path !== "withheld" && loaded.schema_name && (
+          <span className="aug-fs-xs" style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>{loaded.schema_name}</span>
+        )}
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>{body}</div>
+    </div>
+  );
+}
+
+function ObjectBody({ page, scope, reload }: { page: ObjectPage; scope: Scope; reload: () => void }) {
+  const { related } = page;
+  return (
+    <div style={{ padding: "20px 24px 40px" }}>
+      {page.caveats.length > 0 && (
+        <div className="aug-fs-sm"
+          style={{ marginBottom: 16, padding: "8px 12px", borderRadius: "var(--r3)", border: "1px solid var(--amb2)",
+                   background: "var(--amb1)", color: "var(--amb5)" }}>
+          {page.caveats.map((caveat) => <div key={caveat}>{caveat}</div>)}
+        </div>
+      )}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(300px,2fr)]">
+        <div className="flex min-w-0 flex-col gap-4">
+          <PropertiesCard page={page} scope={scope} reload={reload} />
+          {(page.timeseries ?? []).map((series) => <HistoryCard key={series.binding} page={page} series={series} />)}
+          <LinksCard page={page} scope={scope} />
+          <CitationsCard page={page} citations={related.findings} unread={related.findings_unread ?? 0} />
+        </div>
+        <div className="flex min-w-0 flex-col gap-4">
+          <ActionsCard page={page} actions={related.actions} scope={scope} />
+          <HeldCard referrers={related.platform ?? []} scope={scope} />
+          <MetricsCard page={page} metrics={related.metrics} />
+          <NotesCard notes={related.notes} connectionId={page.connection_id} reload={reload} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Section({ title, description, children }: {
+  title: string;
+  description?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card size="sm">
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        {description && <CardDescription>{description}</CardDescription>}
+      </CardHeader>
+      <CardContent className="flex flex-col">{children}</CardContent>
+    </Card>
+  );
+}
+
+/** What the card reads from the backing, from further bindings, and what accepted actions set on top — never one count. */
+function propertiesSummary(page: ObjectPage): string {
+  const set = page.properties.filter((p) => p.overlay).length;
+  const bound = page.properties.filter((p) => p.binding);
+  const through = [...new Set(bound.map((p) => p.binding?.name ?? ""))];
+  const read = page.properties.length - set - bound.length;
+  if (page.platform) {
+    // Arc OC-6 — no warehouse holds it: there is no backing to read, only what declared actions set
+    return `Held by the platform — ${countNoun(set, "property", "properties")} set by declared actions, each change kept.`;
+  }
+  return `Read live through the ${page.type_name} backing — ${countNoun(read, "column")}`
+    + (bound.length ? `, ${formatCount(bound.length)} through the ${through.length === 1 ? "binding" : "bindings"} ${through.join(", ")}` : "")
+    + (set ? `, and ${formatCount(set)} set by accepted actions.` : ".");
+}
+
+/** ON-4 — take back ONE accepted edit. The source was never written, so this restores nothing: it stops
+ *  the merge, and the next read shows the value the warehouse holds. `connectionId` is where the object's rows —
+ *  and so its edits — live: the page's own, never an organisation's ontology token, which answered every
+ *  withdrawal with "no such edit" (PENDING item 25). */
+function Withdraw({ editId, what, connectionId, reload }: {
+  editId: string;
+  what: string;
+  connectionId: string;
+  reload: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const withdraw = useCallback(() => {
+    setBusy(true);
+    setError("");
+    withdrawEdit(editId, connectionId)
+      .then(reload)
+      .catch((e: unknown) => { setError(errorText(e)); setBusy(false); });
+  }, [editId, connectionId, reload]);
+  return (
+    <>
+      <Button variant="ghost" size="xs" disabled={busy} onClick={withdraw}
+        title={`Withdraw ${what} — the source value, never written, is what this object reads again`}>
+        {busy ? "Withdrawing…" : "Withdraw"}
+      </Button>
+      {error && <span className="aug-fs-xs" style={{ color: "var(--red3)" }}>{error}</span>}
+    </>
+  );
+}
+
+/** Arc OC-6 — every version of one property's edits on this object: who set what and what it replaced, who withdrew
+ *  it. Read on request — most readers never ask. */
+function EditHistory({ connectionId, objectType, rowKey, column }: {
+  connectionId: string;
+  objectType: string;
+  rowKey: string;
+  column: string;
+}) {
+  const [rows, setRows] = useState<EditHistoryRow[] | null>(null);
+  const [error, setError] = useState("");
+  const [open, setOpen] = useState(false);
+  const toggle = () => {
+    setOpen(o => !o);
+    if (rows !== null) return;
+    getEditHistory(connectionId, objectType, rowKey, column).then(setRows).catch((e: unknown) => setError(errorText(e)));
+  };
+  return (
+    <>
+      <Button variant="ghost" size="xs" onClick={toggle} data-testid="edit-history-toggle">
+        {open ? "Hide history" : "History"}
+      </Button>
+      {open && (
+        <span style={{ display: "block", width: "100%" }} data-testid="edit-history">
+          {error ? <span style={{ color: "var(--red3)" }}>{error}</span>
+            : rows === null ? "Reading…"
+            : rows.map((r) => (
+              <span key={`${r.version}:${r.event}`} style={{ display: "block" }}>
+                v{r.version} · {r.masked ? <>{r.event === "withdrawn" ? "withdrawn" : "set"} <Masked why={r.masked} /></>
+                  : r.event === "withdrawn" ? `withdrawn (was ${r.previous || "unset"})`
+                  : `set to ${r.body}${r.previous ? ` (was ${r.previous})` : ""}`}
+                {" "}by {r.actor || "—"} · {r.at.slice(0, 16).replace("T", " ")}
+                {/* Arc TC, TC-2 — which run made it, when the install records it */}
+                {r.run_said && <span style={{ display: "block" }} data-testid="edit-history-run">{r.run_said}</span>}
+              </span>
+            ))}
+        </span>
+      )}
+    </>
+  );
+}
+
+function PropertiesCard({ page, scope, reload }: { page: ObjectPage; scope: Scope; reload: () => void }) {
+  // A property that names another object — an order's customer_id — opens that object.
+  const objectColumns = useObjectKeyColumns(scope.connectionId);
+  useOrgSettingsTick();
+  const note = currencyNote(page.properties.map(p => ({ unit: p.unit, name: p.name })));
+  return (
+    <Section title="Properties"
+      description={note ? `${propertiesSummary(page)} ${note}` : propertiesSummary(page)}>
+      <dl style={{ display: "grid", gridTemplateColumns: "minmax(120px, max-content) minmax(0, 1fr)", columnGap: 16, rowGap: 6, margin: 0 }}>
+        {page.properties.map((p) => {
+          const isKey = p.name.toLowerCase() === page.key.toLowerCase();
+          const named = !isKey && p.value != null && p.value !== "" ? objectColumns.get(p.name.toLowerCase()) : undefined;
+          return (
+            <React.Fragment key={p.name}>
+              <dt className="aug-fs-xs" title={p.description || p.name}
+                style={{ color: "var(--t3)", display: "flex", alignItems: "center", gap: 4 }}>
+                {isKey && <Icon name="key" size={12} label="Key" />}
+                {p.overlay && <Icon name="edit" size={12} label="Set by an accepted action" />}
+                {p.display_name}
+              </dt>
+              <dd className="aug-fs-sm"
+                style={{ margin: 0, overflowWrap: "anywhere", color: p.value == null ? "var(--t3)" : "var(--t1)",
+                         ...(isKey ? MONO : {}) }}>
+                {p.withheld ? <Masked why={p.withheld} /> : named ? (
+                  <Link href={objectHref(named, String(p.value), scope.connectionId, scope.schemaName)}
+                    style={{ ...MONO, color: "var(--blue3)" }} title={`Open ${named} ${String(p.value)}`}>
+                    {String(p.value)}
+                  </Link>
+                ) : propertyText(p)}
+                {p.unit && p.value != null && !moneyOf(p.unit, p.name).money && <span style={{ color: "var(--t3)" }}> {p.unit}</span>}
+                {p.formula && (
+                  <span className="aug-fs-xs" style={{ display: "block", color: "var(--t3)", ...MONO }}
+                    title={p.formula.kind === "computed" ? "A computed property the builder verified — evaluated for this object"
+                      : "An expression a person declared — evaluated for this object"}>
+                    = {p.formula.expression}
+                  </span>
+                )}
+                {p.overlay && (
+                  <span className="aug-fs-xs"
+                    style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", color: "var(--t3)" }}>
+                    {p.overlay.provenance}{p.overlay.note ? ` — ${p.overlay.note}` : ""}
+                    <Withdraw editId={p.overlay.id} what={`${p.display_name} on this ${page.type_name}`}
+                      connectionId={page.connection_id} reload={reload} />
+                    <EditHistory connectionId={page.connection_id} objectType={page.object_type} rowKey={page.pk}
+                      column={p.name} />
+                  </span>
+                )}
+                {/* ON-5 — a timeseries property is a value AT A TIME, and what it was before is half of what a
+                    reader wants: a price of 246 says one thing after 287 and another after 210. */}
+                {p.binding?.kind === "timeseries" && p.value != null && (
+                  <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+                    {" "}as of {cellText(p.binding.at)}
+                    {p.binding.previous != null && (
+                      <span title={`its reading of ${cellText(p.binding.previous_at)}`}>
+                        {" "}· from {cellText(p.binding.previous)}
+                      </span>
+                    )}
+                  </span>
+                )}
+                {p.binding && (
+                  <span className="aug-fs-xs" style={{ ...MONO, display: "block", color: "var(--t3)" }}
+                    title={p.binding.kind === "timeseries"
+                      ? `${p.binding.note ?? ""} — through the binding ${p.binding.name}, on the ${page.type_name} key`
+                      : `Read through the ${p.binding.kind} binding ${p.binding.name}, on the ${page.type_name} key`}>
+                    {p.binding.source}.{p.binding.column}
+                  </span>
+                )}
+              </dd>
+            </React.Fragment>
+          );
+        })}
+      </dl>
+    </Section>
+  );
+}
+
+/** ON-5 — the readings behind a timeseries property's latest value, newest first. The value above is the first
+ *  row of this table, which is the whole claim: what it is now, and what it was before. */
+function HistoryCard({ page, series }: { page: ObjectPage; series: ObjectTimeseries }) {
+  const when = series.columns.indexOf(series.time_column);
+  return (
+    <Section title={`History · ${series.binding}`}
+      description={`${series.source}, ${series.note}. The ${series.limit} most recent readings for this `
+        + `${page.type_name.toLowerCase()}.`}>
+      {series.error && <EmptyState variant="inline" title={series.error} />}
+      {!series.error && series.rows.length === 0 && (
+        <EmptyState variant="inline" title={`No reading in ${series.source} reaches this ${page.type_name.toLowerCase()}.`} />
+      )}
+      {series.rows.length > 0 && (
+        <div style={{ overflowX: "auto" }}>
+          <Table className="aug-fs-xs">
+            <TableHeader>
+              <TableRow>
+                {series.columns.map((c) => (
+                  <TableHead key={c} style={{ ...MONO, textAlign: "left", padding: "3px 10px 3px 0", color: "var(--t3)",
+                                       fontWeight: 500, whiteSpace: "nowrap", borderBottom: ROW_RULE }}>{c}</TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {series.rows.map((row, i) => (
+                <TableRow key={i}>
+                  {row.map((cell, j) => (
+                    <TableCell key={series.columns[j] ?? j}
+                      style={{ padding: "3px 10px 3px 0", whiteSpace: "nowrap", borderTop: i ? ROW_RULE : undefined,
+                               color: j === when || i === 0 ? "var(--t1)" : "var(--t2)",
+                               ...(j === when ? MONO : {}) }}>
+                      {cellText(cell)}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </Section>
+  );
+}
+
+function LinksCard({ page, scope }: { page: ObjectPage; scope: Scope }) {
+  const [open, setOpen] = useState<string | null>(null);
+  // A to-one link resolves to the linked object's KEY; its name is one request for all of them together.
+  const titles = useKeyTitles(page.links.map((l) => ({ objectType: l.to, pk: l.pk })),
+                              scope.connectionId, scope.schemaName);
+  if (page.links.length === 0) {
+    return (
+      <Section title="Links">
+        <EmptyState variant="inline" title={`No measured link reaches out from ${page.type_name}.`} />
+      </Section>
+    );
+  }
+  return (
+    <Section title="Links"
+      description="A to-one link opens the linked object; a to-many link lists its objects. A link the compiler refuses says why and is not followed.">
+      {page.links.map((link, i) => (
+        <div key={link.name} style={{ padding: "8px 0", borderTop: i ? ROW_RULE : undefined }}>
+          <LinkRow link={link} scope={scope} open={open === link.name} titles={titles}
+            onToggle={() => setOpen(open === link.name ? null : link.name)} />
+          {open === link.name && <LinkedObjects page={page} link={link} scope={scope} />}
+        </div>
+      ))}
+    </Section>
+  );
+}
+
+function LinkRow({ link, scope, open, onToggle, titles }: {
+  titles: Map<string, string>;
+  link: ObjectLink;
+  scope: Scope;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  let value: React.ReactNode;
+  if (!link.usable) {
+    value = <span className="aug-fs-xs" style={{ color: "var(--t3)", textAlign: "right" }}>{link.why_not}</span>;
+  } else if (link.kind === "to-one") {
+    const named = link.pk ? titles.get(`${link.to}\u0000${link.pk}`) : undefined;
+    value = link.pk ? (
+      <Link href={objectHref(link.to, link.pk, scope.connectionId, scope.schemaName)} className="aug-fs-sm"
+        style={{ ...(named ? {} : MONO), color: "var(--blue3)" }}
+        title={named ? `Open ${link.to_type} ${link.pk} — ${named}` : `Open ${link.to_type} ${link.pk}`}>
+        {named ?? link.pk}
+      </Link>
+    ) : <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>none</span>;
+  } else if ((link.count ?? 0) > 0) {
+    const count = link.count ?? 0;
+    value = (
+      <Button variant="ghost" size="xs" onClick={onToggle} aria-expanded={open}>
+        <Icon name={open ? "chevd" : "chevr"} size={14} />
+        {formatCount(count)} {count === 1 ? "object" : "objects"}
+      </Button>
+    );
+  } else {
+    value = <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>none</span>;
+  }
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+      <span style={{ color: link.usable ? "var(--t3)" : "var(--t3)", display: "inline-flex" }}><Icon name="link" size={14} /></span>
+      <span className="aug-fs-sm" style={{ color: link.usable ? "var(--t1)" : "var(--t3)", fontWeight: 500 }}>{link.to_type}</span>
+      <span className="aug-fs-xs" style={{ ...MONO, color: "var(--t3)", whiteSpace: "nowrap" }} title={link.on}>
+        {link.name} · {link.cardinality}
+      </span>
+      <div style={{ flex: 1 }} />
+      {value}
+    </div>
+  );
+}
+
+function LinkedObjects({ page, link, scope }: { page: ObjectPage; link: ObjectLink; scope: Scope }) {
+  const [head, setHead] = useState<LinkedObjectsPage | null>(null);
+  const [rows, setRows] = useState<unknown[][]>([]);
+  const [problem, setProblem] = useState("");
+  const [loading, setLoading] = useState(false);
+  // Every column that names an object opens it in place — a ticket's order_id opens its order.
+  const columnLinks = useObjectColumnLinks(head?.columns ?? NO_COLUMNS, scope.connectionId,
+                                           { schemaName: scope.schemaName, newTab: false, rows });
+
+  const load = useCallback((offset: number) => {
+    setLoading(true);
+    getLinkedObjects(page.object_type, page.pk, link.name, scope.connectionId, scope.schemaName,
+                     { limit: LINKED_PAGE, offset })
+      .then((res) => {
+        if (res.path === "links") {
+          setHead(res);
+          setRows((prev) => (offset === 0 ? res.rows : [...prev, ...res.rows]));
+        } else {
+          setProblem(res.path === "refused" ? res.refused : res.detail);
+        }
+      })
+      .catch((e: unknown) => setProblem(errorText(e)))
+      .finally(() => setLoading(false));
+  }, [page.object_type, page.pk, link.name, scope.connectionId, scope.schemaName]);
+
+  useEffect(() => { load(0); }, [load]);
+
+  if (problem) return <div className="aug-fs-xs" style={{ color: "var(--t3)", paddingTop: 8 }}>{problem}</div>;
+  if (!head) return <div style={{ paddingTop: 8 }}><SkeletonRows rows={3} /></div>;
+  const keyColumn = head.columns.find((c) => c.toLowerCase() === head.key.toLowerCase());
+  // The list's own key links even before the catalog arrives, or without one.
+  const overrides = keyColumn
+    ? { ...columnLinks, [keyColumn]: { render: objectLinkRender(head.object_type, { ...scope, newTab: false }) } }
+    : columnLinks;
+  return (
+    <div style={{ paddingTop: 8 }}>
+      <SqlResultTable columns={head.columns} rows={rows} maxHeight={300} totals={false} columnOverrides={overrides} />
+      {head.has_more && (
+        <Button variant="ghost" size="xs" disabled={loading} onClick={() => load(rows.length)} style={{ marginTop: 6 }}>
+          {loading ? "Loading…" : `Show the next ${LINKED_PAGE}`}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function CitationsCard({ page, citations, unread }: { page: ObjectPage; citations: ObjectCitation[]; unread: number }) {
+  return (
+    <Section title="Findings and answers about it"
+      description={<>First what names this exact {page.type_name.toLowerCase()} (its <span style={MONO}>{page.key}</span>, or a column joined to it); then findings about its segment — one of its own values, like its country — and about {page.type_name.toLowerCase()}s in general, each marked.</>}>
+      {unread > 0 && (
+        <p className="aug-fs-xs" style={{ color: "var(--t3)", margin: "0 0 6px" }}>
+          {unread === 1 ? "1 finding could not be read and is left out." : `${unread} findings could not be read and are left out.`}
+        </p>
+      )}
+      {citations.length === 0 ? (
+        <EmptyState variant="inline" title={`No finding or answer is about this ${page.type_name.toLowerCase()}, its segment or its type yet.`} />
+      ) : citations.map((c, i) => (
+        <div key={`${c.kind}:${c.id}`} style={{ padding: "8px 0", borderTop: i ? ROW_RULE : undefined }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+            <span className={`aug-tag ${c.kind === "answer" ? "aug-tag-blue" : "aug-tag-violet"}`}>{c.kind}</span>
+            <span className="aug-fs-xs" style={{ color: "var(--t2)", whiteSpace: "nowrap" }}>
+              {c.scope === "segment" ? `its segment: ${c.segment}`
+                : c.scope === "type" ? `${page.type_name.toLowerCase()}s in general`
+                : `this ${page.type_name.toLowerCase()}`}
+            </span>
+            {typeof c.at === "string" && <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{relTime(c.at)}</span>}
+            <div style={{ flex: 1 }} />
+            <span className="aug-fs-xs"
+              style={{ ...MONO, color: "var(--t3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {c.matched}
+            </span>
+          </div>
+          <div className="aug-fs-sm" style={{ color: "var(--t1)", marginTop: 4, lineHeight: 1.5 }}>{c.text || c.question}</div>
+        </div>
+      ))}
+    </Section>
+  );
+}
+
+/** A property's value as a reader reads it: money with its symbol to the cent, any other number
+ *  in full with separators, everything else as the cell shows it. */
+function propertyText(p: { value: unknown; unit: string; name: string }): string {
+  if (p.value == null || p.value === "NULL" || p.value === "") return "—";
+  const n = typeof p.value === "number" ? p.value : (typeof p.value === "string" && /^-?\d+(?:\.\d+)?$/.test(p.value.trim()) ? Number(p.value) : NaN);
+  if (!Number.isFinite(n)) return cellText(p.value);
+  const m = moneyOf(p.unit, p.name);
+  return m.money ? formatMoney(n, moneySymbol(m.code)) : formatTableNumber(n);
+}
+
+function MetricsCard({ page, metrics }: { page: ObjectPage; metrics: ObjectMetric[] }) {
+  useOrgSettingsTick();
+  const note = currencyNote(metrics.map(m => ({ unit: m.unit, name: m.metric })));
+  const base = `Verified metrics, compiled with this ${page.type_name.toLowerCase()} as the filter.`;
+  return (
+    <Section title="Metrics" description={note ? `${base} ${note}` : base}>
+      {metrics.length === 0 ? (
+        <EmptyState variant="inline" title="No verified metric reaches this object." />
+      ) : metrics.map((m, i) => (
+        <div key={`${m.metric}:${m.via}`} title={m.sql}
+          style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "7px 0", borderTop: i ? ROW_RULE : undefined }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div className="aug-fs-sm" style={{ color: "var(--t1)" }}>{m.display_name}</div>
+            <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>{m.via ? `across ${m.on} · ${m.via}` : `on this ${m.on}`}</div>
+          </div>
+          <MetricValue metric={m} />
+        </div>
+      ))}
+    </Section>
+  );
+}
+
+function MetricValue({ metric }: { metric: ObjectMetric }) {
+  if (metric.refused || metric.error) {
+    return (
+      <span className="aug-fs-xs"
+        style={{ color: metric.error ? "var(--red5)" : "var(--t3)", maxWidth: 200, textAlign: "right" }}>
+        {metric.refused || metric.error}
+      </span>
+    );
+  }
+  const n = typeof metric.value === "number" ? metric.value : Number(metric.value);
+  const m = moneyOf(metric.unit, metric.metric);
+  const text = metric.value == null || metric.value === "" ? "—"
+    : !Number.isFinite(n) ? cellText(metric.value)
+    : m.money ? formatMoney(n, moneySymbol(m.code))
+    : formatMetricValue(n);
+  // A figure is set in the UI face with tabular numerals (2026-09-25), never mono; a money
+  // figure carries its symbol, so the unit text is only for what is not money.
+  return (
+    <span className="aug-fs-ui aug-num" style={{ color: "var(--t1)", fontWeight: 600, whiteSpace: "nowrap" }}>
+      {text}
+      {metric.unit && !m.money && <span className="aug-fs-xs" style={{ color: "var(--t3)", fontWeight: 400 }}> {metric.unit}</span>}
+    </span>
+  );
+}
+
+function ActionsCard({ page, actions, scope }: { page: ObjectPage; actions: ObjectAction[]; scope: Scope }) {
+  const actionsTab = declaredActionsHref(scope.connectionId);
+  const noun = page.type_name.toLowerCase();
+  return (
+    <Section title="Actions"
+      description={`Declared actions that take this ${noun}, its key filled in. Offered here; proposing and approving happen in Actions.`}>
+      {actions.length === 0 ? (
+        <EmptyState variant="inline" title={`No declared action takes ${withArticle(noun)}.`}
+          action={<Link href={actionsTab}><Button variant="outline" size="xs">Open Actions</Button></Link>} />
+      ) : (
+        <div className="flex flex-col gap-3">
+          {actions.map((a) => <ActionOffer key={a.id} action={a} href={actionsTab} page={page} />)}
+        </div>
+      )}
+    </Section>
+  );
+}
+
+function ActionOffer({ action, href, page }: { action: ObjectAction; href: string; page: ObjectPage }) {
+  return (
+    <div className="aug-panel" style={{ padding: "10px 12px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+        <span style={{ color: "var(--t3)", display: "inline-flex" }}><Icon name="bolt" size={14} /></span>
+        <span className="aug-fs-sm" style={{ color: "var(--t1)", fontWeight: 600 }}>{action.display_name}</span>
+        {action.risk && <span className={`aug-tag ${RISK_TAG[action.risk] ?? "aug-tag-gray"}`}>{action.risk}</span>}
+        {action.kind && <span className="aug-tag aug-tag-gray">{action.kind}</span>}
+        <div style={{ flex: 1 }} />
+        <span className="aug-fs-xs" style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>{action.why}</span>
+      </div>
+      {action.description && (
+        <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4, lineHeight: 1.5 }}>{action.description}</div>
+      )}
+      {action.params.length > 0 && (
+        <dl style={{ display: "grid", gridTemplateColumns: "max-content minmax(0, 1fr)", columnGap: 12, rowGap: 4, margin: "8px 0 0" }}>
+          {action.params.map((p) => {
+            const filled = action.prefilled.includes(p.name);
+            return (
+              <React.Fragment key={p.name}>
+                <dt className="aug-fs-xs" style={{ ...MONO, color: "var(--t3)" }} title={p.description || undefined}>
+                  {p.name}{p.required ? " *" : ""}
+                </dt>
+                <dd className="aug-fs-xs"
+                  style={{ ...MONO, margin: 0, display: "flex", alignItems: "center", gap: 4, overflowWrap: "anywhere",
+                           color: filled ? "var(--blue5)" : p.value == null ? "var(--t3)" : "var(--t1)" }}>
+                  {filled && <Icon name="check" size={12} label="Filled from this object" />}
+                  {p.value == null ? "to be filled" : objectParamText(p, page)}
+                </dd>
+              </React.Fragment>
+            );
+          })}
+        </dl>
+      )}
+      <div style={{ marginTop: 8 }}>
+        <Link href={href}><Button variant="outline" size="xs">Open in Actions</Button></Link>
+      </div>
+    </div>
+  );
+}
+
+/** ON-4 — an object parameter is passed as "<type>:<key>", which is the wire and not something to read. On the
+ *  page of the object it names, the page already knows what to call it — so the card says the name and keeps the
+ *  wire value on hover. A parameter naming some OTHER object keeps its key: guessing at a name we have not read
+ *  is exactly what the object page exists to stop. */
+function objectParamText(param: ObjectActionParam, page: ObjectPage): string {
+  if (param.kind !== "object") return cellText(param.value);
+  const text = String(param.value);
+  const key = text.includes(":") ? text.slice(text.indexOf(":") + 1) : text;
+  return key === page.pk && page.title ? page.title : text;
+}
+
+/** Arc OC-6 — the objects the platform holds that name this one (an order's cases), one card per type. Each was made
+ *  by a declared action and opens on its own page; nothing is shown when none names it. */
+function HeldCard({ referrers, scope }: { referrers: ObjectReferrer[]; scope: Scope }) {
+  const types = [...new Set(referrers.map((r) => r.type_id))];
+  return (
+    <>
+      {types.map((typeId) => {
+        const rows = referrers.filter((r) => r.type_id === typeId);
+        return (
+          <Section key={typeId} title={rows[0].type_name || typeId}
+            description={`Held by the platform — each made by a declared action that names this object in ${rows[0].via}, every change kept.`}>
+            {rows.map((r, i) => (
+              <div key={r.pk} data-testid="held-object"
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderTop: i ? ROW_RULE : undefined }}>
+                <Link href={objectHref(r.object_type, r.pk, scope.connectionId, scope.schemaName)} className="aug-fs-sm"
+                  style={{ ...MONO, color: "var(--blue3)" }} title={`Open ${r.type_name} ${r.pk}`}>
+                  {r.pk}
+                </Link>
+                <span className="aug-fs-xs" style={{ color: "var(--t3)", minWidth: 0, overflowWrap: "anywhere" }}>
+                  {Object.entries(r.summary).filter(([, v]) => v != null && v !== "")
+                    .map(([k, v]) => `${k.replace(/_/g, " ")} ${cellText(v)}`).join(" · ")}
+                </span>
+              </div>
+            ))}
+          </Section>
+        );
+      })}
+    </>
+  );
+}
+
+function NotesCard({ notes, connectionId, reload }: { notes: ObjectNote[]; connectionId: string; reload: () => void }) {
+  return (
+    <Section title="Notes" description="Edits kept beside the data on this row; the source is never written.">
+      {notes.length === 0 ? (
+        <EmptyState variant="inline" title="No notes on this row." />
+      ) : notes.map((n, i) => (
+        <div key={`${n.column}:${n.at}:${i}`} style={{ padding: "7px 0", borderTop: i ? ROW_RULE : undefined }}>
+          <div className="aug-fs-sm" style={{ color: "var(--t1)", lineHeight: 1.5 }}>{n.body}</div>
+          <div className="aug-fs-xs"
+            style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--t3)", marginTop: 2 }}>
+            {[n.column, n.kind, n.source, typeof n.at === "string" ? relTime(n.at) : ""].filter(Boolean).join(" · ")}
+            {n.id && <Withdraw editId={n.id} what="this note" connectionId={connectionId} reload={reload} />}
+          </div>
+        </div>
+      ))}
+    </Section>
+  );
+}

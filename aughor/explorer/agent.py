@@ -1,0 +1,4782 @@
+"""
+SchemaExplorer — proactive, curiosity-driven background schema cartography.
+
+Aughor connects to a database and immediately begins a background exploration:
+one small SQL query at a time, rate-limited to avoid overloading the database,
+pausing entirely whenever a user investigation is running.
+
+The 5 exploration phases (building on profiler output for Phases 1 & 2):
+  3. Null meaning resolution  — why is a column nullable? (pending vs missing)
+  4. Join verification        — orphan checks + cardinality confirmation
+  5. Lifecycle mapping        — state machine extraction for entity tables
+  6. Distribution profiling   — shape characterisation for measure columns
+  7. Cross-table patterns     — pre-computed analytical insights
+
+Each query produces a (think, sql, observation) episode for SkyRL-SQL training.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import re
+import time
+
+from datetime import datetime, timezone
+from typing import Optional, TYPE_CHECKING
+from weakref import WeakKeyDictionary
+
+if TYPE_CHECKING:
+    from aughor.db.connection import DatabaseConnection
+
+from aughor.kernel.metering import BudgetExceeded as _BudgetExceeded
+from aughor.explorer.models import (
+    DistributionShape,
+    ExplorationPhase,
+    ExplorationStatus,
+    LifecycleTransition,
+    NullMeaning,
+    NullMeaningResult,
+)
+from aughor.explorer import store as _store
+from aughor.ontology.lifecycle_states import (
+    ACTIVE, ACTIVE_SUBS, TERMINAL, TERMINAL_SUBS, is_lifecycle_state, plausible_lifecycle_states,
+    reads_as_status_column,
+)
+from aughor.explorer.frontier import signature_fields
+from aughor.util.format import rows_for_prompt, round_long_decimals
+from aughor.explorer.episodes import EpisodeCollector
+from aughor.explorer.grounding import (
+    GroundingResult,
+    numeric_cells_block,
+    verify_finding,
+)
+from aughor.explorer.windowing import (
+    profile_field,
+    days_between,
+    anchor_activity,
+    role_aware_time_window,
+    window_for_tables,
+)
+from aughor.explorer.scope import (
+    dataset_of,
+    tables_in_sql,
+    crosses_datasets,
+)
+from aughor.explorer.feasibility import (
+    is_temporal_angle,
+    angle_feasible,
+    has_temporal_sql,
+    has_vacuous_temporal,
+)
+
+logger = logging.getLogger(__name__)
+
+# Lease on one questions-pass domain pass (slice claims — durable execution).
+# Sized above the worst observed domain pass so a live worker is never stolen from;
+# a dead worker's domain frees itself within this window. AUGHOR_DOMAIN_LEASE_S
+# overrides for slicing experiments.
+_DOMAIN_LEASE_S = float(os.environ.get("AUGHOR_DOMAIN_LEASE_S", "900") or 900)
+
+#: How a finding writes its figures (2026-10-23, the Olist study's group C: "late rate 0.0646" and "$" over
+#: reais). A ratio as a percentage with one decimal — the grounding guards credit a percentage of a result's
+#: fraction (verify._number_grounded) and do not enforce percentages; money plain, because the page labels
+#: it with the currency a person confirmed for the dataset.
+FIGURE_STYLE = ("Write a rate, share or ratio as a percentage with one decimal (6.5%, not 0.0646). "
+                "Write money as a plain number with thousands separators and no currency symbol or code — "
+                "the page labels the currency.")
+
+
+_RATE_SECONDS_SCHEMA = 0.0   # schema phases (3-7) run as fast as the DB allows
+_RATE_SECONDS_INTEL  = 1.5   # domain intel phase: at most one question each 1.5 s (was 5 s — 300 questions spent 25 minutes asleep)
+_COST_LARGE_ROWS     = 5_000_000  # Tier 3 — at/above this, prefer approximate aggregates
+#: Table layers whose tables are never offered to the question generator — raw and integration copies
+#: (findings come from the business copy), uploads (only when a person asks) and system. A reference table
+#: stays: it is a dimension others join to, though never explored alone (the exploration principles §5).
+_QUIET_LAYERS = frozenset({"raw", "integration", "uploads", "system"})
+#: What `_next_question` answers when an automatic re-run has asked every uncovered cell it may.
+_NO_MORE_QUESTIONS = object()
+# The run's passes, by what they do (2026-10-23 — these used to be "Phase 3" … "Phase 9", numbers that
+# reached the log, the job titles and the Catalog without saying anything; PENDING 53):
+#   structure  — the five structure passes, no model call: null meaning (what a blank means),
+#                join verification, lifecycle mapping, distribution profiling, cross-table patterns
+#                (`_pass_null_meaning` … `_pass_patterns`; journaled as null_meaning, join_verification,
+#                lifecycle_mapping, distribution, cross_table)
+#   questions  — what the explorer asks each dataset once a person set its layer: the pinned key
+#                questions, the industry manifest's baseline questions, then the curiosity loop
+#                (`_pass_pinned_questions`, `_pass_questions`; journaled as domain_intel — the persisted
+#                key keeps its old spelling so history still reads)
+#   synthesis  — pairs of findings composed into one neither holds (`_pass_synthesis`)
+# A job is one of structure · questions · full (`self._job`); the log and every surface say these
+# words, never a phase number. docs/GLOSSARY.md › The explorer's passes.
+SYNTH_RESERVE_FRACTION = 0.80  # stop the questions pass at this share of the token budget, leaving the rest for synthesis
+#: The findings a question's prompts carry for context — the domain's newest, not all of them: every finding in every
+#: prompt grew a run's tokens with the square of its length, and a run now asks hundreds of questions.
+CONTEXT_FINDINGS = 40
+# (0.80 not 0.85: a single questions-pass iteration can overshoot the threshold by a few %, and
+#  the now-higher-yield the questions pass + synthesis was crossing 100% and getting heartbeat-cancelled
+#  at the very end — 20% headroom lets synthesis finish cleanly.)
+_NEG_PCT_RE = re.compile(r"-\s*\d+(?:\.\d+)?\s*%")  # an impossible negative percentage in a share/rate claim
+
+# Bound how many explorations run their phases at once. The kernel spawns each as its
+# own asyncio.Task with no cap, so onboarding N connections at once (or boot recovery)
+# put N explorers on the event loop together — each firing run_in_executor SQL + LLM
+# calls — which saturated the shared executor and starved cheap requests like /status
+# (the UI then looked like only one connection was exploring). The single local LLM
+# serializes generations anyway, so a small cap costs ~nothing and keeps the API
+# responsive. Excess explorers queue at the semaphore (phase stays PENDING) and proceed
+# as slots free. Override with AUGHOR_MAX_CONCURRENT_EXPLORERS (default 2).
+_MAX_CONCURRENT_EXPLORERS = max(1, int(os.getenv("AUGHOR_MAX_CONCURRENT_EXPLORERS", "2")))
+#: One semaphore PER EVENT LOOP, not one per process. An ``asyncio.Semaphore`` binds to
+#: the loop it is first awaited on, so a single cached object handed to a second loop
+#: raises "bound to a different event loop" — and if it was left ACQUIRED when its loop
+#: died, every later awaiter blocks forever rather than failing. Production runs one
+#: long-lived loop, so this is the same single semaphore it has always been and the cap
+#: is unchanged; a process that creates many loops (the test suite runs one
+#: ``asyncio.run`` per test) gets one each, and each dies with its loop.
+#: Weak-keyed so a finished loop's entry is collected instead of accumulating.
+_explorer_semaphores: "WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = (
+    WeakKeyDictionary())
+
+
+def _get_explorer_semaphore() -> "asyncio.Semaphore":
+    """The shared explorer slot for the RUNNING event loop.
+
+    Raises ``RuntimeError`` when called outside a running loop, deliberately: the cap
+    only means anything against the loop that will await it, and the previous
+    process-global answer was wrong often enough to deadlock the whole test suite.
+    """
+    loop = asyncio.get_running_loop()
+    sem = _explorer_semaphores.get(loop)
+    if sem is None:
+        sem = asyncio.Semaphore(_MAX_CONCURRENT_EXPLORERS)
+        _explorer_semaphores[loop] = sem
+    return sem
+
+# State-value vocabulary for lifecycle classification — one list, in ontology/lifecycle_states.py
+_TERMINAL, _ACTIVE, _TERMINAL_SUBS, _ACTIVE_SUBS = TERMINAL, ACTIVE, TERMINAL_SUBS, ACTIVE_SUBS
+
+
+# _NO_DATA_RE moved to explorer/verify.py (with is_degenerate_result, its only user besides revalidate).
+
+
+# The pre-emission trust gate + structural guards live in verify.py; the metric-naming layer in
+# metric_coherence.py — both extracted from this god-file. The class methods + emission sites below
+# import the PUBLIC entry points (kept public so these cross-module imports stay off the ratchet).
+from aughor.explorer.metric_coherence import metric_vocab_for, relabel_mislabeled_finding  # noqa: E402
+from aughor.explorer.verify import (  # noqa: E402
+    verify_insight,
+    has_fabricated_dimension,
+    clamp_novelty,
+    mislabeled_per_grain,
+)
+# Semantic metric groups (#5). A repair that swaps a column from one group for a
+# column in another changed WHAT is measured (revenue→cost), not just how. An LLM
+# faithfulness check rates these "faithful" (cf. 5ba0fbe) — the deterministic
+# column-group swap is the reliable signal, like the de-temporalisation guard.
+_METRIC_GROUPS: "dict[str, re.Pattern[str]]" = {
+    "revenue":  re.compile(r"revenue|gross_?sales|net_?sales|gmv|turnover|\bsales\b|total_amount|grand_total|line_total|amount_paid", re.I),
+    "cost":     re.compile(r"\bcost|expense|spend|cogs|unit_cost|landed|purchase_price", re.I),
+    "profit":   re.compile(r"profit|margin|markup|earnings|contribution", re.I),
+    "discount": re.compile(r"discount|markdown|rebate|coupon|promo_amount", re.I),
+    "price":    re.compile(r"unit_price|list_price|msrp|\bprice\b", re.I),
+    "quantity": re.compile(r"\bqty\b|quantity|units?_sold|\bunits\b|volume", re.I),
+}
+
+
+def _semantic_metric_drift(original_sql: str, fixed_sql: str) -> bool:
+    """True when a repair replaced a metric column with one of a DIFFERENT business
+    meaning (revenue↔cost, price↔quantity …). Compares the metric-group membership
+    of columns dropped vs added: a clean, disjoint group swap = the metric drifted."""
+    if not original_sql or not fixed_sql:
+        return False
+    removed = _query_columns(original_sql) - _query_columns(fixed_sql)
+    added = _query_columns(fixed_sql) - _query_columns(original_sql)
+    if not removed or not added:
+        return False
+
+    def _groups(cols: "set[str]") -> "set[str]":
+        return {g for c in cols for g, pat in _METRIC_GROUPS.items() if pat.search(c)}
+
+    gr_removed, gr_added = _groups(removed), _groups(added)
+    # Both sides name a metric, the meaning changed, and there is no overlap that
+    # would mean the original metric is still present.
+    return bool(gr_removed and gr_added and not (gr_removed & gr_added))
+
+
+# Column/table names the SQL engine reported as nonexistent — harvested generically from
+# DuckDB *and* Postgres binder errors and fed back to the question generator so it stops
+# re-proposing the same hallucinated names (the dominant questions-pass failure class: a generator
+# that "expects" a region/campaign_id/touchpoint_id column the schema doesn't have). This is
+# negative knowledge accumulated from the live engine — no schema or connection specifics.
+# Ambiguous-column errors are deliberately NOT harvested: that column DOES exist, it just
+# needs qualifying (handled by the repair diagnosis instead).
+_DEAD_REF_RES = (
+    re.compile(r'does not have a column named\s+"?(\w+)"?', re.I),
+    re.compile(r'[Rr]eferenced column\s+"?(\w+)"?\s+not found', re.I),
+    re.compile(r'column\s+"?(\w+)"?\s+does not exist', re.I),          # Postgres
+    re.compile(r'[Rr]eferenced table\s+"?(\w+)"?\s+not found', re.I),
+    re.compile(r'[Rr]elation\s+"?(\w+)"?\s+does not exist', re.I),     # Postgres
+)
+
+
+def _extract_dead_refs(error: str) -> set:
+    """Nonexistent column/table names named in a SQL engine error (DuckDB + Postgres)."""
+    out: set = set()
+    for pat in _DEAD_REF_RES:
+        out.update(pat.findall(error or ""))
+    return out
+
+
+# SQL function/keyword tokens to ignore when checking whether a recipe formula's
+# identifiers bind to a schema (so SUM/COUNT/NULLIF/etc. aren't mistaken for columns).
+_SQL_FORMULA_WORDS = frozenset({
+    "sum", "count", "avg", "min", "max", "distinct", "nullif", "coalesce", "case", "when",
+    "then", "else", "end", "cast", "round", "filter", "where", "over", "partition", "by",
+    "group", "order", "and", "or", "not", "null", "as", "on", "join", "left", "right", "inner",
+    "outer", "from", "select", "per", "with", "countif", "date", "extract", "interval", "having",
+    "between", "in", "like", "abs", "floor", "ceil", "div", "mod", "asc", "desc",
+})
+
+
+def _norm_ident(s: str) -> str:
+    return (s or "").replace("_", "").replace("-", "").replace(" ", "").lower()
+
+
+def _recipe_binds(formula: str, real_cols: set, real_tables: set, *, min_frac: float = 0.5) -> bool:
+    """True if a recipe's formula references THIS schema's columns/tables — i.e. its
+    column-like identifiers mostly exist. A profile's generic recipes
+    (``SUM(revenue - cogs)``, ``customer_id``, ``ecommerce.orders``) don't bind to a
+    connection whose real columns are ``unit_price``/``customer_unique_id`` on
+    ``missimi.*``; injecting them verbatim steers the generator to INVENT those names
+    (the dominant questions-pass token sink). Drop the non-binding ones. Fail-open (keep) when
+    the formula has no judgeable identifiers."""
+    import re as _re
+    fake_table = False
+    cols: list[str] = []
+    for tok in _re.findall(r"[A-Za-z_][A-Za-z0-9_.]*", formula or ""):
+        if "." in tok:                       # qualified ref: schema.table or table.col
+            parts = tok.split(".")
+            tbl = _norm_ident(parts[-2]) if len(parts) >= 2 else ""
+            if tbl and tbl not in real_tables and tbl not in real_cols:
+                fake_table = True            # an explicit non-existent table ref → non-binding
+            cols.append(_norm_ident(parts[-1]))
+            continue
+        n = _norm_ident(tok)
+        if len(n) >= 3 and n not in _SQL_FORMULA_WORDS:
+            cols.append(n)
+    if fake_table:
+        return False
+    if not cols:
+        return True                          # nothing to judge → keep
+    hits = sum(1 for c in cols if c in real_cols or c in real_tables)
+    return (hits / len(cols)) >= min_frac
+
+
+def _query_columns(sql: str) -> set:
+    """Lowercased bare column names referenced by a SQL string (best-effort, via sqlglot).
+    Used to tell a meaning-changing repair (one column SUBSTITUTED for another) apart from a
+    benign one (a join added, or an alias qualified) — both of which preserve the columns."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+        tree = sqlglot.parse_one(sql)
+    except Exception:
+        return set()
+    return {(c.name or "").lower() for c in tree.find_all(exp.Column) if c.name}
+
+
+def _org_identity(connection_id: str, profile_industry: str = "") -> tuple[str, str]:
+    """Track E (2026-08-06) — ``(org_block, effective_industry)`` resolved through
+    the workspace that OWNS this connection, never the app-level global alone.
+
+    The explorer was the one identity consumer that never asked which workspace it
+    explores for — which is how a briefing came to assert the operator's company
+    name (and EUR) over a public US-retail sample dataset: the org block and
+    industry rode in from whoever configured the app, regardless of whose data was
+    on the table. ``workspace_for_connection`` is best-effort and returns ``None``
+    for the catch-all Default workspace, which resolves to the app scope — same as
+    before for single-workspace deployments, scoped for everyone else. Fail-open:
+    a broken workspace store degrades to the app scope, never blocks a run."""
+    from aughor.orgsettings import org_context, resolve_industry
+    try:
+        from aughor.workspace.store import workspace_for_connection
+        ws_id = workspace_for_connection(connection_id)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "workspace resolution is best-effort; identity falls back to app scope",
+                 counter="explorer.workspace_identity")
+        ws_id = None
+    return org_context(ws_id), resolve_industry(profile_industry, ws_id)
+
+
+def _ontology_skip_note(last_build: Optional[dict]) -> str:
+    """An actionable 'why the questions found nothing' message, from the build outcome the
+    connection recorded (which stage failed + why). Turns a silent empty Hub into a clear,
+    retryable status. Falls back to a generic note when no build detail is available."""
+    lb = last_build or {}
+    stage, err = lb.get("stage"), lb.get("error")
+    if stage and err:
+        return f"The questions couldn't start — the ontology's {stage} stage failed: {err}"
+    if stage:
+        return f"The questions couldn't start — the ontology's {stage} stage produced no object model."
+    return (
+        "Ontology unavailable — the object model the questions are asked from "
+        "could not be built (the schema may be too sparse to model)."
+    )
+
+
+_LINEAGE_SCHEMA_TTL = 300.0
+_lineage_schema_cache: dict[str, tuple[float, dict]] = {}
+
+
+def _lineage_schema_for(connection_id: str, conn) -> dict | None:
+    """DE-4 — the connection's schema as sqlglot's `qualify` takes it, rendered once per run
+    (and kept five minutes) so every finding's receipt binds its columns against it. None when
+    the schema cannot be rendered: the receipt then says its columns were attributed by name."""
+    import time as _t
+    hit = _lineage_schema_cache.get(connection_id)
+    if hit and (_t.monotonic() - hit[0]) < _LINEAGE_SCHEMA_TTL:
+        return hit[1] or None
+    try:
+        from aughor.db.schema_render import sqlglot_schema
+        mapping = sqlglot_schema(conn.get_schema())
+    except Exception:
+        mapping = {}
+    _lineage_schema_cache[connection_id] = (_t.monotonic(), mapping)
+    return mapping or None
+
+
+class SchemaExplorer:
+    """
+    Background schema exploration agent.
+
+    Create one per connected database and schedule ``explore()`` as an
+    asyncio task.  Call ``pause()`` / ``resume()`` to yield to investigations.
+    """
+
+    def __init__(
+        self,
+        connection_id: str,
+        conn: "DatabaseConnection",
+        canvas_id: Optional[str] = None,
+        tables_filter: Optional[list[str]] = None,
+        schema_name: Optional[str] = None,
+    ) -> None:
+        self.connection_id = connection_id
+        self.canvas_id = canvas_id
+        # When a multi-schema connection is explored per-schema, this run is scoped to ONE
+        # schema: state/episodes/profile/ontology are keyed by (connection, schema) so each
+        # schema gets its OWN intelligence (the missimi=0 fix). None = connection-level (the
+        # single-schema / 'All schemas' case) — fully backward-compatible.
+        self.schema_name = schema_name
+        self.tables_filter = tables_filter  # non-empty list = restrict the structure passes to these tables
+        self._conn = conn
+        self._status = ExplorationStatus(
+            connection_id=connection_id,
+            canvas_id=canvas_id,
+            started_at=datetime.now(timezone.utc).isoformat(),
+        )
+        # State/episode key: canvas → its own key; a schema-scoped run → conn__schema;
+        # otherwise the bare connection (unchanged).
+        if canvas_id:
+            _store_key = f"canvas_{canvas_id}"
+        elif schema_name:
+            _store_key = f"{connection_id}__{schema_name}"
+        else:
+            _store_key = connection_id
+        self._store_key = _store_key
+        self._episodes = EpisodeCollector(_store_key)
+        # Identity for slice claims (durable execution): stable per explorer
+        # instance, distinct across processes. Claims are released by EXPIRY, not by
+        # hand — completion is recorded in domain_coverage/budgets state, so a claim
+        # outliving its finished domain only shields it briefly; a claim whose worker
+        # died frees itself. try_claim is re-entrant for the same owner, so this
+        # instance resuming a domain it already holds just proceeds.
+        import uuid as _uuid
+        self._worker_id = f"explorer-{_uuid.uuid4().hex[:12]}"
+        self._held_claim: tuple | None = None    # (ledger, scope) of the domain being worked
+        self._can_run = asyncio.Event()
+        self._can_run.set()
+        self._stopped = False
+        self._state = _store.load_canvas(canvas_id) if canvas_id else _store.load(self._store_key)
+        # Restore the time-to-first-insight milestone if this run is resuming a
+        # prior one, so TTFI isn't re-stamped (and re-emitted) on every restart.
+        self._status.first_insight_at = self._state.get("first_insight_at")
+        self._last_query_at: float = 0.0
+        # The SQL that ACTUALLY ran on the last _run — the shared guard battery may rewrite it
+        # (de-fan / preflight-repair), and a finding must cite the query that produced its rows.
+        self._last_executed_sql: str = ""
+        self._rate_seconds: float = _RATE_SECONDS_SCHEMA
+        self._time_window: Optional[tuple[str, str]] = None  # (start_iso, end_iso) — 12-month window
+        # Negative knowledge — column/table names found not to exist — restored from a
+        # prior run so the generator avoids them from iteration 1 instead of re-learning
+        # (and re-paying tokens for) the same dead names every run.
+        self._dead_refs: set = set(self._state.get("dead_refs", []) or [])
+        self._macro_context: Optional[dict] = None  # Tier 2 full-span long-arc rollup
+        self._cost_large: bool = False               # Tier 3 — connection big enough for approx
+        self._prev_watermark: Optional[str] = None   # Tier 3 — anchor edge at the last run
+        self._activity_unchanged: bool = False        # no new activity since last run → pinned findings reproducible-by-read
+
+    # ── State persistence helpers ─────────────────────────────────────────────
+
+    def _rebuild_context_graph(self) -> None:
+        """Wave L1: rebuild the connection knowledge graph once an exploration run
+        completes — the structural trigger the graph never had.
+
+        An exploration is the one event that moves BOTH halves of the graph at once:
+        it discovers insights (new `finding` nodes) and it can change what the
+        ontology knows about the schema. That is why this is a full rebuild rather
+        than the answer path's incremental write — and why it goes through C3's
+        ``refresh_context_graph``, whose change classifier does the proportional-cost
+        work (SKIP when nothing moved, PARTIAL/FULL otherwise) and re-indexes for
+        search, instead of calling the builder directly.
+
+        Runs after ``_save_state`` at COMPLETE, mirroring the mid-run ontology build
+        this method's caller already performs for a downstream phase. Never raises:
+        an exploration that finished must not be reported as failed because a
+        projection didn't land.
+        """
+        try:
+            from aughor.ontology.graph_freshness import refresh_context_graph
+            # force: the run just wrote findings, which the schema classifier cannot
+            # see — without it a run that discovered a dozen insights and changed no
+            # column would classify SKIP and land none of them.
+            result = refresh_context_graph(self.connection_id, force=True)
+            if result is not None and result.rebuilt:
+                logger.info("[explorer:%s] context graph rebuilt (%s)",
+                            self.connection_id, result.verdict.change)
+        except Exception as _cg_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_cg_exc, "context-graph rebuild after exploration is best-effort; the "
+                              "run is complete and the next refresh picks the change up",
+                     counter="explorer.context_graph_rebuild")
+
+    def _release_held_claim(self) -> None:
+        """Release the domain claim this worker currently holds, if any. Called
+        before claiming the next domain and when the questions pass exits — a completed run
+        must free its slices immediately, not by lease expiry (a successor within
+        the lease window would skip them all). Best-effort."""
+        held, self._held_claim = self._held_claim, None
+        if held is None:
+            return
+        try:
+            held[0].release_claim(held[1], self._worker_id)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "claim release is best-effort; the lease frees it anyway",
+                     counter="explorer.claim_release")
+
+    def _save_state(self) -> None:
+        # Mirror the LIVE phase into the persisted state on EVERY save. Mid-run phase
+        # transitions only update self._status.phase (in-memory, served by /status);
+        # without this, the persisted exploration JSON stayed "pending" until the
+        # terminal COMPLETE/FAILED write, so any disk-based view (restart recovery,
+        # offline monitoring, a busy event loop that times out /status) under-reported
+        # progress. Now disk == live phase.
+        self._state["phase"] = (
+            self._status.phase.value
+            if isinstance(self._status.phase, ExplorationPhase)
+            else self._status.phase
+        )
+        # Mirror the LIVE runtime counters too, for the same reason. They were only
+        # copied into the persisted state in the COMPLETE block, so a failed or
+        # cancelled run — or a server restart mid-run — fell back to a state with no
+        # counters and /status reported 0 queries for a run that executed hundreds.
+        # Same last-run-wins semantics as the terminal write. (The first-finding
+        # milestone needs no mirroring — it is written to state directly at stamp time.)
+        self._state["queries_executed"] = self._status.queries_executed
+        self._state["tables_total"] = self._status.tables_total
+        self._state["columns_total"] = self._status.columns_total
+        self._state["started_at"] = self._status.started_at
+        # The REASON, mirrored beside the phase it explains. Without this the phase
+        # survived a restart and the explanation did not: `/status` reported
+        # `phase: "failed", error: null` for a connection whose failure had been recorded
+        # in memory and thrown away on the next boot, and `_restored_error` could only
+        # derive a reason from per-schema failures — so a SINGLE-schema connection was
+        # structurally incapable of ever saying what went wrong. A terminal state nobody
+        # can explain is one people fix by starting over, which costs a full re-run.
+        #
+        # Written on every save (not only on failure) so a recovered run CLEARS it: a
+        # stale reason outliving the failure it describes would be worse than none, since
+        # it reads as a fresh diagnosis of a run that actually succeeded.
+        if self._status.error:
+            self._state["error"] = str(self._status.error)
+        else:
+            self._state.pop("error", None)
+        # Persist negative knowledge (columns/tables the generator invented that don't
+        # exist) so a connection LEARNS them once instead of re-paying tokens to
+        # re-discover the same dead names (e.g. line_total, customer_id, ecommerce.*)
+        # on every run. Reloaded in __init__ and seeded into the generator's avoid-list.
+        _dr = getattr(self, "_dead_refs", None)
+        if _dr:
+            self._state["dead_refs"] = sorted(_dr)
+        if self.canvas_id:
+            _store.save_canvas(self.canvas_id, self._state)
+        else:
+            _store.save(self._store_key, self._state)
+
+    def _leaks_schema(self, sql: str) -> bool:
+        """For a schema-SCOPED run, True if the SQL references a table in a DIFFERENT schema.
+        Scoping filters get_schema() but the underlying DuckDB can still EXECUTE a cross-schema
+        query, so a pinned/profile-seeded SQL could escape the schema — drop such findings so a
+        per-schema view stays pure. No-op for connection-level runs (schema_name=None)."""
+        if not self.schema_name:
+            return False
+        mine = self.schema_name.lower()
+        other = {dataset_of(t).lower() for t in tables_in_sql(sql)} - {mine, ""}
+        return bool(other)
+
+    # ── External control ──────────────────────────────────────────────────────
+
+    def _journal(self, kind: str, payload: dict | None = None) -> None:
+        """Best-effort kernel-journal emit, scoped to this exploration — the
+        event spine the UI subscribes to (K2). Never raises into the run."""
+        try:
+            from aughor.kernel.ledger import Ledger
+            from aughor.kernel.jobs import current_job_id
+            Ledger.default().emit(
+                kind, payload or {},
+                conn_id=self.connection_id, canvas_id=self.canvas_id,
+                job_id=current_job_id(),
+            )
+        except Exception:
+            logger.debug("journal emit failed (%s)", kind, exc_info=True)
+
+    def _record_first_insight(self) -> None:
+        """Stamp the time-to-first-insight milestone (B-6) on the first insight
+        of the run. No-op after that, so a restart/resume never re-stamps. Emits
+        an `exploration.first_insight` event carrying elapsed seconds so the
+        connect→first-insight funnel is a query, not a guess."""
+        if self._status.first_insight_at:
+            return
+        now = datetime.now(timezone.utc)
+        self._status.first_insight_at = now.isoformat()
+        self._state["first_insight_at"] = self._status.first_insight_at
+        elapsed: float | None = None
+        if self._status.started_at:
+            try:
+                elapsed = round((now - datetime.fromisoformat(self._status.started_at)).total_seconds(), 1)
+            except (ValueError, TypeError):
+                elapsed = None
+        self._journal("exploration.first_insight", {
+            "elapsed_seconds": elapsed,
+            "insights_found": self._status.insights_found,
+            "phase": self._status.phase.value if isinstance(self._status.phase, ExplorationPhase) else self._status.phase,
+        })
+        logger.info("[explorer:%s] ⏱ time-to-first-insight: %ss", self.connection_id, elapsed)
+
+    def _emit_insight(self, insight: dict, sql: str, *, dossier: dict | None = None,
+                      journal_extra: dict | None = None) -> None:
+        """Common emission tail for a discovered insight, shared by the cross-table pass
+        (cross-table) and the questions pass. Bumps counters, writes the K3
+        ledger artifact (Trust-Receipt provenance), fires the live
+        `exploration.insight` event so subscribed panels surface it immediately,
+        and stamps the TTFI milestone. The caller has already appended the
+        insight to `self._state["insights"]`.
+
+        Before this helper, the cross-table pass insights bumped only the counters — they had
+        no artifact and emitted no event, so the *earliest* findings never
+        surfaced live (the panels saw them only on the slow 60s fallback poll or
+        at completion). Routing both phases here closes that built-not-wired gap.
+        """
+        self._status.insights_found += 1
+        self._status.facts_discovered += 1
+        self._record_first_insight()
+        insight_id = insight.get("id", "")
+        # K3: the finding becomes a versioned ledger artifact with provenance
+        # edges — the Trust Receipt ("why believe this number") is a SELECT over
+        # these, not a reconstruction. Supersede-not-delete; re-explore → version+1.
+        try:
+            from aughor.kernel.ledger import Ledger
+            from aughor.kernel.jobs import current_job_id
+            _lineage = [("source_sql", "sql", sql)]
+            for _tbl in sorted(tables_in_sql(sql))[:8]:
+                _lineage.append(("input", f"table:{_tbl}", None))
+            # DE-4: the columns the finding's SQL read, beside its tables, with how each was
+            # resolved — qualified against this connection's schema, rendered once per run.
+            _columns: list[str] = []
+            try:
+                from aughor.trust.lineage_edges import column_edges, payload_columns
+                _col_rows = column_edges([sql], dialect=getattr(self._conn, "dialect", None),
+                                         schema_map=_lineage_schema_for(self.connection_id, self._conn))
+                _lineage.extend(_col_rows)
+                _columns = payload_columns(_col_rows)
+            except Exception:
+                logger.debug("column lineage skipped", exc_info=True)
+            _lineage.append(("validated_by", "guard:numeric_grounding",
+                             "all magnitudes matched result cells"))
+            # The Finding Dossier rides INSIDE the finding artifact's payload (not
+            # state["insights"], which the panel reads and must stay lean). The
+            # read-only receipt endpoint returns the whole payload, so the Evidence
+            # drawer gets the full derivation for free — no new endpoint, no recompute.
+            # Re-explore writes version+1, naturally re-snapshotting the dossier.
+            if dossier is not None:
+                _lineage.append(("derivation", "dossier", "captured at emit time"))
+            _payload = insight if dossier is None else {**insight, "dossier": dossier}
+            if _columns:
+                _payload = {**_payload, "columns": _columns}
+            _aid = Ledger.default().artifact_write(
+                "finding",
+                f"insight:{self.connection_id}:{insight_id}",
+                _payload,
+                conn_id=self.connection_id,
+                canvas_id=self.canvas_id,
+                created_by_job=current_job_id(),
+                lineage=_lineage,
+            )
+            # The explorer writer (the 2027 study §E, the first of the five shapes): the finding is
+            # a measured claim in the Record, warranted by the artifact just written. Best-effort.
+            try:
+                from aughor.record.writers import book_explorer_finding
+                book_explorer_finding(finding=_payload, sql=sql, connection_id=self.connection_id,
+                                      receipt_id=_aid, schema_name=self.schema_name or "",
+                                      canvas_id=self.canvas_id or "")
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "the explorer's finding could not be booked into the Record; the artifact stands",
+                         counter="record.explorer_finding", conn_id=self.connection_id)
+        except Exception:
+            logger.debug("finding artifact write failed", exc_info=True)
+        payload = {"insight_id": insight_id, "finding": str(insight.get("finding", ""))[:120]}
+        if journal_extra:
+            payload.update(journal_extra)
+        self._journal("exploration.insight", payload)
+
+    def _finding_id(self, base: str) -> str:
+        """``base`` made unique across the connection — a run over one schema of several puts the schema in front."""
+        return _store.scoped_finding_id(None if getattr(self, "canvas_id", None) else getattr(self, "schema_name", None), base)
+
+    def _rescope_findings(self) -> None:
+        """Once per schema's state: findings kept from before ids carried their schema take it now (`dossier.rescope`),
+        and the state is saved at once, so the Briefing reads the new ids beside their receipts."""
+        if getattr(self, "canvas_id", None) or not getattr(self, "schema_name", None):
+            return
+        try:
+            from aughor.explorer.dossier import rescope
+            # A finding reading another schema's tables was read back here from that schema's receipt: it is set
+            # aside with the reason, never renamed into this schema.
+            leaked = 0
+            for f in self._state.get(_store.FINDINGS) or []:
+                if isinstance(f, dict) and not f.get("invalid") and self._leaks_schema(str(f.get("sql") or "")):
+                    f["invalid"] = True
+                    f["invalid_reason"] = "it reads another schema's tables — read back from that schema's receipt"
+                    leaked += 1
+            if rescope(self.connection_id, self.schema_name, self._state) or leaked:
+                _store.save(self._store_key, self._state)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "a schema's findings could not take their schema-scoped ids; they keep the old ones this run",
+                     counter="explorer.rescope", conn_id=self.connection_id)
+
+    def _read_prior_pinned(self, qi: int) -> Optional[dict]:
+        """The latest stored pinned finding for slot ``qi`` from the ledger, or None.
+        Lets the pinned pass REPRODUCE a finding (read) instead of re-running identical
+        SQL when the data hasn't moved — killing the visible 'asks the same question
+        every run' symptom while keeping the briefing reproducible."""
+        try:
+            from aughor.kernel.ledger import Ledger
+            rec = Ledger.default().receipt(f"insight:{self.connection_id}:{self._finding_id(f'pinned__{qi}')}")
+            payload = ((rec or {}).get("artifact", {}) or {}).get("payload", {}) or {}
+            if isinstance(payload, dict) and payload.get("finding") and payload.get("sql"):
+                return payload
+        except Exception:
+            logger.debug("[explorer:%s] prior pinned read failed (q%d)",
+                         self.connection_id, qi, exc_info=True)
+        return None
+
+    def pause(self) -> None:
+        """Yield execution — called when a user investigation begins."""
+        self._can_run.clear()
+        self._status.paused = True
+
+    def resume(self) -> None:
+        """Resume exploration — called when a user investigation ends."""
+        self._can_run.set()
+        self._status.paused = False
+
+    def stop(self) -> None:
+        """Permanently stop (e.g. connection deleted)."""
+        self._stopped = True
+        self._can_run.set()  # unblock if currently paused so the task exits
+
+    @property
+    def status(self) -> ExplorationStatus:
+        return self._status
+
+    # ── Execution gate ────────────────────────────────────────────────────────
+
+    async def _gate(self) -> None:
+        """Block until unpaused, then enforce the per-phase rate limit."""
+        await self._can_run.wait()
+        if self._stopped:
+            raise asyncio.CancelledError()
+        if self._rate_seconds > 0:
+            elapsed = time.monotonic() - self._last_query_at
+            wait = self._rate_seconds - elapsed
+            if wait > 0:
+                await asyncio.sleep(wait)
+
+    async def _run(self, sql: str, think: str = "", *, schema: Optional[str] = None) -> Optional[list]:
+        """Execute one read-only SQL query off the event loop and record an episode turn.
+
+        Pass ``schema`` when the SQL was WRITTEN BY A MODEL: execution then routes through the
+        shared guard battery (``aughor.sql.executor.execute_guarded``) instead of hitting the
+        connector raw, so the explorer gets the same deterministic hardening every other answer
+        path already had — de-fan and preflight-repair BEFORE the query runs, plus the
+        post-execute guard findings. This agent writes the Briefing, and it was the only
+        generate-and-execute path in the system still executing unguarded.
+
+        DETERMINISTIC-ONLY by construction: no ``fix_prompt_template``/``provider_factory`` is
+        passed, so the shared runner never adds an LLM retry — the questions pass has its own repair loop
+        and a second one would double the cost and fight the first.
+
+        Without ``schema`` the raw path is kept, deliberately: the profiling / percentile /
+        catalog / join probes are built by the explorer itself from parsed schema metadata, not
+        by a model, so there is no generated SQL to guard and hardening them would be waste.
+
+        ``preflight_harden`` may REWRITE the SQL (dry-run gated). The rewritten text is what
+        actually ran, so it is what gets journalled — and callers that persist the query
+        alongside its rows must resync from :attr:`_last_executed_sql`, or the stored finding
+        would cite SQL that never produced its numbers.
+        """
+        loop = asyncio.get_running_loop()
+        self._last_query_at = time.monotonic()
+        self._status.queries_executed += 1
+        sql_dialect = None
+        if schema:
+            sql = self._repair_contra_amount(sql)
+            keyed = self._order_keys_projected(sql)
+            if keyed:
+                from aughor.stats import stats as _s
+                _s.inc("explorer.order_keys_projected")
+                logger.info("[explorer:%s] projected the ORDER BY key(s) the result was ranked by "
+                            "but did not return", self.connection_id)
+                sql = keyed
+        else:
+            # PLATFORM SQL, written by this agent in DuckDB's dialect (the docstring above
+            # says so: the profiling / percentile / catalog / join probes are built here from
+            # parsed metadata, not by a model). On a `writes_native_sql` engine it was sent as
+            # written, and BigQuery refused it: measured over September 2026, 40 of the
+            # explorer's 42 SQL failures were `CAST(x AS FLOAT)` ("Type not found: FLOAT"),
+            # `CAST(x AS VARCHAR)` ("Type not found: VARCHAR") and `::` ("CAST operators are
+            # not supported"). It is declared DuckDB to the door, which translates it for such
+            # an engine and hands it on untouched everywhere else, so the common path pays
+            # nothing (GM-1).
+            #
+            # NOT declared for model-written SQL above: the model is told the target dialect and
+            # writes in it, so reading that as DuckDB and transpiling would corrupt it.
+            sql_dialect = "duckdb"
+        self._last_executed_sql = sql
+        try:
+            if schema:
+                from aughor.semantic.enforcement import rules_for_statement
+                from aughor.sql.executor import execute_guarded
+                # BR-7 — a finding that computes a quantity an approved metric defines is
+                # computed over that metric's rows. `think` is the question this statement was
+                # written to answer; the rules are the ones a chat answer to it would carry
+                # (none unless it names an approved metric that declares a filter). Every
+                # other path that runs model-written SQL already hands the executor these —
+                # the explorer, which writes the Briefing, was the one that did not.
+                rules = rules_for_statement(getattr(self, "connection_id", "") or "", think or None,
+                                            dialect=getattr(self._conn, "dialect", "") or "duckdb")
+                result = await loop.run_in_executor(
+                    None, lambda: execute_guarded(
+                        self._conn, sql, query_id="__explorer__", schema=schema, sql_dialect=sql_dialect,
+                        metric_rules=rules),
+                )
+            else:
+                result = await loop.run_in_executor(
+                    None, lambda: self._conn.execute("__explorer__", sql, sql_dialect=sql_dialect)
+                )
+            ran = (getattr(result, "sql", None) or sql).strip() or sql
+            self._last_executed_sql = ran
+            if result.error:
+                self._episodes.add(think=think, sql=ran, observation=f"ERROR: {result.error}")
+                return None
+            obs_rows = "\n".join(str(r) for r in (result.rows or [])[:6])
+            obs = f"{result.row_count} rows\ncols: {result.columns}\n{obs_rows}"
+            self._episodes.add(think=think, sql=ran, observation=obs)
+            return result.rows or []
+        except Exception as e:
+            self._episodes.add(think=think, sql=sql, observation=f"EXCEPTION: {e}")
+            return None
+
+    def _contra_units(self, cp: dict, schema_text: str) -> None:
+        """Settle whether each contra-revenue column holds a RATE or an AMOUNT, once.
+
+        Reuses the profiles the profiler already computed — `ColumnProfile.value_range` is the
+        measured (min, max) — so this costs no warehouse query. The classification itself
+        lives in `loss_signals`, which is the one module allowed to decide it; duplicating
+        the rule here is how the two paths would drift apart.
+
+        Sets `_contra_rate_cols` (leaf names) and `_contra_directive` (the prompt text).
+        Both empty when nothing is a rate, which is the common case and byte-identical to
+        the behaviour before this guard existed.
+        """
+        self._contra_rate_cols: list = []
+        self._contra_directive: str = ""
+        try:
+            from aughor.agent.loss_signals import (contra_amount_directive,
+                                                   contra_kinds_from_ranges,
+                                                   contra_rate_columns, gross_columns)
+            ranges = {}
+            for table, cols in (cp or {}).items():
+                for col, prof in (cols or {}).items():
+                    vr = getattr(prof, "value_range", None)
+                    if isinstance(vr, (list, tuple)) and len(vr) == 2:
+                        ranges[f"{table}.{col}"] = tuple(vr)
+            kinds = contra_kinds_from_ranges(schema_text or "", ranges)
+            self._contra_rate_cols = contra_rate_columns(kinds)
+            self._contra_directive = contra_amount_directive(
+                kinds, gross_columns(schema_text or ""))
+            if self._contra_rate_cols:
+                logger.info("[explorer:%s] contra units probed: rates=%s",
+                            self.connection_id, self._contra_rate_cols)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "contra-unit classification is best-effort; the explorer "
+                          "proceeds without the rate guard",
+                     counter="explorer.contra_units")
+
+    def _order_keys_projected(self, sql: str) -> Optional[str]:
+        """``sql`` with the outer ORDER BY keys it ranks by but does not return added to its
+        SELECT list, when that rewrite exists and binds; else None.
+
+        A finding's SQL is its evidence: the Briefing re-runs it to draw the finding's chart.
+        ``SELECT category … ORDER BY total_profit DESC`` ranks by profit and returns names
+        only, so the chart had no measure (Table was its only option) and the interpreting
+        model had no figure to state. See ``aughor.sql.order_measure``.
+        """
+        if not sql:
+            return None
+        try:
+            from aughor.sql.order_measure import project_order_keys
+            rewritten = project_order_keys(sql, getattr(self._conn, "dialect", "duckdb"))
+            if rewritten and self._conn.dry_run(rewritten)[0]:
+                return rewritten
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "projecting ORDER BY keys is best-effort; the original SQL runs",
+                     counter="explorer.order_keys_projection_failed")
+        return None
+
+    def _repair_contra_amount(self, sql: str) -> str:
+        """Braces to `_contra_directive`'s belt: rewrite a generated aggregate that sums a
+        contra RATE as if it were money.
+
+        The deep-analysis path has carried this pair since PR #255; the explorer writes its
+        own SQL in the questions pass and consulted neither, so it reproduced the exact defect the
+        guard exists to stop — `SUM(Discount * Quantity)` on the Superstore sample dataset, where
+        `Discount` is a fraction 0.00–0.80. A rate times a unit count is a number in no
+        unit at all, and it reads as a small amount of money rather than an error.
+
+        Applied only to model-written SQL (the `schema`-bearing branch of `_run`); the
+        explorer's own profiling and join probes are built from parsed metadata and have
+        nothing to guard.
+        """
+        rates = getattr(self, "_contra_rate_cols", None)
+        if not rates or not sql:
+            return sql
+        try:
+            from aughor.agent.loss_signals import contra_amount_fix
+            fixed = contra_amount_fix(sql, tuple(rates))
+            if not fixed:
+                return sql
+            from aughor.stats import stats as _s
+            _s.inc("explorer.contra_amount_repaired")
+            logger.info("[explorer:%s] contra repair: %s", self.connection_id, fixed[1])
+            return fixed[0]
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "contra-amount repair is best-effort; the original SQL runs",
+                     counter="explorer.contra_repair")
+            return sql
+
+    @staticmethod
+    def _kb_context(query: str, top_k: int = 3) -> str:
+        """Curated SQL/domain patterns for `query` from the knowledge base, or "".
+
+        The ADA path has consulted this on every plan since it shipped; the explorer never did —
+        so the agent that writes the Briefing was the one generating SQL with no access to the
+        library describing the mistakes it kept making. The KB carries a "Fan-out Detection and
+        Prevention" entry (pre-aggregate the child before joining) and a "Return Rate" entry
+        whose misconception note is exactly the ratio-of-sums rule; the questions pass has been rediscovering
+        both the hard way, one guard rejection at a time.
+
+        Bounded and fail-open by construction — `retrieve_for_planning` already returns "" on any
+        failure, so a missing index or an unreachable Qdrant costs nothing but the lookup.
+        """
+        if not query or not query.strip():
+            return ""
+        try:
+            from aughor.semantic.kb_retriever import retrieve_for_planning
+            block = retrieve_for_planning(query.strip()[:400], top_k=top_k) or ""
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "explorer KB retrieval is best-effort; generation proceeds without it",
+                     counter="explorer.kb_retrieval_failed")
+            return ""
+        if block:
+            from aughor.stats import stats as _s
+            _s.inc("explorer.kb_retrieved")
+            return block.rstrip() + "\n\n"
+        return ""
+
+    # ── Time window helpers ───────────────────────────────────────────────────
+
+    def _compute_time_window(
+        self, tp: dict, cp: Optional[dict] = None, jmap: Optional[dict] = None,
+    ) -> Optional[tuple[str, str]]:
+        """Anchor the 12-month window's recency on the consensus trailing edge of
+        *activity* (measure-bearing event/fact tables), excluding calendar/dimension
+        spines — so a date dimension running into the future can't push the window past
+        the last real fact and yield empty ("no data") briefings. Sentinel dates
+        (9999/1900/epoch) are filtered, and the dense ``effective_date_range`` is
+        preferred over the raw ``date_range``. See docs/ADAPTIVE_TEMPORAL_SCOPE.md §3.
+        """
+        start, end, discrepancy = role_aware_time_window(tp, cp, jmap)
+        if discrepancy:
+            spines = ", ".join(f"{t} (→{r})" for t, r in discrepancy[:3])
+            logger.info(
+                "[explorer:%s] Date spine(s) extend past the last activity (%s): %s — "
+                "anchoring on observed activity, not the calendar.",
+                self.connection_id, end, spines,
+            )
+        if not (start and end):
+            return None
+
+        # Tier 1: narrow to the CURRENT regime when one is clearly present. Regime-narrows-
+        # only — we move the window start forward to a recent structural break, never widen
+        # or weaken the Tier-0 result; any failure falls back to the fixed window.
+        try:
+            anchor, _rec, _eff = anchor_activity(tp, cp)
+            if anchor:
+                regime_start = self._regime_window_start(anchor, tp, start)
+                # Floor: never narrow below ~a quarter of data — guards against a recent
+                # daily/weekly spike collapsing the window to days.
+                if regime_start and regime_start > start and days_between(regime_start, end) >= 90:
+                    logger.info(
+                        "[explorer:%s] Tier 1: narrowing window to current regime (start %s → %s)",
+                        self.connection_id, start, regime_start,
+                    )
+                    start = regime_start
+        except Exception:
+            logger.debug("[explorer:%s] Tier 1 regime refinement skipped", self.connection_id, exc_info=True)
+
+        return start, end
+
+    def _regime_window_start(self, table: str, tp: dict, win_start: str) -> Optional[str]:
+        """Query the activity density series (rows per period) for ``table`` and return the
+        current-regime start date when a structural break falls *inside* the window
+        (``> win_start``), else None. Best-effort; never raises into the pipeline.
+        Tier 1 of docs/ADAPTIVE_TEMPORAL_SCOPE.md."""
+        prof = tp.get(table)
+        ts_col = getattr(prof, "primary_timestamp", None) if prof else None
+        if not ts_col:
+            return None
+        grain = (getattr(prof, "time_grain", None) or "month")
+        unit = {"day": "day", "week": "week", "month": "month",
+                "quarter": "quarter", "year": "year"}.get(grain, "month")
+        sql = (
+            f"SELECT date_trunc('{unit}', {ts_col})::VARCHAR AS p, COUNT(*) AS c "
+            f"FROM {table} WHERE {ts_col} IS NOT NULL GROUP BY 1 ORDER BY 1"
+        )
+        try:
+            # Direct connector call (this probe does not go through `_run`), so it declares
+            # the same dialect: `date_trunc(...)::VARCHAR` is DuckDB, and BigQuery rejects
+            # the `::` operator outright.
+            r = self._conn.execute("__explorer__", sql, sql_dialect="duckdb", internal=True)
+        except Exception:
+            return None
+        rows = (r.rows or []) if not getattr(r, "error", None) else []
+        if len(rows) < 12:   # need enough periods for a meaningful regime
+            return None
+        periods = [str(row[0])[:10] for row in rows]
+        counts = [row[1] for row in rows]
+        try:
+            from aughor.explorer.regime import adaptive_window
+            rstart, _rend, _reason = adaptive_window(periods, counts)
+        except Exception:
+            return None
+        return rstart if (rstart and rstart > win_start) else None
+
+    def _compute_macro_context(self, tp: dict, cp: dict) -> Optional[dict]:
+        """Tier 2: one coarse full-span rollup over the anchor activity table — the long
+        arc (secular trend / growth factor) the briefing juxtaposes against the recent
+        regime. Cheap (one GROUP BY year, ~N_years rows). Best-effort; returns None on
+        any failure. See aughor/explorer/temporal.py + docs/ADAPTIVE_TEMPORAL_SCOPE.md §5."""
+        anchor, _rec, _eff = anchor_activity(tp, cp)
+        if not anchor:
+            return None
+        prof = tp.get(anchor)
+        ts_col = getattr(prof, "primary_timestamp", None) if prof else None
+        if not ts_col:
+            return None
+
+        # Roll up at year grain unless the full span is short (then quarter).
+        grain = "year"
+        # Pick one additive measure column on the anchor to roll up alongside row counts.
+        # Skip key/id-like columns the profiler mis-tags as measures — SUM(l_orderkey)
+        # is a meaningless aggregate of identifiers, not a business quantity.
+        def _looks_like_key(name: str) -> bool:
+            n = name.lower()
+            # _key/_id (snake) and ...key/...id (TPC-style concat: l_orderkey, partkey)
+            return (n in ("id", "key") or n.endswith(("_id", "_key", "_no", "_num", "_code", "_sk",
+                                                       "key", "id"))
+                    or n.startswith(("id_", "key_")))
+        measure_col = None
+        for col_name, col_p in (cp.get(anchor) or {}).items():
+            if profile_field(col_p, "semantic_type") == "measure" and not _looks_like_key(col_name):
+                measure_col = col_name
+                break
+
+        measure_expr = f", SUM({measure_col}) AS m" if measure_col else ""
+        sql = (
+            f"SELECT date_trunc('{grain}', {ts_col})::VARCHAR AS p, COUNT(*) AS c{measure_expr} "
+            f"FROM {anchor} WHERE {ts_col} IS NOT NULL GROUP BY 1 ORDER BY 1"
+        )
+        try:
+            # Direct connector call (this probe does not go through `_run`), so it declares
+            # the same dialect: `date_trunc(...)::VARCHAR` is DuckDB, and BigQuery rejects
+            # the `::` operator outright.
+            r = self._conn.execute("__explorer__", sql, sql_dialect="duckdb", internal=True)
+        except Exception:
+            return None
+        rows = (r.rows or []) if not getattr(r, "error", None) else []
+        if len(rows) < 2:
+            return None
+
+        periods = [str(row[0])[:10] for row in rows]
+        counts = [row[1] for row in rows]
+        measures = [row[2] for row in rows] if measure_col else None
+
+        from aughor.explorer.temporal import build_macro_context
+        micro_start = self._time_window[0] if self._time_window else None
+        return build_macro_context(
+            periods, counts, measures=measures, measure_name=measure_col,
+            micro_start=micro_start, grain=grain, anchor=anchor,
+        )
+
+    def _time_filter(self, table: str, tp: dict) -> str:
+        """
+        Return a SQL AND-clause fragment for the 12-month time window, e.g.
+          'AND order_purchase_timestamp >= \'2023-09-14\''
+        Returns '' if no time window is set or the table has no primary timestamp.
+        """
+        if not self._time_window:
+            return ""
+        t_profile = tp.get(table)
+        if not t_profile:
+            return ""
+        ts_col = getattr(t_profile, "primary_timestamp", None)
+        if not ts_col:
+            return ""
+        start_str, _ = self._time_window
+        return f"AND {ts_col} >= '{start_str}'"
+
+    # ── Main loop ─────────────────────────────────────────────────────────────
+
+    async def explore(self, domain_intel_only: bool = False, *, structure_only: bool = False,
+                      gaps_only: bool = False, reason: str = "") -> None:
+        """Concurrency-bounded entry point for an exploration run (scheduled as an
+        asyncio.Task by the kernel). Acquires a shared slot so at most
+        AUGHOR_MAX_CONCURRENT_EXPLORERS run their phases at once; excess explorers wait
+        here (phase stays PENDING) rather than piling onto the event loop and starving
+        the API. `async with` releases the slot correctly even on cancellation."""
+        sem = _get_explorer_semaphore()
+        if sem.locked():
+            logger.info("[explorer:%s] queued — waiting for an exploration slot (max %d concurrent)",
+                        self.connection_id, _MAX_CONCURRENT_EXPLORERS)
+        # R6: the global cap is the outer host ceiling (unchanged); the per-workspace lane is a
+        # stricter inner bound so one workspace can't monopolise compute once the global cap is
+        # raised for throughput. At defaults the global cap dominates → behaviour is identical.
+        from aughor.db.lanes import lane_for_connection
+        lane = lane_for_connection(self.connection_id)
+        async with sem:
+            async with lane.gate():
+                await self._explore_run(domain_intel_only=domain_intel_only, structure_only=structure_only,
+                                        gaps_only=gaps_only, reason=reason)
+
+    async def _explore_run(self, domain_intel_only: bool = False, *, structure_only: bool = False,
+                           gaps_only: bool = False, reason: str = "") -> None:
+        """Full exploration run.
+
+        If domain_intel_only=True (triggered by "Explore 5 more") skips the structure passes
+        and runs only the questions pass, consuming the extended budget.
+
+        The exploration principles' three jobs (§2, 2026-10-08): ``structure_only`` learns the
+        structure — profiles, empty-value meanings, joins, lifecycles, distributions, cross-table
+        patterns — and stops before anything that calls a model; ``domain_intel_only`` maps the
+        questions on a structure already learned; neither is both. ``gaps_only`` is an automatic
+        re-run's questions: the uncovered cells of the question list, never the model's free
+        curiosity loop, which runs when a person starts it or a named event reopens the dataset.
+        """
+        self._structure_only = bool(structure_only)
+        self._gaps_only = bool(gaps_only)
+        self._job = "structure" if structure_only else ("questions" if domain_intel_only else "full")
+        self._job_reason = reason
+        _job_words = {
+            "structure": "structure only — no model call",
+            "questions": "questions only — the structure is already learned",
+            "full": "full run — structure, then questions, then synthesis",
+        }[self._job] + (" (only the questions not yet asked)" if gaps_only else "")
+        logger.info("[explorer:%s] Starting — %s%s", self.connection_id, _job_words,
+                    f" · {reason}" if reason else "")
+        _loop = asyncio.get_running_loop()
+        await _loop.run_in_executor(None, self._rescope_findings)
+        self._findings_at_start = self._findings_made()
+        # A new run is not the stopped one: only THIS run's own budget stop may re-stamp it,
+        # or a later failure of another kind would be continued as if it were a budget stop.
+        self._state.pop("stopped_on_budget_at", None)
+        try:
+            tp, cp, jmap = await _loop.run_in_executor(None, self._load_profiler_data)
+            if not tp:
+                # An engine the profiler cannot profile lands here on EVERY run. This was
+                # a bare return — the kernel job then reported SUCCEEDED while status sat
+                # at pending forever, with 0 queries and 0 insights. Absent input is a
+                # failure the user can see, never a success with nothing in it.
+                self._status.phase = ExplorationPhase.FAILED
+                self._status.error = (
+                    f"every table here is turned off for analysis ({self._turned_off} of them) — "
+                    "turn one back on in the Catalog to explore it" if getattr(self, "_turned_off", 0)
+                    else ("no profiler data for this connection — the schema "
+                          "profiler has not produced table profiles here "
+                          "(it may not support this engine yet)"))
+                self._journal("exploration.phase", {"phase": "failed", "reason": "no_profiler_data"})
+                self._save_state()
+                self._record_program("failed")
+                logger.warning(f"[explorer:{self.connection_id}] No profiler data — marking failed")
+                return
+
+            self._status.tables_total = len(tp)
+            self._status.columns_total = sum(len(v) for v in cp.values())
+            self._status.joins_total = len(jmap.get("joins", []))
+            # The dataset's fingerprint, stamped as soon as it is known — not only at COMPLETE, where a
+            # run that stopped never stamped it and the question list's reuse waited for a third run.
+            if not getattr(self, "canvas_id", None):
+                try:
+                    from aughor.db.connection import unfiltered_schema
+                    from aughor.explorer.continuous import fingerprint_of
+                    _dfp = await _loop.run_in_executor(None, lambda: fingerprint_of(unfiltered_schema(self._conn)))
+                    if _dfp:
+                        self._state["dataset_fingerprint"] = _dfp
+                except Exception as _dfp_exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_dfp_exc, "the dataset fingerprint stamp is best-effort; the next run stamps it",
+                             counter="explorer.dataset_fingerprint")
+
+            # Compute the 12-month window — recency anchored on activity (fact) tables,
+            # not the calendar spine (Tier 0; docs/ADAPTIVE_TEMPORAL_SCOPE.md §3).
+            self._time_window = self._compute_time_window(tp, cp, jmap)
+            if self._time_window:
+                logger.info(
+                    "[explorer:%s] Time window: %s → %s",
+                    self.connection_id, self._time_window[0], self._time_window[1],
+                )
+
+            # Tier 3 cost governor: capture the activity high-water mark (for incremental
+            # re-exploration) and decide whether this connection is large enough that the
+            # curiosity loop should use approximate aggregates. Best-effort, never fatal.
+            try:
+                from aughor.explorer.watermark import get_watermark, set_watermark
+                _anchor, _rec, _ = anchor_activity(tp, cp)
+                self._prev_watermark = get_watermark(self.connection_id, _anchor) if _anchor else None
+                # If the activity high-water mark hasn't advanced since the last run, the
+                # data behind a pinned finding hasn't moved — so it's reproducible from the
+                # ledger (read, don't re-run identical SQL every exploration). Refresh only
+                # when activity moved.
+                self._activity_unchanged = bool(_anchor and _rec and self._prev_watermark == _rec)
+                if _anchor and _rec:
+                    set_watermark(self.connection_id, _anchor, _rec)
+                self._cost_large = any((profile_field(p, "row_count") or 0) >= _COST_LARGE_ROWS
+                                       for p in (tp or {}).values())
+                if self._cost_large:
+                    logger.info("[explorer:%s] Tier 3: large connection — approximate aggregates on",
+                                self.connection_id)
+            except Exception:
+                self._cost_large = False
+
+            # Tier 2: cheap full-span macro rollup over the anchor — the long arc that
+            # briefings juxtapose against the recent-regime micro window. Best-effort.
+            try:
+                self._macro_context = self._compute_macro_context(tp, cp)
+                if self._macro_context:
+                    self._state["macro_context"] = self._macro_context
+                    self._save_state()
+                    logger.info(
+                        "[explorer:%s] Macro context: %s %s→%s (%d %ss)",
+                        self.connection_id, self._macro_context.get("anchor"),
+                        self._macro_context.get("first_period"), self._macro_context.get("last_period"),
+                        self._macro_context.get("n_periods"), self._macro_context.get("grain"),
+                    )
+            except Exception:
+                logger.debug("[explorer:%s] Tier 2 macro context skipped", self.connection_id, exc_info=True)
+
+            if not domain_intel_only:
+                # Phases 3-7: schema cartography — run as fast as the DB allows
+                self._rate_seconds = _RATE_SECONDS_SCHEMA
+
+                # structure pass — null meaning
+                self._status.phase = ExplorationPhase.NULL_MEANING
+                self._journal("exploration.phase", {"phase": "null_meaning"})
+                await self._pass_null_meaning(tp, cp)
+
+                # structure pass — join verification
+                self._status.phase = ExplorationPhase.JOIN_VERIFICATION
+                self._journal("exploration.phase", {"phase": "join_verification"})
+                await self._pass_joins(jmap, tp)
+
+                # structure pass — lifecycle mapping
+                self._status.phase = ExplorationPhase.LIFECYCLE_MAPPING
+                self._journal("exploration.phase", {"phase": "lifecycle_mapping"})
+                await self._pass_lifecycle(tp, cp)
+
+                # structure pass — distribution profiling
+                self._status.phase = ExplorationPhase.DISTRIBUTION
+                self._journal("exploration.phase", {"phase": "distribution"})
+                await self._pass_distributions(cp, tp)
+
+                # structure pass — cross-table patterns
+                self._status.phase = ExplorationPhase.CROSS_TABLE
+                self._journal("exploration.phase", {"phase": "cross_table"})
+                await self._pass_patterns(cp, jmap, tp)
+                self._state["structure_learned"] = {"at": datetime.now(timezone.utc).isoformat(),
+                                                    "fp": self._state.get("dataset_fingerprint")}
+                self._save_state()
+
+            if self._structure_only:
+                # The structure job ends here: nothing below it may call a model (§2, decision 2).
+                self._status.domain_intel_skipped = True
+                self._status.domain_intel_note = (self._job_reason or
+                    "structure learned; its questions wait for this dataset's layer to be set")
+            else:
+                # ── Ontology gate: the questions pass needs the ontology; build it now if it
+                # hasn't been created yet.  On a fresh connection, the structure passes can
+                # finish in <10 s while the ontology build (triggered by the first
+                # /ontology API request) may not have happened yet.  get_schema()
+                # is idempotent + cached — instant on the second call.
+                from aughor.ontology.store import load_latest_ontology as _load_onto
+                if not _load_onto(self.connection_id, self.schema_name):
+                    logger.info(
+                        "[explorer:%s] Ontology not found before the questions — building now…",
+                        self.connection_id,
+                    )
+                    try:
+                        await _loop.run_in_executor(None, self._conn.build_intelligence)
+                        logger.info(
+                            "[explorer:%s] Ontology build complete, proceeding to the questions",
+                            self.connection_id,
+                        )
+                    except Exception as _onto_exc:
+                        logger.warning(
+                            "[explorer:%s] Ontology build failed — the questions will be skipped: %s",
+                            self.connection_id, _onto_exc,
+                        )
+
+                # the questions: slow down to avoid overloading the DB
+                # and to allow the user to stop between queries if needed
+                self._rate_seconds = _RATE_SECONDS_INTEL
+                self._status.phase = ExplorationPhase.DOMAIN_INTEL
+                self._journal("exploration.phase", {"phase": "domain_intel"})
+                self._status.domain_intel_skipped = False   # cleared; set by the questions pass if it bails
+                self._status.domain_intel_note = None
+                await self._pass_questions(cp, tp)
+
+                # synthesis: compose pairs of existing findings into emergent
+                # insights neither parent holds (build on what we know; zero new scans for
+                # discovery). Runs at end-of-run over the full ledger. Best-effort — a
+                # synthesis failure must never fail the run or block COMPLETE.
+                try:
+                    self._status.phase = ExplorationPhase.SYNTHESIS
+                    self._journal("exploration.phase", {"phase": "synthesis"})
+                    await self._pass_synthesis(cp, tp)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as _se:
+                    logger.warning("[explorer:%s] synthesis failed (non-fatal): %s",
+                                   self.connection_id, _se)
+
+            # Done — persist runtime counters so the status fallback can restore them
+            self._status.phase = ExplorationPhase.COMPLETE
+            self._journal("exploration.phase", {"phase": "complete"})
+            self._status.completed_at = datetime.now(timezone.utc).isoformat()
+            self._state["phase"] = ExplorationPhase.COMPLETE.value
+            self._state["tables_total"] = self._status.tables_total
+            self._state["columns_total"] = self._status.columns_total
+            self._state["queries_executed"] = self._status.queries_executed
+            self._state["started_at"] = self._status.started_at
+            self._state["completed_at"] = self._status.completed_at
+            # A completed run has no failure to report. Cleared explicitly rather than
+            # left to `_save_state`, because this block writes the terminal record and a
+            # reader of it should not have to know which of two writers won.
+            self._state.pop("error", None)
+            self._state["domain_intel_skipped"] = self._status.domain_intel_skipped
+            self._state["domain_intel_note"] = self._status.domain_intel_note
+            # WP-6 — stamp the connection-level schema fingerprint this run covered, so the
+            # continuous-exploration tick can detect a later schema change (a table/column
+            # added or removed) and re-arm the Scout. Best-effort; None just means the tick
+            # falls back to the staleness refresh for this connection.
+            try:
+                from aughor.explorer.continuous import connection_schema_fingerprint
+                self._state["schema_fingerprint"] = connection_schema_fingerprint(self.connection_id)
+            except Exception as _fp_exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_fp_exc, "schema-fingerprint stamp is best-effort; continuous re-arm "
+                                  "falls back to the staleness refresh for this connection",
+                         counter="explorer.fingerprint_stamp")
+            self._save_state()
+            self._record_program("complete")
+            self._rebuild_context_graph()
+            # Idea 2 — the alerts worth having, proposed the moment the map is fresh: the
+            # Watcher's job, keyed on the schema fingerprint so an unchanged schema
+            # re-explored proposes nothing twice. Best-effort — a proposal is not the
+            # exploration, and a refusal to submit must not fail a finished run.
+            try:
+                from aughor.monitors.sentinel import submit_alert_proposals
+                await submit_alert_proposals(
+                    self.connection_id,
+                    fingerprint=str(self._state.get("schema_fingerprint") or ""))
+            except Exception as _alert_exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_alert_exc, "alert proposals are best-effort after an exploration",
+                         counter="explorer.alert_proposals")
+            # Arc BG-1 — the Briefing guide, drafted from what this run learned: the Briefer's job,
+            # keyed on the schema fingerprint. Never for a structure-only run (no model call may
+            # follow it) or a canvas; a re-run nobody started drafts only when the organisation
+            # lets Aughor make model calls nobody pressed for.
+            if not self._structure_only and not self.canvas_id:
+                try:
+                    from aughor.orgsettings.allows import allows
+                    if not self._gaps_only or allows("scheduled_model_work"):
+                        from aughor.briefing.guide import submit_draft
+                        await submit_draft(self.connection_id, self.schema_name,
+                                           fingerprint=str(self._state.get("schema_fingerprint") or ""))
+                except Exception as _guide_exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_guide_exc, "the Briefing guide's draft is best-effort after an exploration",
+                             counter="explorer.briefing_guide")
+            logger.info(
+                f"[explorer:{self.connection_id}] Complete — "
+                f"{self._status.queries_executed}q, "
+                f"{self._status.facts_discovered} facts, "
+                f"{self._status.insights_found} insights"
+            )
+
+        except (asyncio.CancelledError, _BudgetExceeded) as _stop:
+            # A cancel (budget breach / user stop / owner deletion) — or the run's own
+            # in-context budget firing on the call that crossed it (the kernel arms the
+            # same numbers its heartbeat enforces; BudgetExceeded is a BaseException, so
+            # it passes every fail-open `except Exception` above to land here) — unwinds
+            # here BEFORE the COMPLETE transition, so the in-memory status was left at
+            # whatever phase it was in (e.g. domain_intel). Mark it terminal so a later
+            # start/spawn doesn't see a stale "still running" explorer and refuse — the
+            # budget-cancel WEDGE (Tier-0 #1). Both paths save progress the same way.
+            self._status.phase = ExplorationPhase.FAILED
+            # The kernel says why it cancelled: a heartbeat that enforced the run's budget is a budget
+            # stop, said as one and continued like one. It arrived as a bare cancel and was written
+            # "budget exceeded or stopped", which the continuous loop must read as a person's stop.
+            from aughor.kernel.jobs import stop_reason
+            _why = stop_reason()
+            _budget_kill = _why.startswith("budget exceeded: ")
+            if not self._status.error:
+                self._status.error = (
+                    f"cancelled ({_stop.reason} exceeded) — progress saved"
+                    if isinstance(_stop, _BudgetExceeded)
+                    else f"cancelled ({_why[len('budget exceeded: '):]} exceeded) — progress saved" if _budget_kill
+                    else "cancelled (budget exceeded or stopped) — progress saved")
+            if isinstance(_stop, _BudgetExceeded) or _budget_kill:
+                # the continuous loop continues a budget stop a day later (explorer/continuous.py)
+                self._state["stopped_on_budget_at"] = datetime.now(timezone.utc).isoformat()
+            self._journal("exploration.phase", {"phase": "failed", "reason": "cancelled"})
+            self._save_state()
+            self._record_program("stopped")
+            logger.info(f"[explorer:{self.connection_id}] Cancelled, progress saved")
+            raise
+        except Exception as e:
+            self._status.phase = ExplorationPhase.FAILED
+            self._journal("exploration.phase", {"phase": "failed"})
+            self._status.error = str(e)
+            self._save_state()
+            self._record_program("failed")
+            logger.error(f"[explorer:{self.connection_id}] Error: {e}", exc_info=True)
+
+    async def _next_question(self, domain, domain_table_cols, cp, NQ, llm, steer_of, system: str, user: str):
+        """The domain loop's next question, cheapest source first: a cell of the question list,
+        synthesised with no generation call (Tier-1 #4); else the grounded probe, where the model picks
+        columns from the real schema and the SQL is compiled; else free-form generation, for probes the
+        compiler cannot express. An automatic re-run (``_gaps_only``) asks the question list's uncovered
+        cells only — the model's free curiosity runs when a person starts a run, on a dataset's first
+        questions, or when a named event reopens it (the exploration principles §2) — so with no cell
+        left it returns ``_NO_MORE_QUESTIONS`` and calls no model."""
+        nq = self._manifest_nq(domain_table_cols, NQ) if self._manifest_driven else None
+        if nq is not None:
+            return nq
+        if getattr(self, "_gaps_only", False):
+            return _NO_MORE_QUESTIONS
+        # the questions pass INVENTS the question, so retrieval cannot key on one — the steer keys on the domain
+        # and its tables, which are known before generation.
+        nq = await self._grounded_probe_nq(domain, domain_table_cols, cp, NQ, llm, steer_of())
+        if nq is not None:
+            from aughor.stats import stats as _s
+            _s.inc("explorer.grounded_probe")
+            return nq
+        from aughor.stats import stats as _s
+        _s.inc("explorer.grounded_fallback")
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, lambda: llm.complete(system=system, user=user, response_model=NQ))
+
+    def _table_layer(self, table: str) -> str:
+        """The layer a person SET for this table itself ("" when none) — a proposal never applies
+        (decision 2). Read once per schema per run."""
+        cache = self.__dict__.setdefault("_table_layer_cache", {})
+        if "__any__" not in cache:
+            # a connection where no person set any layer reads nothing more (the common case, and a test's)
+            try:
+                from aughor.ontology.dataset_layers import LAYERS_FILE
+                from aughor.ontology.recommendations import recommendations_root, safe_name
+                root = recommendations_root() / safe_name(self.connection_id)
+                cache["__any__"] = root.is_dir() and any(root.glob(f"*/{LAYERS_FILE}"))
+            except Exception:  # noqa: BLE001
+                cache["__any__"] = False
+        if not cache["__any__"]:
+            return ""
+        name = str(table or "")
+        schema = name.rsplit(".", 1)[0].split(".")[-1] if "." in name else getattr(self, "schema_name", None)
+        if not schema:
+            # the scope a person set it under in the Catalog: the connection's one schema (`layer_scope`)
+            if "__scope__" not in cache:
+                try:
+                    from aughor.routers._shared import layer_scope
+                    cache["__scope__"] = layer_scope(self.connection_id, None)
+                except Exception:  # noqa: BLE001
+                    cache["__scope__"] = "default"
+            schema = cache["__scope__"]
+        if schema not in cache:
+            try:
+                from aughor.ontology.dataset_layers import load_declared
+                cache[schema] = {t: d["layer"] for t, d in load_declared(self.connection_id, schema)["tables"].items()}
+            except Exception as exc:  # noqa: BLE001 — no layer read, no layer applied
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "table layers unreadable for a run; every table is asked about",
+                         counter="explorer.table_layers")
+                cache[schema] = {}
+        return cache[schema].get(name.split(".")[-1].lower(), "")
+
+    def _findings_made(self) -> int:
+        """How many findings this dataset's state holds — what a run's new findings are counted against."""
+        return len(self._state.get("insights") or [])
+
+    def _record_program(self, outcome: str) -> None:
+        """This run in the dataset's program (`explorer/program.py`): which job, how it ended, how many
+        new findings it made — two runs that found almost nothing new is maturity (§3)."""
+        if getattr(self, "canvas_id", None) or not hasattr(self, "_job") or not hasattr(self, "_store_key"):
+            return
+        try:
+            from aughor.explorer import program
+            program.record_run(self._store_key, job=self._job, outcome=outcome,
+                               new_findings=self._findings_made() - self._findings_at_start,
+                               started_at=self._status.started_at or "", reason=self._job_reason or "")
+        except Exception as exc:  # noqa: BLE001
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "the run's program record is best-effort", counter="explorer.program_record")
+
+    # ── Profiler data loader ──────────────────────────────────────────────────
+
+    def _load_profiler_data(self):
+        """
+        Return (table_profiles, col_profiles_by_table, join_map).
+        Reads from profile cache when available, builds from DB otherwise.
+        col_profiles_by_table: {table: {col_name: ColumnProfile}}
+        """
+        try:
+            # Discover tables (SHOW TABLES is blocked by the SELECT-only validator,
+            # so use information_schema for both dialects)
+            schema = getattr(self._conn, "_schema_name", None)
+            if self._conn.dialect == "duckdb":
+                if schema:
+                    schema_filter = f"= '{schema}'"
+                else:
+                    # No specific schema configured — scan all user-defined schemas.
+                    # DuckDB databases can store tables in non-default schemas
+                    # (e.g. samples.duckdb uses 'ecommerce'). Exclude system catalogs.
+                    schema_filter = "NOT IN ('information_schema', 'pg_catalog', 'temp')"
+            else:
+                schema_filter = f"= '{schema or 'public'}'"
+            # INFORMATION_SCHEMA spelled uppercase is the portable form: BigQuery
+            # REQUIRES it (lowercase resolves as a dataset named information_schema
+            # and 404s), Postgres folds unquoted identifiers down, DuckDB/MySQL/
+            # Snowflake are case-insensitive here.
+            r = self._conn.execute(
+                "__explorer_catalog__",  # catalog probe, not a data query — stays out of the audit trail
+                f"SELECT table_schema, table_name FROM INFORMATION_SCHEMA.TABLES "
+                f"WHERE table_schema {schema_filter} "
+                f"AND table_type = 'BASE TABLE' ORDER BY table_schema, table_name",
+                sql_dialect="duckdb",
+             internal=True)
+            raw_tables = [(row[0], row[1]) for row in (r.rows or [])] if not r.error else []
+            # Exploration principles §6 — a table or schema a person turned off is never explored.
+            from aughor.ontology.visibility import is_table_off
+            _listed = len(raw_tables)
+            raw_tables = [(s, t) for s, t in raw_tables if not is_table_off(self.connection_id, s, t)]
+            self._turned_off = _listed - len(raw_tables)
+            # When multiple schemas exist, fully-qualify table names so generated
+            # SQL resolves correctly (e.g. bakehouse.sales_franchises).
+            schemas_seen = {s for s, _ in raw_tables}
+            if len(schemas_seen) > 1 or (schema and schema not in schemas_seen and len(raw_tables) > 0):
+                tables = [f'{s}.{t}' for s, t in raw_tables]
+            elif len(schemas_seen) == 1 and not schema:
+                # Single schema, no explicit schema configured — still qualify to be safe
+                single_schema = next(iter(schemas_seen))
+                tables = [f'{single_schema}.{t}' for s, t in raw_tables]
+            else:
+                tables = [t for _, t in raw_tables]
+
+            if not tables:
+                return {}, {}, {}
+
+            # Filter tables to canvas scope when set
+            if self.tables_filter:
+                filter_set = set(self.tables_filter)
+                tables = [t for t in tables if t in filter_set or t.split('.')[-1] in filter_set]
+            if not tables:
+                return {}, {}, {}
+
+            # Build / load profiles (idempotent, cached)
+            from aughor.tools.profile_cache import get_or_build_profiles
+            tp, cp_flat = get_or_build_profiles(
+                self._conn, self.connection_id, tables, {}
+            )
+
+            # Re-group flat {"table.col": ColumnProfile} → {table: {col: ColumnProfile}}
+            cp: dict[str, dict] = {}
+            for col_p in cp_flat.values():
+                cp.setdefault(col_p.table, {})[col_p.column] = col_p
+
+            # Build a minimal schema string for join inference
+            lines = []
+            for table in tables:
+                lines.append(f"TABLE: {table}")
+                for col_p in cp.get(table, {}).values():
+                    lines.append(f"  {col_p.column}  {col_p.dtype}")
+            schema_str = "\n".join(lines)
+
+            from aughor.tools.schema import join_map_for, parse_schema_tables
+            # DE-3c: the engine's declared foreign keys lead the join map; the names fill the rest.
+            jmap = join_map_for(self._conn, parse_schema_tables(schema_str), cache_key=self.connection_id)
+
+            return tp, cp, jmap
+
+        except Exception as e:
+            logger.warning(f"[explorer:{self.connection_id}] _load_profiler_data failed: {e}")
+            return {}, {}, {}
+
+    # ── Structure pass · null meaning (what a blank means) ─────────────────────────────────────
+
+    async def _pass_null_meaning(self, tp: dict, cp: dict) -> None:
+        """
+        For each column with a non-trivial null rate (1%–99%), determine whether
+        the null is business-meaningful or a data quality problem.
+        """
+        for table, col_map in cp.items():
+            # Find the lifecycle/status column for this table (for cross-reference)
+            status_col = _find_status_col(col_map)
+
+            for col_name, col_p in col_map.items():
+                if col_p.null_rate is None:
+                    continue
+                if not (0.01 <= col_p.null_rate <= 0.99):
+                    continue
+                if col_p.semantic_type in ("key", "timestamp"):
+                    continue
+
+                key = f"{table}:{col_name}"
+                if key in self._state.get("null_meanings", {}):
+                    self._status.null_meanings_resolved += 1
+                    continue
+
+                await self._gate()
+
+                if status_col and status_col != col_name:
+                    result = await self._null_cross_ref(table, col_name, status_col, col_p.null_rate, tp=tp)
+                else:
+                    meaning = NullMeaning.MISSING if col_p.null_rate > 0.3 else NullMeaning.UNKNOWN
+                    result = NullMeaningResult(
+                        table=table, column=col_name,
+                        null_rate=col_p.null_rate, meaning=meaning,
+                    )
+
+                self._state.setdefault("null_meanings", {})[key] = {
+                    "meaning": result.meaning.value,
+                    "business_rule": result.business_rule,
+                    "evidence_sql": result.evidence_sql,
+                }
+                self._status.null_meanings_resolved += 1
+                self._status.facts_discovered += 1
+                self._save_state()
+
+    async def _null_cross_ref(
+        self, table: str, col: str, status_col: str, null_rate: float,
+        tp: Optional[dict] = None,
+    ) -> NullMeaningResult:
+        tf = self._time_filter(table, tp or {})
+        sql = (
+            f"SELECT {status_col} AS s, COUNT(*) AS total, "
+            f"SUM(CASE WHEN {col} IS NULL THEN 1 ELSE 0 END) AS null_n, "
+            f"ROUND(SUM(CASE WHEN {col} IS NULL THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1) AS null_pct "
+            f"FROM {table} WHERE 1=1 {tf} "
+            f"GROUP BY {status_col} ORDER BY null_pct DESC LIMIT 20"
+        )
+        think = (
+            f"'{table}.{col}' has {null_rate:.0%} nulls. "
+            f"Cross-referencing with '{status_col}' to classify: "
+            f"pending-event vs terminal-state vs data-quality issue."
+        )
+        rows = await self._run(sql, think=think)
+        if not rows:
+            return NullMeaningResult(
+                table=table, column=col, null_rate=null_rate, meaning=NullMeaning.UNKNOWN
+            )
+
+        # rows: [(status_val, total, null_n, null_pct), ...]
+        try:
+            high = [r for r in rows if r[3] is not None and float(r[3]) > 80]
+            low  = [r for r in rows if r[3] is not None and float(r[3]) < 10]
+        except (TypeError, ValueError):
+            return NullMeaningResult(
+                table=table, column=col, null_rate=null_rate, meaning=NullMeaning.UNKNOWN
+            )
+
+        if high and low:
+            null_states = [str(r[0]) for r in high]
+            business_rule = (
+                f"NULL when {status_col} IN "
+                f"({', '.join(repr(s) for s in null_states)})"
+            )
+            is_terminal = any(
+                s.lower() in _TERMINAL or any(t in s.lower() for t in _TERMINAL_SUBS)
+                for s in null_states
+            )
+            meaning = (
+                NullMeaning.NOT_APPLICABLE_TERMINAL if is_terminal else NullMeaning.PENDING
+            )
+        elif rows and all(r[3] is not None and float(r[3] or 0) > 30 for r in rows):
+            meaning, business_rule = NullMeaning.MISSING, None
+        else:
+            meaning, business_rule = NullMeaning.MIXED, None
+
+        return NullMeaningResult(
+            table=table, column=col, null_rate=null_rate,
+            meaning=meaning, business_rule=business_rule, evidence_sql=sql,
+        )
+
+    # ── Structure pass · join verification ────────────────────────────────────────────
+
+    async def _pass_joins(self, jmap: dict, tp: dict | None = None) -> None:
+        """
+        Verify each inferred FK relationship with an orphan check.
+        A verified join has orphan_count == 0.
+
+        On huge tables the exact orphan anti-join (a full ``NOT IN`` scan of the parent per
+        edge) is costly, so when either side is above _HLL_MIN_ROWS we estimate the same three
+        numbers with a HyperLogLog (``approx_count_distinct`` inclusion–exclusion) — a single
+        cheap aggregate per column. The record is flagged ``estimated`` and verification then
+        tolerates HLL noise (orphan RATE below a small epsilon counts as clean).
+        """
+        from aughor.sql.join_guard import hll_min_rows
+        _hll_rows = hll_min_rows()
+        joins = jmap.get("joins", [])
+        done_keys = {v.get("key") for v in self._state.get("join_verifications", [])}
+        table_rows = {t: (profile_field(p, "row_count") or 0) for t, p in (tp or {}).items()}
+
+        for j in joins:
+            t1, c1, t2, c2 = j["t1"], j["c1"], j["t2"], j["c2"]
+            key = f"{t1}.{c1}→{t2}.{c2}"
+            if key in done_keys:
+                self._status.joins_verified += 1
+                continue
+
+            await self._gate()
+
+            big = (int(table_rows.get(t1, 0)) >= _hll_rows
+                   or int(table_rows.get(t2, 0)) >= _hll_rows)
+            # CAST both keys to VARCHAR for the comparison: the same logical key can carry
+            # different physical types across tables (franchiseID BIGINT here, VARCHAR there);
+            # comparing string forms is the right FK check (an id is an id) and never raises.
+            if big:
+                # HLL: orphans ≈ |fk ∪ pk| − |pk| (FK distinct values absent from PK).
+                sql = (
+                    f"SELECT "
+                    # No `FILTER (WHERE … IS NOT NULL)`: every aggregate but COUNT(*) already
+                    # ignores NULLs, so it was a no-op — and BigQuery has no FILTER clause, which
+                    # sqlglot does not rewrite either, so `native_sql` could not save this one.
+                    # The sibling subquery on the next line always expressed the same intent as a
+                    # plain WHERE; this now matches it.
+                    f"approx_count_distinct(CAST({c1} AS VARCHAR)) AS fk_distinct, "
+                    f"(SELECT approx_count_distinct(CAST({c2} AS VARCHAR)) FROM {t2} WHERE {c2} IS NOT NULL) AS pk_distinct, "
+                    f"GREATEST(0, (SELECT approx_count_distinct(v) FROM ("
+                    f"   SELECT CAST({c1} AS VARCHAR) AS v FROM {t1} WHERE {c1} IS NOT NULL "
+                    f"   UNION ALL SELECT CAST({c2} AS VARCHAR) FROM {t2} WHERE {c2} IS NOT NULL) AS _u) "
+                    f" - (SELECT approx_count_distinct(CAST({c2} AS VARCHAR)) FROM {t2} WHERE {c2} IS NOT NULL)) AS orphan_count "
+                    f"FROM {t1}"
+                )
+            else:
+                sql = (
+                    f"SELECT "
+                    f"(SELECT COUNT(DISTINCT {c1}) FROM {t1}) AS fk_distinct, "
+                    f"(SELECT COUNT(DISTINCT {c2}) FROM {t2}) AS pk_distinct, "
+                    f"(SELECT COUNT(*) FROM {t1} "
+                    f" WHERE {c1} IS NOT NULL "
+                    f" AND CAST({c1} AS VARCHAR) NOT IN (SELECT CAST({c2} AS VARCHAR) FROM {t2} WHERE {c2} IS NOT NULL)"
+                    f") AS orphan_count"
+                )
+            think = (
+                f"Verify FK {t1}.{c1} → {t2}.{c2}: "
+                f"count distinct values and check for orphan rows."
+            )
+            rows = await self._run(sql, think=think)
+
+            if rows and rows[0]:
+                try:
+                    fk_d = int(rows[0][0] or 0)
+                    pk_d = int(rows[0][1] or 0)
+                    orphans = int(rows[0][2] or 0)
+                except (TypeError, ValueError):
+                    continue
+
+                if fk_d == pk_d:
+                    card = "1:1"
+                elif fk_d > pk_d:
+                    card = "N:1"
+                else:
+                    card = "1:N"
+
+                # Exact orphans must be 0; HLL estimates carry noise, so tolerate an orphan
+                # RATE under 2% of the FK distinct count as "verified".
+                verified = (orphans == 0) if not big else (fk_d > 0 and (orphans / fk_d) < 0.02)
+
+                self._state.setdefault("join_verifications", []).append({
+                    "key": key,
+                    "from_table": t1, "from_col": c1,
+                    "to_table": t2, "to_col": c2,
+                    "orphan_count": orphans,
+                    "fk_distinct": fk_d, "pk_distinct": pk_d,
+                    "verified": verified,
+                    "estimated": big,
+                    "cardinality": card,
+                })
+                self._status.joins_verified += 1
+                self._status.facts_discovered += 1
+                done_keys.add(key)
+                self._save_state()
+
+        # Precompute the build-time joinability cache from what we just verified, so the data
+        # catalog reuses phase-4's work instead of re-probing each table at first-query time
+        # (a value-disjoint edge is demoted to DO-NOT-JOIN before the model ever sees it).
+        try:
+            from aughor.sql.join_guard import seed_verified_cache
+            seed_verified_cache(self.connection_id, joins, self._state.get("join_verifications", []))
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "phase4 joinable cache seed best-effort", counter="join_guard.precompute")
+
+    # ── Structure pass · lifecycle mapping ────────────────────────────────────────────
+
+    async def _pass_lifecycle(self, tp: dict, cp: dict) -> None:
+        """
+        For each table with a status/lifecycle column, extract the state
+        distribution and (when possible) state-transition frequencies.
+        """
+        for table, col_map in cp.items():
+            if table in self._state.get("lifecycle_maps", {}):
+                self._status.lifecycles_mapped += 1
+                continue
+
+            status_col = _find_status_col(col_map)
+            if not status_col:
+                continue
+
+            await self._gate()
+
+            tf = self._time_filter(table, tp)
+
+            # State distribution
+            sql = (
+                f"SELECT {status_col} AS state, COUNT(*) AS n "
+                f"FROM {table} WHERE {status_col} IS NOT NULL {tf} "
+                f"GROUP BY {status_col} ORDER BY n DESC LIMIT 30"
+            )
+            think = (
+                f"Extract lifecycle states for {table}.{status_col}. "
+                f"Classify terminal vs active states."
+            )
+            rows = await self._run(sql, think=think)
+            if not rows:
+                continue
+
+            states = _lifecycle_states(rows)
+            if states is None:
+                continue
+            terminal, active = _classify_states(states)
+
+            # Try to extract transitions via self-join if PK + timestamp exist
+            tp_entry = tp.get(table)
+            pk_col = tp_entry.grain_column if tp_entry else None
+            ts_col = tp_entry.primary_timestamp if tp_entry else None
+            transitions: list[LifecycleTransition] = []
+
+            if pk_col and ts_col:
+                await self._gate()
+                # Time filter for self-join must be qualified with alias 'a'
+                alias_tf = (
+                    f"AND a.{ts_col} >= '{self._time_window[0]}'"
+                    if self._time_window else ""
+                )
+                trans_sql = (
+                    f"SELECT a.{status_col} AS from_s, b.{status_col} AS to_s, COUNT(*) AS n "
+                    f"FROM {table} a "
+                    f"JOIN {table} b ON a.{pk_col} = b.{pk_col} AND a.{ts_col} < b.{ts_col} "
+                    f"WHERE a.{status_col} != b.{status_col} {alias_tf} "
+                    f"GROUP BY a.{status_col}, b.{status_col} "
+                    f"ORDER BY n DESC LIMIT 20"
+                )
+                think2 = (
+                    f"Extract state transitions for {table}: "
+                    f"self-join on {pk_col} ordered by {ts_col}."
+                )
+                trans_rows = await self._run(trans_sql, think=think2)
+                if trans_rows:
+                    transitions = [
+                        LifecycleTransition(
+                            from_state=str(r[0]), to_state=str(r[1]), count=int(r[2])
+                        )
+                        for r in trans_rows
+                    ]
+
+            self._state.setdefault("lifecycle_maps", {})[table] = {
+                "status_column": status_col,
+                "states": states,
+                "terminal_states": terminal,
+                "active_states": active,
+                "transitions": [
+                    {"from": t.from_state, "to": t.to_state, "n": t.count}
+                    for t in transitions
+                ],
+            }
+            self._status.lifecycles_mapped += 1
+            self._status.facts_discovered += 1
+            self._save_state()
+
+    # ── Structure pass · distribution profiling ──────────────────────────────────────
+
+    async def _pass_distributions(self, cp: dict, tp: dict = None) -> None:
+        """
+        Characterise the value distribution of every measure column.
+        Uses basic stats + percentiles to classify shape.
+        """
+        tp = tp or {}
+        # Phase-completion guard: if a previous full run already finished this
+        # phase, skip it entirely rather than re-checking every column.
+        if self._state.get("phase6_done"):
+            self._status.distributions_profiled = len(self._state.get("distributions", {}))
+            return
+
+        for table, col_map in cp.items():
+            for col_name, col_p in col_map.items():
+                if col_p.semantic_type != "measure":
+                    continue
+
+                key = f"{table}:{col_name}"
+                existing = self._state.get("distributions", {}).get(key)
+                if existing is not None and not existing.get("_partial"):
+                    # Fully computed in a previous run — skip
+                    self._status.distributions_profiled += 1
+                    continue
+
+                await self._gate()
+
+                tf = self._time_filter(table, tp)
+                stats_sql = (
+                    f"SELECT COUNT(*) AS n, "
+                    f"MIN({col_name}) AS mn, MAX({col_name}) AS mx, "
+                    f"AVG(CAST({col_name} AS FLOAT)) AS mean_v, "
+                    f"AVG(CAST({col_name} AS FLOAT)*CAST({col_name} AS FLOAT)) - AVG(CAST({col_name} AS FLOAT))*AVG(CAST({col_name} AS FLOAT)) AS variance, "
+                    f"SUM(CASE WHEN {col_name}=0 THEN 1 ELSE 0 END)*1.0/COUNT(*) AS pct_zero "
+                    f"FROM {table} WHERE {col_name} IS NOT NULL {tf}"
+                )
+                rows = await self._run(stats_sql, think=f"Distribution stats for {table}.{col_name}.")
+                if not rows or not rows[0] or not rows[0][0]:
+                    continue
+
+                try:
+                    n, mn, mx, mean_v, variance, pct_zero = [
+                        float(x) if x is not None else 0.0 for x in rows[0]
+                    ]
+                    n = int(n)
+                    if n == 0:
+                        continue
+                    std_dev = variance ** 0.5 if variance > 0 else 0.0
+                except (TypeError, ValueError):
+                    continue
+
+                # Initial shape classification from basic stats
+                shape = _classify_shape(mn, mx, mean_v, std_dev, float(pct_zero))
+
+                # Save a partial record immediately after the first query so that a
+                # server crash between the two queries doesn't cause the stats query
+                # to re-fire on the next run.
+                self._state.setdefault("distributions", {})[key] = {
+                    "shape": shape.value, "p25": None, "p50": None, "p75": None,
+                    "pct_zero": pct_zero, "min": mn, "max": mx, "mean": mean_v,
+                    "col_type": col_p.dtype,
+                    "_partial": True,
+                }
+                self._save_state()
+
+                # Refine with percentiles
+                await self._gate()
+                pct_sql = (
+                    f"SELECT "
+                    f"percentile_cont(0.25) WITHIN GROUP (ORDER BY {col_name}) AS p25, "
+                    f"percentile_cont(0.5)  WITHIN GROUP (ORDER BY {col_name}) AS p50, "
+                    f"percentile_cont(0.75) WITHIN GROUP (ORDER BY {col_name}) AS p75 "
+                    f"FROM {table} WHERE {col_name} IS NOT NULL {tf}"
+                )
+                pct_rows = await self._run(pct_sql, think=f"Percentiles for {table}.{col_name}.")
+                p25 = p50 = p75 = None
+                if pct_rows and pct_rows[0]:
+                    try:
+                        p25 = float(pct_rows[0][0] or 0)
+                        p50 = float(pct_rows[0][1] or 0)
+                        p75 = float(pct_rows[0][2] or 0)
+                        if p50 and p50 > 0 and mean_v / p50 > 1.5:
+                            shape = DistributionShape.SKEWED_RIGHT
+                    except (TypeError, ValueError):
+                        pass
+
+                # Write final (non-partial) record
+                self._state["distributions"][key] = {
+                    "shape": shape.value, "p25": p25, "p50": p50, "p75": p75,
+                    "pct_zero": pct_zero, "min": mn, "max": mx, "mean": mean_v,
+                    "col_type": col_p.dtype,
+                }
+                self._status.distributions_profiled += 1
+                self._status.facts_discovered += 1
+                self._save_state()
+
+        # Mark the entire phase as done so restarts can skip it immediately
+        self._state["phase6_done"] = True
+        self._save_state()
+
+    # ── Structure pass · cross-table patterns ────────────────────────────────
+
+    async def _pass_patterns(self, cp: dict, jmap: dict, tp: dict = None) -> None:
+        """
+        For each verified join, check if a dimension in the PK table (t2)
+        meaningfully explains variation in a measure in the FK table (t1).
+        Records findings as ExplorerFindings.
+        """
+        tp = tp or {}
+        done_ids = {i.get("id") for i in self._state.get("insights", [])}
+        joins = jmap.get("joins", [])[:10]  # bound query count
+
+        for j in joins:
+            t_fact = j["t1"]   # fact/event table (orders, order_items)
+            t_dim  = j["t2"]   # dimension table (customers, products)
+            fk_col = j["c1"]
+            pk_col = j["c2"]
+
+            dim_cols = [
+                name for name, p in cp.get(t_dim, {}).items()
+                if (p.semantic_type == "dimension"
+                    and p.is_low_cardinality
+                    and p.distinct_count is not None
+                    and 2 <= p.distinct_count <= 20)
+            ][:2]
+
+            mea_cols = [
+                name for name, p in cp.get(t_fact, {}).items()
+                if p.semantic_type == "measure"
+            ][:2]
+
+            if not dim_cols or not mea_cols:
+                continue
+
+            for dim_col in dim_cols:
+                for mea_col in mea_cols:
+                    insight_id = self._finding_id(f"{t_dim}.{dim_col}×{t_fact}.{mea_col}")
+                    if insight_id in done_ids:
+                        continue
+
+                    await self._gate()
+
+                    # Time-scope the fact table to 12-month window
+                    fact_tf = ""
+                    if self._time_window:
+                        t_profile = tp.get(t_fact)
+                        ts_col = getattr(t_profile, "primary_timestamp", None) if t_profile else None
+                        if ts_col:
+                            fact_tf = f"AND f.{ts_col} >= '{self._time_window[0]}'"
+
+                    sql = (
+                        f"SELECT d.{dim_col} AS dim_val, "
+                        f"ROUND(AVG(f.{mea_col}), 2) AS avg_measure, "
+                        f"COUNT(*) AS n "
+                        f"FROM {t_fact} f "
+                        f"JOIN {t_dim} d ON f.{fk_col} = d.{pk_col} "
+                        f"WHERE f.{mea_col} IS NOT NULL AND d.{dim_col} IS NOT NULL {fact_tf} "
+                        f"GROUP BY d.{dim_col} "
+                        f"HAVING COUNT(*) >= 30 "
+                        f"ORDER BY avg_measure DESC LIMIT 20"
+                    )
+                    think = (
+                        f"Does '{dim_col}' ({t_dim}) explain variation "
+                        f"in '{mea_col}' ({t_fact})? "
+                        f"Checking for >15% variation across segments."
+                    )
+                    rows = await self._run(sql, think=think)
+                    if not rows or len(rows) < 2:
+                        continue
+
+                    try:
+                        vals = [float(r[1]) for r in rows if r[1] is not None]
+                        if not vals or min(vals) <= 0:
+                            continue
+                        ratio = max(vals) / min(vals)
+                        if ratio < 1.15:
+                            continue  # not interesting enough
+
+                        top, bot = rows[0], rows[-1]
+                        total_n = sum(int(r[2] or 0) for r in rows)
+                        finding = (
+                            f"{t_dim}.{dim_col}='{top[0]}' → "
+                            f"avg {mea_col} = {top[1]:.2f} vs "
+                            f"{bot[1]:.2f} for '{bot[0]}' "
+                            f"({(ratio - 1) * 100:.0f}% variation, n={total_n:,})"
+                        )
+                        insight = {
+                            "id": insight_id,
+                            "entities_involved": [t_dim, t_fact],
+                            "dimensions": [dim_col],
+                            "measures": [mea_col],
+                            "finding": finding,
+                            "sql": sql,
+                            "confidence": min(0.95, 0.5 + (ratio - 1) * 0.5),
+                            "generated_at": datetime.now(timezone.utc).isoformat(),
+                            "canvas_id": self.canvas_id,
+                            "promoted_to_org": False,
+                            "promotion_confidence": 0.0,
+                        }
+                        self._state.setdefault("insights", []).append(insight)
+                        done_ids.add(insight_id)
+                        self._emit_insight(insight, sql, journal_extra={"phase": "cross_table"})
+                        self._save_state()
+                    except (TypeError, ValueError, ZeroDivisionError):
+                        continue
+
+
+    # ── Questions · the pinned key questions (deterministic must-ask) ─────────────────
+
+    async def _pass_pinned_questions(self, profile, sql_writer, profile_block: str) -> int:
+        """Deterministically ASK each of the profile's curated `key_questions` — the
+        must-ask analyst questions for this vertical (e.g. "which SKUs have >90% margin
+        but >10% WRONG_SHADE returns?") — so the high-value angles are covered EVERY run
+        instead of by the LLM's whim. The free per-domain loop is great at breadth but is
+        non-deterministic, so a profitable finding can vanish between runs; pinning the
+        curated questions makes the briefing REPRODUCIBLE on what matters.
+
+        Each question is run through the SAME authorities the main loop uses (bind-check +
+        the fan-out/grain DROP guards + degenerate + join value-domain + structural &
+        semantic dedup), then interpreted and stored FIRST — so the per-domain loop later
+        dedups against them instead of re-deriving them. Best-effort per question; returns
+        the count stored. Runs before the domain passes so its findings seed `insights`."""
+        from pydantic import BaseModel as _BM
+        from aughor.llm.provider import get_provider
+        from aughor.sql.fanout import (
+            integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
+            avg_over_chasm_fanout, sum_over_chasm_fanout, cte_grain_mismatch_fanout,
+            measure_times_key_arithmetic, avg_of_row_ratios,
+        )
+        from aughor.sql.shape import is_redundant_insight, is_semantically_redundant
+        from aughor.sql.join_guard import check_join_value_domains
+
+        _all_q = [q for q in (getattr(profile, "key_questions", None) or []) if q.strip()]
+        questions = _all_q[:6]
+        if not questions:
+            return 0
+        # Build-time audited SQL per key_question (aligned by index) — deterministic and
+        # reproducible. Prefer it over live one-shot generation, which can't bind the hard
+        # composites (the SKU margin-leak). Falls back to live gen where none was produced.
+        _kq_sql = list(getattr(profile, "key_question_sql", None) or [])
+
+        # Composite key-questions (the SKU margin-leak: ">90% margin AND >10% returns")
+        # need the same SQL-correctness grounding the per-domain loop gives its generator,
+        # not just the industry block — otherwise the multi-condition join fails to bind
+        # and the highest-value question silently drops. Add the join-safety rules
+        # (pre-aggregate each metric in its OWN CTE keyed by the entity, then join) so the
+        # generator builds a bindable, fan-out-free composite.
+        _jv = self._state.get("join_verifications", []) or []
+        _jrules = []
+        for _j in _jv[:12]:
+            _ft, _tt, _fc = _j.get("from_table", ""), _j.get("to_table", ""), _j.get("from_col", "")
+            _card = _j.get("cardinality", "")
+            if _ft and _tt and ("many" in _card.lower() or _card in ("N:1", "1:N", "N:M")):
+                _jrules.append(f"  {_ft} ↔ {_tt} via {_fc} ({_card}): COUNT(*) after this JOIN counts {_ft} rows.")
+        _pin_rules = (
+            "\nSQL RULES FOR THIS QUESTION (follow exactly so it binds and the numbers are right):\n"
+            "- Use ONLY tables/columns shown in the schema; never invent a column.\n"
+            "- For a COMPOSITE question (two conditions on different metrics, e.g. high margin AND "
+            "high return rate), compute EACH metric in its OWN CTE keyed by the entity (one CTE for "
+            "per-SKU margin, one for per-SKU return rate), then JOIN the CTEs on the entity key and "
+            "filter in the outer query — NEVER aggregate across a multi-table join directly (fan-out).\n"
+            "- Every rate = SUM(numerator)/NULLIF(SUM(denominator),0) at the correct grain (0..1, never >1).\n"
+            "- Follow the COMPUTATION RECIPES above for any named metric.\n"
+            + ("JOIN CARDINALITIES (verified):\n" + "\n".join(_jrules) + "\n" if _jrules else "")
+        )
+        _pin_context = profile_block + _pin_rules
+
+        class _PinInterp(_BM):
+            finding: str
+            novelty: int
+
+        _loop = asyncio.get_running_loop()
+        llm = get_provider("coder")
+        _tc = getattr(sql_writer, "table_cols", {})
+        _dialect = getattr(self._conn, "dialect", "duckdb")
+        from aughor.business_profile.validate import profile_metric_ranges
+        _mranges = profile_metric_ranges(profile)
+        stored = 0
+
+        for qi, q in enumerate(questions):
+            await self._gate()
+            if self._stopped:
+                break
+
+            # Reproduce-by-read: when activity hasn't moved since the last run, a pinned
+            # finding is reproducible from the ledger — read it back instead of re-executing
+            # identical SQL every exploration (the visible "asking the same question again"
+            # symptom). Refresh (re-run below) only when the data actually moved.
+            if self._activity_unchanged:
+                prior = self._read_prior_pinned(qi)
+                # A prior whose query ranks by a key it does not return is re-derived, not
+                # re-read: reading it back would carry its measureless evidence into every run.
+                if prior and self._order_keys_projected(prior.get("sql", "")):
+                    prior = None
+                # Nor is one reading another schema's tables: its answer is that schema's.
+                if prior and self._leaks_schema(prior.get("sql", "")):
+                    prior = None
+                if prior:
+                    _pdoss = prior.pop("dossier", None) if isinstance(prior, dict) else None
+                    if not prior.get("signature"):
+                        _psf = signature_fields(prior.get("sql", ""), getattr(self._conn, "dialect", "duckdb"))
+                        prior["dimensions"], prior["measures"], prior["signature"] = (
+                            _psf["dimensions"], _psf["measures"], _psf)
+                    prior["reproduced"] = True
+                    # The state holds its findings across runs, this one included: it takes its slot again
+                    # rather than a second place (theLook held each key question four times, 2026-10-09).
+                    _store.keep_slot(self._state, prior)
+                    if hasattr(self, "_insight_vecs"):
+                        self._insight_vecs.append(None)
+                    self._emit_insight(prior, prior.get("sql", ""), dossier=_pdoss,
+                                       journal_extra={"pinned": True, "reproduced": True})
+                    stored += 1
+                    from aughor.stats import stats as _s; _s.inc("explorer.pinned_reproduced")
+                    logger.info("[explorer:%s] questions (pinned): reproduced Q%d from ledger "
+                                "(activity unchanged — no re-run)", self.connection_id, qi)
+                    continue
+
+            try:
+                _cached = _kq_sql[qi].strip() if qi < len(_kq_sql) and _kq_sql[qi] else ""
+                if _cached:
+                    sql = _cached                                  # build-time audited; deterministic
+                else:
+                    # KB patterns for THIS question — _pin_context is built once for all
+                    # pinned questions, so retrieval has to happen per question here.
+                    _pin_ctx_q = self._kb_context(q) + _pin_context
+                    sql = await _loop.run_in_executor(
+                        None, lambda: sql_writer.write(q, extra_context=_pin_ctx_q))
+                if not sql or not sql.strip():
+                    continue
+
+                # Bind-check (repair up to 3×) — never run an unbindable draft. Composite
+                # pinned questions are the hardest to bind, so give the repair loop headroom.
+                ok, berr = self._conn.dry_run(sql)
+                if not ok:
+                    fix = await _loop.run_in_executor(None, lambda: sql_writer.fix(sql, berr, max_retries=3))
+                    if not (getattr(fix, "ok", False) and getattr(fix, "sql", "")):
+                        continue
+                    sql = fix.sql
+
+                # Fan-out / grain DROP guards (same as the main loop).
+                grain = (integer_division_risk(sql)
+                         or count_star_entity_fanout(sql, _tc)
+                         or count_star_chasm_fanout(sql, _tc, dialect=_dialect)
+                         or avg_over_chasm_fanout(sql, _tc, dialect=_dialect)
+                         or sum_over_chasm_fanout(sql, _tc, dialect=_dialect)
+                         or cte_grain_mismatch_fanout(sql, _tc, dialect=_dialect)
+                         or measure_times_key_arithmetic(sql, _tc, dialect=_dialect)
+                         or avg_of_row_ratios(sql, _tc, dialect=_dialect))
+                if grain:
+                    logger.info("[explorer:%s] questions (pinned): skipping Q%d — grain bug: %s",
+                                self.connection_id, qi, grain)
+                    continue
+
+                # Fabricated join (value-domain mismatch).
+                try:
+                    if check_join_value_domains(self._conn, sql):
+                        continue
+                except Exception:
+                    pass
+
+                # Structural dedup vs everything found so far.
+                _prior_sqls = [i.get("sql", "") for i in self._state.get("insights", [])]
+                if is_redundant_insight(sql, _prior_sqls, _dialect):
+                    continue
+
+                # Model-written SQL → the shared guard battery; resync `sql` because a
+                # preflight rewrite must be what the stored finding cites.
+                rows = await self._run(sql, think=f"[pinned] {q[:60]}", schema=sql_writer.schema)
+                sql = self._last_executed_sql or sql
+                if not rows:
+                    continue
+                if self._leaks_schema(sql):
+                    logger.info("[explorer:%s] questions (pinned): skipping Q%d — SQL escapes schema %s",
+                                self.connection_id, qi, self.schema_name)
+                    continue
+                _ok, _why = verify_insight(rows, q, sql, _mranges, conn=self._conn)
+                if not _ok:
+                    logger.info("[explorer:%s] questions (pinned): skipping Q%d — %s",
+                                self.connection_id, qi, _why)
+                    continue
+                if has_fabricated_dimension(sql):
+                    continue
+
+                # Interpret.
+                result_text = rows_for_prompt(rows)
+                try:
+                    interp: _PinInterp = await _loop.run_in_executor(
+                        None,
+                        lambda: llm.complete(
+                            system=("You are a precise analyst. Interpret the query result as ONE specific, "
+                                    "number-bearing business insight that answers the question. Do not invent "
+                                    "per-row ratios from totals. novelty is 1-5. " + FIGURE_STYLE),
+                            user=f"QUESTION: {q}\n\nRESULT (first 20 rows):\n{result_text}",
+                            response_model=_PinInterp,
+                        ),
+                    )
+                except Exception:
+                    continue
+
+                # Number hygiene at the SOURCE. Do it here — before verification, embedding,
+                # redundancy and persist — so every downstream consumer sees one canonical
+                # form of the finding. Rounding is well inside `_number_grounded`'s 1%
+                # tolerance, so a grounded finding stays grounded.
+                interp.finding = round_long_decimals(interp.finding)
+
+                if self._leaks_schema(sql):
+                    continue
+                _rl = relabel_mislabeled_finding(interp.finding, sql, metric_vocab_for(self._conn), rows)
+                if _rl:
+                    logger.info("[explorer:%s] questions (pinned): relabeled a mislabeled metric, keeping the signal",
+                                self.connection_id)
+                    interp.finding = _rl
+                _ok, _why = verify_insight(rows, interp.finding, sql, _mranges, conn=self._conn)
+                if not _ok:
+                    logger.info("[explorer:%s] questions (pinned): dropping interpreted finding — %s",
+                                self.connection_id, _why)
+                    continue
+                _prior_findings = [i.get("finding", "") for i in self._state.get("insights", [])]
+                if is_semantically_redundant(interp.finding, _prior_findings):
+                    continue
+                # Embedding (paraphrase) dedup vs all prior insights.
+                _pvec = None
+                try:
+                    from aughor.semantic.finding_dedup import embed_text, is_paraphrase_duplicate
+                    _pvec = embed_text(interp.finding)
+                    if is_paraphrase_duplicate(_pvec, getattr(self, "_insight_vecs", [])):
+                        logger.info("[explorer:%s] questions (pinned): skipping Q%d — paraphrase of an existing insight",
+                                    self.connection_id, qi)
+                        continue
+                except Exception:
+                    _pvec = None
+
+                _psigf = signature_fields(sql, getattr(self._conn, "dialect", "duckdb"))
+                insight = {
+                    "id": self._finding_id(f"pinned__{qi}"),
+                    "domain": "Key Questions",
+                    "angle": "pinned-question",
+                    "question": q,
+                    "entities_involved": [],
+                    "dimensions": _psigf["dimensions"],
+                    "measures": _psigf["measures"],
+                    "signature": _psigf,
+                    "finding": interp.finding,
+                    "sql": sql,
+                    "confidence": min(0.95, 0.4 + clamp_novelty(interp.novelty) * 0.1),
+                    "novelty": clamp_novelty(interp.novelty),
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                    "canvas_id": self.canvas_id,
+                    "promoted_to_org": False,
+                    "promotion_confidence": 0.0,
+                    "pinned": True,
+                }
+                _store.keep_slot(self._state, insight)
+                if hasattr(self, "_insight_vecs"):
+                    self._insight_vecs.append(_pvec)
+                self._emit_insight(insight, sql, journal_extra={"pinned": True})
+                stored += 1
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "a pinned key-question is best-effort; on failure skip it and "
+                         "continue", counter="explorer.pinned_question_failed")
+
+        if stored:
+            self._save_state()
+            logger.info("[explorer:%s] questions: pinned pass stored %d/%d key-question findings",
+                        self.connection_id, stored, len(questions))
+        return stored
+
+
+    # ── Questions · the curiosity loop ───────────────────────────
+
+    def _manifest_nq(self, domain_table_cols, NQ):
+        """Tier-1 #4: pop the next uncovered manifest cell whose table is in this domain's scope
+        and build a deterministic next-question from it (zero LLM). Returns None when no cell
+        applies or its SQL can't be synthesised — the caller then uses the LLM generator."""
+        from aughor.explorer.manifest_query import cell_question, cell_to_sql
+        _tbls = {str(t).split(".")[-1].lower() for t in (domain_table_cols or {})}
+        for cell in self._manifest_cells:
+            key = (cell.metric, cell.table, cell.axis, cell.cut)
+            if key in self._manifest_attempted:
+                continue
+            if getattr(cell, "sql", None) is None and self._table_layer(str(cell.table)) not in ("", "business"):
+                continue   # a table a person set to another layer is never asked about on its own (§5)
+            # KPI cells (pre-validated value_sql) are connection-level — run regardless of which
+            # domain is active; synthesised cells must be scoped to this domain's tables.
+            if getattr(cell, "sql", None) is None and _tbls and str(cell.table).split(".")[-1].lower() not in _tbls:
+                continue
+            self._manifest_attempted.add(key)            # one attempt per cell, persisted across runs
+            self._state["manifest_covered"] = {          # so re-runs skip it (Tier-2 coverage tracker)
+                "fp": self._state.get("dataset_fingerprint") or self._state.get("schema_fingerprint"),
+                "cells": [list(k) for k in self._manifest_attempted],
+            }
+            _st = self._state.setdefault("manifest_status", {})
+            _st["attempts"] = _st.get("attempts", 0) + 1     # observability: the path actually ran
+            sql = cell_to_sql(cell, self._tp_by_table.get(cell.table),
+                              self._cp_by_key.get((cell.table, cell.metric)))
+            if sql:
+                return NQ(question=cell_question(cell), sql=sql,
+                          angle=f"{cell.metric}:{cell.axis}",
+                          why="manifest baseline coverage (deterministic, no LLM)")
+        return None
+
+    async def _grounded_probe_nq(self, domain, domain_table_cols, cp, NQ, llm, steering: str):
+        """Grounded generation — the SOTA fix for column hallucination. The LLM fills a
+        STRUCTURED probe by CHOOSING measures/dimensions/filters from this domain's REAL
+        columns (never writing SQL); we validate the picks by set-membership and COMPILE
+        to grain-safe SQL deterministically. A non-existent column is structurally
+        impossible to emit. Returns an NQ with compiled SQL, or None when the probe can't
+        be grounded/compiled — the caller then falls back to the free-form generator."""
+        from pydantic import BaseModel as _BM
+        from typing import Optional as _Opt
+        from aughor.explorer.probe import Probe, ProbeFilter, ProbeHaving, validate_probe, probe_to_sql
+
+        # Enumerate this domain's allowed REAL columns (same source as the frontier).
+        meas: list[str] = []
+        dims: list[str] = []
+        for _t in domain_table_cols:
+            _cps = (cp or {}).get(_t) or (cp or {}).get(_t.lower()) or {}
+            for _cn, _cpf in _cps.items():
+                _st = (getattr(_cpf, "semantic_type", "") or "")
+                if _st == "measure":
+                    meas.append(_cn)
+                elif _st in ("dimension", "flag", "ordinal") and not getattr(_cpf, "is_fk", False):
+                    dims.append(_cn)
+        meas = sorted(set(meas))
+        dims = sorted(set(dims))
+        logger.debug("[explorer:%s] grounded probe: domain=%s tables=%s measures=%d dims=%d",
+                     self.connection_id, domain, list(domain_table_cols.keys()), len(meas), len(dims))
+        if not meas and not dims:
+            return None                       # nothing to count or aggregate → free-form fallback
+
+        class _PFilter(_BM):
+            column: str = ""
+            op: str = "="
+            value: str = ""
+
+        class _PHaving(_BM):
+            measure: str = ""
+            op: str = ">"
+            value: float = 0.0
+
+        class _ProbeGen(_BM):
+            question: str
+            angle: str = "grounded"
+            why: str = ""
+            measures: list[str]
+            dimensions: list[str] = []
+            filters: list[_PFilter] = []
+            having: _Opt[_PHaving] = None
+            sort_desc: bool = True
+
+        _sys = (
+            "You are a data analyst choosing the next analytical probe to run. You do NOT write "
+            "SQL. Choose `measures` and `dimensions` ONLY from the column lists provided — never "
+            "invent or rename a column, and never name a column that isn't listed. Prefer an "
+            "uncovered, high-value cut. If NO measure columns are listed, leave `measures` empty — "
+            "the probe will COUNT rows by your chosen dimension(s). For a COMPOSITE question (a "
+            "threshold on a metric across a group — e.g. SKUs whose avg margin > 0.6), set `having` "
+            "to {measure, op, value}. Keep it to 1-2 dimensions."
+        )
+        _usr = (
+            steering +
+            f"MEASURE COLUMNS you may aggregate (use these names EXACTLY; empty = COUNT rows): "
+            f"{', '.join(meas) or '(none — use a COUNT-by-dimension probe)'}\n"
+            f"DIMENSION COLUMNS you may group/filter by (EXACTLY): {', '.join(dims) or '(none)'}\n\n"
+            "Fill the probe with the single most valuable next question, using ONLY listed columns."
+        )
+
+        _loop = asyncio.get_running_loop()
+
+        def _to_probe(g) -> Probe:
+            return Probe(
+                question=g.question, angle=g.angle or "grounded", why=g.why or "",
+                measures=list(g.measures or []), dimensions=list(g.dimensions or []),
+                filters=[ProbeFilter(f.column, f.op, f.value) for f in (g.filters or []) if f.column],
+                having=(ProbeHaving(g.having.measure, g.having.op, g.having.value)
+                        if g.having and g.having.measure else None),
+                sort_desc=bool(g.sort_desc),
+            )
+
+        try:
+            gen = await _loop.run_in_executor(
+                None, lambda: llm.complete(system=_sys, user=_usr, response_model=_ProbeGen))
+        except Exception as _ge:
+            logger.info("[explorer:%s] grounded probe gen ERRORED (%s) → free-form",
+                        self.connection_id, type(_ge).__name__)
+            return None
+        probe = _to_probe(gen)
+
+        # Validate by set-membership; one cheap structured repair if a pick strays.
+        bad = validate_probe(probe, meas, dims, dims)
+        if bad:
+            _rusr = (_usr + f"\n\nINVALID columns (not in the lists): {', '.join(map(str, bad))}. "
+                     "Re-choose using ONLY the listed columns.")
+            try:
+                gen = await _loop.run_in_executor(
+                    None, lambda: llm.complete(system=_sys, user=_rusr, response_model=_ProbeGen))
+                probe = _to_probe(gen)
+                bad = validate_probe(probe, meas, dims, dims)
+            except Exception:
+                return None
+            if bad:
+                return None
+
+        # Authoritative real-column lists come from domain_table_cols ({table: [cols]}),
+        # not cp.keys() (cp may profile only a subset → resolution fails → needless fallback).
+        _tcols = {_t: list(_cols or []) for _t, _cols in (domain_table_cols or {}).items()}
+        _cprof = {_t: ((cp or {}).get(_t) or (cp or {}).get(_t.lower()) or {}) for _t in domain_table_cols}
+        sql = probe_to_sql(probe, tables_cols=_tcols, col_profiles=_cprof,
+                           joins=self._state.get("join_verifications", []) or [],
+                           dialect=getattr(self._conn, "dialect", "duckdb"))
+        if not sql:
+            logger.info("[explorer:%s] grounded probe not compilable (measures=%s dims=%s) → free-form",
+                        self.connection_id, probe.measures, probe.dimensions)
+            return None                       # compiler can't express it → free-form fallback
+        return NQ(question=probe.question or "grounded probe", sql=sql,
+                  angle=probe.angle or "grounded", why=probe.why or "grounded generation")
+
+    async def _pass_questions(self, *args, **kwargs) -> int:
+        """Wrapper: however the questions pass exits — completion, early return, cancellation —
+        this worker's held domain claim is released. A finished run leaving claims
+        starves its successor within the lease window ('Explore 5 more' would skip
+        every domain the previous run claimed; caught live by the integration suite,
+        where a session-shared ledger crosses tests exactly like sequential runs)."""
+        try:
+            return await self._pass_questions_inner(*args, **kwargs)
+        finally:
+            self._release_held_claim()
+
+    async def _pass_questions_inner(
+        self,
+        cp: dict | None = None,
+        tp: dict | None = None,
+    ) -> None:
+        """
+        For each ontology domain, run an adaptive curiosity loop:
+          1. Build domain context from ontology entities + existing findings
+          2. Ask LLM: what is the most valuable question to investigate next?
+          3. Execute the SQL, interpret the result as a business insight
+          4. Store the finding, update knowledge state
+          5. Repeat until stopping criteria met
+        Stopping: hard budget (15 per domain, extendable by user) OR
+                  all coverage angles answered OR novelty decay < 2 avg over last 3
+
+        cp: {table: {col: ColumnProfile}}   (column profiles — cardinality, FK flags)
+        tp: {table: TableProfile}           (table profiles — grain, row counts)
+        """
+        self._episodes.phase = "domain_intel"
+        _loop = asyncio.get_running_loop()
+        from pydantic import BaseModel as _BM
+        from aughor.llm.provider import get_provider
+        from aughor.ontology.store import load_latest_ontology
+        from aughor.sql.writer import SqlWriter
+
+        # Tier-1 #4: manifest-driven deterministic generation — permanent (flag endgame
+        # Wave 5, 2026-08-06): the questions pass covers the L2 baseline cells with SYNTHESISED SQL
+        # (no generation LLM call) and the existing guards enforce correctness; the LLM
+        # curiosity loop handles cells/domains the manifest doesn't cover, and a manifest
+        # build failure fails closed to that loop (the flip below).
+        self._manifest_driven = True
+        self._manifest_cells = []
+        self._manifest_attempted = set()
+        self._cp_by_key = {}
+        self._tp_by_table = tp or {}
+        if self._manifest_driven:
+            try:
+                from aughor.explorer.coverage_manifest import build_manifest
+                _cpf = {f"{t}.{c}": p for t, cols in (cp or {}).items() for c, p in (cols or {}).items()}
+                self._cp_by_key = {(t, c): p for t, cols in (cp or {}).items() for c, p in (cols or {}).items()}
+                self._manifest_cells = [c for c in build_manifest(tp or {}, _cpf)
+                                        if c.source == "profiled_measure"]
+                # Coverage tracker (Tier-2): seed `attempted` from the cells a prior run already
+                # covered, so re-runs skip them and only advance the frontier. It was reset whenever
+                # the CONNECTION's fingerprint changed — stamped only at COMPLETE, so the second run
+                # re-covered every cell (§1), and a new table anywhere re-asked every question of every
+                # dataset. Exploration principles §2 (2026-10-08): a schema change is learned as its new
+                # parts — the new tables' and columns' cells are new keys; a question already asked of
+                # a table that has not changed is not asked again. What moves over time is the watch
+                # job's to read (`explorer/watch.py`), not a reason to re-ask the structure's questions.
+                _cov = self._state.get("manifest_covered") or {}
+                if isinstance(_cov, dict):
+                    self._manifest_attempted = {tuple(k) for k in _cov.get("cells", [])}
+                logger.info("[explorer:%s] questions: the industry manifest sets %d baseline questions (%d already asked)",
+                            self.connection_id, len(self._manifest_cells), len(self._manifest_attempted))
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "manifest build is best-effort; on failure fall back to the LLM loop",
+                         counter="explorer.manifest_build_failed")
+                self._manifest_driven = False
+        # Observability (Tier-5): persist whether the manifest path is live + its size, so a
+        # post-run state read tells us if it actually engaged (driven/cells) and ran (attempts).
+        _by_table: dict[str, int] = {}
+        for _c in self._manifest_cells:
+            _t = str(getattr(_c, "table", "") or "").split(".")[-1].lower()
+            _by_table[_t] = _by_table.get(_t, 0) + 1
+        self._state["manifest_status"] = {"driven": bool(self._manifest_driven),
+                                          "cells": len(self._manifest_cells), "attempts": 0,
+                                          "by_table": _by_table}
+
+        ontology = load_latest_ontology(self.connection_id, self.schema_name)
+        if not ontology:
+            # Surface the SPECIFIC failure the build recorded (stage + reason) so the user
+            # gets an actionable message + Retry instead of a silent empty Hub.
+            note = _ontology_skip_note(getattr(self._conn, "last_build", None))
+            logger.warning("[explorer:%s] questions: skipping — %s", self.connection_id, note)
+            self._status.domain_intel_skipped = True
+            self._status.domain_intel_note = note
+            return
+
+        # Group entities by domain
+        domain_entities: dict[str, list] = {}
+        for eid, entity in ontology.entities.items():
+            d = entity.domain or "General"
+            domain_entities.setdefault(d, []).append(entity)
+
+        if not domain_entities:
+            self._status.domain_intel_skipped = True
+            self._status.domain_intel_note = (
+                "Ontology built, but produced no entities to reason about."
+            )
+            return
+
+        # ── Pydantic models for structured LLM output ──────────────────────────
+
+        class _NextQuestion(_BM):
+            question: str      # plain-English business question
+            sql: str           # executable SQL using exact table/column names
+            angle: str         # which coverage angle this answers (from the checklist)
+            why: str           # why this is the most valuable next question
+
+        class _Interpretation(_BM):
+            finding: str       # 1-2 sentence business insight, specific with numbers
+            novelty: int       # 1-5: how new is this vs existing findings for this domain
+            angle_covered: str # which coverage angle this satisfies
+            rationale: str = "" # 1 sentence: the business mechanism/reasoning behind the finding
+                                # (why it holds / what drives it) — captured into the Finding
+                                # Dossier so "explain this" is a read, not a re-derivation.
+
+        # ── Coverage angles per domain ─────────────────────────────────────────
+
+        DOMAIN_ANGLES: dict[str, list[str]] = {
+            "Commerce":   ["volume", "value", "retention", "basket_composition", "seasonality"],
+            "Finance":    ["revenue", "margins", "payment_behavior", "refund_rate", "receivables"],
+            "Marketing":  ["channel_mix", "conversion", "campaign_roi", "attribution", "experiments"],
+            "Operations": ["fulfillment", "inventory_health", "supplier_performance", "lead_times"],
+        }
+        DEFAULT_ANGLES = ["volume", "value", "patterns", "anomalies", "trends"]
+
+
+        llm = get_provider("coder")
+        sql_writer = SqlWriter(self._conn)
+        # Settle contra-revenue UNITS before a single question is generated. the profiler has
+        # already measured every column's range, so this is free — and it must happen
+        # before generation, because the directive it produces is the belt and
+        # `_repair_contra_amount` (wired at the guarded execute seam) is the braces.
+        self._contra_units(cp, getattr(sql_writer, "schema", "") or "")
+
+        def _last_episode_error() -> str:
+            """Read the observation from the most recent episode — used to get SQL errors."""
+            try:
+                import json as _j
+                # The collector writes under the run's STORE KEY ({conn}__{schema}
+                # for a per-schema run) — reading the bare conn file returned the
+                # generic fallback on every multi-schema run.
+                from aughor.explorer.episodes import episodes_dir
+                ep_path = episodes_dir() / f"episodes_{self._store_key}.jsonl"
+                if ep_path.exists():
+                    last = ep_path.read_text().strip().split("\n")[-1]
+                    return _j.loads(last).get("observation", "SQL execution failed")
+            except Exception:
+                pass
+            return "SQL execution failed"
+
+        # Dataset isolation: a connection may hold unrelated uploaded datasets in separate
+        # schemas (e.g. bakehouse + ecommerce). The generated SQL is schema-qualified, so a
+        # bare→dataset map lets us also restrict the table context the LLM sees. No-op for a
+        # single-schema connection.
+        _all_datasets = {dataset_of(t) for t in (tp or {}) if dataset_of(t)}
+        multi_dataset = len(_all_datasets) > 1
+        _bare2dataset = {str(q).split(".")[-1].lower(): dataset_of(q)
+                         for q in (tp or {}) if dataset_of(q)}
+
+        def _ds(tbl):
+            """Dataset (schema) of a possibly-bare table, via the qualified-table universe."""
+            return dataset_of(tbl) or _bare2dataset.get(str(tbl).split(".")[-1].lower(), "")
+
+        if multi_dataset:
+            logger.info("[explorer:%s] questions: multi-dataset connection %s — isolating datasets",
+                        self.connection_id, sorted(_all_datasets))
+
+        # ── Per-dataset domain passes (the "every dataset gets understood" guarantee) ──
+        # A domain's entities can span unrelated uploaded datasets (a Marketing domain over
+        # BOTH bakehouse and netflix). The old behaviour kept only the DOMINANT dataset's
+        # entities and DROPPED the rest — so a single-table catalog like netflix.netflix_titles,
+        # which loses every dominance contest, got ZERO exploration and ZERO briefing (it just
+        # vanished, silently). That breaks the core promise: whether or not a dataset has joins
+        # or measures, the explorer must still understand it and surface reasonable insights.
+        #
+        # Fix: split each multi-dataset domain into ONE pass PER dataset. Every pass is already
+        # single-dataset (so the in-loop dataset-isolation guards below are no-ops, and the SQL
+        # stays join-valid), and no dataset is ever dropped. Each pass carries its own budget /
+        # coverage / novelty state via a unique label; the original domain name (`_base_domain`)
+        # still drives the angle checklist and is what the insight is tagged with for grouping.
+        def _entity_ds(e) -> str:
+            from collections import Counter as _C
+            dss = [_ds(t) for t in e.source_tables if _ds(t)]
+            return _C(dss).most_common(1)[0][0] if dss else ""
+
+        passes, _pass_splits = _build_domain_passes(domain_entities, multi_dataset, _entity_ds)
+        # each domain's share of the run's questions (`explorer.budget.COVERAGE_QUERIES`); a person's `{domain}__cap` wins
+        from aughor.explorer.budget import domain_cap
+        HARD_BUDGET = domain_cap(len(passes))
+        for _split_domain, _split_datasets in _pass_splits:
+            logger.info(
+                "[explorer:%s] questions: %s domain spans %s — splitting into one pass per dataset",
+                self.connection_id, _split_domain, _split_datasets,
+            )
+
+        # ── Industry-aware steering (Business Profile) ──────────────────────────
+        # The keystone for industry-aware intelligence. Load the connection's
+        # Business Profile and let it DRIVE questions: (a) DERIVE extra angles from its
+        # north-star metrics — the per-domain column-feasibility gate below trims any
+        # that don't fit a domain's tables — and (b) INJECT an authoritative industry
+        # block into the question prompt so generated SQL targets what matters for
+        # THIS vertical (AOV/repeat-rate for ecommerce, load-factor/OTP for an
+        # airline) instead of generic volume/value, and respects each metric's sane
+        # range (no more "conversion rate = 1.42"). Best-effort: no profile → the
+        # hardcoded DOMAIN_ANGLES still apply unchanged.
+        profile_block = ""
+        profile_angles: list[str] = []
+        _profile_for_pin = None
+        _metric_ranges: list = []   # (distinctive tokens, kind, max) per north-star metric
+        _eff_industry_seen = None   # the effective industry, once the profile below resolves it
+        try:
+            from aughor.business_profile.infer import get_or_infer
+            # Key the profile by THIS run's schema (a per-schema run) or the connection's
+            # configured schema, so the Briefing's schema selector fetches the matching one.
+            _conn_schema = self.schema_name
+            if not _conn_schema:
+                try:
+                    from aughor.db.registry import get_meta
+                    _conn_schema = (get_meta(self.connection_id) or {}).get("schema_name") or None
+                except Exception:
+                    _conn_schema = None
+            _bp = await _loop.run_in_executor(None, lambda: get_or_infer(self.connection_id, _conn_schema))
+            if _bp is not None:
+                _profile_for_pin = _bp
+                try:
+                    from aughor.business_profile.validate import profile_metric_ranges
+                    _metric_ranges = profile_metric_ranges(_bp)
+                except Exception:
+                    _metric_ranges = []
+                import re as _re
+                def _slug(s: str) -> str:
+                    return _re.sub(r"[^a-z0-9]+", "_", (s or "").lower()).strip("_")[:40]
+                profile_angles = [a for a in (_slug(m.name) for m in _bp.north_star_metrics) if a][:8]
+                _mlines = "\n".join(
+                    f"  - {m.name}: {m.definition} [from {m.maps_to}] (sane value: {m.unit_or_range})"
+                    for m in _bp.north_star_metrics[:8]
+                )
+                _qlines = "\n".join(f"  - {q}" for q in _bp.key_questions[:8])   # rewritten below once the industry resolves
+                # Computation recipes (curated industry KB + LLM fallback) — the
+                # SQL-ACCURACY knowledge: each metric's canonical formula, the grain
+                # to compute at, and the anti-pattern that produces a wrong number
+                # (e.g. COUNT(orders)/COUNT(carts) → conversion > 1). Injected
+                # authoritatively so generated SQL gets the join/grain right.
+                from aughor.business_profile import store as _pstore
+                _recipes = _pstore.load_recipes(self.connection_id, _conn_schema)
+                # Drop recipes whose formula columns don't exist in THIS schema: a generic
+                # profile recipe (SUM(revenue - cogs), customer_id, ecommerce.orders) doesn't
+                # bind to missimi (unit_price/customer_unique_id), and injecting it verbatim
+                # steers the generator to INVENT those names — the dominant questions-pass token sink.
+                if _recipes:
+                    _real_cols: set = set()
+                    _real_tbls: set = set()
+                    for _wt, _wcols in (getattr(sql_writer, "table_cols", {}) or {}).items():
+                        _real_tbls.add(_norm_ident(str(_wt).split(".")[-1]))
+                        for _wc in (_wcols or []):
+                            _real_cols.add(_norm_ident(str(_wc)))
+                    if _real_cols:
+                        _n_before = len(_recipes)
+                        _recipes = [r for r in _recipes
+                                    if _recipe_binds(r.get("formula", ""), _real_cols, _real_tbls)]
+                        if len(_recipes) < _n_before:
+                            logger.info("[explorer:%s] questions: dropped %d/%d unbound recipe(s) "
+                                        "(formula columns absent from this schema)",
+                                        self.connection_id, _n_before - len(_recipes), _n_before)
+                _rlines = ""
+                if _recipes:
+                    _parts = []
+                    for r in _recipes[:8]:
+                        _aps = "; ".join((r.get("anti_patterns") or [])[:2])
+                        _parts.append(
+                            f"  • {r.get('metric')}:\n"
+                            f"      formula: {r.get('formula')}\n"
+                            f"      grain: {r.get('grain')}\n"
+                            f"      AVOID: {_aps}"
+                        )
+                    _rlines = (
+                        "COMPUTATION RECIPES — when a question targets one of these metrics, follow "
+                        "the formula and grain EXACTLY and avoid the named anti-patterns (this is how "
+                        "you keep the SQL correct — a conversion rate must come out 0..1, not 1.4):\n"
+                        + "\n".join(_parts) + "\n"
+                    )
+                # Track E (2026-08-06): identity resolved through the workspace
+                # that OWNS this connection — see _org_identity.
+                _org_block, _eff_industry = _org_identity(self.connection_id, _bp.industry)
+                _eff_industry_seen = _eff_industry
+                # Steer by the effective industry's CURATED metrics — names + formula + grain +
+                # anti-patterns. Deterministic, no LLM.
+                #
+                # This used to fire ONLY when the user's SELECTED industry differed from the one
+                # inferred for the dataset, on the reasoning that a matching pair made the curated
+                # KB redundant with the profile. It doesn't: the profile carries metrics INFERRED
+                # from column names, while the KB carries a human-authored formula, grain, sane
+                # range and anti-pattern per metric. The common case — selected == inferred — is
+                # exactly when that curation is most trustworthy, and it was the one case that got
+                # none of it.
+                _kb_block = ""
+                try:
+                    from aughor.business_profile.metric_kb import (curated_metrics, declared_key_questions,
+                                                                   match_industry, package_questions)
+                    # IP — the questions the ACTIVE package declares in `questions.yaml` lead the
+                    # QUESTIONS THAT MATTER block, marked as declared, ahead of the ones the profile
+                    # inferred; and its explorer angles lead the angle checklist below. Measured
+                    # before this: `questions.yaml` reached no prompt at all — its only readers were
+                    # the steering router (which excludes industry packages) and a projection no
+                    # renderer read. Deterministic; nothing without an active package.
+                    _declared_q = declared_key_questions(_eff_industry, list(_bp.key_questions or []))
+                    if any(declared for _q, declared in _declared_q):
+                        _qlines = "\n".join(f"  - {q}{' [declared by the industry package]' if declared else ''}"
+                                             for q, declared in _declared_q)
+                    _pkg_angles = list(package_questions(_eff_industry)["explorer_angles"])
+                    if _pkg_angles:
+                        profile_angles = list(dict.fromkeys(_pkg_angles + profile_angles))[:12]
+                    _sel_kb = match_industry(_eff_industry)
+                    # IP — the ACTIVE package's typed recipes first, then industry.json's prose ones
+                    # for what the package does not cover. A band marked "published" was measured
+                    # against a named source and reproduced by gate 4; a prose one is an assertion.
+                    # The model should be able to tell them apart, because it is being asked to
+                    # refuse impossible figures on the strength of them.
+                    _sel_metrics = curated_metrics(_eff_industry)
+                    if _sel_kb and _sel_metrics:
+                        _kb_lines = "\n".join(
+                            f"  • {m.get('name')}: {str(m.get('formula') or '')[:120]} "
+                            f"(grain: {str(m.get('grain') or '')[:90]}; "
+                            f"sane{' [published]' if m.get('sourced') else ''}: "
+                            f"{m.get('sane_range') or '—'}; "
+                            f"AVOID: {'; '.join((m.get('anti_patterns') or [])[:1])})"
+                            for m in _sel_metrics[:10]
+                        )
+                        _kb_block = (
+                            f"CURATED {_sel_kb.get('industry')} METRICS — treat these as the "
+                            f"priority lens for what to look for (compute each by its "
+                            f"formula/grain, honour its sane range, avoid its anti-patterns); only fall "
+                            f"back to the dataset-inferred metrics below when a question isn't covered "
+                            f"here:\n{_kb_lines}\n\n"
+                        )
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "selected-industry KB steering is best-effort; fall back to the "
+                             "inferred profile metrics", counter="explorer.selected_industry_kb")
+                profile_block = (
+                    _org_block
+                    + _kb_block
+                    + f"INDUSTRY CONTEXT — this is a {_eff_industry} business ({_bp.business_model}). "
+                    f"{_bp.summary}\n"
+                    f"PRIORITY METRICS for this industry (prefer these; honour each metric's sane "
+                    f"value — NEVER report an impossible figure like a ratio > 1 or a near-zero "
+                    f"per-unit revenue):\n{_mlines}\n"
+                    f"{_rlines}"
+                    f"QUESTIONS THAT MATTER for this industry:\n{_qlines}\n\n"
+                )
+                logger.info(
+                    "[explorer:%s] questions: industry-aware steering — %r (%d priority metrics, %d recipes)",
+                    self.connection_id, _eff_industry, len(profile_angles), len(_recipes),
+                )
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "business-profile steering is best-effort; on failure fall back to "
+                     "the generic DOMAIN_ANGLES", counter="explorer.profile_steer_failed")
+
+        # The playbook is read for this connection's industry only, plus the plays every industry shares.
+        from aughor.business_profile.metric_kb import industry_scope
+        _pb_scope = industry_scope(self.connection_id, self.schema_name, industry=_eff_industry_seen)
+
+        # Embedding vectors for paraphrase dedup, aligned to self._state["insights"].
+        # Seed from any insights already present (e.g. cross-table cross-table) so questions-pass
+        # dedups against them too. Fail-open: no embed model → empty list, dedup is a no-op.
+        try:
+            from aughor.semantic.finding_dedup import embed_text as _embf
+            self._insight_vecs = [_embf(i.get("finding", "")) for i in self._state.get("insights", [])]
+        except Exception:
+            self._insight_vecs = []
+
+        # ── Pinned key-questions (deterministic must-ask) ───────────────────────
+        # Ask the profile's curated key_questions FIRST, with the same guards, so the
+        # high-value angles (the SKU margin-leak, conversion validity, …) are covered
+        # every run and seeded into `insights` before the free per-domain exploration —
+        # which then dedups against them instead of re-deriving them.
+        if _profile_for_pin is not None:
+            try:
+                await self._pass_pinned_questions(_profile_for_pin, sql_writer, profile_block)
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "pinned key-questions pass is best-effort; on failure the free "
+                         "per-domain loop still runs", counter="explorer.pinned_pass_failed")
+
+        # Tier-1 #4: cover the named KPIs deterministically too — reuse each metric's pre-validated
+        # value_sql (no LLM, no synthesis), prepended so the on-target KPIs lead the frontier.
+        if self._manifest_driven and _profile_for_pin is not None:
+            from aughor.explorer.coverage_manifest import ManifestCell
+            _kpi_cells = []
+            for _m in (getattr(_profile_for_pin, "north_star_metrics", None) or []):
+                _vs = (getattr(_m, "value_sql", "") or "").strip()
+                if not _vs:
+                    continue
+                # Only lead with a KPI whose value_sql actually BINDS against THIS run's schema —
+                # a profile's value_sql can target a different dataset (ecommerce.orders) than a
+                # per-schema run (missimi), in which case it'd just be skipped. Validate up front.
+                try:
+                    _ok, _ = self._conn.dry_run(_vs)
+                except Exception:
+                    _ok = False
+                if _ok:
+                    _kpi_cells.append(ManifestCell(metric=_m.name, table="(kpi)", axis="headline",
+                                                   cut=None, source="profile", sql=_vs))
+            if _kpi_cells:
+                self._manifest_cells = _kpi_cells + list(self._manifest_cells)
+                logger.info("[explorer:%s] questions: +%d KPI cells (value_sql, bind-validated) → %d cells",
+                            self.connection_id, len(_kpi_cells), len(self._manifest_cells))
+
+        # Reserve a slice of the token budget for synthesis: synthesis is the
+        # cheapest, highest-value phase (it composes findings already in hand), yet it runs
+        # last — so without a reserve, a token-hungry the questions pass exhausts the budget and the
+        # heartbeat hard-cancels the run BEFORE synthesis ever fires. Stop the questions pass once it
+        # has spent SYNTH_RESERVE_FRACTION of the budget, leaving the remainder for synthesis.
+        _reserve_hit = False
+
+        for domain, _base_domain, entities in passes:
+            if _reserve_hit:
+                break
+            await self._gate()
+            if self._stopped:
+                return
+
+            # durable execution: one DOMAIN is the unit of sliced work. A
+            # worker claims `explore:{store_key}:{domain}` before touching it, so two
+            # workers sharing the database split the domain list between them instead
+            # of double-running it — and a domain whose worker died is reclaimable
+            # after the lease lapses. Claim failure is not an error: the domain is
+            # simply someone else's slice right now; state-level coverage keeps a
+            # later pass from redoing what they complete. Best-effort: a ledger
+            # hiccup must not stop a single-process exploration.
+            self._release_held_claim()   # the previous domain is done — free its slice
+            _claim_scope = f"explore:{self._store_key}:{domain}"
+            _resumed_after_interrupt = False
+            try:
+                from aughor.kernel.ledger import Ledger
+                _claim_ledger = Ledger.default()
+                # 4.1c — is this claim a STEAL? A lapsed lease means a worker started
+                # this domain and never finished it, so whatever it recorded may be
+                # half-written. Read before claiming, because the claim erases the
+                # evidence. Advisory only (see `lapsed_claim_owner`).
+                _resumed_after_interrupt = bool(
+                    _claim_ledger.lapsed_claim_owner(_claim_scope))
+                if not _claim_ledger.try_claim(_claim_scope, self._worker_id,
+                                               lease_s=_DOMAIN_LEASE_S):
+                    logger.info("[explorer:%s] questions: domain %s is another worker's slice — skipping",
+                                self.connection_id, domain)
+                    continue
+                self._held_claim = (_claim_ledger, _claim_scope)
+            except Exception as _cl_exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_cl_exc, "domain claim is best-effort; single-process exploration proceeds",
+                         counter="explorer.domain_claim")
+
+            if _resumed_after_interrupt:
+                # Tell the model its own history has a gap. Without this it re-runs a
+                # domain that already has findings recorded and simply repeats them —
+                # the interruption is invisible from inside the prompt, so the model
+                # has no way to know that "no findings yet" and "findings written by a
+                # worker that died mid-write" look identical to it.
+                logger.info("[explorer:%s] domain %s resumed after an interrupted slice — "
+                            "marking its context", self.connection_id, domain)
+                from aughor.stats import bump
+                bump("explorer.resumed_after_interrupt")
+
+            # Derive: profile metrics lead the angle checklist; generic angles remain
+            # as fallback. The column-feasibility gate downstream drops any that don't
+            # fit this domain's tables, so cross-domain metrics self-scope.
+            angles = list(dict.fromkeys(profile_angles + DOMAIN_ANGLES.get(_base_domain, DEFAULT_ANGLES)))
+            budgets = self._state.setdefault("domain_budgets", {})
+            coverage = self._state.setdefault("domain_coverage", {})
+            domain_insights: list[dict] = [
+                i for i in self._state.get("insights", []) if i.get("domain") == domain
+            ]
+
+            # The per-domain budget is a CROSS-RUN throttle for the LLM loop (don't re-ask a
+            # saturated domain forever). For manifest-driven mode that throttle is the manifest
+            # FRONTIER (covered cells are tracked separately and skipped), so the budget is
+            # per-RUN — without this reset, domains pinned at the cap by prior runs skip the loop
+            # entirely and the manifest path never runs (attempts=0).
+            used = 0 if self._manifest_driven else budgets.get(domain, 0)
+
+            # Dataset isolation, hoisted to cover the WHOLE per-domain context. A domain's
+            # entities can span unrelated uploaded datasets (Customer = bakehouse.sales_customers
+            # AND ecommerce.customers). Restricting only the schema BLOCK still leaves the other
+            # dataset's entities — and their column names — in the entity/relationship context,
+            # and the generator then reaches for them (ecommerce `line_total`/`customer` in a
+            # bakehouse domain), burning budget on questions the gates must skip. Scope `entities`
+            # to the dominant dataset HERE so every downstream block (entity context, relationships,
+            # schema, grains) sees one dataset only — the principle the measure-grain leak taught.
+            if multi_dataset:
+                from collections import Counter as _Counter
+                _ent_tbl_ds = _Counter(_ds(t) for e in entities for t in e.source_tables if _ds(t))
+                if len(_ent_tbl_ds) > 1:
+                    _primary_ds = max(sorted(_ent_tbl_ds), key=lambda d: _ent_tbl_ds[d])
+                    _scoped = [e for e in entities if any(_ds(t) == _primary_ds for t in e.source_tables)]
+                    if _scoped and len(_scoped) < len(entities):
+                        logger.info(
+                            "[explorer:%s] questions: %s domain spans %s — scoping entities to '%s' "
+                            "(%d→%d entities)",
+                            self.connection_id, domain, sorted(_ent_tbl_ds), _primary_ds,
+                            len(entities), len(_scoped),
+                        )
+                        entities = _scoped
+
+            entity_context = "\n".join(
+                f"  - {e.display_name} ({', '.join(e.source_tables)}): {e.description}"
+                for e in entities
+            )
+            relationship_context = "\n".join(
+                f"  - {r.from_entity} → {r.to_entity} ({r.verb}, {r.cardinality})"
+                for r in ontology.relationships.values()
+                if any(e.id == r.from_entity or e.id == r.to_entity for e in entities)
+            )[:2000]
+
+            logger.info(f"[explorer:{self.connection_id}] questions: {domain} domain — {len(entities)} entities, used={used}")
+
+            # Playbook hypotheses (Layer 2): consult the org playbook — the causal
+            # "when metric X behaves like Y, investigate Z" knowledge — for this domain's
+            # metrics, and offer the matching plays as patterns to look for. This is the
+            # explorer finally BUILDING ON the playbook (it was Analyst-only before): the
+            # generator gets known cause→effect patterns to test, not just blank angles.
+            playbook_block = ""
+            try:
+                from aughor.playbook.retriever import retrieve_for_metric_and_phases
+                _pb_labels = [domain] + list(profile_angles) + list(angles)
+                # Relevance alone: a play's success rate is learned from outcomes on every connection, and
+                # the explorer does not look beyond its own (the user's rule, 2026-09-14).
+                _plays = retrieve_for_metric_and_phases(_pb_labels, limit=4, learned_rates=False,
+                                                        industry=_pb_scope)
+                if _plays:
+                    _pb_lines = "\n".join(
+                        f"  • When {p.trigger_metric} {p.trigger_condition}: {(p.recommendation or '')[:140]}"
+                        for p in _plays)
+                    playbook_block = (
+                        "KNOWN PATTERNS (from the playbook) — if the data shows one of these triggers, "
+                        "prefer surfacing it as the finding:\n" + _pb_lines + "\n\n"
+                    )
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "playbook hypotheses are best-effort prompt context; on failure omit",
+                         counter="explorer.playbook_hint_failed")
+
+            _dup_streak = 0   # consecutive structural-duplicate findings → stop a looping domain
+            _followup_hint = ""   # Layer 3: drill instruction carried to the next iteration
+            if "moved" in str(getattr(self, "_job_reason", "") or "") and not getattr(self, "_gaps_only", False):
+                # a run a watched figure's move reopened starts from the move (the exploration principles §4)
+                _followup_hint = (f"A WATCHED FIGURE MOVED — {self._job_reason}. If this domain's tables can "
+                                  "explain that move, ask the question that would.\n\n")
+            _drill_parent = None  # id of the finding the current drill is explaining (observability)
+            _chain_depth = 0      # consecutive drills, bounded so a thread deepens but never runs away
+            while used < budgets.get(f"{domain}__cap", HARD_BUDGET):
+                budgets.get(f"{domain}__cap", HARD_BUDGET)
+                await self._gate()
+                if self._stopped:
+                    return
+
+                # Budget reserve for synthesis: once the questions pass has spent its share of the
+                # token budget, stop here (and skip the remaining domains) so synthesis has
+                # headroom to run instead of being hard-cancelled by the heartbeat.
+                from aughor.kernel.jobs import budget_fraction_used
+                _bf = budget_fraction_used()
+                if _bf is not None and _bf >= SYNTH_RESERVE_FRACTION:
+                    _reserve_hit = True
+                    logger.info("[explorer:%s] questions: budget %.0f%% spent — reserving the rest "
+                                "for synthesis, stopping domain intel", self.connection_id, _bf * 100)
+                    break
+
+                covered_angles = coverage.get(domain, [])
+
+                # Stop on novelty decay: avg novelty of last 3 findings < 2. But when manifest-driven
+                # and uncovered cells remain, the MANIFEST FRONTIER drives the loop — a few low-novelty
+                # (already-covered) cells must not halt it before the uncovered cells are reached.
+                # Novelty-decay then governs only the LLM tail, once the frontier is exhausted.
+                _frontier_remains = self._manifest_driven and any(
+                    (c.metric, c.table, c.axis, c.cut) not in self._manifest_attempted
+                    for c in self._manifest_cells)
+                if not _frontier_remains and len(domain_insights) >= 3:
+                    recent_novelty = [i.get("novelty", 3) for i in domain_insights[-3:]]
+                    if sum(recent_novelty) / 3 < 2.0:
+                        logger.info(f"[explorer:{self.connection_id}] questions: {domain} — novelty decay, stopping")
+                        break
+
+                existing_findings = "\n".join(
+                    f"  • [{i.get('angle','')}] {i.get('finding','')}"
+                    for i in domain_insights[-CONTEXT_FINDINGS:]
+                ) or "  (none yet)"
+                # The ONE shared sentence for interrupted work — same constant the
+                # kernel stamps on an orphaned job and the web client shows on a
+                # dropped stream, so the fact reads identically wherever it surfaces.
+                from aughor.kernel.jobs import UNCERTAIN_RESULT
+                if _resumed_after_interrupt:
+                    # 4.1c — tell the model its own history has a gap. This list is
+                    # where it reads what has already been found, and an interrupted
+                    # worker's half-written findings look exactly like complete ones
+                    # from in here. Naming the gap is what stops it either repeating
+                    # work or trusting a record that was never finished.
+                    existing_findings = (
+                        f"  ⚠ the previous pass over this domain was interrupted mid-work — "
+                        f"{UNCERTAIN_RESULT}. Treat the findings below as unverified: "
+                        f"confirm one before building on it, and do not assume the list "
+                        f"is complete.\n" + existing_findings
+                    )
+
+                # Angle-diversity nudge — POSITIVE grounding only. The structural-dedup gate
+                # drops exact repeats, but a domain can still circle one THEME at different
+                # grains (all four Customer cuts were geographic). NAME the real, low-cardinality
+                # dimension columns it hasn't used yet and invite one. Purely positive by design:
+                # an earlier negative-only "pick something different" pushed the generator to
+                # INVENT a `customer_type`/`segment` column (negative steering without a real
+                # alternative → hallucination). This only fires when a real unused dimension
+                # exists and names it, so it can never induce one.
+                diversity_block = ""
+                try:
+                    from aughor.sql.shape import query_signature as _qsig
+                    _used_dims: set[str] = set()
+                    for _i in domain_insights:
+                        _sg = _qsig(_i.get("sql", ""), getattr(self._conn, "dialect", "duckdb"))
+                        if _sg:
+                            _used_dims |= set(_sg[1])
+                    if len(_used_dims) >= 2:
+                        def _dnorm(s):
+                            return (s or "").replace("_", "").replace("-", "").replace(" ", "").lower()
+                        _avail: list[str] = []
+                        # KNOWN-DORMANT (found via ruff F821): `domain_table_cols` is never
+                        # bound, so this nudge always NameErrors and is swallowed by the
+                        # enclosing try → diversity_block stays "". Left as-is (noqa) rather
+                        # than guessing the intended table list and activating an untested
+                        # path in a lint pass; tracked for a proper fix.
+                        for _tbl in domain_table_cols:  # noqa: F821
+                            _cps = (cp or {}).get(_tbl) or (cp or {}).get(_tbl.lower()) or {}
+                            for _cn, _cpf in _cps.items():
+                                if (getattr(_cpf, "is_low_cardinality", False)
+                                        and not getattr(_cpf, "is_fk", False)
+                                        and (getattr(_cpf, "semantic_type", "") or "") not in ("id", "foreign_key", "metric")
+                                        and _dnorm(_cn) not in _used_dims):
+                                    _avail.append(_cn)
+                        _avail = sorted(set(_avail))[:6]
+                        if _avail:
+                            diversity_block = (
+                                f"DIMENSIONS ALREADY ANALYSED: {', '.join(sorted(_used_dims))} — well-covered. "
+                                f"For a fresh angle, prefer an UNUSED real dimension — e.g. {', '.join(_avail)} "
+                                f"— or a measure-based cut. Use ONLY columns that appear in the SCHEMA.\n\n"
+                            )
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "diversity nudge is best-effort prompt context; on failure omit it",
+                             counter="explorer.diversity_nudge_failed")
+
+                uncovered = [a for a in angles if a not in covered_angles]
+                if not uncovered:
+                    # All named angles covered — let LLM propose deeper / cross-cutting questions
+                    uncovered = ["deeper_analysis", "anomalies", "cross_domain_patterns", "trends"]
+
+                # Build compact schema for domain tables — grounding _NextQuestion SQL generation
+                domain_tables = {tbl for ent in entities for tbl in ent.source_tables}
+                # Table-level isolation backstop: entities are already scoped to the dominant
+                # dataset above, but an entity that itself SPANS datasets can still drag the
+                # other schema's tables in here — trim them so the schema block stays single-set.
+                if multi_dataset:
+                    from collections import Counter
+                    counts = Counter(_ds(t) for t in domain_tables if _ds(t))
+                    if len(counts) > 1:
+                        primary = max(sorted(counts), key=lambda d: counts[d])
+                        domain_tables = {t for t in domain_tables if _ds(t) == primary}
+                        logger.info(
+                            "[explorer:%s] questions: %s domain spans %s — restricting tables to '%s'",
+                            self.connection_id, domain, sorted(counts), primary,
+                        )
+
+                # ── Temporal-feasibility gate (#1) ──────────────────────────────
+                # A table with no real timestamp cannot support date filters, aging or
+                # trends; offering a time-based angle (or window) there forces the generator
+                # to invent a date column — the `invoice_date`-on-a-dateless-`invoices`
+                # hallucination. Drop temporal angles when the whole domain is dateless, and
+                # always name the dateless tables so the LLM never applies time logic to them.
+                def _tbl_ts(t):
+                    p = (tp or {}).get(t) or (tp or {}).get(t.lower())
+                    return getattr(p, "primary_timestamp", None) if p else None
+                dateless_tables = sorted(t for t in domain_tables if not _tbl_ts(t))
+                domain_has_dates = any(_tbl_ts(t) for t in domain_tables)
+                if not domain_has_dates:
+                    uncovered = [a for a in uncovered if not is_temporal_angle(a)] or [
+                        "distribution", "composition", "ranking", "anomalies"]
+                    temporal_guard_block = (
+                        "NO TEMPORAL DATA: this domain has NO date or timestamp column. Do NOT use "
+                        "any date filter, time window, DATE_DIFF, aging buckets, trends, seasonality, "
+                        "growth or over-time analysis, and do NOT invent a date/timestamp column. "
+                        "Analyze only by category, status, distribution, ratio and rank.\n\n"
+                    )
+                elif dateless_tables:
+                    temporal_guard_block = (
+                        f"TABLES WITH NO DATE COLUMN: {', '.join(dateless_tables)}. For these you MUST "
+                        f"NOT use a date filter, time window, DATE_DIFF, aging bucket or over-time "
+                        f"analysis, and MUST NOT invent a date column for them — analyze them only by "
+                        f"category, status, distribution, ratio or rank. Time-based analysis is valid "
+                        f"only on tables that have a listed timestamp column.\n\n"
+                    )
+                else:
+                    temporal_guard_block = ""
+
+                domain_schema_lines: list[str] = []
+                domain_cols: set[str] = set()
+                domain_table_cols: dict[str, list] = {}   # scoped to THIS domain's tables
+                _wkeys = sql_writer.table_cols
+                _bare = lambda s: str(s).split(".")[-1].lower()
+                for tbl in sorted(domain_tables):
+                    if self._table_layer(tbl) in _QUIET_LAYERS:
+                        continue   # a person set this table to a layer that is never questioned (§5)
+                    # Resolve the ontology's BARE table name (`order_payments`) to the SQL
+                    # writer's QUALIFIED schema key (`missimi.order_payments`) — they never
+                    # matched before, so domain_table_cols came back EMPTY for every domain
+                    # and the generator got NO schema block (→ it invented every column, the
+                    # real origin of the line_total waste). Key by the qualified name so the
+                    # schema block AND the compiled SQL use the runnable table reference.
+                    if tbl in _wkeys:
+                        _key = tbl
+                    elif tbl.lower() in _wkeys:
+                        _key = tbl.lower()
+                    else:
+                        _key = next((k for k in _wkeys if k.lower() == tbl.lower()), None) \
+                            or next((k for k in _wkeys if _bare(k) == _bare(tbl)), None)
+                    cols = _wkeys.get(_key) if _key else None
+                    if cols:
+                        domain_schema_lines.append(f"  {_key}: {', '.join(cols)}")
+                        domain_cols.update(str(c).lower() for c in cols)
+                        domain_table_cols[_key] = cols
+
+                # Joinable-neighbour grounding: a domain often analyses a metric that lives on a
+                # SIBLING fact table reached by a verified FK (Customer 'value' lives on
+                # sales_transactions.totalPrice, not on sales_customers). That table isn't a
+                # domain entity, so without its columns here the generator GUESSES the measure
+                # name (total_amount vs the real totalPrice) — the gate skips it, but a budget
+                # slot is wasted and the domain starves. Surface the EXACT columns of same-dataset,
+                # verified-FK neighbours so the generator joins with real names. Same dataset only
+                # (the cross-dataset guard still rejects an actual cross-schema join).
+                _nbr_tables: set[str] = set()
+                for jv in self._state.get("join_verifications", []):
+                    _ft, _tt = jv.get("from_table", ""), jv.get("to_table", "")
+                    for _a, _b in ((_ft, _tt), (_tt, _ft)):
+                        if _a in domain_tables and _b and _b not in domain_tables and _ds(_b) == _ds(_a):
+                            _nbr_tables.add(_b)
+                _nbr_lines: list[str] = []
+                for nt in sorted(t for t in _nbr_tables if self._table_layer(t) not in _QUIET_LAYERS)[:4]:  # cap
+                    cols = (sql_writer.table_cols.get(nt)
+                            or next((v for k, v in sql_writer.table_cols.items() if k.lower() == nt.lower()), None))
+                    if cols:
+                        _nbr_lines.append(f"  {nt}: {', '.join(cols)}")
+                        domain_table_cols[nt] = cols                 # so measure-grains sees its grain too
+                        domain_cols.update(str(c).lower() for c in cols)
+
+                if not domain_table_cols:
+                    logger.info("[explorer:%s] questions: %s — domain_table_cols EMPTY; "
+                                "domain_tables=%s writer_keys=%s",
+                                self.connection_id, domain, sorted(domain_tables)[:8],
+                                sorted(sql_writer.table_cols.keys())[:8])
+
+                domain_schema_block = (
+                    "EXACT COLUMN NAMES — use ONLY these, never invent:\n"
+                    + "\n".join(domain_schema_lines)
+                ) if domain_schema_lines else ""
+                if _nbr_lines:
+                    domain_schema_block += (
+                        "\nJOINABLE TABLES (reachable by a verified key — if you join to one, use its "
+                        "EXACT column names below; NEVER invent a measure like total_amount/line_total):\n"
+                        + "\n".join(_nbr_lines)
+                    )
+
+                # ── Column-feasibility gate (#1) ────────────────────────────────
+                # Drop named angles whose required column class is absent (a
+                # channel/source column for channel_mix, a payment column for
+                # payment_behavior …). Offering them forces the generator to stub
+                # the missing dimension with a constant literal. Keep at least one
+                # angle so the loop never starves.
+                if domain_cols:
+                    _feasible = [a for a in uncovered if angle_feasible(a, domain_cols)]
+                    if _feasible and len(_feasible) < len(uncovered):
+                        logger.info(
+                            "[explorer:%s] questions: %s — dropping infeasible angles %s (required column absent)",
+                            self.connection_id, domain,
+                            [a for a in uncovered if a not in _feasible],
+                        )
+                        uncovered = _feasible
+
+                # ── Grain + cardinality context ─────────────────────────────────
+                # Inject table grains, row counts, FK columns, and high-cardinality
+                # info so the LLM writes JOIN-safe SQL.
+                grain_lines: list[str] = []
+                fk_pairs: list[tuple[str, str, str]] = []   # (child_tbl, fk_col, parent_tbl hint)
+
+                for tbl in sorted(domain_tables):
+                    t_profile = (tp or {}).get(tbl) or (tp or {}).get(tbl.lower())
+                    c_profiles = (cp or {}).get(tbl) or (cp or {}).get(tbl.lower()) or {}
+                    row_count = getattr(t_profile, "row_count", None) if t_profile else None
+                    grain_col = getattr(t_profile, "grain_column", None) if t_profile else None
+
+                    row_str = f"{row_count:,} rows" if row_count else "? rows"
+                    grain_str = f"grain={grain_col}" if grain_col else "grain=unknown"
+                    grain_lines.append(f"  {tbl} ({row_str}, {grain_str})")
+
+                    # Cardinality notes for columns with known profiles
+                    for col_name, col_p in list(c_profiles.items())[:20]:
+                        dc = getattr(col_p, "distinct_count", None)
+                        is_fk = getattr(col_p, "is_fk", False)
+                        sem = getattr(col_p, "semantic_type", "") or ""
+                        if is_fk and dc is not None:
+                            # FK column — record for join rule generation
+                            fk_pairs.append((tbl, col_name, f"{dc:,} distinct"))
+                            grain_lines.append(
+                                f"    {col_name}: FK ({dc:,} distinct) → references another table's grain"
+                            )
+                        elif dc is not None and not getattr(col_p, "is_low_cardinality", False) and dc > 100:
+                            # High-cardinality measure/ID — note the global distinct count
+                            if sem in ("id", "foreign_key", "metric") or col_name.endswith("_id"):
+                                grain_lines.append(f"    {col_name}: {dc:,} distinct values (global, not per row)")
+
+                grain_block = ""
+                if grain_lines:
+                    grain_block = (
+                        "TABLE GRAINS AND CARDINALITY — critical for correct SQL:\n"
+                        + "\n".join(grain_lines)
+                        + "\n"
+                    )
+                # Measure-additivity PREVENTION: per-unit vs per-line grain so the generator
+                # writes SUM(x*quantity) for a unit price and SUM(x) for a line total. No-op safe.
+                # Scope to THIS domain's tables — passing the whole connection injects another
+                # dataset's measure columns (e.g. ecommerce `total_amount`/`line_total`) into a
+                # bakehouse prompt, and the generator then writes them onto tables that don't
+                # have them (the #1 Binder-error class on a mixed-dataset workspace).
+                from aughor.semantic.measure_grain import measure_grains_block as _mg_block
+                _mgb = _mg_block(self.connection_id, self._conn, domain_table_cols or sql_writer.table_cols)
+                if _mgb:
+                    grain_block += "\n" + _mgb + "\n"
+
+                # Build join-safety rules from FK knowledge
+                join_rules: list[str] = []
+                # Also scan all join verifications for relevant relationships
+                jv_all = self._state.get("join_verifications", [])
+                for jv_entry in jv_all:
+                    ft = jv_entry.get("from_table", "")
+                    tt = jv_entry.get("to_table", "")
+                    fc = jv_entry.get("from_col", "")
+                    card = jv_entry.get("cardinality", "")
+                    if ft in domain_tables or tt in domain_tables:
+                        if "many" in card.lower() or card in ("N:1", "1:N", "N:M"):
+                            join_rules.append(
+                                f"  {ft} ↔ {tt} via {fc} ({card}): "
+                                f"COUNT(*) after JOIN = rows in {ft}, NOT in {tt}. "
+                                f"To count {tt} rows: COUNT(DISTINCT {tt}.grain_col)."
+                            )
+
+                # Always add the generic join-safety rule
+                join_rules.insert(0, (
+                    "  GENERAL: When JOINing a parent table to a child (one-to-many), COUNT(*) counts "
+                    "child rows. To count parents use COUNT(DISTINCT parent.grain_column). "
+                    "For per-parent averages, aggregate the child in a subquery first:\n"
+                    "    SELECT parent_col, AVG(child_cnt) FROM parent\n"
+                    "    JOIN (SELECT fk_col, COUNT(*) AS child_cnt FROM child GROUP BY fk_col) s\n"
+                    "    ON parent.grain = s.fk_col GROUP BY parent_col\n"
+                    "  NEVER do: COUNT(DISTINCT child.col) / COUNT(*) in a join — total-vs-total ratio.\n"
+                    "  NEVER do: COUNT(DISTINCT col_a) / COUNT(DISTINCT col_b) — also a total-vs-total ratio.\n"
+                    "  ALWAYS use subquery aggregation for per-parent averages:\n"
+                    "    AVG(x_cnt) FROM (SELECT parent_id, COUNT(DISTINCT x) AS x_cnt FROM child GROUP BY parent_id) s\n"
+                    "    JOIN parent ON parent.grain = s.parent_id"
+                ))
+
+                join_safety_block = (
+                    "JOIN SAFETY RULES — read before writing any JOIN:\n"
+                    + "\n".join(join_rules)
+                    + "\n"
+                ) if join_rules else ""
+
+                # Build prior-phases context (the structure passes findings) — SCOPED to this domain's
+                # DATASET (not its individual tables). The phase-3/4/5 facts are connection-wide;
+                # left unscoped a bakehouse domain is handed ecommerce lifecycles and bakehouse↔
+                # ecommerce "join issues" (the cross-dataset leak). But SAME-dataset facts are
+                # useful GROUNDING — a join issue naming sales_suppliers.continent reminds the
+                # generator that column is real. An earlier draft scoped to the table SET and was
+                # too aggressive: it dropped those same-dataset join facts and the Catalog domain
+                # started inventing location_country instead of using continent. Dataset
+                # granularity removes the leak while keeping the grounding.
+                _domain_ds = _ds(sorted(domain_tables)[0]) if domain_tables else ""
+                def _pp_same_ds(tbl: str) -> bool:
+                    return (not multi_dataset) or _ds(tbl) == _domain_ds
+                prior_phases_lines: list[str] = []
+                nm = self._state.get("null_meanings", {})
+                if nm:
+                    meaningful = {k: v for k, v in nm.items()
+                                  if v.get("meaning") not in ("not_applicable", "unknown")
+                                  and _pp_same_ds(k.split(":")[0])}
+                    if meaningful:
+                        prior_phases_lines.append("NULL SEMANTICS (from the null-meaning pass):")
+                        for k, v in list(meaningful.items())[:8]:
+                            prior_phases_lines.append(f"  {k.replace(':', '.')}: NULL = {v.get('meaning', '?')} ({v.get('null_rate', 0):.0%})")
+                jv = self._state.get("join_verifications", [])
+                if jv:
+                    # Same-dataset only — drops bakehouse↔ecommerce leaks, keeps the in-dataset
+                    # join facts that ground the generator on real column names.
+                    orphans = [j for j in jv if j.get("orphan_count", 0) > 0
+                               and _pp_same_ds(j.get("from_table", "")) and _pp_same_ds(j.get("to_table", ""))]
+                    if orphans:
+                        prior_phases_lines.append("JOIN ISSUES (from join verification):")
+                        for j in orphans[:5]:
+                            prior_phases_lines.append(f"  {j.get('key', '?')}: {j.get('orphan_count', 0)} orphan rows")
+                lm = self._state.get("lifecycle_maps", {})
+                if lm:
+                    _scoped_lm = [(tbl, m) for tbl, m in lm.items() if _pp_same_ds(tbl)]
+                    if _scoped_lm:
+                        prior_phases_lines.append("LIFECYCLES (from lifecycle mapping):")
+                        for tbl, m in _scoped_lm[:5]:
+                            prior_phases_lines.append(f"  {tbl}.{m.get('status_column', '?')}: {', '.join(m.get('active_states', [])[:4])} → {', '.join(m.get('terminal_states', [])[:3])}")
+                prior_phases_block = "\n".join(prior_phases_lines) + "\n\n" if prior_phases_lines else ""
+
+                # Step 1: Ask LLM what to investigate next (grain-aware, schema-grounded)
+                # Run synchronous Ollama call in a thread so the event loop stays alive.
+                try:
+                    _sys1 = (
+                        "You are a data analyst autonomously exploring a business database. "
+                        "Propose exactly one SQL query that will reveal the most valuable business insight "
+                        "for the given domain.\n\n"
+                        "CRITICAL RULES:\n"
+                        "1. Use ONLY the exact column names listed in EXACT COLUMN NAMES — never guess.\n"
+                        "2. Write SELECT-only SQL with real aggregations and comparisons.\n"
+                        "3. READ the JOIN SAFETY RULES before writing any JOIN. "
+                        "After a one-to-many JOIN, COUNT(*) counts child rows, not parent rows. "
+                        "Always use COUNT(DISTINCT parent.grain_col) to count parent entities. "
+                        "For per-parent averages, subquery the child first.\n"
+                        "4. BANNED PATTERN — never divide two COUNT(DISTINCT) values to express an average: "
+                        "COUNT(DISTINCT child.col_a) / COUNT(DISTINCT parent.col_b) is ALWAYS wrong — "
+                        "it gives total-A / total-B across the whole group, not the average A per B row. "
+                        "The correct pattern for 'average X per parent' is: "
+                        "AVG(x_count) FROM (SELECT parent_id, COUNT(DISTINCT x) AS x_count FROM child GROUP BY parent_id) sub. "
+                        "This applies equally to COUNT(DISTINCT x) / COUNT(*) — both are banned.\n"
+                        "5. RESPECT the TIME WINDOW in the user prompt — scope every query touching a "
+                        "timestamped table to the specified date range. Trends, seasonality, and "
+                        "growth metrics are only meaningful within a bounded, recent window.\n"
+                        "6. ONE metric per query, with the population THAT metric needs. Do NOT bolt a "
+                        "second metric onto a query whose WHERE/JOIN filter is wrong for it — a "
+                        "conversion query filtered to status='DELIVERED' will silently return ZERO for a "
+                        "refund metric whose refunds live on status='RETURNED' orders, producing a false "
+                        "'no refunds' finding. If you want another metric, ask it as a SEPARATE question "
+                        "with its own correct filter."
+                        # Belt. `_repair_contra_amount` at the execute seam is the braces —
+                        # both, because the lifecycle rule taught that a planner obeys the
+                        # constraint beside this one and ignores this one, and a contra
+                        # amount that is silently 225x too small reads as good news.
+                        + ("\n7. " + self._contra_directive.replace("\n", "\n   ")
+                           if getattr(self, "_contra_directive", "") else "")
+                    )
+                    time_window_block = ""
+                    # The window must reflect THIS domain's dataset, not the connection's
+                    # freshest dataset (multi-dataset connections), and its phrasing must
+                    # reflect the actual coverage — a 17-day dataset framed as "the last
+                    # 12 months" produces findings narrated over data that doesn't exist.
+                    _domain_window = window_for_tables(tp, cp, domain_tables) or self._time_window
+                    if _domain_window:
+                        # Name only the profiler-vetted timestamp columns. Without this the
+                        # LLM invents a date filter on a date-NAMED integer column (e.g.
+                        # ClickBench EventDate::USMALLINT) → "USMALLINT vs DATE". If a
+                        # connection has no real timestamp anywhere, omit the window
+                        # instruction entirely rather than provoke an un-runnable filter.
+                        _ts_cols = sorted({
+                            f"{t}.{getattr(p, 'primary_timestamp', None)}"
+                            for t, p in (tp or {}).items()
+                            if getattr(p, "primary_timestamp", None)
+                        })
+                        if _ts_cols:
+                            _wstart, _wend = _domain_window[0], _domain_window[1]
+                            _wdays = days_between(_wstart, _wend) or 0
+                            if _wdays < 300:
+                                _frame = (
+                                    f"DATA COVERAGE: this domain's data spans only ~{_wdays} days "
+                                    f"({_wstart} to {_wend}) — that is ALL the history that exists. "
+                                    f"Scope queries to that range and frame findings as 'over the "
+                                    f"available {_wdays}-day history' — NEVER as 'the last 12 months' "
+                                    f"or any period longer than the coverage. Do not propose MoM "
+                                    f"comparisons with under ~2 months of data, nor YoY/seasonality "
+                                    f"with under ~13 months. "
+                                )
+                            else:
+                                _frame = (
+                                    f"TIME WINDOW: Scope queries to the last 12 months "
+                                    f"({_wstart} to {_wend}). "
+                                )
+                            time_window_block = (
+                                f"{_frame}The ONLY "
+                                f"real timestamp columns are: {', '.join(_ts_cols)}. "
+                                f"Add WHERE <that column> >= '{_wstart}' only when "
+                                f"your query touches one of those tables. NEVER add a date filter "
+                                f"to a table without a listed timestamp column, and never compare "
+                                f"a non-date column to a date literal.\n\n"
+                            )
+
+                    # Negative knowledge: names earlier queries proved don't exist. Steers the
+                    # generator off repeated hallucinations (the #1 wasted-budget failure class).
+                    dead_refs_block = ""
+                    if self._dead_refs:
+                        _avoid = ", ".join(sorted(self._dead_refs)[:60])
+                        dead_refs_block = (
+                            f"NONEXISTENT NAMES — earlier queries failed because these columns/tables "
+                            f"do not exist in the table they were used on. Do NOT reference any of them "
+                            f"unless it appears verbatim in the SCHEMA above: {_avoid}\n\n"
+                        )
+                    # Cut-level FRONTIER (Layer 1): name the concrete measure×dimension cells
+                    # this domain has NOT covered yet, so the generator targets a real unexplored
+                    # cut instead of re-deriving a covered one or guessing at "deeper analysis".
+                    # Built from the SAME signature vocabulary the dedup gate uses, so "covered"
+                    # (parsed from executed SQL) and the universe (profiled columns) align.
+                    frontier_block = ""
+                    try:
+                        from aughor.explorer.frontier import (
+                            build_universe, covered_cuts, rank_frontier, render_frontier_block)
+                        _meas: list[str] = []
+                        _dims: list[str] = []
+                        for _ftbl in domain_table_cols:
+                            _fcps = (cp or {}).get(_ftbl) or (cp or {}).get(_ftbl.lower()) or {}
+                            for _fcn, _fcpf in _fcps.items():
+                                _fst = (getattr(_fcpf, "semantic_type", "") or "")
+                                if _fst == "measure":
+                                    _meas.append(_fcn)
+                                elif _fst in ("dimension", "flag", "ordinal") and not getattr(_fcpf, "is_fk", False):
+                                    _dims.append(_fcn)
+                        if _meas and _dims:
+                            _universe = build_universe(_meas, _dims)
+                            _covered = covered_cuts(domain_insights, getattr(self._conn, "dialect", "duckdb"))
+                            _frontier = rank_frontier(_universe, _covered)
+                            frontier_block = render_frontier_block(_frontier, k=8)
+                    except Exception as _exc:
+                        from aughor.kernel.errors import tolerate
+                        tolerate(_exc, "cut-level frontier is best-effort prompt context; on failure omit it",
+                                 counter="explorer.frontier_failed")
+
+                    _usr1 = (
+                        f"DOMAIN: {domain}\n\n"
+                        f"{profile_block}"
+                        f"ENTITIES IN THIS DOMAIN:\n{entity_context}\n\n"
+                        f"RELATIONSHIPS:\n{relationship_context}\n\n"
+                        f"{domain_schema_block}\n\n"
+                        f"{grain_block}\n"
+                        f"{join_safety_block}\n"
+                        f"{temporal_guard_block}"
+                        f"{time_window_block}"
+                        f"{dead_refs_block}"
+                        f"{prior_phases_block}"
+                        f"COVERAGE ANGLES TO EXPLORE: {', '.join(uncovered)}\n"
+                        f"ANGLES ALREADY COVERED: {', '.join(covered_angles) or 'none'}\n\n"
+                        f"EXISTING FINDINGS FOR THIS DOMAIN:\n{existing_findings}\n\n"
+                        f"{diversity_block}"
+                        f"{frontier_block}"
+                        f"{playbook_block}"
+                        f"{_followup_hint}"
+                        "Propose the single most valuable next question. "
+                        "Choose an uncovered angle. Write grain-correct SQL. "
+                        "CRITICAL: every table and column you reference MUST appear VERBATIM in the "
+                        "SCHEMA above — do NOT use any other name (no line_total, no quantity, no "
+                        "city/objective unless listed). If the column you want isn't there, pick a "
+                        "different question that the listed columns can answer."
+                    )
+                    # Tier-1 #4: a manifest cell IS the query spec — synthesise it deterministically
+                    # (no generation LLM call) when manifest-driven; the entire downstream pipeline
+                    # (bind-check, guards, execute, interpret) is unchanged. Fall back to the LLM
+                    # generator when no manifest cell applies (deeper/cross-cutting tail).
+                    def _steer_of() -> str:
+                        # read only when the model is to invent the question (a cell of the question list
+                        # needs no steer): the questions pass INVENTS it, so retrieval keys on the domain and its tables
+                        _kb_steer = self._kb_context(
+                            f"{domain} " + " ".join(list(domain_table_cols)[:8]))
+                        return (f"DOMAIN: {domain}\n\n{_kb_steer}{frontier_block}{playbook_block}{_followup_hint}"
+                                f"EXISTING FINDINGS FOR THIS DOMAIN:\n{existing_findings}\n\n")
+                    nq = await self._next_question(domain, domain_table_cols, cp, _NextQuestion, llm,
+                                                   _steer_of, _sys1, _usr1)
+                    if nq is _NO_MORE_QUESTIONS:
+                        break
+                except Exception as e:
+                    logger.warning(f"[explorer:{self.connection_id}] questions: LLM question gen failed for {domain}: {e}")
+                    break
+
+                # Qualify bare table names to their unique schema FIRST: on a multi-dataset
+                # connection the LLM drops the qualifier (`FROM reviews`), which both errors
+                # on DuckDB (no cross-schema search path) and hides a cross-dataset reference
+                # from the guard below. Qualifying makes a same-dataset reference runnable and
+                # exposes a cross-dataset one (`reviews` → ecommerce.reviews in a bakehouse domain).
+                if multi_dataset:
+                    try:
+                        from aughor.sql.identifiers import qualify_table_names
+                        nq.sql = qualify_table_names(nq.sql, sql_writer.table_cols,
+                                                     getattr(self._conn, "dialect", "duckdb"))
+                    except Exception as _exc:
+                        from aughor.kernel.errors import tolerate
+                        tolerate(_exc, "table qualification is best-effort; on failure the "
+                                 "cross-dataset guard still runs on the original SQL",
+                                 counter="explorer.qualify_failed")
+
+                # Dataset-isolation guard: if the LLM still wrote a cross-dataset join,
+                # drop it — a hallucinated join between unrelated uploaded datasets that can
+                # only return garbage (the bakehouse ⋈ ecommerce class).
+                if multi_dataset and crosses_datasets(nq.sql):
+                    logger.info(
+                        "[explorer:%s] questions: %s/%s — skipping cross-dataset join: %s",
+                        self.connection_id, domain, nq.angle, sorted(tables_in_sql(nq.sql)),
+                    )
+                    used += 1
+                    budgets[domain] = used
+                    continue
+
+                # Feasibility guard (#1, free-proposed angles): the generator stubbed
+                # a missing column with a constant literal ('Unknown' AS signup_source
+                # … GROUP BY signup_source) — a fabricated dimension. Catch it BEFORE
+                # wasting an execute+interpret cycle (the named-angle gate above only
+                # covers the checklist; the LLM can free-propose any angle).
+                if has_fabricated_dimension(nq.sql):
+                    logger.info(
+                        "[explorer:%s] questions: %s/%s — skipping fabricated-dimension question (constant grouping key)",
+                        self.connection_id, domain, nq.angle,
+                    )
+                    used += 1
+                    budgets[domain] = used
+                    continue
+
+                # RC1 — metric-feasibility gate: don't generate a finding for a metric the
+                # data can't support (a margin/profit question against a schema with no cost
+                # column → the LLM fabricates COGS = price·qty·0.5 → a constant 50% margin).
+                # Scope the column check to the question's OWN tables so a sibling dataset's
+                # cost column (missimi) can't mask a cost-less one (bakehouse).
+                try:
+                    from aughor.semantic.metric_feasibility import unsupported_metric_gap
+                    _q_tables = {t.lower() for t in tables_in_sql(nq.sql)}
+                    _q_bare = {t.split(".")[-1] for t in _q_tables}
+                    _q_cols = {
+                        c for tk, cols in (sql_writer.table_cols or {}).items()
+                        if tk.lower() in _q_tables or tk.lower().split(".")[-1] in _q_bare
+                        for c in (cols or [])
+                    }
+                    if not _q_cols:   # table resolution missed — over-include rather than false-skip
+                        _q_cols = {c for cols in (sql_writer.table_cols or {}).values() for c in (cols or [])}
+                    _feas = unsupported_metric_gap(nq.question, _q_cols)
+                except Exception:
+                    _feas = None
+                if _feas:
+                    logger.info(
+                        "[explorer:%s] questions: %s/%s — skipping unsupported-metric question: %s",
+                        self.connection_id, domain, nq.angle, _feas[:90],
+                    )
+                    used += 1
+                    budgets[domain] = used
+                    continue
+
+                # Step 2: Execute SQL — repair loop: run → fail → fix with real error → repeat
+                MAX_ATTEMPTS = 3
+                think_str = f"Domain {domain} | angle={nq.angle} | {nq.question}"
+                sql = nq.sql
+                # Deterministic identifier repair: the LLM rewrites a camelCase schema's
+                # `customerID` to snake_case `customer_id` (a nonexistent column → Binder
+                # error → wasted retry, often a dropped angle). Remap to the exact column
+                # name BEFORE execution so the query just runs. Invented columns are left
+                # alone (a different, hallucination class).
+                try:
+                    from aughor.sql.identifiers import repair_identifiers
+                    sql = repair_identifiers(sql, sql_writer.table_cols,
+                                             getattr(self._conn, "dialect", "duckdb"))
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "identifier repair is best-effort; on failure execute the "
+                             "original SQL (the retry loop still catches a casing error)",
+                             counter="explorer.repair_failed")
+                # ── Semantic column repair (#invention-starvation, deterministic) ─
+                # Casing is fixed; now fix SEMANTIC renames — a real-sounding column the schema
+                # lacks but that MEANS a real one (location_country→country, region→state,
+                # total_amount→totalPrice). The generator invents these from a strong prior even
+                # though the real columns are in the schema block, and a domain can burn its whole
+                # budget on them → 0 findings (the gate skips every one, so errors stay 0, but
+                # nothing is produced). Map to the real column ONLY on an unambiguous concept
+                # match, BEFORE the gate, so the question runs instead of being skipped. High-
+                # precision: a no-concept invention (`segment`) or an ambiguous one is left for
+                # the gate; the metric-drift / grain / dry_run guards downstream backstop a bad map.
+                try:
+                    from aughor.sql.semantic_repair import repair_semantic_columns
+                    _pre_sem = sql
+                    sql = repair_semantic_columns(sql, sql_writer.table_cols,
+                                                  getattr(self._conn, "dialect", "duckdb"))
+                    if sql != _pre_sem:
+                        from aughor.stats import stats as _s; _s.inc("explorer.semantic_repairs")
+                        logger.info(
+                            "[explorer:%s] questions: %s/%s — semantic column repair applied "
+                            "(mapped an invented column to the schema's real one)",
+                            self.connection_id, domain, nq.angle,
+                        )
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "semantic column repair is best-effort; on failure the gate "
+                             "still skips an unresolved column (no worse than before)",
+                             counter="explorer.semantic_repair_failed")
+                # ── Schema-grounding pre-flight (#residual, deterministic) ───────
+                # Casing slips are now repaired; what survives is a genuine invention —
+                # `segment`/`region`/generic `id`, or an invented table (`product_items`).
+                # A blind execute+retry only learns this by FAILING first, and that first
+                # failure is exactly the Binder error the user sees in the Activity Tab.
+                # Catch it statically, harvest the dead names (so the very next budget
+                # iteration regenerates avoiding them — the existing NONEXISTENT-NAMES
+                # block), and skip without ever executing. Mirrors the cross-dataset /
+                # fabricated-dimension guards: a runnable question is worth more than a
+                # logged error, and the loop will simply propose a valid one next.
+                try:
+                    from aughor.sql.identifiers import unresolved_identifiers
+                    _bad_cols, _bad_tbls = unresolved_identifiers(
+                        sql, sql_writer.table_cols, getattr(self._conn, "dialect", "duckdb"))
+                    if _bad_cols or _bad_tbls:
+                        self._dead_refs |= _bad_cols | _bad_tbls
+                        from aughor.stats import stats as _s; _s.inc("explorer.invention_skips")
+                        logger.info(
+                            "[explorer:%s] questions: %s/%s — skipping invented identifiers "
+                            "(cols=%s tables=%s); harvested to negative knowledge",
+                            self.connection_id, domain, nq.angle,
+                            sorted(_bad_cols), sorted(_bad_tbls),
+                        )
+                        used += 1
+                        budgets[domain] = used
+                        self._state["domain_budgets"] = budgets
+                        continue
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "schema-grounding pre-flight is best-effort; on failure "
+                             "fall through to the execute+retry loop (no worse than before)",
+                             counter="explorer.preflight_failed")
+                # ── Active filter-literal binding (deterministic) ────────────────
+                # Identifiers + columns are now correct, but a wrong-CASE or near-miss
+                # enum VALUE ('Womenswear' vs the stored 'womenswear') still passes
+                # dry_run as valid-but-EMPTY → a silent zero-row "finding" the gate drops
+                # (a real, user-reported Scout failure). Bind the literal to the column's
+                # live domain — the same CHESS value-index guard Insight/ADA get via
+                # preflight_repair — dry-run-gated so a wrong rewrite is never adopted.
+                try:
+                    from aughor.sql.join_guard import bind_filter_literals
+                    _bind_dialect = getattr(self._conn, "dialect", "duckdb")
+                    _bound, _applied = bind_filter_literals(self._conn, sql, _bind_dialect)
+                    if _applied and _bound.strip() != sql.strip() and self._conn.dry_run(_bound)[0]:
+                        sql = _bound
+                        from aughor.stats import stats as _s; _s.inc("explorer.filter_bound")
+                        logger.info(
+                            "[explorer:%s] questions: %s/%s — filter literal bound to the live "
+                            "column domain (wrong-case/near-miss value corrected)",
+                            self.connection_id, domain, nq.angle,
+                        )
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "filter-literal binding is best-effort; on failure execute "
+                             "the original SQL (an empty result is no worse than before)",
+                             counter="explorer.filter_bind_failed")
+                # Tier 3: on a large connection, swap exact COUNT(DISTINCT) for the HLL
+                # approximation — orders of magnitude cheaper on big facts, ~1-3% off.
+                # EXCEPT for ratio/rate queries: the per-count HLL error compounds across
+                # a division and flips rankings of near-tied values (the conversion-rate
+                # query that crowned the wrong channel). Keep those exact — a distinct
+                # count over a few-million-row fact is cheap enough in DuckDB.
+                _dialect = getattr(self._conn, "dialect", "duckdb")
+                if self._cost_large:
+                    try:
+                        from aughor.sql.cost import approximate_aggregates, has_count_ratio
+                        if has_count_ratio(sql, _dialect):
+                            logger.info("[explorer:%s] Tier 3: keeping COUNT exact — query computes a ratio",
+                                        self.connection_id)
+                        else:
+                            sql = approximate_aggregates(sql, _dialect)
+                    except Exception as _exc:
+                        from aughor.kernel.errors import tolerate
+                        tolerate(_exc, "HLL approximation is an optional cost optimisation; on "
+                                 "failure run the exact aggregate (correct, just slower)",
+                                 counter="explorer.cost_approx_failed")
+
+                # ── Universal bind-check (#residual backstop, deterministic) ─────
+                # EXPLAIN the final SQL against the real engine BEFORE executing. The
+                # static gate models the dominant invention class, but no static checker
+                # enumerates EVERY binder rule — a dangling table alias (c.customer_id with
+                # no `c` in scope), a GROUP BY/aggregate violation, a residual VARCHAR/BIGINT
+                # mismatch. dry_run IS the engine's binder, so it catches them all without
+                # returning rows or logging an episode. On a bind failure, harvest the dead
+                # names and attempt ONE grounded fix (fix() dry-runs internally, so it only
+                # returns SQL that binds); adopt the fix or skip. This guarantees the first
+                # real execution binds — no failed-bind episode reaches the Activity Tab —
+                # while still salvaging a fixable question into an insight rather than losing it.
+                try:
+                    _ok, _berr = self._conn.dry_run(sql)
+                    if not _ok:
+                        self._dead_refs |= _extract_dead_refs(_berr)
+                        _fix = await _loop.run_in_executor(
+                            None, lambda: sql_writer.fix(sql, _berr, max_retries=2))
+                        if _fix.ok and _fix.sql:
+                            logger.info(
+                                "[explorer:%s] questions: %s/%s — pre-flight bind-fix applied: %s",
+                                self.connection_id, domain, nq.angle, _fix.explanation,
+                            )
+                            sql = _fix.sql
+                        else:
+                            from aughor.stats import stats as _s; _s.inc("explorer.bindcheck_skips")
+                            logger.info(
+                                "[explorer:%s] questions: %s/%s — skipping unbindable question (%s)",
+                                self.connection_id, domain, nq.angle,
+                                (_berr.splitlines()[0] if _berr else "bind error")[:90],
+                            )
+                            used += 1
+                            budgets[domain] = used
+                            self._state["domain_budgets"] = budgets
+                            continue
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "pre-flight bind-check is best-effort; on failure fall "
+                             "through to the execute+retry loop (no worse than before)",
+                             counter="explorer.bindcheck_failed")
+
+                # Join value-domain guard: probe each explicit JOIN's value overlap and
+                # SKIP a query that joins columns whose values don't overlap. The model
+                # invented `attribution.touchpoint_type = campaigns.channel` (ad_click/
+                # organic/… vs YouTube/TikTok/… → 0% overlap) — it binds and runs but
+                # matches nothing, so revenue/ROAS come back all-NULL and the finding
+                # reads as a confident "critical data gap" when it's just a fabricated
+                # join. The ADA/investigation paths already run this guard; the background
+                # explorer (which feeds the Briefing) did not — wire it in here. Probes the
+                # DB, so it runs once per query AFTER the bind-check has finalised the SQL.
+                try:
+                    from aughor.sql.join_guard import check_join_value_domains
+                    _jw = check_join_value_domains(self._conn, sql)
+                    if _jw:
+                        from aughor.stats import stats as _s; _s.inc("explorer.join_domain_skips")
+                        logger.info(
+                            "[explorer:%s] questions: %s/%s — skipping fabricated join (no value overlap): %s",
+                            self.connection_id, domain, nq.angle,
+                            "; ".join(str(w) for w in _jw[:3]),
+                        )
+                        used += 1
+                        budgets[domain] = used
+                        self._state["domain_budgets"] = budgets
+                        continue
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "join value-domain guard is best-effort; on failure run the "
+                             "query (no worse than before the explorer had the guard)",
+                             counter="explorer.join_guard_failed")
+                rows = None
+
+                for attempt in range(MAX_ATTEMPTS):
+                    label = think_str if attempt == 0 else f"[retry {attempt}] {think_str}"
+                    rows = await self._run(sql, think=label, schema=sql_writer.schema)
+                    sql = self._last_executed_sql or sql
+                    if rows is not None:
+                        break
+                    error_msg = _last_episode_error()
+                    # Accumulate negative knowledge — names the engine says don't exist — so
+                    # the next-question generator stops re-proposing them (even on the final attempt).
+                    self._dead_refs |= _extract_dead_refs(error_msg)
+                    if attempt >= MAX_ATTEMPTS - 1:
+                        logger.warning(
+                            f"[explorer:{self.connection_id}] questions: all {MAX_ATTEMPTS} attempts "
+                            f"failed for {domain}/{nq.angle}"
+                        )
+                        break
+                    fix = await _loop.run_in_executor(
+                        None, lambda: sql_writer.fix(sql, error_msg, max_retries=1)
+                    )
+                    if not fix.ok:
+                        logger.warning(
+                            f"[explorer:{self.connection_id}] questions: fix failed at attempt "
+                            f"{attempt+1} for {domain}/{nq.angle}: {fix.final_error}"
+                        )
+                        break
+                    logger.info(
+                        f"[explorer:{self.connection_id}] questions: fix attempt {attempt+1} "
+                        f"for {domain}/{nq.angle} — {fix.explanation}"
+                    )
+                    sql = fix.sql
+
+                used += 1
+                budgets[domain] = used
+                self._state["domain_budgets"] = budgets
+
+                if not rows or len(rows) == 0:
+                    logger.debug(f"[explorer:{self.connection_id}] questions: empty result for {nq.question}")
+                    continue
+
+                # ── Fan-out de-fan (deterministic, #1 correctness lever) ─────────
+                # A SUM of a parent measure across a one-to-many join over-counts
+                # (5x on TPC-H) — and this becomes a Briefing number. Replace it with
+                # the exact DISTINCT(parent-key, measure) dedup before interpreting.
+                # Adopt only if it dry-runs clean and re-executes; silent otherwise.
+                try:
+                    from aughor.sql.fanout import detect_fanout, defan, dimension_ratio_chasm
+                    _dialect = getattr(self._conn, "dialect", "duckdb")
+                    _ff = detect_fanout(sql, sql_writer.table_cols, dialect=_dialect) or \
+                        dimension_ratio_chasm(sql, sql_writer.table_cols, dialect=_dialect)
+                    if _ff:
+                        _rw = defan(sql, _ff, dialect=_dialect)
+                        if _rw and _rw.strip() != sql.strip() and self._conn.dry_run(_rw)[0]:
+                            _rerows = await self._run(_rw, think=f"[de-fan] {think_str}")
+                            if _rerows:
+                                logger.info(
+                                    "[explorer:%s] questions: %s/%s — de-fanned over-counting SUM (%s ⋈ %s)",
+                                    self.connection_id, domain, nq.angle, _ff.satellites, _ff.children,
+                                )
+                                sql, rows = _rw, _rerows
+                except Exception:
+                    pass
+
+                # ── Intent-preservation gate (#2) ───────────────────────────────
+                # A repair can make a query RUN while silently changing its MEANING. The
+                # highest-confidence, deterministic case: the repair DE-TEMPORALISES a time-based
+                # question — the invoice case computed invoice AGE via DATE_DIFF on a date plus a
+                # date-range filter, and the "fix" swapped in a plain payment-delay column,
+                # stripping every temporal construct. When the repair substituted columns AND the
+                # original computed over time but the repaired query no longer does, the result
+                # answers a DIFFERENT question — drop it (a runnable-but-wrong finding is worse
+                # than none). No LLM judgement: an LLM rated this exact drift "faithful".
+                if sql != nq.sql:
+                    _removed = _query_columns(nq.sql) - _query_columns(sql)
+                    _detemporalised = bool(_removed) and has_temporal_sql(nq.sql) and not has_temporal_sql(sql)
+                    _vacuous = has_vacuous_temporal(sql)
+                    if _detemporalised or _vacuous:
+                        logger.info(
+                            "[explorer:%s] questions: %s/%s — dropping finding; repair %s a time-based "
+                            "question (removed %s, added %s)",
+                            self.connection_id, domain, nq.angle,
+                            "neutered (DATE_DIFF of identical dates → constant)" if _vacuous else "de-temporalised",
+                            sorted(_removed), sorted(_query_columns(sql) - _query_columns(nq.sql)),
+                        )
+                        continue
+
+                # Format result for LLM interpretation (max 20 rows)
+                result_text = rows_for_prompt(rows)
+
+                # ── Sanity-check: detect impossible ratios before interpretation ──
+                # If the SQL contains COUNT(DISTINCT ...) / COUNT(*) across a join,
+                # the result may look like "2970 distinct sellers per 110k orders" when
+                # 2970 is actually the global seller population — catch and skip.
+                _skip_result = False
+                try:
+                    sql_upper = sql.upper()
+                    has_join = "JOIN" in sql_upper
+                    # Detect either banned ratio pattern:
+                    #   COUNT(DISTINCT x) / COUNT(*)           — child vs all rows
+                    #   COUNT(DISTINCT x) / COUNT(DISTINCT y)  — total-A / total-B
+                    # Detect either banned ratio pattern (must have an actual division):
+                    #   COUNT(DISTINCT x) / COUNT(*)           — child vs all rows
+                    #   COUNT(DISTINCT x) / COUNT(DISTINCT y)  — total-A / total-B
+                    import re as _re
+                    _div_ratio_pat = _re.compile(
+                        r"COUNT\s*\(\s*DISTINCT[^)]+\)"   # COUNT(DISTINCT x)
+                        r"[\s\d.*]*"                       # optional multiplier/cast
+                        r"/"                               # division
+                        r"\s*COUNT\s*\(",                  # / COUNT(
+                        _re.IGNORECASE,
+                    )
+                    has_distinct_div = bool(_div_ratio_pat.search(sql_upper))
+                    if has_join and has_distinct_div:
+                        # Check if any result value could be a spurious ratio:
+                        # if a "distinct_X_count" cell value equals a known total cardinality
+                        # for a global dimension column, the ratio is meaningless.
+                        for row in rows[:5]:
+                            for cell in row:
+                                try:
+                                    val = int(cell) if cell is not None else None
+                                except (ValueError, TypeError):
+                                    val = None
+                                if val is None:
+                                    continue
+                                # Check against known global cardinalities from cp
+                                for tbl_p, col_profiles in (cp or {}).items():
+                                    for col_n, col_p in col_profiles.items():
+                                        dc = getattr(col_p, "distinct_count", None)
+                                        if dc and abs(val - dc) <= max(2, dc * 0.01):
+                                            # Value equals a known global cardinality
+                                            # Only flag if this looks like a "per-X" misread
+                                            if col_n.endswith("_id") and not getattr(col_p, "is_low_cardinality", True):
+                                                logger.info(
+                                                    "[explorer:%s] questions: skipping likely grain-confused result "
+                                                    "— result cell %d matches global cardinality of %s.%s (%d). "
+                                                    "SQL had JOIN+COUNT(DISTINCT)/COUNT(*).",
+                                                    self.connection_id, val, tbl_p, col_n, dc,
+                                                )
+                                                _skip_result = True
+                except Exception:
+                    pass
+
+                # ── Two grain bugs detect_fanout/the ratio check above miss: integer
+                # division of aggregates (→ avg=1.0, "all orders 3 items") and a single-join
+                # COUNT(*) aliased as a PARENT entity (→ "2000 products" = 25 × 80 items).
+                # Both narrate confident WRONG numbers grounding can't catch (the inflated
+                # value is a real cell). Skip rather than store a runnable-but-wrong finding.
+                if not _skip_result:
+                    try:
+                        from aughor.sql.fanout import (
+                            integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
+                            avg_over_chasm_fanout, sum_over_chasm_fanout, cte_grain_mismatch_fanout,
+                            measure_times_key_arithmetic, avg_of_row_ratios,
+                        )
+                        _tc = getattr(sql_writer, "table_cols", {})
+                        # Measure-additivity: per-unit measure summed without ×quantity
+                        # (under-count) or per-line measure ×quantity (double-count). Grains
+                        # are data-detected once per connection and cached.
+                        from aughor.semantic.measure_grain import (
+                            connection_measure_grains, measure_grain_misuse,
+                        )
+                        _mg, _qc = connection_measure_grains(self.connection_id, self._conn, _tc)
+                        _grain = (integer_division_risk(sql)
+                                  or count_star_entity_fanout(sql, _tc)
+                                  or count_star_chasm_fanout(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb"))
+                                  or avg_over_chasm_fanout(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb"))
+                                  or sum_over_chasm_fanout(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb"))
+                                  or cte_grain_mismatch_fanout(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb"))
+                                  or measure_times_key_arithmetic(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb"))
+                                  or avg_of_row_ratios(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb"))
+                                  or (measure_grain_misuse(sql, _mg, _qc, dialect=getattr(self._conn, "dialect", "duckdb")) if _mg else None))
+                        if _grain:
+                            from aughor.stats import stats as _s; _s.inc("explorer.grain_skips")
+                            logger.info(
+                                "[explorer:%s] questions: %s/%s — skipping (SQL grain bug: %s)",
+                                self.connection_id, domain, nq.angle, _grain,
+                            )
+                            _skip_result = True
+                    except Exception as _exc:
+                        from aughor.kernel.errors import tolerate
+                        tolerate(_exc, "grain-bug lint is best-effort; on failure keep the "
+                                 "finding (no worse than before the lint existed)",
+                                 counter="explorer.grain_lint_failed")
+
+                if _skip_result:
+                    logger.info(
+                        "[explorer:%s] questions: %s/%s — result skipped (grain-confused ratio detected)",
+                        self.connection_id, domain, nq.angle,
+                    )
+                    continue
+
+                # Step 3: Interpret the result — run in thread to keep event loop live
+                try:
+                    _cells_block = numeric_cells_block(rows)
+                    _sys3 = (
+                        "You are interpreting a SQL query result as a concise business insight. "
+                        "Write 1-2 sentences maximum. Include specific numbers from the result. "
+                        + FIGURE_STYLE + " "
+                        "Focus on what is actionable or surprising.\n\n"
+                        "CRITICAL INTERPRETATION RULES:\n"
+                        "- Use ONLY numbers that appear in the result. Copy each value exactly as it "
+                        "is — never scale it or add a magnitude suffix (K/M/B) the value does not "
+                        "already have. If a cell is 2.49, write 2.49, never 2.49M.\n"
+                        "- If a column is labelled 'distinct_X_count' in a grouped query, it is the "
+                        "TOTAL distinct count of X across all rows in that group, NOT a per-row average. "
+                        "Do NOT say 'X per Y' unless the SQL explicitly computed an average (AVG or ratio "
+                        "from a subquery with per-grain counts).\n"
+                        "- Only use ratio language ('per order', 'per customer') when the SQL computed "
+                        "a genuine per-grain aggregation.\n"
+                        "- SEVERITY GROUNDING: do NOT call a value 'weak', 'critically low', 'poor', "
+                        "'underperforming', or 'the weakest' unless it is below a stated benchmark/target. "
+                        "Being the LOWEST in a ranking is NOT evidence it is bad. Use relative language "
+                        "instead ('the lowest of the group at X, vs ~Y typical'); a 47% margin that is "
+                        "merely the smallest of several healthy margins is NOT 'critically low'.\n"
+                        "- Novelty score: 1=already known/trivial, 5=genuinely new and surprising.\n"
+                        "- rationale: in ONE sentence, state the business mechanism or reasoning that "
+                        "makes this finding meaningful — why it holds or what drives it. This is the "
+                        "'why', distinct from the 'what' in `finding`. Do not restate the numbers."
+                    )
+                    _usr3 = (
+                        f"DOMAIN: {domain}\n"
+                        f"QUESTION: {nq.question}\n"
+                        f"SQL:\n{sql}\n\n"
+                        f"SQL RESULT (first 20 rows):\n{result_text}\n\n"
+                        f"NUMERIC VALUES IN THE RESULT (cite these exactly):\n{_cells_block}\n\n"
+                        f"{grain_block}"
+                        f"EXISTING FINDINGS FOR CONTEXT:\n{existing_findings}\n\n"
+                        "Interpret this result as a business insight. "
+                        "Be precise about what the numbers represent — do not invent per-row ratios "
+                        "from total-level aggregations."
+                    )
+                    interp: _Interpretation = await _loop.run_in_executor(
+                        None,
+                        lambda: llm.complete(system=_sys3, user=_usr3, response_model=_Interpretation),
+                    )
+                except Exception as e:
+                    logger.warning(f"[explorer:{self.connection_id}] questions: LLM interpretation failed for {domain}: {e}")
+                    continue
+
+                interp.finding = round_long_decimals(interp.finding)   # number hygiene at the source
+
+                # Drop "no data" findings — an empty/all-NULL result or an interpretation
+                # that says as much. They pollute the Briefing and turn into broken monitors.
+                if self._leaks_schema(sql):
+                    logger.info("[explorer:%s] questions: %s/%s — dropping finding: SQL escapes schema %s",
+                                self.connection_id, domain, nq.angle, self.schema_name)
+                    continue
+                _rl = relabel_mislabeled_finding(interp.finding, sql, metric_vocab_for(self._conn), rows)
+                if _rl:
+                    logger.info("[explorer:%s] questions: %s/%s — relabeled a mislabeled metric, keeping the signal",
+                                self.connection_id, domain, nq.angle)
+                    interp.finding = _rl
+                _ok, _why = verify_insight(rows, interp.finding, sql, _metric_ranges, conn=self._conn)
+                if not _ok:
+                    logger.info(
+                        "[explorer:%s] questions: %s/%s — dropping finding: %s",
+                        self.connection_id, domain, nq.angle, _why,
+                    )
+                    continue
+
+                # Drop fabricated-dimension findings — the model stubbed a missing
+                # column with a constant literal ('Unknown' AS channel … GROUP BY
+                # channel), yielding a vacuous single-group "breakdown" the narrator
+                # dresses up as a real category ("the only channel represented").
+                if has_fabricated_dimension(sql):
+                    logger.info(
+                        "[explorer:%s] questions: %s/%s — skipping fabricated-dimension finding (constant grouping key)",
+                        self.connection_id, domain, nq.angle,
+                    )
+                    continue
+
+                # Drop per-grain mislabels (#6) — a line-item AVG presented as a
+                # per-order/per-customer metric (AVG(line_total) AS aov). The numeric
+                # grounding below can't catch it: the averaged value is a real cell,
+                # only the metric name is wrong (the $467-AOV-vs-$1108 case).
+                if mislabeled_per_grain(sql, interp.finding):
+                    logger.info(
+                        "[explorer:%s] questions: %s/%s — skipping per-grain mislabel (line-item AVG sold as a per-order metric)",
+                        self.connection_id, domain, nq.angle,
+                    )
+                    continue
+
+                # Drop narration-inversion findings — a per-group/per-row value the
+                # narrator universalised over a varying distribution ("3 orders have 1
+                # item" → "all orders have 3 items"). Deterministic: fires only when the
+                # prose says "all/every/each <entity> have/has <N>" AND N is one of
+                # several differing values in the result, so the data disproves it.
+                from aughor.agent.verify import inverted_universal_claim
+                _inv = inverted_universal_claim(interp.finding, rows)
+                if _inv:
+                    logger.info(
+                        "[explorer:%s] questions: %s/%s — skipping narration inversion (%s)",
+                        self.connection_id, domain, nq.angle, _inv,
+                    )
+                    continue
+
+                # Drop semantic metric drift (#5) — the self-repair loop swapped the
+                # metric column for one with a DIFFERENT business meaning (revenue↔cost,
+                # price↔qty) while "fixing" the SQL, so the finding now measures the
+                # wrong thing. Compare the original draft (nq.sql) to what actually ran.
+                if sql != nq.sql and _semantic_metric_drift(nq.sql, sql):
+                    logger.info(
+                        "[explorer:%s] questions: %s/%s — skipping semantic metric drift (repair changed WHAT is measured)",
+                        self.connection_id, domain, nq.angle,
+                    )
+                    continue
+
+                # Ground every magnitude-bearing number in the prose against the real
+                # result cells. The narrator sometimes fabricates a magnitude/unit
+                # ("2.49M" for a cell of 2.49 — off 1e6). Try one corrective rewrite that
+                # may only cite the exact values; if it still can't be grounded, drop the
+                # finding rather than headline a wrong number.
+                _g = verify_finding(interp.finding, rows)
+                if not _g.grounded:
+                    logger.info(
+                        "[explorer:%s] questions: %s/%s — ungrounded number(s) %s; re-grounding",
+                        self.connection_id, domain, nq.angle, _g.ungrounded,
+                    )
+                    try:
+                        _sys_rg = (
+                            "Your previous business insight contained a number that does NOT "
+                            "appear in the data — a fabricated magnitude or unit. Rewrite it "
+                            "using ONLY values from the provided list. Copy each value exactly; "
+                            "never scale it or add a magnitude suffix (K/M/B) it does not already "
+                            "have. If a number cannot be supported by the list, drop it and "
+                            "describe the pattern qualitatively. 1-2 sentences. Keep the same "
+                            "novelty and angle_covered."
+                        )
+                        _usr_rg = (
+                            f"QUESTION: {nq.question}\n"
+                            f"SQL:\n{sql}\n\n"
+                            f"EXACT RESULT VALUES YOU MAY CITE:\n{numeric_cells_block(rows)}\n\n"
+                            f"YOUR PREVIOUS (UNGROUNDED) INSIGHT:\n{interp.finding}\n\n"
+                            f"Ungrounded number(s) to remove or fix: {', '.join(_g.ungrounded)}\n"
+                            "Rewrite it grounded strictly in the exact values above."
+                        )
+                        interp_rg: _Interpretation = await _loop.run_in_executor(
+                            None,
+                            lambda: llm.complete(system=_sys_rg, user=_usr_rg, response_model=_Interpretation),
+                        )
+                        interp_rg.finding = round_long_decimals(interp_rg.finding)
+                        if verify_finding(interp_rg.finding, rows).grounded:
+                            interp = interp_rg
+                            _g = GroundingResult(grounded=True)
+                    except Exception as e:
+                        logger.warning(
+                            "[explorer:%s] questions: re-grounding failed for %s: %s",
+                            self.connection_id, domain, e,
+                        )
+                if not _g.grounded:
+                    logger.info(
+                        "[explorer:%s] questions: %s/%s — dropping finding with unverifiable "
+                        "number(s) %s",
+                        self.connection_id, domain, nq.angle, _g.ungrounded,
+                    )
+                    continue
+
+                # ── Structural-duplicate gate (insight diversity) ───────────────
+                # The model self-grades novelty generously — it rates "top countries by
+                # customer count" and "customer concentration by continent" as both novel,
+                # so novelty-decay never fires and a domain emits the SAME cut four cosmetic
+                # ways (COUNT(*) vs COUNT(DISTINCT pk), a pct-of-total window wrapper, an
+                # alias rename). A query's STRUCTURE is the honest signal: same tables, same
+                # grain, same measures = the same finding. Drop the duplicate; a different
+                # grain or measure has a different signature and is kept. After a few in a
+                # row the domain is clearly out of fresh structural questions — stop it
+                # rather than burn the rest of the budget regenerating variants.
+                # Cross-domain redundancy gate: the structural-dup gate below only sees
+                # THIS domain's findings, so two domains can each surface "conversion by
+                # traffic_source" (same grain + measures, overlapping tables) → two
+                # near-identical briefing charts. Check against ALL insights so far and
+                # drop the later one. Coarser than the per-domain gate (tolerates a tacked-
+                # on secondary column/table) but guarded by shared-table + grouped-only.
+                try:
+                    from aughor.sql.shape import is_redundant_insight
+                    _all_prior_sqls = [i.get("sql", "") for i in self._state.get("insights", [])]
+                    if is_redundant_insight(sql, _all_prior_sqls, getattr(self._conn, "dialect", "duckdb")):
+                        from aughor.stats import stats as _s; _s.inc("explorer.redundant_skips")
+                        logger.info(
+                            "[explorer:%s] questions: %s/%s — dropping cross-domain redundant finding "
+                            "(same grain+measures as an existing insight)",
+                            self.connection_id, domain, nq.angle,
+                        )
+                        used += 1
+                        budgets[domain] = used
+                        self._state["domain_budgets"] = budgets
+                        continue
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "cross-domain redundancy check is best-effort; on failure keep "
+                             "the finding (no worse than the per-domain gate alone)",
+                             counter="explorer.redundancy_failed")
+
+                # Semantic (text) dedup: the structural gates key on SQL shape, so the
+                # SAME claim written with DIFFERENT SQL survives — "top refund reason is
+                # 'WRONG_SHADE' (59,314, 21.19%)" surfaced twice under two domains. Compare
+                # the FINDING TEXT against every prior finding and drop the later twin.
+                try:
+                    from aughor.sql.shape import is_semantically_redundant
+                    _prior_findings = [i.get("finding", "") for i in self._state.get("insights", [])]
+                    if is_semantically_redundant(interp.finding, _prior_findings):
+                        from aughor.stats import stats as _s; _s.inc("explorer.semantic_dup_skips")
+                        logger.info(
+                            "[explorer:%s] questions: %s/%s — dropping semantically-redundant finding "
+                            "(same claim as an existing insight, different SQL)",
+                            self.connection_id, domain, nq.angle,
+                        )
+                        used += 1
+                        budgets[domain] = used
+                        self._state["domain_budgets"] = budgets
+                        continue
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "semantic dedup is best-effort; on failure keep the finding",
+                             counter="explorer.semantic_dedup_failed")
+
+                # Embedding (paraphrase) dedup — catches the same claim worded differently
+                # with different numbers (cosine ~0.87), which the token check (Jaccard ~0.23)
+                # misses. Embed once here; reuse the vector at store time. Fail-open.
+                _fvec = None
+                try:
+                    from aughor.semantic.finding_dedup import embed_text, is_paraphrase_duplicate
+                    _fvec = embed_text(interp.finding)
+                    if is_paraphrase_duplicate(_fvec, getattr(self, "_insight_vecs", [])):
+                        from aughor.stats import stats as _s; _s.inc("explorer.embed_dup_skips")
+                        logger.info(
+                            "[explorer:%s] questions: %s/%s — dropping paraphrase-redundant finding "
+                            "(embedding match to an existing insight)",
+                            self.connection_id, domain, nq.angle,
+                        )
+                        used += 1
+                        budgets[domain] = used
+                        self._state["domain_budgets"] = budgets
+                        continue
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "embedding dedup is best-effort; on failure keep the finding",
+                             counter="explorer.embed_dedup_failed")
+
+                try:
+                    from aughor.sql.shape import is_structural_duplicate
+                    _prior_sqls = [i.get("sql", "") for i in domain_insights]
+                    if is_structural_duplicate(sql, _prior_sqls, getattr(self._conn, "dialect", "duckdb")):
+                        _dup_streak += 1
+                        from aughor.stats import stats as _s; _s.inc("explorer.duplicate_skips")
+                        logger.info(
+                            "[explorer:%s] questions: %s/%s — dropping structural-duplicate finding "
+                            "(same tables/grain/measures as a prior one); streak=%d",
+                            self.connection_id, domain, nq.angle, _dup_streak,
+                        )
+                        if _dup_streak >= 3:
+                            logger.info(
+                                "[explorer:%s] questions: %s — 3 consecutive duplicates, stopping domain",
+                                self.connection_id, domain,
+                            )
+                            break
+                        continue
+                    _dup_streak = 0
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "structural-dedup is best-effort; on failure keep the finding "
+                             "(no worse than before the gate existed)",
+                             counter="explorer.dedup_failed")
+
+                # Step 4: Store the insight
+                insight_id = _store.fresh_finding_id(self._state, self._finding_id(f"{domain}__{nq.angle}__{used}"))
+                # Structured cut coordinates (measure×dimension×tables) parsed from the
+                # executed SQL — populates the hitherto-empty dimensions/measures and a
+                # `signature` block, the substrate the cut-frontier and the synthesis
+                # findings-graph read. Best-effort: unparseable SQL → empty lists.
+                _sigf = signature_fields(sql, getattr(self._conn, "dialect", "duckdb"))
+                insight = {
+                    "id": insight_id,
+                    "domain": domain,
+                    "angle": interp.angle_covered or nq.angle,
+                    "entities_involved": [e.id for e in entities[:4]],
+                    "dimensions": _sigf["dimensions"],
+                    "measures": _sigf["measures"],
+                    "signature": _sigf,
+                    "finding": interp.finding,
+                    # The query that ACTUALLY produced the result — after the self-repair
+                    # loop fixed column/binder errors (and any Tier-3 approx rewrite). Storing
+                    # nq.sql here showed a non-runnable draft as "the data behind this claim",
+                    # breaking the Evidence layer's provenance.
+                    "sql": sql,
+                    "confidence": min(0.95, 0.4 + clamp_novelty(interp.novelty) * 0.1),
+                    "novelty": clamp_novelty(interp.novelty),
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                    "canvas_id": self.canvas_id,
+                    "promoted_to_org": False,
+                    "promotion_confidence": 0.0,
+                    # Forward-chaining (L3) observability: set when THIS question was a drill
+                    # of a prior notable finding, naming that parent — so we can measure
+                    # whether forward-chaining actually yields findings.
+                    "drill_of": (_drill_parent if _followup_hint else None),
+                }
+                self._state.setdefault("insights", []).append(insight)
+                if hasattr(self, "_insight_vecs"):
+                    self._insight_vecs.append(_fvec)   # keep paraphrase-dedup vectors aligned
+                domain_insights.append(insight)
+
+                # Capture the derivation while every input is still in hand — the
+                # question asked, the grounded result cells, the interpreter's
+                # reasoning, and the structural facts this finding stands on. This
+                # is the dossier the Evidence drawer renders, so a later "explain
+                # this" drill is a read, not a second deep analysis. Fail-soft:
+                # provenance must never block emitting a real finding.
+                _dossier = None
+                try:
+                    from aughor.explorer.dossier import build_dossier
+                    _ftables = tables_in_sql(sql)
+                    # Snapshot-pin the finding to the data version it ran against (opt-in),
+                    # so a later drill / re-validate can reproduce it and tell a moved
+                    # dataset apart from a mis-derived finding. Fail-open — never blocks emit.
+                    _data_version = None
+                    try:
+                        from aughor.db.snapshot import snapshot_receipts_enabled, data_version
+                        if snapshot_receipts_enabled():
+                            _data_version = data_version(self._conn, _ftables)
+                    except Exception:
+                        logger.debug("data-version pin failed (non-fatal)", exc_info=True)
+                    _dossier = build_dossier(
+                        question=nq.question,
+                        sql=sql,
+                        finding=interp.finding,
+                        rationale=getattr(interp, "rationale", "") or "",
+                        rows=rows,
+                        grounding=_g,
+                        tables=_ftables,
+                        state=self._state,
+                        generated_at=insight["generated_at"],
+                        data_fingerprint=self._state.get("schema_fingerprint"),
+                        data_version=_data_version,
+                    )
+                except Exception:
+                    logger.debug("dossier build failed (non-fatal)", exc_info=True)
+
+                self._emit_insight(insight, sql, dossier=_dossier,
+                                   journal_extra={"domain": domain})
+
+                # Mark angle as covered
+                angle_key = interp.angle_covered or nq.angle
+                covered = coverage.get(domain, [])
+                if angle_key not in covered:
+                    covered.append(angle_key)
+                    coverage[domain] = covered
+                self._state["domain_coverage"] = coverage
+                self._status.domain_budgets = dict(budgets)
+                self._status.domain_coverage = dict(coverage)
+
+                self._save_state()
+                logger.info(
+                    f"[explorer:{self.connection_id}] questions: {domain}/{angle_key} — "
+                    f"novelty={interp.novelty} — \"{interp.finding[:80]}…\""
+                )
+
+                # Forward-chaining (Layer 3): a non-trivial finding (novelty ≥3) spawns a
+                # targeted drill as the NEXT question — explain WHY (which driver/segment
+                # accounts for it), reusing this same pipeline rather than returning to a
+                # blank frontier cut. Threshold is ≥3 not ≥4: real runs almost never produce
+                # a ≥4, so ≥4 meant forward-chaining never fired. Bounded to 2 consecutive
+                # drills so a thread deepens without running away; a flat (≤2) finding
+                # resets the chain.
+                if clamp_novelty(interp.novelty) >= 3 and _chain_depth < 2:
+                    _chain_depth += 1
+                    _drill_parent = insight_id
+                    _followup_hint = (
+                        "DRILL THIS FINDING (explain it, do not restate it): "
+                        f"\"{interp.finding[:160]}\". Propose the single question that reveals WHY "
+                        "— which segment, driver or sub-population accounts for it — at the correct grain.\n\n"
+                    )
+                else:
+                    _followup_hint = ""
+                    _drill_parent = None
+                    _chain_depth = 0
+
+    async def _pass_synthesis(self, cp, tp, *, max_findings: int = 12, max_pairs: int = 36) -> int:
+        """synthesis — cross-finding SYNTHESIS. Compose pairs of existing findings that
+        share a join key into emergent claims neither parent holds (the five operators
+        in ``explorer/synthesis.py``). This is where Scout *builds on what it knows*:
+        discovery costs ZERO new scans — only the ONE confirming query per surviving
+        hypothesis touches the DB.
+
+        Every emergent NUMBER is re-derived by a confirming query generated through the
+        same ``SqlWriter`` + bind-check + fan-out/grain/join guards a normal finding
+        runs, then the final finding is interpreted FROM the real result rows and
+        grounded — so a composed claim can never narrate a fabricated number. Returns
+        the count of synthesized findings stored. Best-effort throughout."""
+        from pydantic import BaseModel as _BM
+        from aughor.llm.provider import get_provider
+        from aughor.sql.writer import SqlWriter
+        from aughor.sql.shape import is_redundant_insight, is_semantically_redundant
+        from aughor.sql.fanout import (
+            integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
+            avg_over_chasm_fanout, sum_over_chasm_fanout, cte_grain_mismatch_fanout,
+            measure_times_key_arithmetic, avg_of_row_ratios,
+        )
+        from aughor.sql.join_guard import check_join_value_domains
+        from aughor.explorer.synthesis import candidate_pairs, render_pair_prompt, OPERATORS
+
+        insights = list(self._state.get("insights", []) or [])
+        if len(insights) < 2:
+            return 0
+        candidates = candidate_pairs(insights, max_pairs=max_pairs)
+        if not candidates:
+            logger.info("[explorer:%s] synthesis: no combinable finding-pairs", self.connection_id)
+            return 0
+        logger.info("[explorer:%s] synthesis: %d candidate pairs from %d findings",
+                    self.connection_id, len(candidates), len(insights))
+
+        class _SynthPlan(_BM):
+            applies: bool          # does composing A+B yield a genuinely NOVEL emergent claim?
+            composition_type: str  # one of the candidate operators
+            hypothesis: str        # the emergent claim neither parent states (1-2 sentences)
+            confirm_question: str  # the plain-English question whose answer proves the number
+
+        class _SynthInterp(_BM):
+            finding: str           # the emergent insight, stated from the confirming result
+            novelty: int           # 1-5 vs the two parent findings
+
+        _loop = asyncio.get_running_loop()
+        llm = get_provider("coder")
+        sql_writer = SqlWriter(self._conn)
+        _dialect = getattr(self._conn, "dialect", "duckdb")
+        _tc = getattr(sql_writer, "table_cols", {})
+        stored = 0
+
+        _sys_plan = (
+            "You are a senior analyst COMBINING two existing findings into one emergent insight "
+            "the business would miss if it read them separately. The composition operators are: "
+            "share (a magnitude + a rate → contribution/importance), tension (two measures opposing "
+            "on the same entity → a trade-off), concentration (a total + a subset's large share → "
+            "fragility/leverage), confound (an aggregate vs a reversing split → the headline is "
+            "misleading), chain (two metrics linked via a shared segment → a causal narrative). "
+            "Set applies=false UNLESS the combination yields a claim NEITHER finding states alone. "
+            "Pick composition_type ONLY from the candidate types given. The confirm_question must be "
+            "answerable by ONE SQL query that re-derives the emergent quantity (e.g. the revenue "
+            "share, the trade-off magnitude) — do NOT restate either parent."
+        )
+
+        # Pairs already composed in a prior run (by parent-id set) — skip them so synthesis
+        # spends its budget on NEW pairs instead of re-evaluating + re-deriving the same
+        # findings the dedup gate would drop anyway. Diversifies output across runs.
+        _done_pairs = {frozenset(p) for p in (self._state.get("synthesized_pairs") or [])}
+
+        from aughor.kernel.jobs import budget_fraction_used
+        for c in candidates:
+            if stored >= max_findings:
+                break
+            # Self-limit: stop synthesis just shy of the token cap so a productive synthesis
+            # finishes cleanly instead of being heartbeat-cancelled at the very end.
+            _bf9 = budget_fraction_used()
+            if _bf9 is not None and _bf9 >= 0.97:
+                logger.info("[explorer:%s] synthesis: budget %.0f%% spent — stopping synthesis "
+                            "short of the cap", self.connection_id, _bf9 * 100)
+                break
+            if frozenset(c.parent_ids) in _done_pairs:
+                continue
+            await self._gate()
+            if self._stopped:
+                break
+            try:
+                plan: _SynthPlan = await _loop.run_in_executor(
+                    None,
+                    lambda c=c: llm.complete(
+                        system=_sys_plan,
+                        user=render_pair_prompt(c) + "\nCompose these into one emergent insight.",
+                        response_model=_SynthPlan,
+                    ),
+                )
+            except Exception:
+                logger.debug("[explorer:%s] synthesis: plan LLM call failed for pair %s",
+                             self.connection_id, c.parent_ids, exc_info=True)
+                continue
+            if not plan.applies or not (plan.confirm_question or "").strip():
+                continue
+            ctype = plan.composition_type if plan.composition_type in OPERATORS else (c.operators[0] if c.operators else "share")
+
+            # Confirming query — generated through the SAME grounded writer a pinned
+            # question uses, so it binds to the real schema (never LLM-composed SQL).
+            _ctx = (
+                "This question COMBINES two findings to confirm an emergent quantity.\n"
+                f"FINDING A: {c.a.finding}\nFINDING B: {c.b.finding}\n"
+                f"COMPOSITION: {ctype}. HYPOTHESIS: {plan.hypothesis}\n"
+                "Compute EACH metric in its OWN CTE keyed by the shared entity/segment, then JOIN "
+                "the CTEs — never aggregate across a multi-table join directly (fan-out). "
+                "Every rate = SUM(numerator)/NULLIF(SUM(denominator),0) at the correct grain.\n"
+            )
+            _ctx = self._kb_context(plan.confirm_question) + _ctx
+            try:
+                sql = await _loop.run_in_executor(
+                    None, lambda: sql_writer.write(plan.confirm_question, extra_context=_ctx))
+            except Exception:
+                logger.debug("[explorer:%s] synthesis: confirm-SQL write failed (%s)",
+                             self.connection_id, ctype, exc_info=True)
+                continue
+            if not sql or not sql.strip():
+                continue
+
+            ok, berr = self._conn.dry_run(sql)
+            if not ok:
+                fix = await _loop.run_in_executor(None, lambda: sql_writer.fix(sql, berr, max_retries=3))
+                if not (getattr(fix, "ok", False) and getattr(fix, "sql", "")):
+                    continue
+                sql = fix.sql
+
+            grain = (integer_division_risk(sql)
+                     or count_star_entity_fanout(sql, _tc)
+                     or count_star_chasm_fanout(sql, _tc, dialect=_dialect)
+                     or avg_over_chasm_fanout(sql, _tc, dialect=_dialect)
+                     or sum_over_chasm_fanout(sql, _tc, dialect=_dialect)
+                     or cte_grain_mismatch_fanout(sql, _tc, dialect=_dialect)
+                     or measure_times_key_arithmetic(sql, _tc, dialect=_dialect)
+                     or avg_of_row_ratios(sql, _tc, dialect=_dialect))
+            if grain:
+                logger.info("[explorer:%s] synthesis: dropping %s pair — grain bug: %s",
+                            self.connection_id, ctype, grain)
+                continue
+            try:
+                if check_join_value_domains(self._conn, sql):
+                    continue
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "synth join value-domain probe is best-effort; on failure keep the candidate",
+                         counter="explorer.synth_join_guard_failed")
+
+            rows = await self._run(sql, think=f"[synth:{ctype}] {plan.confirm_question[:50]}",
+                                   schema=sql_writer.schema)
+            sql = self._last_executed_sql or sql
+            if not rows or self._leaks_schema(sql):
+                continue
+
+            # Interpret the EMERGENT finding from the real result — the number is the
+            # query's, never the LLM's prediction.
+            _result_text = rows_for_prompt(rows)
+            try:
+                interp: _SynthInterp = await _loop.run_in_executor(
+                    None,
+                    lambda: llm.complete(
+                        system=("You are a precise analyst. State the SINGLE emergent insight this "
+                                "result proves — the claim that comes from COMBINING the two findings. "
+                                "CRITICAL: every number you state MUST be a value that appears in the "
+                                "CONFIRMING RESULT below. Do NOT reuse, restate, or recompute any figure "
+                                "from Finding A or Finding B — those are the inputs, not the answer. If the "
+                                "result contains no new combined quantity, the composition failed: say so "
+                                "plainly with novelty=1 and cite no numbers. novelty is 1-5. " + FIGURE_STYLE),
+                        user=(f"FINDING A (input — do NOT quote its numbers): {c.a.finding}\n"
+                              f"FINDING B (input — do NOT quote its numbers): {c.b.finding}\n"
+                              f"COMPOSITION: {ctype}\n\n"
+                              f"CONFIRMING RESULT — state the emergent number FROM HERE (first 20 rows):\n{_result_text}"),
+                        response_model=_SynthInterp,
+                    ),
+                )
+            except Exception:
+                logger.debug("[explorer:%s] synthesis: interpret call failed (%s)",
+                             self.connection_id, ctype, exc_info=True)
+                continue
+
+            interp.finding = round_long_decimals(interp.finding)   # number hygiene at the source
+
+            # Plausibility hardening (same authorities the questions pass applies): fix a mislabeled
+            # metric against the real vocab, then reject an impossible value. A share or
+            # concentration is a rate — a NEGATIVE share/% is self-contradictory and signals
+            # a mis-derived confirming query or a mislabel (the live "-4.33% repeat share"
+            # defect), so drop it rather than ship a number a reader can't trust.
+            _rl = relabel_mislabeled_finding(interp.finding, sql, metric_vocab_for(self._conn), rows)
+            if _rl:
+                interp.finding = _rl
+            if ctype in ("share", "concentration") and _NEG_PCT_RE.search(interp.finding or ""):
+                logger.info("[explorer:%s] synthesis: dropping %s finding — implausible negative "
+                            "share/rate", self.connection_id, ctype)
+                continue
+
+            _ok, _why = verify_insight(rows, interp.finding, sql, None, conn=self._conn)
+            if not _ok:
+                logger.info("[explorer:%s] synthesis: dropping %s finding — %s",
+                            self.connection_id, ctype, _why)
+                continue
+            _g = verify_finding(interp.finding, rows)
+            if not _g.grounded:
+                logger.info("[explorer:%s] synthesis: dropping %s finding — ungrounded number(s) %s",
+                            self.connection_id, ctype, _g.ungrounded)
+                continue
+            # Synthesis exists to surface NOVEL composed views — drop a trivial one (the
+            # interpreter rating it ≤1, e.g. "repeat AOV $69.39 vs $69.34") rather than
+            # spend a briefing slot on a non-insight.
+            if clamp_novelty(interp.novelty) < 2:
+                logger.info("[explorer:%s] synthesis: dropping %s finding — trivial (novelty<2)",
+                            self.connection_id, ctype)
+                continue
+            _prior_findings = [i.get("finding", "") for i in self._state.get("insights", [])]
+            if is_semantically_redundant(interp.finding, _prior_findings):
+                continue
+            _prior_sqls = [i.get("sql", "") for i in self._state.get("insights", [])]
+            if is_redundant_insight(sql, _prior_sqls, _dialect):
+                continue
+
+            _sigf = signature_fields(sql, _dialect)
+            insight = {
+                "id": _store.fresh_finding_id(self._state, self._finding_id(f"synth__{ctype}__{stored}")),
+                "domain": "Synthesis",
+                "angle": ctype,
+                "entities_involved": [],
+                "dimensions": _sigf["dimensions"],
+                "measures": _sigf["measures"],
+                "signature": _sigf,
+                "finding": interp.finding,
+                "sql": sql,
+                "confidence": min(0.95, 0.4 + clamp_novelty(interp.novelty) * 0.1),
+                "novelty": clamp_novelty(interp.novelty),
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "canvas_id": self.canvas_id,
+                "promoted_to_org": False,
+                "promotion_confidence": 0.0,
+                "synthesized": True,
+                "composition_type": ctype,
+                "parents": [c.a.id, c.b.id],
+            }
+            self._state.setdefault("insights", []).append(insight)
+            if hasattr(self, "_insight_vecs"):
+                try:
+                    from aughor.semantic.finding_dedup import embed_text
+                    self._insight_vecs.append(embed_text(interp.finding))
+                except Exception:
+                    self._insight_vecs.append(None)
+
+            _dossier = None
+            try:
+                from aughor.explorer.dossier import build_dossier
+                _dossier = build_dossier(
+                    question=plan.confirm_question, sql=sql, finding=interp.finding,
+                    rationale=plan.hypothesis, rows=rows, grounding=_g,
+                    tables=tables_in_sql(sql), state=self._state,
+                    generated_at=insight["generated_at"],
+                    data_fingerprint=self._state.get("schema_fingerprint"),
+                )
+            except Exception:
+                logger.debug("synth dossier build failed (non-fatal)", exc_info=True)
+
+            self._emit_insight(insight, sql, dossier=_dossier,
+                               journal_extra={"synthesized": True, "composition_type": ctype,
+                                              "parents": [c.a.id, c.b.id]})
+            stored += 1
+            # Remember this pair so future runs don't re-compose it (cross-run dedup).
+            _done_pairs.add(frozenset(c.parent_ids))
+            self._state["synthesized_pairs"] = [sorted(p) for p in _done_pairs]
+            self._save_state()
+            logger.info("[explorer:%s] synthesis: SYNTH %s from (%s + %s) — \"%s…\"",
+                        self.connection_id, ctype, c.a.id, c.b.id, interp.finding[:80])
+        logger.info("[explorer:%s] synthesis: synthesized %d findings", self.connection_id, stored)
+        return stored
+
+
+# ── Helpers (module-level) ────────────────────────────────────────────────────
+
+def _build_domain_passes(domain_entities, multi_dataset, entity_ds):
+    """Split each ontology domain into per-dataset exploration passes so no uploaded
+    dataset is ever dropped — the "every dataset gets understood" guarantee.
+
+    On a multi-dataset connection a domain's entities can span unrelated uploaded
+    datasets (a Marketing domain over BOTH bakehouse and netflix). Keeping only the
+    dominant dataset's entities silently dropped the rest, so a single-table catalog
+    like ``netflix.netflix_titles`` — which loses every dominance contest — got ZERO
+    exploration and ZERO briefing (it just vanished). Splitting into one pass per
+    dataset keeps every pass single-dataset (so the in-loop isolation guards stay
+    no-ops) and drops nothing; entities whose dataset can't be determined ride with
+    the largest group. ``entity_ds(entity) -> str`` resolves an entity's dataset
+    ('' when unknown); on a single-dataset connection it is never called.
+
+    Returns ``(passes, splits)``: ``passes`` = ``[(pass_label, base_domain, entities)]``
+    (``base_domain`` still drives the angle checklist + insight tagging); ``splits`` =
+    ``[(domain, sorted_datasets)]`` for the caller to log.
+    """
+    passes: list[tuple[str, str, list]] = []   # (pass_label, base_domain, entities)
+    splits: list[tuple[str, list]] = []
+    for _domain, _entities in domain_entities.items():
+        if not multi_dataset:
+            passes.append((_domain, _domain, _entities))
+            continue
+        _by_ds: dict[str, list] = {}
+        for _e in _entities:
+            _by_ds.setdefault(entity_ds(_e), []).append(_e)
+        _real = {k: v for k, v in _by_ds.items() if k}
+        if len(_real) <= 1:
+            # One (or zero) identifiable dataset — keep the domain whole.
+            passes.append((_domain, _domain, _entities))
+        else:
+            # Split: a labelled pass per dataset. Entities whose dataset can't be
+            # determined ride with the largest group so they're not dropped either.
+            _unknown = _by_ds.get("", [])
+            _primary = max(sorted(_real), key=lambda d: len(_real[d]))
+            for _ds_name in sorted(_real):
+                _ents = list(_real[_ds_name])
+                if _ds_name == _primary:
+                    _ents += _unknown
+                passes.append((f"{_domain} · {_ds_name}", _domain, _ents))
+            splits.append((_domain, sorted(_real)))
+    return passes, splits
+
+
+def _find_status_col(col_map: dict) -> Optional[str]:
+    """Return the most likely lifecycle/status column in a table's column map.
+
+    Only values that can BE states are matched (ontology/lifecycle_states.py): the match is by
+    substring, and a one-row JSON column whose text contains "complete" otherwise qualifies — and a
+    column not named for a lifecycle needs half its values to name a state, not one ("New York")."""
+    for col_name, col_p in col_map.items():
+        if (
+            col_p.semantic_type == "dimension"
+            and col_p.is_low_cardinality
+            and col_p.top_values
+            and reads_as_status_column(col_name, col_p.top_values)
+        ):
+            return col_name
+    return None
+
+
+def _lifecycle_states(rows) -> Optional[list[str]]:
+    """A status column's distinct values that are states, by the one state rule; None when
+    they do not read as a lifecycle (descriptions, documents) — there is then nothing to map."""
+    states = [str(r[0]) for r in rows if is_lifecycle_state(r[0])]
+    return states if plausible_lifecycle_states(states) else None
+
+
+def _classify_states(states: list[str]) -> tuple[list[str], list[str]]:
+    """Split a list of state names into (terminal, active) buckets."""
+    terminal: list[str] = []
+    active: list[str] = []
+    for s in states:
+        sl = s.lower()
+        if sl in _TERMINAL or any(t in sl for t in _TERMINAL_SUBS):
+            terminal.append(s)
+        elif sl in _ACTIVE or any(a in sl for a in _ACTIVE_SUBS):
+            active.append(s)
+    return terminal, active
+
+
+def _classify_shape(mn: float, mx: float, mean: float, std: float, pct_zero: float) -> DistributionShape:
+    """Heuristic distribution shape from basic stats."""
+    if mn >= 0 and mx <= 1.01:
+        return DistributionShape.FRACTION_0_1
+    if std == 0 or mx == mn:
+        return DistributionShape.CONCENTRATED
+    cv = std / abs(mean) if mean != 0 else float("inf")
+    if pct_zero > 0.5 and cv > 1.5:
+        return DistributionShape.CONCENTRATED
+    if cv > 2.0:
+        return DistributionShape.SKEWED_RIGHT
+    if cv < 0.15:
+        return DistributionShape.CONCENTRATED
+    return DistributionShape.NORMAL

@@ -1,0 +1,1142 @@
+"use client";
+
+/**
+ * VA-12 · the one editor for a trigger and for an action.
+ *
+ * These rows lived inside `AutomationsPanel` and were reachable only from its form view.
+ * The canvas now authors the same objects, and two editors for one model is how a picture
+ * and the thing it edits come to disagree — the same argument `AutomationGraph` makes for
+ * letting the SERVER own the graph. So the rows move here and both surfaces render these.
+ *
+ * **The kind lists are narrower than the model's `Literal`, on purpose.** The server
+ * accepts seven effect kinds; two of them — `monitor` and `agent_alert` — are adopted
+ * objects that the engine writes when an existing monitor or alert rule is migrated onto
+ * it, and the model's own docstring says they are "not authored by hand". Offering them
+ * here would invite a reader to hand-write one and get a row that duplicates an object
+ * they already have. Posting to Slack IS authorable and is offered — VA-13 added the
+ * `GET /slack-bots` client and the picker below.
+ */
+import React from "react";
+
+import { Button } from "@/components/ui/button";
+import {
+  AUTOMATION_REQUIRED_KEYS, getAutomationVocabulary, getIntegrationConnections,
+  getIntegrationOperations, listMcpServers,
+  type AutoCondition, type AutoEffect, type ConditionKind, type EffectKind,
+  type AutomationVocabulary, type GuardClause, type IntegrationConnection,
+  type IntegrationOperation, type McpServerRow, type McpToolRow, type SlackBotSummary,
+  type UserAgent,
+} from "@/lib/api";
+import { CASTS, seedConfig, upstreamKeys } from "@/lib/automationFlow";
+import { withUniqueKeys } from "@/lib/listKeys";
+import { blankRow, EXPECTATION_KINDS, fromConfig, toConfig, type ExpectationRow } from "@/lib/expectations";
+import { slackStepBotNote } from "@/lib/slackBots";
+import { ScheduleEditor } from "@/components/automations/ScheduleEditor";
+import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { MetricField } from "@/components/metrics/MetricField";
+
+export const CONDITION_KINDS: { value: ConditionKind; label: string; desc: string }[] = [
+  { value: "schedule",       label: "Schedule",       desc: "Fire on a cron cadence" },
+  { value: "webhook",        label: "Webhook",        desc: "Fire when something calls this chain's URL" },
+  { value: "metric",         label: "Metric",         desc: "Delegate to an existing monitor by id" },
+  { value: "source_change",  label: "Source change",  desc: "A table's rows changed (add / delete / backfill)" },
+  { value: "entity_appears", label: "New entity",     desc: "A new key appeared in a table" },
+  { value: "promise_breached", label: "Promise breached", desc: "A declared promise is measured broken" },
+  { value: "finding_created",  label: "New finding",      desc: "The explorer recorded a new finding" },
+  { value: "objects_admitted", label: "Objects admitted", desc: "Objects a rule or segment newly admits — their keys, the count said" },
+];
+
+export const EFFECT_KINDS: { value: EffectKind; label: string; desc: string }[] = [
+  { value: "notify",         label: "Notify",         desc: "Send through a Notifications trigger" },
+  { value: "investigate",    label: "Investigate",    desc: "Run the Agent" },
+  { value: "brief",          label: "Deliver briefing", desc: "Deliver a briefing subscription" },
+  { value: "kinetic_action", label: "Declared action",
+    desc: "Run a declared, governed action — through its approval gate" },
+  { value: "slack_post", label: "Post to Slack",
+    desc: "Post into a channel as one of your bots — mentionable, and repliable in thread" },
+  { value: "subchain", label: "Run a chain",
+    desc: "Run another automation as one step — share a shape instead of authoring it twice" },
+  { value: "mcp_call", label: "Call an MCP tool",
+    desc: "Run a read-only tool on a server this deployment allows — capped, spanned and audited like any other outbound call" },
+  { value: "integration_call", label: "Use an integration",
+    desc: "Act as a connected account — read or post under the grant that account gave, "
+        + "capped and audited" },
+  { value: "metric_value", label: "Governed metric",
+    desc: "Read a metric by its approved definition — the number the registry defines, filters and caveats included" },
+  { value: "synthesize", label: "Synthesize",
+    desc: "Write up the data a previous step produced — under the context you give it, "
+        + "with every number grounded in that data" },
+  { value: "trusted_query", label: "Trusted query",
+    desc: "Run a vetted query and publish its rows — the one output in this plane a step can run once per item of" },
+  { value: "expectations", label: "Measure expectations",
+    desc: "Measure what a table's data must meet — never empty, never repeated, fresh — and record each verdict as the table's health" },
+];
+
+export const inputStyle: React.CSSProperties = {
+  width: "100%", padding: "7px 10px", fontSize: 13, borderRadius: "var(--r3)",
+  border: "1px solid var(--b1)", background: "var(--bg-1, var(--bg-2))", color: "var(--t1)",
+};
+
+export const labelStyle: React.CSSProperties = {
+  fontSize: 11, fontWeight: 600, color: "var(--t3)", marginBottom: 5, display: "block",
+  textTransform: "uppercase",
+};
+
+export const ghostBtn: React.CSSProperties = {
+  background: "none", border: "none", color: "var(--t3)", cursor: "pointer", fontSize: 11,
+};
+
+/**
+ * A new trigger / a new action, with the config key its kind REQUIRES already present.
+ *
+ * Shared because the defaults are part of the contract, not a convenience: the server
+ * validates required config keys at CONSTRUCTION, so a default that omits one produces a
+ * 422 the moment it is saved. Two call sites inventing their own defaults is two chances
+ * to get that wrong, and only one of them would be caught by a test.
+ */
+export function newConditionOf(kind: ConditionKind): AutoCondition {
+  return { kind, config: seedConfig(kind, AUTOMATION_REQUIRED_KEYS) };
+}
+
+export function newEffectOf(kind: EffectKind): AutoEffect {
+  return { kind, config: seedConfig(kind, AUTOMATION_REQUIRED_KEYS) };
+}
+
+/** The kind a bare "add" reaches for, unchanged from before the palette existed: the two
+ *  on-canvas buttons and the rail's rows still add a row and let the reader change its
+ *  kind, and only the palette places a chosen one. */
+export function newCondition(): AutoCondition {
+  return newConditionOf("schedule");
+}
+
+export function newEffect(): AutoEffect {
+  return newEffectOf("notify");
+}
+
+/** What is still missing before the server would accept this row. Empty = valid.
+ *
+ *  Checked while the row is on screen rather than discovered from a failed save: the
+ *  server's error names a config key, and a key says nothing about WHICH of five steps
+ *  is carrying it. The requirements themselves live at the wire boundary
+ *  (`AUTOMATION_REQUIRED_KEYS`) and are asserted against the Python source. */
+export function missingKeys(row: AutoCondition | AutoEffect): string[] {
+  return (AUTOMATION_REQUIRED_KEYS[row.kind] ?? [])
+    .filter(k => !String(row.config[k] ?? "").trim());
+}
+
+/** A `message` is either a sentence or a `{"$from": …}` binding. Rendered as the text a
+ *  person typed either way, so the field round-trips: showing `[object Object]` for a
+ *  binding would invite someone to overwrite the one thing that makes the chain work. */
+function fieldText(value: unknown): string {
+  if (value == null) return "";
+  return typeof value === "string" ? value : JSON.stringify(value);
+}
+
+/** §3.8a — what a person needs to know at the moment they are typing a binding.
+ *
+ * `$as` shipped supported on both sides and NAMED on neither surface: the server honoured
+ * it, the client parsed it, and nothing anywhere told anyone it existed or which words it
+ * takes. A capability reachable only by reading the source is one nobody reaches. Carried
+ * as a `title` rather than stuffed into the placeholder because a placeholder is truncated
+ * by the input's width, and a hint that is cut in half is worse than none.
+ *
+ * The list comes from `CASTS` in `lib/automationFlow`, which a test holds equal to the
+ * server's — so this hint cannot drift into offering a conversion the server refuses. */
+const BINDING_HINT =
+  `Bind an earlier step with {"$from": "step1.answer"}. `
+  + `Add {"$as": "…"} to convert it — one of: ${CASTS.join(", ")}.`;
+
+/** §3.8a — the cast picker, shown only when the field actually holds a binding.
+ *
+ * Renders NOTHING for a plain value, and that is the whole reason it can exist here.
+ * Bindings are edited as free text on purpose — a step whose message is
+ * `{"$from": "step1.answer"}` is the point of the chain, and a plain input is the only
+ * editor that holds either that or a sentence. A control that appeared beside every field
+ * would be clutter on the majority that will never carry a binding; one that appears when
+ * a binding does is an affordance arriving exactly when it means something.
+ *
+ * Clearing the cast DELETES `$as` rather than setting it to "". The server's `CASTS` has no
+ * empty member, and `wearsMarker` accepts `$from` plus at most `$as` — so an empty string
+ * would be a third state: recognised as wiring by the client and refused as a conversion by
+ * the server. Deleting returns the binding to exactly the shape it had before.
+ */
+export function BindingCast({ value, onChange }: {
+  value: unknown;
+  onChange: (next: unknown) => void;
+}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const binding = value as Record<string, unknown>;
+  if (!("$from" in binding) && !("$from_any" in binding)) return null;
+
+  const current = typeof binding.$as === "string" ? binding.$as : "";
+  return (
+    <SelectField
+      aria-label="convert the bound value"
+      title={BINDING_HINT}
+      value={current}
+      onChange={ev => {
+        const next: Record<string, unknown> = { ...binding };
+        if (ev.target.value) next.$as = ev.target.value;
+        else delete next.$as;
+        onChange(next);
+      }}>
+      <option value="">as-is</option>
+      {CASTS.map(c => <option key={c} value={c}>{`as ${c}`}</option>)}
+    </SelectField>
+  );
+}
+
+function messageText(e: AutoEffect): string {
+  return fieldText(e.config.message);
+}
+
+/** Text back to a value. A well-formed binding object becomes one — `$from`, or DS-6's
+ *  `$from_any` join — anything else stays the string it is, including half-typed JSON,
+ *  which must not be swallowed mid-keystroke. */
+function parseMessage(text: string): unknown {
+  const t = text.trim();
+  if (!t.startsWith("{")) return text;
+  try {
+    const parsed = JSON.parse(t);
+    return parsed && typeof parsed === "object"
+      && ("$from" in parsed || "$from_any" in parsed) ? parsed : text;
+  } catch {
+    return text;
+  }
+}
+
+
+/* ── W1 · "Only if" ───────────────────────────────────────────────────────────────
+ *
+ * The wire calls this `when`; every surface calls it **Only if**. The trigger node on
+ * the canvas is already labelled "When", and two Whens in one picture is a collision a
+ * reader pays for — so the word is translated here, at the boundary, exactly as the
+ * retired-vocabulary rule asks.
+ */
+
+/** The operators, FETCHED once per page and shared by every row.
+ *
+ *  A hook rather than a prop because `EffectRow` renders on two surfaces — the form and
+ *  the canvas — and a prop is a thing one of them can forget to pass. The cache is a
+ *  module-level promise: N rows on screen make one request, and a failure degrades to
+ *  an empty list (no operators offered) rather than an unhandled rejection. */
+const EMPTY_VOCAB: AutomationVocabulary = {
+  kinds: {}, guardOps: [],
+  // A cap of 0 while the fetch is in flight: the "+ item" control stays disabled rather
+  // than offering a list the save would refuse. Degrading to a guessed number is how a
+  // form and an engine come to disagree about the same rule.
+  forEach: { maxItems: 0, itemAlias: "item", itemValueKey: "value", publishes: [] },
+};
+let vocabCache: Promise<AutomationVocabulary> | null = null;
+
+export function useAutomationVocabulary(): AutomationVocabulary {
+  const [vocab, setVocab] = React.useState<AutomationVocabulary>(EMPTY_VOCAB);
+  React.useEffect(() => {
+    vocabCache ??= getAutomationVocabulary().catch(() => EMPTY_VOCAB);
+    let live = true;
+    void vocabCache.then(v => { if (live) setVocab(v); });
+    return () => { live = false; };
+  }, []);
+  return vocab;
+}
+
+function refOf(value: unknown): string {
+  return value && typeof value === "object" && "$from" in (value as object)
+    ? String((value as { $from: unknown }).$from) : "";
+}
+
+/**
+ * The guard editor for one step.
+ *
+ * The left side is a PICKER over what earlier steps publish, never free text. B1 closed
+ * exactly this hole for params — an unknown key passed every save-time check and
+ * surfaced at 09:00 as a skipped step — and a guard authored as free text would have
+ * re-opened it one field over.
+ *
+ * Nothing renders when no earlier step publishes anything: the chain context is made of
+ * upstream output, so a first step has nothing it could ask about, and an empty picker
+ * is a control that cannot be used.
+ */
+/**
+ * DS-19 — the Trusted query step's two authoring modes.
+ *
+ * **Pick** names a query the organisation already approved. **Write SQL** takes a
+ * question and a statement typed here, which SAVE verifies for real (execution plus the
+ * shared battery) and turns into a trusted query owned by this chain — hidden from the
+ * catalogue, promotable later by one click.
+ *
+ * The modes are exclusive on the wire, so switching CLEARS the other side's keys rather
+ * than leaving them to be sent together and refused at save. A step carrying both would
+ * have two answers to "what runs", and the pair would drift the first time either was
+ * edited.
+ *
+ * 🔑 Why this is not the code node this repo refuses: what gets STORED is still a query
+ * id. The SQL goes through the same verification and approval door a promoted query
+ * does, and the field is human-only — the chain proposer is refused on it by name, on
+ * the grounds that the step which has a model write SQL already exists and is already
+ * governed as one.
+ */
+/** Arc ED, ED-3 — one table, then what its data must meet: a kind, a column and the values the kind needs. Names and
+ *  values only; the server refuses anything else, and says why on save. */
+function ExpectationRows({ e, set }: {
+  e: AutoEffect; set: (patch: Record<string, unknown>) => void;
+}) {
+  const { table, rows } = fromConfig(e.config.expectations);
+  const write = (t: string, rs: ExpectationRow[]) => set({ expectations: toConfig(t, rs) });
+  const shown = rows.length ? rows : [blankRow()];
+  const patch = (i: number, p: Partial<ExpectationRow>) =>
+    write(table, shown.map((r, j) => (j === i ? { ...r, ...p } : r)));
+  return (
+    <div data-testid="expectation-rows" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <Input style={inputStyle} value={table} aria-label="Table"
+        onChange={ev => write(ev.target.value, shown)} placeholder="the table — e.g. ecommerce.orders" />
+      {shown.map((r, i) => {
+        const kind = EXPECTATION_KINDS.find(k => k.kind === r.kind) ?? EXPECTATION_KINDS[0];
+        // Keyed by position: a row is edited in place, and a key read from its column would remount the input
+        // under the person's cursor on every keystroke.
+        return (
+          <div key={`expectation-${i}`} style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
+            {kind.column && (
+              <Input style={{ ...inputStyle, width: 140 }} value={r.column} aria-label="Column"
+                onChange={ev => patch(i, { column: ev.target.value })} placeholder="column" />
+            )}
+            <SelectField style={{ ...inputStyle, width: "auto" }} value={r.kind} aria-label="What it must meet"
+              onChange={ev => patch(i, { kind: ev.target.value as ExpectationRow["kind"], first: "", second: "" })}>
+              {withUniqueKeys(EXPECTATION_KINDS, k => k.kind).map(([key, k]) => (
+                <option key={key} value={k.kind}>{k.words}</option>))}
+            </SelectField>
+            {kind.first && (
+              <Input style={{ ...inputStyle, width: 150 }} value={r.first} aria-label={kind.first}
+                onChange={ev => patch(i, { first: ev.target.value })} placeholder={kind.first} />
+            )}
+            {kind.second && (
+              <Input style={{ ...inputStyle, width: 130 }} value={r.second} aria-label={kind.second}
+                onChange={ev => patch(i, { second: ev.target.value })} placeholder={kind.second} />
+            )}
+            <SelectField style={{ ...inputStyle, width: "auto" }} value={r.criticality} aria-label="If not met"
+              onChange={ev => patch(i, { criticality: ev.target.value as ExpectationRow["criticality"] })}>
+              <option value="warn">if not met: say so</option>
+              <option value="error">if not met: block publishing</option>
+            </SelectField>
+            {shown.length > 1 && (
+              <Button variant="plain" size="sm" className="h-auto font-normal" aria-label="Remove expectation"
+                style={{ ...ghostBtn, color: "var(--red3)", padding: "3px 6px" }}
+                onClick={() => write(table, shown.filter((_x, j) => j !== i))}>✕</Button>
+            )}
+          </div>
+        );
+      })}
+      <Button variant="ghost" size="sm" className="font-normal" style={{ ...ghostBtn, alignSelf: "flex-start" }}
+        onClick={() => write(table, [...shown, blankRow()])}>
+        Add an expectation
+      </Button>
+      <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.45 }}>
+        Each is measured read-only and counts the rows that break it, never the rows themselves. The verdicts become the
+        table&apos;s health, which answers about it then carry.
+      </div>
+    </div>
+  );
+}
+
+function TrustedQueryRows({ e, set }: {
+  e: AutoEffect; set: (patch: Record<string, unknown>) => void;
+}) {
+  // Authored when there is SQL to show, or when this step's query was authored here
+  // before (the id the save path hands back), so re-opening the rail lands on the mode
+  // the author last used rather than on a box holding an id they never typed.
+  const authored = e.config.sql !== undefined || Boolean(e.config.authored_query_id);
+
+  return (
+    <>
+      <div style={{ display: "flex", gap: 4, marginBottom: 4 }}>
+        <Button variant={authored ? "ghost" : "secondary"} size="sm"
+          className="h-auto font-normal" style={{ ...ghostBtn, padding: "3px 8px" }}
+          onClick={() => set({ sql: undefined, question: undefined })}>
+          Pick a query
+        </Button>
+        <Button variant={authored ? "secondary" : "ghost"} size="sm"
+          className="h-auto font-normal" style={{ ...ghostBtn, padding: "3px 8px" }}
+          onClick={() => set({ query_id: undefined, sql: String(e.config.sql ?? ""),
+                               question: String(e.config.question ?? "") })}>
+          Write SQL
+        </Button>
+      </div>
+      {authored ? (
+        <>
+          <Input style={inputStyle} value={String(e.config.question ?? "")}
+            onChange={ev => set({ question: ev.target.value })}
+            placeholder="what this query answers, in a sentence" />
+          <Textarea style={{ ...inputStyle,
+                             minHeight: 88,
+                             marginTop: 4 }}
+            value={String(e.config.sql ?? "")}
+            onChange={ev => set({ sql: ev.target.value })}
+            placeholder="SELECT …" />
+          {/* Said BEFORE the save, because the two facts a person needs are what will
+              happen to their SQL and who will be able to see it — and finding out
+              afterwards is how a governance step reads as an obstacle. */}
+          <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4,
+                                              lineHeight: 1.45 }}>
+            Saving runs this once to verify it. It stays private to this automation until
+            you promote it.
+          </div>
+        </>
+      ) : (
+        <Input style={inputStyle} value={String(e.config.query_id ?? "")}
+          onChange={ev => set({ query_id: ev.target.value })}
+          placeholder="trusted query id" />
+      )}
+    </>
+  );
+}
+
+
+export function GuardRows({ e, siblings, index, onChange }: {
+  e: AutoEffect;
+  /** The whole step list and this step's place in it — a guard may only read what runs
+   *  BEFORE it, which is the same rule `validate_chain` refuses a forward reference by. */
+  siblings: AutoEffect[]; index: number;
+  onChange: (e: AutoEffect) => void;
+}) {
+  const { kinds, guardOps: ops } = useAutomationVocabulary();
+  const upstream = upstreamKeys(siblings, index, kinds);
+  const clauses = e.when ?? [];
+  const unary = new Set(ops.filter(o => o.unary).map(o => o.op));
+  if (upstream.length === 0 || ops.length === 0) return null;
+
+  const put = (next: GuardClause[]) => onChange({ ...e, when: next });
+  const patch = (i: number, p: Partial<GuardClause>) =>
+    put(clauses.map((c, n) => (n === i ? { ...c, ...p } : c)));
+
+  return (
+    <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px dashed var(--b1)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+        <span style={{ ...labelStyle, marginBottom: 0 }}>Only if</span>
+        {clauses.length > 1 && (
+          <SelectField value={e.when_logic ?? "all"} aria-label="Only if logic"
+            onChange={ev => onChange({ ...e, when_logic: ev.target.value as "all" | "any" })}
+            style={{ ...inputStyle, width: 74 }}>
+            <option value="all">all</option>
+            <option value="any">any</option>
+          </SelectField>
+        )}
+        <Button variant="ghost" className="font-normal" style={{ ...ghostBtn }}
+          onClick={() => put([...clauses, { left: { $from: upstream[0].ref }, op: ops[0].op }])}>
+          + condition
+        </Button>
+      </div>
+      {clauses.map((c, i) => (
+        <div key={i} style={{ display: "flex", gap: 6, marginBottom: 5, alignItems: "center" }}>
+          <SelectField value={refOf(c.left)} aria-label="Only if subject"
+            onChange={ev => patch(i, { left: { $from: ev.target.value } })}
+            style={{ ...inputStyle, width: 150 }}>
+            {/* A reference the picker cannot offer — a step renamed or deleted since —
+                is kept as an option rather than silently re-pointed at the first entry,
+                which would change what the guard tests without anyone touching it. */}
+            {!upstream.some(u => u.ref === refOf(c.left)) && refOf(c.left) && (
+              <option value={refOf(c.left)}>{refOf(c.left)} (missing)</option>
+            )}
+            {upstream.map(u => <option key={u.ref} value={u.ref}>{u.ref}</option>)}
+          </SelectField>
+          <SelectField value={c.op} aria-label="Only if comparison"
+            onChange={ev => patch(i, { op: ev.target.value })}
+            style={{ ...inputStyle, width: 96 }}>
+            {ops.map(o => <option key={o.op} value={o.op}>{o.label}</option>)}
+          </SelectField>
+          {!unary.has(c.op) && (
+            <Input style={{ ...inputStyle, flex: 1 }} value={String(c.right ?? "")}
+              aria-label="Only if value" placeholder="value"
+              onChange={ev => patch(i, { right: ev.target.value })} />
+          )}
+          <Button variant="plain" className="h-auto font-normal" aria-label="Remove condition"
+            onClick={() => put(clauses.filter((_, n) => n !== i))}
+            style={{ ...ghostBtn, color: "var(--red3)", padding: "2px 4px" }}>✕</Button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── DS-6 · "Otherwise" ───────────────────────────────────────────────────────────
+ *
+ * The wire calls it `else_of`; every surface calls it **Otherwise**. The route: this
+ * step runs exactly when the named step's "Only if" was evaluated and did NOT hold —
+ * complementary by construction, where two hand-written opposite guards can drift.
+ */
+
+/**
+ * The route editor for one step.
+ *
+ * The target is a PICKER over the steps this one may be the otherwise OF — earlier,
+ * guarded, unfanned: the same eligibility `validate_chain` refuses against, offered
+ * rather than discovered as a 422. Nothing renders when no earlier step qualifies and
+ * no route is set: an empty picker is a control that cannot be used.
+ */
+export function OtherwiseRows({ e, siblings, index, onChange }: {
+  e: AutoEffect; siblings: AutoEffect[]; index: number;
+  onChange: (e: AutoEffect) => void;
+}) {
+  const current = (e.else_of ?? "").trim();
+  const eligible = siblings
+    .map((s, i) => ({ step: s, alias: s.alias || `step${i + 1}`, i }))
+    .filter(({ step, i }) => i < index
+      && (step.when ?? []).length > 0 && !step.for_each);
+  if (eligible.length === 0 && !current) return null;
+
+  return (
+    <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px dashed var(--b1)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ ...labelStyle, marginBottom: 0 }}>Otherwise</span>
+        <SelectField value={current} aria-label="Otherwise of"
+          onChange={ev => onChange({ ...e, else_of: ev.target.value || undefined })}
+          style={{ ...inputStyle, flex: 1 }}>
+          <option value="">— runs regardless —</option>
+          {/* A target the picker cannot offer — deleted, renamed, or no longer guarded
+              — is kept as an option rather than silently cleared, which would change
+              when this step runs without anyone touching it. */}
+          {current && !eligible.some(t => t.alias === current) && (
+            <option value={current}>{current} (missing)</option>
+          )}
+          {eligible.map(t => (
+            <option key={t.alias} value={t.alias}>
+              runs when {t.alias}&apos;s Only if does not hold
+            </option>
+          ))}
+        </SelectField>
+      </div>
+    </div>
+  );
+}
+
+/* ── W2 · "For each" ──────────────────────────────────────────────────────────────
+ *
+ * The wire calls it `for_each` and so does every surface — unlike `when`/"Only if",
+ * there is no collision to translate away.
+ *
+ * Only a LITERAL list is authored here, and deliberately: it is the case that always
+ * works ("post per region" is three region names someone types), while a bound source
+ * needs an upstream that publishes a list, and nothing in this plane does yet except
+ * the declared-action kind's open outcome. The wire accepts that binding and the canvas
+ * draws it — the model stays more expressive than the form, which is the right way
+ * round.
+ */
+export function ForEachRows({ e, onChange }: {
+  e: AutoEffect; onChange: (e: AutoEffect) => void;
+}) {
+  const { forEach: vocab } = useAutomationVocabulary();
+  const source = e.for_each?.source;
+  const bound = source !== null && source !== undefined && !Array.isArray(source);
+  const items: unknown[] = Array.isArray(source) ? source : [];
+  // Items this form can safely EDIT. A dict item is authored on the wire (its fields are
+  // read `{"$from": "item.room"}`), and a text input would render it "[object Object]"
+  // and replace it with that string on the first keystroke — deleting a working design
+  // to make a form work. Shown read-only instead. Found by driving it.
+  const editable = items.every(i => i === null || typeof i !== "object");
+  const put = (next: unknown[] | null) =>
+    onChange({ ...e, for_each: next === null ? null : { source: next } });
+
+  // A bound source is shown, never edited away by a form that cannot express it: an
+  // editor that silently replaced `{"$from": "rows.items"}` with an empty list would
+  // delete a working design on first render.
+  if (bound || !editable) {
+    return (
+      <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px dashed var(--b1)" }}>
+        <div style={{ ...labelStyle, marginBottom: 3 }}>For each</div>
+        <div className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)",
+          color: "var(--chart-2)" }}>
+          {bound ? refOf(source) : `${items.length} items · edited on the canvas`}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px dashed var(--b1)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+        <span style={{ ...labelStyle, marginBottom: 0 }}>For each</span>
+        <span style={{ flex: 1 }} />
+        {e.for_each ? (
+          <>
+            <Button variant="ghost" className="font-normal"
+              style={{ ...ghostBtn }}
+              disabled={items.length >= vocab.maxItems}
+              title={items.length >= vocab.maxItems
+                ? `${vocab.maxItems} items is the cap` : undefined}
+              onClick={() => put([...items, ""])}>+ item</Button>
+            <Button variant="ghost" className="font-normal"
+              style={{ ...ghostBtn, color: "var(--red3)" }}
+              onClick={() => put(null)}>runs once</Button>
+          </>
+        ) : (
+          <Button variant="ghost" className="font-normal"
+            style={{ ...ghostBtn }}
+            onClick={() => put([""])}>+ list</Button>
+        )}
+      </div>
+      {items.map((item, i) => (
+        <div key={i} style={{ display: "flex", gap: 6, marginBottom: 5, alignItems: "center" }}>
+          <Input style={{ ...inputStyle, flex: 1 }}
+            value={String(item ?? "")}
+            aria-label={`For each item ${i + 1}`} placeholder="one item — e.g. EMEA"
+            onChange={ev => put(items.map((v, n) => (n === i ? ev.target.value : v)))} />
+          <Button variant="plain" className="h-auto font-normal" aria-label="Remove item"
+            onClick={() => put(items.filter((_, n) => n !== i))}
+            style={{ ...ghostBtn, color: "var(--red3)", padding: "2px 4px" }}>✕</Button>
+        </div>
+      ))}
+      {items.length > 0 && (
+        <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+          runs once per item · read it as{" "}
+          <code style={{ fontFamily: "var(--font-mono)", color: "var(--chart-2)" }}>
+            {vocab.itemAlias}.{vocab.itemValueKey}
+          </code>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ConditionRow({ c, onChange, onRemove, timezone }: {
+  c: AutoCondition; onChange: (c: AutoCondition) => void; onRemove?: () => void;
+  /** SP-13 — the automation's own clock, for honest labels ("" = UTC). */
+  timezone?: string;
+}) {
+  const set = (patch: Record<string, unknown>) => onChange({ ...c, config: { ...c.config, ...patch } });
+  return (
+    // A column, not a squeeze: the schedule editor needs the drawer's full width, and
+    // the old side-by-side layout is what clipped a time down to a bare "0 9".
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12,
+      paddingBottom: 10, borderBottom: "1px solid var(--b1)" }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <SelectField value={c.kind} onChange={e => onChange({ kind: e.target.value as ConditionKind, config: {} })}
+          aria-label="Trigger kind"
+          style={{ ...inputStyle, flex: 1 }}>
+          {CONDITION_KINDS.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
+        </SelectField>
+        {onRemove && <Button variant="plain" onClick={onRemove} className="h-auto font-normal" aria-label="Remove trigger" style={{ ...ghostBtn, color: "var(--red3)", padding: "6px 4px" }}>✕</Button>}
+      </div>
+      <div>
+        {c.kind === "schedule" && (
+          <ScheduleEditor cron={String(c.config.cron ?? "")} onCron={cron => set({ cron })}
+            timezone={timezone} />
+        )}
+        {c.kind === "metric" && (
+          <Input style={inputStyle} value={String(c.config.monitor_id ?? "")} onChange={e => set({ monitor_id: e.target.value })} placeholder="monitor id" />
+        )}
+        {(c.kind === "source_change" || c.kind === "entity_appears") && (
+          <Input style={inputStyle} value={String(c.config.table ?? "")} onChange={e => set({ table: e.target.value })} placeholder="table (schema.table)" />
+        )}
+        {/* Arc FA, FA-5 — the entity, and the segment on it whose newly admitted objects fire
+            the chain. The save door checks both resolve, in the compiler's own words. */}
+        {c.kind === "objects_admitted" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <Input style={inputStyle} value={String(c.config.entity ?? "")} aria-label="Entity"
+              onChange={e => set({ entity: e.target.value })} placeholder="entity — e.g. order" />
+            <Input style={inputStyle} value={String(c.config.segment ?? "")} aria-label="Segment"
+              onChange={e => set({ segment: e.target.value })}
+              placeholder="segment — a rule's id, a segment, or overdue_<promise>" />
+            <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+              The first check records the objects already in; later checks fire for the ones that enter.
+            </span>
+          </div>
+        )}
+        {/* DS-17 — the one trigger with nothing to fill in. An empty cell would read as a
+            field that failed to render, so it says where the configuration actually is:
+            issuing the URL is a deployment act and lives behind Deploy. */}
+        {c.kind === "webhook" && (
+          <span className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: "26px" }}>
+            Nothing to fill in — issue this chain&apos;s URL under Deploy.
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── DS-11 · "Use an integration" ──────────────────────────────────────────────
+ *
+ * Two pickers and then the operation's own fields — and every one of those three is
+ * SERVED. The grants come from `/integrations/connections` (filtered to the caller by
+ * the route, so this cannot render somebody else's consent); the operations and their
+ * ports come from `/integrations/operations?connection_id=`, per grant, because whether
+ * a grant carries the scope an operation needs is a fact about the pair and only the
+ * server can answer it. A client that computed that itself would be the mirrored
+ * contract this plane keeps paying to avoid.
+ */
+
+/** This user's grants — a hook rather than a prop for `useAutomationVocabulary`'s
+ *  reason: the row renders on two surfaces and a prop is a thing one of them forgets
+ *  to pass.
+ *
+ *  Deliberately NOT module-cached the way the vocabulary is, and the difference is the
+ *  point: a vocabulary is a fact about this VERSION and cannot change while the page is
+ *  open, while a grant is mutable state a person edits elsewhere. A page that cached it
+ *  once would keep saying "No connected accounts" to someone who had just connected one
+ *  in another tab, with no way back but a reload. */
+export function useIntegrationGrants(): IntegrationConnection[] {
+  const [grants, setGrants] = React.useState<IntegrationConnection[]>([]);
+  React.useEffect(() => {
+    let live = true;
+    void getIntegrationConnections().catch(() => [])
+      .then(g => { if (live) setGrants(g); });
+    return () => { live = false; };
+  }, []);
+  return grants;
+}
+
+/** The operations ONE grant may run. Keyed by connection because the availability of a
+ *  row is a property of the pair — the same Google account may read mail and not send
+ *  it — and a roster cached across grants would show one account's answer for another.
+ *
+ *  Cached, unlike the grants above, because the only thing that moves a grant's roster
+ *  is re-consenting to different scopes — and that happens through the provider's own
+ *  consent screen, which navigates this page away and back. */
+const opsCache = new Map<string, Promise<IntegrationOperation[]>>();
+
+export function useIntegrationOperations(connectionId: string): IntegrationOperation[] {
+  // The loaded roster is stored WITH the grant it belongs to, and a mismatch reads as
+  // empty. Not a style point: holding a bare list would leave the previous account's
+  // operations on screen for the render between switching grants and the fetch landing —
+  // and an author who picks in that window picks an operation for the wrong consent.
+  const [loaded, setLoaded] =
+    React.useState<{ id: string; ops: IntegrationOperation[] }>({ id: "", ops: [] });
+  React.useEffect(() => {
+    if (!connectionId) return;
+    let cached = opsCache.get(connectionId);
+    if (!cached) {
+      cached = getIntegrationOperations(connectionId).catch(() => []);
+      opsCache.set(connectionId, cached);
+    }
+    let live = true;
+    void cached.then(o => { if (live) setLoaded({ id: connectionId, ops: o }); });
+    return () => { live = false; };
+  }, [connectionId]);
+  return loaded.id === connectionId ? loaded.ops : [];
+}
+
+export function IntegrationRows({ e, onChange }: {
+  e: AutoEffect; onChange: (e: AutoEffect) => void;
+}) {
+  const grants = useIntegrationGrants();
+  const connectionId = String(e.config.connection_id ?? "");
+  const ops = useIntegrationOperations(connectionId);
+  const operationId = String(e.config.operation ?? "");
+  const op = ops.find(o => o.id === operationId);
+  const params = (e.config.params ?? {}) as Record<string, unknown>;
+
+  const set = (patch: Record<string, unknown>) =>
+    onChange({ ...e, config: { ...e.config, ...patch } });
+  const setParam = (name: string, value: unknown) =>
+    set({ params: { ...params, [name]: value } });
+
+  // A grant that cannot be spent is not offered: `revoked` is dead and
+  // `needs_reconnect` is a refusal the provider already made. The sentence is the
+  // palette's own, word for word — two surfaces explaining one absence differently is
+  // how a reader learns the product has two opinions about it.
+  const usable = grants.filter(g => g.status === "active");
+  // A grant this step was AUTHORED against and the picker cannot offer — revoked since,
+  // or belonging to someone else. Kept and marked, never silently dropped: a `<SelectField>`
+  // whose value matches no option renders as the placeholder, so a step that says "act
+  // as sales@…" would read as one nobody had configured yet, and the next save would
+  // make that true. The Otherwise picker states the same rule one field over, and this
+  // repo has already paid for a client that could not SEE a field dropping it.
+  const orphanGrant = !!connectionId && !usable.some(g => g.id === connectionId);
+  const orphanOp = !!operationId && ops.length > 0 && !op;
+  if (usable.length === 0 && !connectionId) {
+    return (
+      <div className="aug-fs-xs" style={{ color: "var(--amb4)", padding: "6px 0" }}>
+        No connected accounts — connect one under Integrations, then this step can act as it.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <SelectField style={inputStyle} value={connectionId} aria-label="Act as"
+        onChange={ev => set({ connection_id: ev.target.value, operation: "", params: {} })}>
+        <option value="">Act as…</option>
+        {usable.map(g => (
+          <option key={g.id} value={g.id}>
+            {g.provider}{g.account ? ` · ${g.account}` : ""}
+          </option>
+        ))}
+        {orphanGrant && <option value={connectionId}>{connectionId} (missing)</option>}
+      </SelectField>
+      {connectionId && (
+        <SelectField style={inputStyle} value={operationId} aria-label="Operation"
+          onChange={ev => set({ operation: ev.target.value, params: {} })}>
+          <option value="">Do what…</option>
+          {ops.map(o => (
+            <option key={o.id} value={o.id}>
+              {o.label}{o.writes ? " (write)" : ""}
+            </option>
+          ))}
+          {orphanOp && <option value={operationId}>{operationId} (missing)</option>}
+        </SelectField>
+      )}
+      {orphanGrant && (
+        <div className="aug-fs-xs" style={{ color: "var(--amb4)" }}>
+          This step acts as an account you can no longer pick — reconnect it under
+          Integrations, or choose another.
+        </div>
+      )}
+      {/* The server's own sentence about THIS pair. Rendered rather than paraphrased:
+          it names the scope that is missing and the door that grants it. */}
+      {op && op.availability !== "ready" && op.reason && (
+        <div className="aug-fs-xs" style={{ color: "var(--amb4)" }}>{op.reason}</div>
+      )}
+      {op?.writes && (
+        <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+          A write — it passes the approval gate before it runs.
+        </div>
+      )}
+      {op?.params.map(prm => (
+        <div key={prm.name} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <Input style={{ ...inputStyle, flex: 1 }}
+            aria-label={prm.label || prm.name}
+            value={fieldText(params[prm.name])}
+            onChange={ev => setParam(prm.name,
+              // Bindable fields accept a binding object; the rest are plain values. Same
+              // reason `slack_post`'s message is free text: a field whose value is
+              // `{"$from": "step1.answer"}` is the whole point of the chain, and
+              // `String(obj)` renders "[object Object]" — an editor inviting someone to
+              // overwrite the wiring that makes it work.
+              prm.bindable ? parseMessage(ev.target.value) : ev.target.value)}
+            title={prm.bindable ? BINDING_HINT : undefined}
+            placeholder={`${prm.label || prm.name}${prm.required ? "" : " (optional)"}`
+              + (prm.placeholder ? ` — e.g. ${prm.placeholder}` : "")} />
+          {/* Only for a field the operation DECLARES bindable. Offering a conversion on a
+              param that cannot hold a binding would advertise wiring the server refuses. */}
+          {prm.bindable && (
+            <BindingCast value={params[prm.name]}
+              onChange={next => setParam(prm.name, next)} />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The allowlisted MCP servers, with the tool roster each one's last discovery stored. */
+export function useMcpServers(): McpServerRow[] {
+  const [servers, setServers] = React.useState<McpServerRow[]>([]);
+  React.useEffect(() => {
+    let live = true;
+    void listMcpServers().then(r => r.servers).catch(() => [] as McpServerRow[])
+      .then(rows => { if (live) setServers(rows); });
+    return () => { live = false; };
+  }, []);
+  return servers;
+}
+
+/** A tool a step may call: one the server declared read-only, or one a person granted. */
+export function mcpToolCallable(t: McpToolRow): boolean {
+  return t.disposition === "callable" || t.grant_state === "active";
+}
+
+/** One typed argument from the text in its field — by the tool's own declared type. */
+function mcpArgument(text: string, type: unknown): unknown {
+  if (type === "integer" || type === "number") {
+    const n = Number(text);
+    return text.trim() !== "" && Number.isFinite(n) ? n : text;
+  }
+  if (type === "boolean") return text === "true" ? true : text === "false" ? false : text;
+  return text;
+}
+
+/** "Call an MCP tool" — which allowlisted server, which tool, with what. Before this the step
+ *  could be placed on the canvas and configured nowhere: no form set its server or its tool,
+ *  so the one way to call a third party's tool from a chain was a step nobody could fill in. */
+export function McpCallRows({ e, onChange }: {
+  e: AutoEffect; onChange: (e: AutoEffect) => void;
+}) {
+  const servers = useMcpServers();
+  const serverId = String(e.config.server_id ?? "");
+  const toolName = String(e.config.tool ?? "");
+  const args = (e.config.arguments ?? {}) as Record<string, unknown>;
+  const server = servers.find(sv => sv.id === serverId);
+  const callable = (server?.tools ?? []).filter(mcpToolCallable);
+  const tool = callable.find(t => t.name === toolName);
+  const props = ((tool?.input_schema ?? {}) as { properties?: Record<string, { type?: unknown; description?: string }> })
+    .properties ?? {};
+  const required = new Set(((tool?.input_schema ?? {}) as { required?: string[] }).required ?? []);
+
+  const set = (patch: Record<string, unknown>) =>
+    onChange({ ...e, config: { ...e.config, ...patch } });
+  // Authored against a server or tool the pickers can no longer offer: kept and marked,
+  // never dropped — the same rule `IntegrationRows` keeps one form up.
+  const orphanServer = !!serverId && servers.length > 0 && !server;
+  const orphanTool = !!toolName && !!server && !tool;
+  const usable = servers.filter(sv => sv.enabled && sv.tools.some(mcpToolCallable));
+  if (usable.length === 0 && !serverId) {
+    return (
+      <div className="aug-fs-xs" style={{ color: "var(--amb4)", padding: "6px 0" }}>
+        No MCP server with a tool this step may call — allow one under MCP servers and
+        discover its tools, then pick it here.
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <SelectField style={inputStyle} value={serverId} aria-label="MCP server"
+        onChange={ev => set({ server_id: ev.target.value, tool: "", arguments: {} })}>
+        <option value="">Which server…</option>
+        {usable.map(sv => <option key={sv.id} value={sv.id}>{sv.name}</option>)}
+        {orphanServer && <option value={serverId}>{serverId} (missing)</option>}
+      </SelectField>
+      {serverId && (
+        <SelectField style={inputStyle} value={toolName} aria-label="MCP tool"
+          onChange={ev => set({ tool: ev.target.value, arguments: {} })}>
+          <option value="">Which tool…</option>
+          {withUniqueKeys(callable, t => t.name).map(([key, t]) => (
+            <option key={key} value={t.name}>
+              {t.title || t.name}{t.disposition === "callable" ? "" : " (granted)"}
+            </option>
+          ))}
+          {orphanTool && <option value={toolName}>{toolName} (not callable now)</option>}
+        </SelectField>
+      )}
+      {tool?.description && (
+        <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>{tool.description}</div>
+      )}
+      {Object.entries(props).map(([name, spec]) => (
+        <Input key={name} style={inputStyle} aria-label={name}
+          value={fieldText(args[name])}
+          onChange={ev => set({ arguments: { ...args, [name]: mcpArgument(ev.target.value, spec?.type) } })}
+          placeholder={`${name}${required.has(name) ? "" : " (optional)"}`
+            + (spec?.description ? ` — ${spec.description}` : "")} />
+      ))}
+    </div>
+  );
+}
+
+export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange, onRemove, wordsElsewhere = false,
+                           connectionId }: {
+  e: AutoEffect; agents: UserAgent[];
+  /** The automation's connection — whose governed metrics a metric step offers ("" = the organisation's). */
+  connectionId?: string;
+  /** 2026-11-06 — a Slack step whose words are chosen in the What gets posted panel beside it: the
+   *  raw message field is that panel's, so it is not drawn twice. */
+  wordsElsewhere?: boolean;
+  /** W1 — the step list this row belongs to, so its "Only if" picker can offer what the
+   *  steps BEFORE it publish. Defaults to the row alone, which offers nothing: a surface
+   *  that has not been taught about order shows no guard rather than a wrong one. */
+  siblings?: AutoEffect[]; index?: number;
+  /** The bots a "Post to Slack" step may post AS. Empty ⇒ the row says so rather than
+   *  offering an empty picker, because "no bots configured" and "pick a bot" call for
+   *  different actions and only one of them is something the reader can do here. */
+  bots?: SlackBotSummary[];
+  onChange: (e: AutoEffect) => void; onRemove?: () => void;
+}) {
+  const set = (patch: Record<string, unknown>) => onChange({ ...e, config: { ...e.config, ...patch } });
+  const botNote = e.kind === "slack_post" ? slackStepBotNote(e.config.bot_id, bots) : "";
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 8 }}>
+      <SelectField value={e.kind} onChange={ev => onChange({ kind: ev.target.value as EffectKind, config: {} })}
+        aria-label="Action kind"
+        style={{ ...inputStyle, width: 150 }}>
+        {EFFECT_KINDS.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
+      </SelectField>
+      <div style={{ flex: 1 }}>
+        {e.kind === "notify" && (
+          <Input style={inputStyle} value={String(e.config.trigger_id ?? "")} onChange={ev => set({ trigger_id: ev.target.value })} placeholder="Notifications trigger id" />
+        )}
+        {e.kind === "investigate" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <Input style={inputStyle} value={String(e.config.question ?? "")} onChange={ev => set({ question: ev.target.value })} placeholder="Agent question" />
+            {agents.length > 0 && (
+              <SelectField style={inputStyle} value={String(e.config.agent_id ?? "")}
+                aria-label="Run as agent"
+                onChange={ev => set({ agent_id: ev.target.value })}>
+                <option value="">Run unbound (no agent)</option>
+                {agents.filter(a => a.enabled).map(a => (
+                  <option key={a.id} value={a.id}>Run as {a.name}</option>
+                ))}
+              </SelectField>
+            )}
+          </div>
+        )}
+        {e.kind === "brief" && (
+          <Input style={inputStyle} value={String(e.config.subscription_id ?? "")} onChange={ev => set({ subscription_id: ev.target.value })} placeholder="briefing subscription id" />
+        )}
+        {e.kind === "slack_post" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {bots.length === 0 ? (
+              <div className="aug-fs-xs" style={{ color: "var(--amb4)", padding: "6px 0" }}>
+                No Slack bots configured — create one first, then this step can post as it.
+              </div>
+            ) : (<>
+              <SelectField style={inputStyle} value={String(e.config.bot_id ?? "")}
+                aria-label="Post as bot"
+                onChange={ev => set({ bot_id: ev.target.value })}>
+                <option value="">Post as…</option>
+                {/* The stored bot, shown even when it cannot be posted as. Without this
+                    option the select displays "Post as…" for an id it still holds, and
+                    the dead id is saved back on the next edit with nothing said. */}
+                {botNote && (
+                  <option value={String(e.config.bot_id)}>
+                    {bots.find(b => b.id === e.config.bot_id)?.name
+                      ? `${bots.find(b => b.id === e.config.bot_id)?.name} (paused)`
+                      : `Removed bot — ${String(e.config.bot_id)}`}
+                  </option>
+                )}
+                {bots.filter(b => b.enabled).map(b => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </SelectField>
+              {botNote && (
+                <div className="aug-fs-xs" style={{ color: "var(--amb4)" }}>{botNote}</div>
+              )}
+            </>)}
+            {/* Bound like the message below it, and for the same reason: B1 made
+                `channel` bindable, and `String({$from: …})` renders "[object Object]" —
+                an editor inviting someone to overwrite the binding that makes the chain
+                work. Found by driving a step whose channel reads `item.room`. */}
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <Input style={{ ...inputStyle, flex: 1 }} value={fieldText(e.config.channel)}
+                onChange={ev => set({ channel: parseMessage(ev.target.value) })}
+                title={BINDING_HINT}
+                placeholder="channel — e.g. #aughor-canvas or C0…" />
+              <BindingCast value={e.config.channel}
+                onChange={next => set({ channel: next })} />
+            </div>
+            {/* Left as free text on purpose: a step whose message is
+                `{"$from": "step1.answer"}` is the whole reason the chain exists, and a
+                plain input is the only editor that can hold either that or a sentence. */}
+            {!wordsElsewhere && <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <Input style={{ ...inputStyle, flex: 1 }} value={messageText(e)}
+                onChange={ev => set({ message: parseMessage(ev.target.value) })}
+                title={BINDING_HINT}
+                placeholder={'message, or {"$from": "step1.answer", "$as": "text"}'} />
+              <BindingCast value={e.config.message}
+                onChange={next => set({ message: next })} />
+            </div>}
+          </div>
+        )}
+        {e.kind === "integration_call" && <IntegrationRows e={e} onChange={onChange} />}
+        {e.kind === "mcp_call" && <McpCallRows e={e} onChange={onChange} />}
+        {e.kind === "kinetic_action" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <Input style={inputStyle} value={String(e.config.action_id ?? "")} onChange={ev => set({ action_id: ev.target.value })} placeholder="declared action id" />
+            <Input style={inputStyle} value={paramsTextOf(e)} onChange={ev => set({ paramsText: ev.target.value })} placeholder='params JSON e.g. {"amount": 500}' />
+          </div>
+        )}
+        {/* DS-12 — one field each, and it is a NAME, not SQL. The governed object is
+            chosen from the registry (`/components?family=metric`), the same way the
+            declared-action picker reads the ontology route rather than making the
+            author remember an id. */}
+        {e.kind === "metric_value" && (
+          // Picked from the governed metrics (2026-11-07): the step reads a metric by its exact NAME, so a label
+          // typed by hand ("Repeat Purchase Rate") failed it as `unknown metric`.
+          <MetricField connectionId={connectionId} value={String(e.config.metric ?? "")}
+            onChange={v => set({ metric: v })} placeholder="a governed metric"
+            consequence="the step fails: it reads a governed metric by its name" />
+        )}
+        {/* DS-19 — the step still NAMES a governed query; what changed is that a person
+            may author one here instead of promoting it first. Two modes, exclusive,
+            because a step holding both would have two answers to what it runs.
+
+            The SQL is verified on SAVE (really executed, plus the shared battery) and
+            becomes a trusted query private to this chain, promotable later. So this box
+            is an authoring affordance over the governance door — not a bypass of it, and
+            not a code node: what gets stored is still a query id. */}
+        {e.kind === "trusted_query" && (
+          <TrustedQueryRows e={e} set={set} />
+        )}
+        {e.kind === "expectations" && (
+          <ExpectationRows e={e} set={set} />
+        )}
+        {/* DS-18 — the data comes from the step BEFORE (a binding, dragged from its
+            gives-port or typed), and the context is authored right here. Two fields,
+            in that order, because that is the sentence: "take this, and say that". */}
+        {e.kind === "synthesize" && (
+          <>
+            <Input style={inputStyle} value={fieldText(e.config.data)}
+              onChange={ev => set({ data: ev.target.value })}
+              title={BINDING_HINT}
+              placeholder={'data — drag a gives port here, or {"$from": "step1.rows"}'} />
+            <Textarea style={{ ...inputStyle, minHeight: 64, marginTop: 4 }}
+              value={String(e.config.context ?? "")}
+              onChange={ev => set({ context: ev.target.value })}
+              placeholder="what to make of it — e.g. call out anything unusual and say what changed" />
+            <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4,
+                                                lineHeight: 1.45 }}>
+              Every number in the summary has to appear in the data it was given. Leave the
+              context empty and it simply summarises.
+            </div>
+          </>
+        )}
+        <GuardRows e={e} siblings={siblings ?? [e]} index={siblings ? index : 0}
+          onChange={onChange} />
+        <OtherwiseRows e={e} siblings={siblings ?? [e]} index={siblings ? index : 0}
+          onChange={onChange} />
+        <ForEachRows e={e} onChange={onChange} />
+      </div>
+      {onRemove && <Button variant="plain" onClick={onRemove} className="h-auto font-normal" aria-label="Remove action" style={{ ...ghostBtn, color: "var(--red3)", padding: "6px 4px" }}>✕</Button>}
+    </div>
+  );
+}
+
+/**
+ * The wire shape of an effect list, with the one field the editor keeps out of band.
+ *
+ * Declared-action params are edited as TEXT (`paramsText`) because a half-typed JSON
+ * object is not a JSON object, and parsing on every keystroke would fight the typist.
+ * The parse therefore happens once, here, at save — and both surfaces call this rather
+ * than each remembering to strip the field. Throws with a readable message; the caller
+ * decides how to show it.
+ */
+/**
+ * What the params editor shows: the text being typed, else the params already stored.
+ *
+ * Without the second half the field opens BLANK on an automation that has params, and
+ * `effectsForWire` then reads "untouched" as "{}" — so editing an automation's name
+ * through this form erased the params of every declared-action step in it. Fifth of the
+ * PUT-erase family in this subsystem, and the first one INSIDE an effect rather than
+ * around the record.
+ */
+function paramsTextOf(e: AutoEffect): string {
+  const cfg = e.config as Record<string, unknown> & { paramsText?: string };
+  if (typeof cfg.paramsText === "string") return cfg.paramsText;
+  const params = cfg.params;
+  return params && typeof params === "object" ? JSON.stringify(params) : "";
+}
+
+/** The kinds whose params are authored as free TEXT, and what to say when the text is
+ *  not JSON. Keyed rather than `if/else`d so a second one is a row here, and so each
+ *  kind's refusal names ITSELF rather than borrowing another kind's noun.
+ *
+ *  `integration_call` is deliberately ABSENT: DS-11 gives it a generated form built from
+ *  the operation's declared params, so its `params` is already a real object and running
+ *  it through the text path would stringify a structure that was never a string. */
+const PARAMS_AS_TEXT: Record<string, string> = {
+  kinetic_action: "Declared-action params must be valid JSON",
+};
+
+export function effectsForWire(effects: AutoEffect[]): AutoEffect[] {
+  return effects.map(e => {
+    const complaint = PARAMS_AS_TEXT[e.kind];
+    if (!complaint) return e;
+    const cfg = e.config as Record<string, unknown> & { paramsText?: string };
+    // No `paramsText` at all means the editor was never opened on this step — carry its
+    // stored `params` through untouched. Reading absence as "{}" is what erased them.
+    if (typeof cfg.paramsText !== "string") return e;
+    const raw = cfg.paramsText.trim() || "{}";
+    const { paramsText: _omit, ...rest } = cfg;
+    void _omit;
+    let params: unknown;
+    try {
+      params = JSON.parse(raw);
+    } catch {
+      throw new Error(complaint);
+    }
+    // SPREAD, not a fresh literal. The version of this that lived in the form rebuilt
+    // the effect as `{kind, config}` — which silently dropped `alias`, the key VA-4a's
+    // `{"$from": "step1.ts"}` bindings point at. Saving a chained automation through the
+    // form would have quietly unwired its own dataflow. Spreading keeps every field the
+    // server sent, including ones this client has no opinion about.
+    return { ...e, config: { ...rest, params } };
+  });
+}

@@ -1,0 +1,18 @@
+id: telecom-map
+name: Telecommunications and ISPs — the industry map
+version: 1
+persona: >
+  How a telecom operator or ISP is usually shaped — customers and agreements, the offer catalogue,
+  orders and provisioning, the network and its sites, usage and rating, billing, faults and support —
+  each read as a thing or as a part of one. Expectations matched to the data, never facts.
+owner_team: Platform
+default_temporal_grain: period
+domains:
+  - telecommunications
+  - network operations
+  - billing
+  - customer service
+extends: []
+scope:
+  connections: ["*"]
+status: draft

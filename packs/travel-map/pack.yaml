@@ -1,0 +1,18 @@
+id: travel-map
+name: Travel, airlines and hospitality — the industry map
+version: 1
+persona: >
+  How a travel, airline or hospitality business is usually shaped — travellers and guests, offers and
+  fares, flights, rooms and seats, bookings with their items, ticketing and payment, the stay or
+  departure, disruption and loyalty — each read as a thing or as a part of one. Expectations, never facts.
+owner_team: Platform
+default_temporal_grain: period
+domains:
+  - travel
+  - airlines
+  - hospitality
+  - loyalty
+extends: []
+scope:
+  connections: ["*"]
+status: draft

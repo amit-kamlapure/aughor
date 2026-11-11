@@ -1,0 +1,165 @@
+"""A5/CA-4 — the ONE chart vocabulary the model is offered.
+
+Before this module there were three disagreeing vocabularies: the quick path
+offered 13/14 types (`prompts.py`), the deep path's pydantic Literals allowed 8
+(`prompts_investigate.py`), and the renderer could draw 22 (`web/components/
+charts/chartTypeInference.ts`). A5 made this registry the single source; CA-4
+changes WHAT it offers: the model no longer picks among two dozen chart shapes —
+it names the data's JOB (what the reader must do with the result), and code maps
+the job to the form. The specialised shapes stay offered-but-annotated (a sankey
+or a gantt is a data-shape fact the model can see), but the everyday shape
+choice is no longer the model's to make.
+
+Exhibit-grammar semantics throughout: `combo` and `pareto` are NEVER offered —
+dual-axis charts are banned (§6), and nothing auto-upgrades into one. `matrix`
+(internal alias of heatmap) and `table` (a view toggle, not a chart) are also
+not the model's to pick. Legacy shape tokens (`bar`, `line`, `pie`, …) remain
+ACCEPTED at the seams — persisted reports and saved display configs keep
+rendering — they are simply no longer in the model's vocabulary.
+"""
+from __future__ import annotations
+
+#: CA-4 form-by-job: the jobs the model may name, each with what the reader must
+#: do — the job picks the chart, code picks the encoding.
+CHART_JOBS: dict[str, str] = {
+    "magnitude": "compare sizes across categories — renders as one ranked bar",
+    "trend": "follow change over time — renders as a line at the grain that shows the event",
+    "identity": "tell a few distinct series apart — renders stacked/multi-line; >6 folds to 'Other'",
+    "change": "see the signed delta per item (period-over-period, contribution) — renders a diverging delta bar, never grouped before/after bars",
+    "share": "see parts of a whole — renders a stacked composition bar",
+    "distribution": "see the spread of raw values — renders a histogram",
+    "relation": "see how two measures move together — renders a scatter",
+}
+
+#: The renderable specialised types (offered-but-annotated) — a strong model can
+#: reach for a histogram without a weak one spraying gantts at revenue tables.
+EXOTIC_SHAPES: dict[str, str] = {
+    "histogram": "1 numeric column of RAW values — its distribution",
+    "boxplot": "1 categorical + 1 numeric — spread and outliers per group",
+    "counter": "a single number (1 row, 1 numeric) worth showing big",
+    "funnel": "ordered stages + 1 numeric that only shrinks stage to stage",
+    "waterfall": "ordered signed contributions bridging a start total to an end total",
+    "sankey": "source column, target column, flow value — where quantities went",
+    "small_multiples": "1 date + 1 category (>10 values) + 1 numeric — one mini-line per series",
+    "line_forecast": "1 date + 1 numeric where a projection beyond the data is the point",
+    "gantt": "task/name column + start date + end date",
+    "choropleth": "region/country/state NAMES + 1 numeric — a shaded map",
+    "point_map": "latitude + longitude columns (+ optional numeric) — dots on a map",
+    "treemap": "1 additive measure across MANY parts (7–24) — proportional tiles",
+    "heatmap": "2 dimensions × 1 measure — a colour grid",
+}
+
+#: Everything the model may return, quick and deep alike.
+MODEL_CHART_TYPES: tuple[str, ...] = ("auto",) + tuple(CHART_JOBS) + tuple(EXOTIC_SHAPES)
+
+#: Renderer hints the model must not pick. combo/pareto: dual-axis is banned
+#: (§6) — nothing offers one and nothing auto-upgrades into one; matrix is
+#: heatmap's internal alias. (`table`/`auto` are handled by the surfaces.)
+ENGINE_ONLY_HINTS: tuple[str, ...] = ("combo", "matrix", "pareto")
+
+#: Legacy shape tokens still ACCEPTED (never offered): persisted findings and
+#: saved viz configs carry them, and the renderer keeps drawing them.
+LEGACY_SHAPE_HINTS: tuple[str, ...] = (
+    "bar", "bar_horizontal", "bar_vertical", "line", "multi_line", "area",
+    "stacked_bar", "scatter", "pie",
+)
+
+#: Job → the engine hint its default form renders as (the web mirror lives in
+#: chartTypeInference.ts HINT_TO_TYPE; the parity test walks both).
+JOB_TO_FORM: dict[str, str] = {
+    "magnitude": "bar_horizontal",
+    "trend": "line",
+    "identity": "stacked_bar",
+    "change": "delta_bar",
+    "share": "stacked_bar",
+    "distribution": "histogram",
+    "relation": "scatter",
+}
+
+
+def resolve_chart_type(value: str | None) -> str:
+    """A job token becomes its form's engine hint; anything else (legacy shape,
+    exotic, auto, none) passes through untouched."""
+    v = (value or "auto").strip().lower()
+    return JOB_TO_FORM.get(v, v)
+
+
+def chart_vocab_line() -> str:
+    """The prompt fragment offering the vocabulary — jobs first, specialised
+    shapes only when the result matches the stated shape. Derived, cannot drift."""
+    jobs = " ".join(f"'{j}' ({what})." for j, what in CHART_JOBS.items())
+    exotic = " ".join(f"'{t}' ({shape})." for t, shape in EXOTIC_SHAPES.items())
+    return (
+        f"Also return chart_type — name the data's JOB and the renderer picks the form: {jobs} "
+        f"Specialised types, ONLY when the result matches the stated shape: {exotic} "
+        f"Or 'auto' to defer to the renderer's shape inference. "
+    )
+
+
+def chart_vocab_field_description() -> str:
+    """The same vocabulary, shaped as a STRUCTURED-OUTPUT field description.
+
+    `chart_vocab_line()` is a prompt sentence ("Also return chart_type — …"); this is what
+    a `Field(description=…)` needs, and it exists because the deep path never reads the
+    prompt sentence. Measured 2026-09-18 over 1,026 stored investigations / 1,477 findings:
+    the job vocabulary was named **zero** times. `chart_vocab_line()` is spliced only into
+    `prompts.py` (the quick path), so on the deep path the model saw a bare
+    `Literal[...]` — 22 opaque tokens with no descriptions — while the prompt text told it
+    to return "line", "bar", "pareto" and "bar_horizontal", three of which that Literal
+    forbids and one (`pareto`) this module never offers at all.
+
+    So it could not comply: it emitted a legacy token and structured output fell back to
+    the default `auto`. The result was 53% `bar_horizontal`, 38% `auto`/`none`, and six
+    distinct types ever chosen out of twenty-two.
+
+    Putting the vocabulary HERE reaches every prompt that uses the model, including the
+    decomposition, dimensional, breakdown and behavioural interpreters — none of which
+    mention charts at all, and all of which return this field. Derived from the same two
+    dicts as the prompt sentence, so the two cannot drift.
+    """
+    jobs = "; ".join(f"{j} — {what}" for j, what in CHART_JOBS.items())
+    exotic = "; ".join(f"{t} — {shape}" for t, shape in EXOTIC_SHAPES.items())
+    return (
+        "Name the data's JOB — what the reader must DO with this result — and the renderer "
+        f"picks the form. Jobs: {jobs}. Specialised types, ONLY when the result matches the "
+        f"stated shape: {exotic}. Use 'none' when there is nothing to plot (a single value, "
+        "or prose), and 'auto' only when no job above fits."
+    )
+
+
+def answer_chart_payload(
+    chart_type: str | None,
+    chart_config: dict | None,
+    row_count: int,
+    tier: str | None = None,
+) -> dict:
+    """What a persisted answer records about its chart.
+
+    Phase 3 of the chart-engine migration. Until now the artifact kept ``chart_type`` and
+    dropped ``chart_config`` — measured 2026-08-21: 0 of 700 stored chat answers carried
+    one. The whole exhibit grammar (severity ramps, sign colouring, reference lines, subject
+    emphasis) is computed per answer, sent to the browser, and then thrown away at the write,
+    so the chart a reader was shown could never be reconstructed from the ledger. For a
+    product whose thesis is evidence, that is the receipt missing its most legible half.
+
+    Kept deliberately small: this records the chart's INTENT, never its data. Tier-1 charts
+    are a deterministic function of intent, so the spec re-derives from what is stored here.
+    Persisting the resolved spec (which inlines its rows) is a separate decision with a
+    storage and data-retention cost, and is only strictly required once hand-authored
+    tier-2/3 specs exist.
+
+    Empty and null members are omitted so an answer with nothing to say adds nothing to the
+    payload — the same absent-means-default discipline the frontend's VizConfig uses.
+    """
+    out: dict = {"row_count": int(row_count or 0)}
+    if chart_type:
+        out["chart_type"] = chart_type
+    if isinstance(chart_config, dict) and chart_config:
+        # Drop empty members so a config of {"exhibit": None} does not read as a real one.
+        cfg = {k: v for k, v in chart_config.items() if v not in (None, {}, [], "")}
+        if cfg:
+            out["chart_config"] = cfg
+    if tier:
+        out["complexity_tier"] = tier
+    return out
+

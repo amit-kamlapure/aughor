@@ -1,0 +1,212 @@
+# Extends b2b-saas with the rest of the B2B SaaS industry vocabulary (AUGHOR_ATLAS_INDUSTRY_VOCABULARY_v1, 2026-11-11:
+# industry `saas`, 65 reference types). Fourteen of them are the parent's objects, some under another name:
+#   Account       ← Organization Account, Tenant, Workspace (the parent already reads `tenants` and `workspaces` so)
+#   Contact       ← User, Lead (the parent already reads `users` and `leads` so)
+#   Opportunity   ← Opportunity, Expansion Opportunity (an opportunity of one kind)
+#   Subscription  ← Subscription, Sales Contract (the parent already reads `contracts` so)
+#   Plan · Invoice ← the same names;  Ticket ← Support Ticket;  Signup ← Signup Event, Trial
+# The other fifty-one are here. The parent's Seat is not in the vocabulary and stays.
+#
+# Two readings were made, and both are this package's, not the vocabulary's:
+#   * its classes are read onto the eight roles a map has, by meaning — its "digital service" and "commitment" are
+#     each read as the standing thing (asset), the definition (catalog) or the record (event) the type is;
+#   * a record of activity is a PART of the thing it happened to (a subscription's items, renewals, amendments and
+#     cancellation, an invoice's tax and dunning attempts, a payment's attempts, an incident's root-cause review, an
+#     account's health assessments, expansions and churn), never a thing beside it.
+# One spelling MOVES: the parent reads `payments` and `charges` as Invoice; the vocabulary names Payment as a thing of
+# its own with its attempts, so here they are Payment's and Invoice keeps the bill's spellings.
+# The vocabulary names no table spellings; every alias below is a guess the data confirms or leaves unmatched. Like the
+# parent, nothing here creates an object: one the data has no table for is never proposed and never mentioned.
+objects:
+  # The parent's objects restated — a child replaces an entry by name — to give each its parts and the vocabulary's names.
+  - name: Account
+    roles: [party]
+    drawn_as: pods
+    aliases: [accounts, customers, companies, organizations, organisations, tenants, workspaces, clients, organization_accounts]
+    parts: [CustomerHealthAssessment, AccountExpansionEvent, ChurnEvent]
+    description: The paying company — the grain retention, churn and ACV are counted at.
+  - name: Opportunity
+    roles: [transaction]
+    aliases: [opportunities, deals, pipeline, opps, expansion_opportunities, upsell_opportunities]
+    description: A sales opportunity with an account — new business or expansion — from creation to closed won or lost.
+  - name: Subscription
+    roles: [asset]
+    drawn_as: contract
+    aliases: [subscriptions, contracts, agreements, licenses, licences, sales_contracts, order_forms]
+    parts: [SubscriptionItem, Renewal, ContractAmendment, Cancellation]
+    description: An account's subscription to a plan, with its billing period and recurring price.
+  - name: Invoice
+    roles: [transaction]
+    aliases: [invoices, invoice, bills, billing_invoices]
+    parts: [TaxCalculation, DunningAttempt]
+    description: A bill for a subscription period or a one-time charge; collected cash, not recurring revenue.
+  # What the vocabulary adds — demand & pipeline.
+  - name: Campaign
+    roles: [catalog]
+    aliases: [campaigns, campaign, marketing_campaigns, ad_campaigns]
+  - name: AccountProspect
+    roles: [party]
+    aliases: [account_prospects, prospects, prospect_accounts, target_accounts]
+    description: a company being sold to that has not bought
+  - name: SalesActivity
+    roles: [event]
+    aliases: [sales_activities, sales_activity, activities, crm_activities, sales_touches]
+  - name: SalesQuote
+    roles: [transaction]
+    aliases: [sales_quotes, quotes, quote, cpq_quotes, proposals]
+  # Trial & onboarding.
+  - name: Invitation
+    roles: [event]
+    aliases: [invitations, invitation, invites, user_invitations, team_invites]
+  - name: OnboardingTask
+    roles: [event]
+    aliases: [onboarding_tasks, onboarding_steps, onboarding_checklist, implementation_tasks]
+  - name: IdentityProvider
+    roles: [catalog]
+    aliases: [identity_providers, identity_provider, idps, auth_providers]
+  - name: SSOConfiguration
+    roles: [asset]
+    aliases: [sso_configurations, sso_configs, sso_connections, saml_configurations, saml_configs]
+  # Product adoption.
+  - name: Feature
+    roles: [catalog]
+    aliases: [features, feature, product_features]
+  - name: FeatureFlag
+    roles: [catalog]
+    aliases: [feature_flags, feature_flag, feature_toggles, flags]
+  - name: FeatureAccessGrant
+    roles: [asset]
+    aliases: [feature_access_grants, feature_grants, feature_access, feature_permissions]
+  - name: FeatureAdoption
+    roles: [event]
+    aliases: [feature_adoption, feature_adoptions, feature_usage, feature_adoption_daily]
+  - name: ActivationMilestone
+    roles: [catalog]
+    aliases: [activation_milestones, activation_milestone, onboarding_milestones, milestones]
+    description: what counts as activated — the definition, not the day an account reached it
+  - name: Experiment
+    roles: [catalog]
+    aliases: [experiments, experiment, ab_tests, feature_experiments]
+  - name: Session
+    roles: [event]
+    aliases: [sessions, session, user_sessions, app_sessions, logins]
+  - name: ProductEvent
+    roles: [event]
+    aliases: [product_events, product_event, app_events, analytics_events, user_events, tracks]
+  # Subscription & pricing.
+  - name: Price
+    roles: [catalog]
+    aliases: [prices, price, plan_prices, price_points, rate_cards]
+  - name: Discount
+    roles: [catalog]
+    aliases: [discounts, discount, coupons, promo_codes, promotions]
+  - name: SubscriptionItem
+    roles: [asset]
+    aliases: [subscription_items, subscription_item, subscription_lines, subscription_products, subscription_addons]
+  - name: Entitlement
+    roles: [asset]
+    aliases: [entitlements, entitlement, account_entitlements, plan_entitlements]
+    description: what an account's subscription gives it the right to use
+  - name: BillingSchedule
+    roles: [asset]
+    aliases: [billing_schedules, billing_schedule, invoice_schedules, payment_schedules]
+  # Usage & metering.
+  - name: Meter
+    roles: [catalog]
+    aliases: [meters, meter, usage_meters, billable_metrics]
+  - name: Quota
+    roles: [catalog]
+    aliases: [quotas, quota, usage_limits, plan_limits]
+  - name: RateLimit
+    roles: [catalog]
+    aliases: [rate_limits, rate_limit, throttle_rules, api_limits]
+  - name: APIToken
+    roles: [asset]
+    aliases: [api_tokens, api_token, api_keys, access_tokens]
+  - name: APIRequest
+    roles: [event]
+    aliases: [api_requests, api_request, api_calls, api_logs, request_logs]
+  - name: UsageEvent
+    roles: [event]
+    aliases: [usage_events, usage_event, usage_records, metering_events, metered_usage]
+  - name: UsageAggregate
+    roles: [event]
+    aliases: [usage_aggregates, usage_summaries, usage_daily, usage_monthly, billable_usage]
+    description: usage summed per account, meter and period
+  - name: OverageEvent
+    roles: [event]
+    aliases: [overage_events, overages, overage_charges, quota_overages]
+  - name: CreditBalance
+    roles: [stock]
+    aliases: [credit_balances, credit_balance, prepaid_credits, account_credits, wallet_balances]
+    description: prepaid credit an account holds at a moment
+  # Billing & collections.
+  - name: TaxCalculation
+    roles: [event]
+    aliases: [tax_calculations, tax_lines, invoice_taxes, invoice_tax_lines]
+  - name: Payment
+    roles: [transaction]
+    aliases: [payments, payment, charges, invoice_payments, payment_transactions]
+    parts: [PaymentAttempt]
+  - name: PaymentAttempt
+    roles: [event]
+    aliases: [payment_attempts, payment_attempt, payment_intents, charge_attempts, payment_events]
+  - name: DunningAttempt
+    roles: [event]
+    aliases: [dunning_attempts, dunning, dunning_events, collection_attempts, payment_reminders]
+  - name: Refund
+    roles: [transaction]
+    aliases: [refunds, refund, payment_refunds]
+  - name: CreditNote
+    roles: [transaction]
+    aliases: [credit_notes, credit_note, credit_memos]
+  - name: RevenueRecognitionEntry
+    roles: [event]
+    aliases: [revenue_recognition, revenue_recognition_entries, rev_rec_entries, revenue_schedules, recognized_revenue]
+  # Support & reliability.
+  - name: Escalation
+    roles: [event]
+    aliases: [escalations, escalation, ticket_escalations]
+  - name: SLACommitment
+    roles: [catalog]
+    aliases: [sla_commitments, slas, sla_policies, service_level_agreements]
+  - name: Service
+    roles: [asset]
+    drawn_as: services
+    aliases: [services, service, service_catalog, microservices]
+    description: a running part of the product whose reliability is tracked
+  - name: Deployment
+    roles: [event]
+    aliases: [deployments, deployment, deploys, releases]
+  - name: Alert
+    roles: [event]
+    aliases: [alerts, alert, monitoring_alerts, pages]
+  - name: Incident
+    roles: [event]
+    aliases: [incidents, incident, outages, service_incidents]
+    parts: [RootCauseReview]
+  - name: RootCauseReview
+    roles: [event]
+    aliases: [root_cause_reviews, postmortems, post_mortems, incident_reviews, rcas]
+  - name: SecurityIncident
+    roles: [event]
+    aliases: [security_incidents, security_incident, security_events, breaches]
+  # Renewal & expansion.
+  - name: CustomerHealthAssessment
+    roles: [event]
+    aliases: [customer_health_assessments, health_scores, customer_health, account_health, health_assessments]
+  - name: Renewal
+    roles: [event]
+    aliases: [renewals, renewal, subscription_renewals, contract_renewals]
+  - name: ContractAmendment
+    roles: [event]
+    aliases: [contract_amendments, amendments, subscription_amendments, subscription_changes]
+  - name: AccountExpansionEvent
+    roles: [event]
+    aliases: [account_expansion_events, account_expansions, expansion_events, expansions, upsells]
+  - name: Cancellation
+    roles: [event]
+    aliases: [cancellations, cancellation, cancellation_requests, subscription_cancellations]
+  - name: ChurnEvent
+    roles: [event]
+    aliases: [churn_events, churn_event, churn, churned_accounts]

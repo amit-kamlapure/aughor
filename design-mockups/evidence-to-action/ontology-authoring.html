@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ontology — creating and changing (mockup)</title>
+<!-- A MOCKUP. theLook's draft ontology, read 2026-11-11 from GET /object-types and GET /object-types/{id}: every entity,
+     table, column, key, row count, link, process and rule here is the product's own. Nothing is saved: a "save" adds a
+     line to the waiting list on this page only. The picture is a hand-placed flat plan, not the Atlas's own pen; the
+     point of this page is the doors, not the drawing. -->
+<style>
+:root { --b0:#2e3135; --b1:#43474d; --bg-0:#111113; --bg-1:#18191b; --bg-2:#212225; --t1:#edeef0; --t2:#b0b4ba; --t3:#8b8f96; --blue1:#0d2847; --blue2:#205d9e; --blue3:#3b9eff; --blue4:#70b8ff; --grn3:#30a46c; --grn4:#3dd68c; --red1:#3b1219; --red2:#8c333a; --red3:#e5484d; --red4:#ff9592; --amb1:#2d2008; --amb3:#ffc53d; --plot:#1a2632; --plot-line:#40566c; --link:#9db4cb; --shadow:rgba(0,0,0,.5); --veil:rgba(8,10,14,.55); --r2:3px; --r3:6px; --mono:ui-monospace,SFMono-Regular,Menlo,monospace; }
+:root[data-theme="light"] { --b0:#d9dde3; --b1:#c6ccd4; --bg-0:#f0f2f5; --bg-1:#f7f8fa; --bg-2:#ffffff; --t1:#1c2024; --t2:#60646c; --t3:#80838d; --blue1:#e6f4fe; --blue2:#8ec8f6; --blue3:#0090ff; --blue4:#0d74ce; --grn3:#30a46c; --grn4:#218358; --red1:#feebec; --red2:#f4a9aa; --red3:#e5484d; --red4:#ce2c31; --amb1:#fff7c2; --amb3:#ad7f00; --plot:#ffffff; --plot-line:#a9b9c9; --link:#5d7286; --shadow:rgba(30,50,80,.22); --veil:rgba(240,242,245,.6); }
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg-0); color: var(--t1); font: 13px/1.45 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; display: flex; flex-direction: column; }
+button, select, input, textarea { font: inherit; color: inherit; }
+.btn { height: 28px; padding: 0 10px; border: 1px solid var(--b1); border-radius: var(--r2); background: var(--bg-2); cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover { border-color: var(--blue3); }
+.btn.is-main { background: var(--blue3); border-color: var(--blue3); color: #fff; font-weight: 600; }
+.btn.is-danger { border-color: var(--red2); color: var(--red4); }
+.btn.is-sm { height: 24px; padding: 0 8px; font-size: 12px; }
+.btn[disabled] { opacity: .45; cursor: default; }
+.note { background: var(--amb1); border-bottom: 1px solid var(--b0); padding: 7px 20px; font-size: 12px; color: var(--t2); display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.note b { color: var(--t1); }
+.seg { display: inline-flex; border: 1px solid var(--b1); border-radius: var(--r2); overflow: hidden; }
+.seg button { height: 26px; padding: 0 11px; border: 0; border-right: 1px solid var(--b1); background: var(--bg-2); cursor: pointer; color: var(--t2); }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--blue1); color: var(--blue4); font-weight: 600; }
+.crumb { padding: 8px 20px 0; color: var(--t3); font-size: 12px; }
+.title { display: flex; align-items: center; gap: 10px; padding: 4px 20px 10px; border-bottom: 1px solid var(--b0); flex-wrap: wrap; }
+.title h1 { margin: 0; font-size: 18px; font-weight: 600; }
+.chip { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px; border-radius: var(--r2); border: 1px solid var(--b0); color: var(--t2); font-size: 11.5px; white-space: nowrap; }
+.chip.is-ok { color: var(--grn4); } .chip.is-warn { color: var(--amb3); border-color: var(--amb3); } .chip.is-blue { color: var(--blue4); background: var(--blue1); border-color: transparent; }
+.grow { flex: 1; }
+main { flex: 1; min-height: 0; overflow: auto; padding: 14px 20px 20px; display: flex; flex-direction: column; gap: 12px; }
+.frame { border: 1px solid var(--b0); border-radius: var(--r3); background: var(--bg-2); }
+.frame-head { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--b0); min-height: 45px; flex-wrap: wrap; }
+.frame-head h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.muted { color: var(--t3); } .sm { font-size: 12px; }
+.world { position: relative; width: 100%; aspect-ratio: 1100 / 430; background-image: linear-gradient(var(--b0) 1px, transparent 1px), linear-gradient(90deg, var(--b0) 1px, transparent 1px); background-size: 4% 9%; background-color: var(--bg-1); overflow: hidden; }
+.world svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.world line { stroke: var(--link); stroke-width: 1.3; stroke-dasharray: 3 5; opacity: .6; }
+.world line.is-on { stroke: var(--blue3); stroke-width: 2; opacity: 1; stroke-dasharray: none; }
+.zone { position: absolute; top: 3%; bottom: 3%; border: 1px dashed var(--b1); border-radius: var(--r3); }
+.zone > span { position: absolute; left: 10px; top: 6px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); }
+.plot { position: absolute; transform: translate(-50%,-50%); width: 13.5%; min-width: 118px; padding: 9px 10px; border: 1px solid var(--plot-line); border-radius: var(--r2); background: var(--plot); box-shadow: 0 4px 14px var(--shadow); cursor: pointer; text-align: left; }
+.plot:hover { border-color: var(--blue4); }
+.plot.is-picked { border-color: var(--blue3); box-shadow: 0 0 0 2px var(--blue3); }
+.plot.is-target { border-style: dashed; border-color: var(--blue4); }
+.plot b { display: block; font-weight: 600; }
+.plot small { color: var(--t3); font-size: 11.5px; display: block; }
+.plot .needs { color: var(--amb3); }
+.selbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.selbar .who { font-weight: 600; }
+.menu { position: relative; }
+.menu-list { position: absolute; right: 0; top: 32px; z-index: 20; min-width: 290px; background: var(--bg-2); border: 1px solid var(--b1); border-radius: var(--r3); box-shadow: 0 10px 28px var(--shadow); padding: 4px; display: none; }
+.menu.is-open .menu-list { display: block; }
+.menu-list button { display: flex; width: 100%; gap: 10px; align-items: baseline; padding: 7px 9px; border: 0; background: none; border-radius: var(--r2); cursor: pointer; text-align: left; }
+.menu-list button:hover { background: var(--blue1); }
+.menu-list button b { font-weight: 600; min-width: 62px; }
+.menu-list button span { color: var(--t3); font-size: 12px; }
+.strip { display: flex; align-items: center; gap: 10px; padding: 7px 20px; border-top: 1px solid var(--b0); background: var(--bg-1); font-size: 12px; color: var(--t2); flex-wrap: wrap; }
+.strip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--t3); } .strip.has .dot { background: var(--amb3); }
+.waitlist { margin: 0; padding: 0; list-style: none; }
+.waitlist li { display: flex; gap: 10px; align-items: center; padding: 7px 12px; border-top: 1px solid var(--b0); }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; font-weight: 500; color: var(--t3); font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; padding: 7px 12px; border-bottom: 1px solid var(--b0); }
+td { padding: 0 12px; height: 36px; border-bottom: 1px solid var(--b0); vertical-align: middle; }
+tr:last-child td { border-bottom: 0; }
+td.acts { text-align: right; white-space: nowrap; } td.acts .btn { margin-left: 6px; }
+code { font-family: var(--mono); font-size: 12px; color: var(--t2); }
+.sect-head { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--b0); }
+.sect-head h3 { margin: 0; font-size: 13px; font-weight: 600; } .sect-head .n { color: var(--t3); }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } @media (max-width: 1100px) { .two { grid-template-columns: 1fr; } }
+/* the one dialog every create and change uses */
+.veil { position: fixed; inset: 0; background: var(--veil); backdrop-filter: blur(6px); display: none; align-items: flex-start; justify-content: center; padding-top: 7vh; z-index: 50; }
+.veil.is-open { display: flex; }
+.dlg { width: min(680px, 94vw); max-height: 84vh; overflow: auto; background: var(--bg-2); border: 1px solid var(--b1); border-radius: var(--r3); box-shadow: 0 24px 60px var(--shadow); }
+.dlg header { padding: 14px 18px 4px; } .dlg header h2 { margin: 0; font-size: 16px; font-weight: 600; } .dlg header p { margin: 4px 0 0; color: var(--t3); font-size: 12px; }
+.dlg .body { padding: 10px 18px 6px; display: grid; gap: 12px; }
+.dlg footer { display: flex; gap: 8px; align-items: center; padding: 12px 18px 16px; }
+.fld > label { display: block; font-size: 12px; color: var(--t2); margin-bottom: 4px; }
+.fld > small { display: block; color: var(--t3); font-size: 11.5px; margin-top: 4px; }
+.fld input[type=text], .fld select, .fld textarea { width: 100%; height: 30px; padding: 0 8px; border: 1px solid var(--b1); border-radius: var(--r2); background: var(--bg-1); }
+.fld textarea { height: 58px; padding: 6px 8px; resize: vertical; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } .row3 { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: end; }
+.cols { display: flex; flex-wrap: wrap; gap: 6px; }
+.cols button { height: 24px; padding: 0 8px; border: 1px solid var(--b1); border-radius: 12px; background: var(--bg-1); cursor: pointer; font-family: var(--mono); font-size: 12px; color: var(--t2); }
+.cols button[aria-pressed=true] { background: var(--blue1); border-color: var(--blue3); color: var(--blue4); }
+details.more > summary { cursor: pointer; color: var(--t2); font-size: 12px; } details.more > div { padding-top: 10px; display: grid; gap: 12px; }
+.say { padding: 8px 10px; border-radius: var(--r2); background: var(--bg-1); border: 1px solid var(--b0); font-size: 12px; color: var(--t2); }
+.say.is-warn { border-color: var(--amb3); } .say.is-danger { border-color: var(--red2); color: var(--red4); background: var(--red1); }
+.hide { display: none !important; }
+.was { color: var(--t3); } .now { color: var(--t1); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="note">
+  <b>Mockup</b> <span>theLook's own entities, columns, keys and links, read 11 Nov 2026. Nothing here saves — a save only adds a line to "waiting" on this page.</span>
+  <span class="grow"></span>
+  <span class="seg" id="views"><button data-v="atlas" aria-pressed="true">1 · From the Atlas</button><button data-v="page" aria-pressed="false">2 · An entity's page</button><button data-v="words">3 · One set of words</button><button data-v="kept">4 · Nothing lost</button></span>
+  <span class="seg"><button id="th-d" aria-pressed="true">dark</button><button id="th-l" aria-pressed="false">light</button></span>
+</div>
+<div class="crumb">Define › Ontology › theLook</div>
+<div class="title">
+  <h1 id="page-title">Ontology</h1><span class="chip">Release 6 · 10 Oct</span><span class="chip is-warn" id="draft-chip">draft · 0 waiting</span>
+  <span class="grow"></span>
+  <div class="menu" id="newmenu">
+    <button class="btn is-main" id="newbtn">+ New ▾</button>
+    <div class="menu-list">
+      <button data-new="entity"><b>Entity</b><span>a thing the business keeps — read from a table</span></button>
+      <button data-new="link"><b>Link</b><span>how two entities belong together</span></button>
+      <button data-new="process"><b>Process</b><span>the stages one entity moves through</span></button>
+      <button data-new="rule"><b>Rule</b><span>a named set of one entity's rows</span></button>
+      <button data-new="action"><b>Action</b><span>a button a person can press on an entity</span></button>
+    </div>
+  </div>
+  <button class="btn">Tools ▾</button>
+</div>
+
+<main id="v-atlas">
+  <div class="frame">
+    <div class="frame-head">
+      <div class="selbar" id="selbar"><h2>theLook</h2><span class="muted sm">8 entities · 9 links · 1 process · 1 rule — click an entity to act on it</span></div>
+    </div>
+    <div class="world" id="world"><svg id="lines" viewBox="0 0 1100 430" preserveAspectRatio="none"></svg></div>
+  </div>
+  <div class="frame" id="waitframe">
+    <div class="sect-head"><h3>Waiting in the draft</h3><span class="n" id="waitn">0</span><span class="grow"></span><button class="btn is-sm" id="discard" disabled>Discard all</button><button class="btn is-sm is-main" id="publish" disabled>Publish release 7</button></div>
+    <ul class="waitlist" id="waitlist"><li class="muted">Nothing waits. Every save lands here first; agents and queries keep reading release 6 until you publish.</li></ul>
+  </div>
+</main>
+
+<main id="v-page" class="hide"></main>
+
+<main id="v-words" class="hide">
+  <div class="frame"><div class="sect-head"><h3>The same job has the same word everywhere</h3></div>
+  <table><thead><tr><th style="width:22%">The job</th><th>Said today as</th><th style="width:22%">Proposed</th></tr></thead><tbody id="words"></tbody></table></div>
+  <div class="frame"><div class="sect-head"><h3>One way to do each kind of thing</h3></div>
+  <table><thead><tr><th style="width:22%">The job</th><th>Today</th><th style="width:36%">Proposed</th></tr></thead><tbody id="ways"></tbody></table></div>
+</main>
+
+<main id="v-kept" class="hide">
+  <div class="frame"><div class="sect-head"><h3>Every door that exists today, and where it is afterwards</h3><span class="n" id="keptn"></span></div>
+  <table><thead><tr><th style="width:26%">What a person does</th><th>Where it is today</th><th style="width:34%">Where it is afterwards</th></tr></thead><tbody id="kept"></tbody></table></div>
+</main>
+
+<div class="strip" id="strip"><span class="dot"></span><span id="striptext">theLook · BigQuery · release 6 published 10 Oct · nothing waiting</span><span class="grow"></span><span class="muted">a save never reaches agents or queries until it is published</span></div>
+
+<div class="veil" id="veil"><div class="dlg" role="dialog" aria-modal="true" id="dlg"></div></div>
+
+<script>
+const D = {"entities": [{"id": "Event", "name": "Business Event", "table": "events", "key": "", "key_ok": null, "rows": null, "domain": "Customer", "named_by": "", "origin": "table", "desc": "Business event calendar. One row per notable event (outages, promotions, holidays, product launches) that may explain metric movements. Always check this table when investigating anomalies before concluding a root cause.", "cols": ["id", "user_id", "sequence_number", "session_id", "created_at", "ip_address", "city", "state", "postal_code", "browser", "traffic_source", "uri", "event_type"], "counts": {"properties": 13, "bindings": 1, "proposed_bindings": 0, "links": 1, "traversable_links": 1, "actions": 0, "metrics": 2, "parts": 0}, "waiting": 0}, {"id": "Case", "name": "Case", "table": "", "key": "id", "key_ok": true, "rows": null, "domain": "", "named_by": "id", "origin": "human", "desc": "A late order a person is working: who has it and where it stands.", "cols": ["id", "about", "status", "assignee"], "counts": {"properties": 4, "bindings": 1, "proposed_bindings": 0, "links": 0, "traversable_links": 0, "actions": 2, "metrics": 0, "parts": 0}, "waiting": 0}, {"id": "User", "name": "Customer", "table": "users", "key": "id", "key_ok": true, "rows": 100000, "domain": "Customer", "named_by": "id", "origin": "table", "desc": "Registered customer accounts with demographic, location, and acquisition-source attributes. Likely used for user segmentation and geographic analysis.", "cols": ["id", "first_name", "last_name", "email", "age", "gender", "state", "street_address", "postal_code", "city", "country", "latitude", "longitude", "traffic_source", "created_at", "user_geom", "sequence_number", "session_id", "ip_address", "browser", "uri", "event_type"], "counts": {"properties": 22, "bindings": 2, "proposed_bindings": 5, "links": 4, "traversable_links": 4, "actions": 0, "metrics": 0, "parts": 0}, "waiting": 1}, {"id": "DistributionCenter", "name": "Distribution Center", "table": "distribution_centers", "key": "id", "key_ok": true, "rows": 10, "domain": "Operations", "named_by": "name", "origin": "table", "desc": "Reference list of company distribution centers, with names and geographic coordinates for each site. Used for mapping and location-based analysis of fulfillment or logistics operations.", "cols": ["id", "name", "latitude", "longitude", "distribution_center_geom"], "counts": {"properties": 5, "bindings": 1, "proposed_bindings": 5, "links": 3, "traversable_links": 3, "actions": 0, "metrics": 0, "parts": 0}, "waiting": 0}, {"id": "InventoryItem", "name": "Inventory Item", "table": "inventory_items", "key": "id", "key_ok": true, "rows": 489712, "domain": "Operations", "named_by": "id", "origin": "table", "desc": "Individual physical inventory units of products, tracking each item from creation through sale, along with its cost, retail price, and product attributes. Likely derived from an e-commerce sample dataset.", "cols": ["id", "product_id", "created_at", "sold_at", "cost", "product_category", "product_name", "product_brand", "product_retail_price", "product_department", "product_sku", "product_distribution_center_id"], "counts": {"properties": 12, "bindings": 1, "proposed_bindings": 5, "links": 3, "traversable_links": 3, "actions": 0, "metrics": 2, "parts": 0}, "waiting": 0}, {"id": "Order", "name": "Order", "table": "orders", "key": "order_id", "key_ok": true, "rows": 125285, "domain": "Commerce", "named_by": "order_id", "origin": "table", "desc": "Customer order header records, tracking each order's status and lifecycle timestamps from creation through shipping, delivery, and return. Contains 125,303 orders.", "cols": ["order_id", "user_id", "status", "gender", "created_at", "returned_at", "shipped_at", "delivered_at", "num_of_item", "line_count", "revenue", "flagged_for_review"], "counts": {"properties": 12, "bindings": 2, "proposed_bindings": 0, "links": 3, "traversable_links": 3, "actions": 2, "metrics": 1, "parts": 1}, "waiting": 0}, {"id": "OrderItem", "name": "Order Line", "table": "order_items", "key": "id", "key_ok": true, "rows": 181499, "domain": "Commerce", "named_by": "id", "origin": "table", "desc": "Line-item records for customer orders, one per product unit purchased, tracking its fulfillment lifecycle (created, shipped, delivered, returned) and sale price.", "cols": ["id", "order_id", "user_id", "product_id", "inventory_item_id", "status", "created_at", "shipped_at", "delivered_at", "returned_at", "sale_price"], "counts": {"properties": 11, "bindings": 1, "proposed_bindings": 5, "links": 5, "traversable_links": 5, "actions": 0, "metrics": 4, "parts": 0}, "waiting": 0}, {"id": "Product", "name": "Product", "table": "products", "key": "id", "key_ok": true, "rows": 29120, "domain": "Catalog", "named_by": "name", "origin": "table", "desc": "Product catalog listing each sellable item with its name, brand, category, department, SKU, cost, retail price, and the distribution center that stocks it.", "cols": ["id", "cost", "category", "name", "brand", "retail_price", "department", "sku", "distribution_center_id", "units"], "counts": {"properties": 10, "bindings": 2, "proposed_bindings": 5, "links": 5, "traversable_links": 5, "actions": 0, "metrics": 0, "parts": 0}, "waiting": 1}], "links": [{"id": "Event_RELATES_TO_User", "from": "event", "to": "user", "verb": "performed by", "card": "N:1", "origin": "join_map", "measured": true}, {"id": "OrderItem_RELATES_TO_User", "from": "order_item", "to": "user", "verb": "purchased by", "card": "N:1", "origin": "join_map", "measured": true}, {"id": "Order_RELATES_TO_User", "from": "order", "to": "user", "verb": "placed by", "card": "N:1", "origin": "join_map", "measured": true}, {"id": "InventoryItem_RELATES_TO_Product", "from": "inventory_item", "to": "product", "verb": "is unit of", "card": "N:1", "origin": "join_map", "measured": true}, {"id": "OrderItem_RELATES_TO_Product", "from": "order_item", "to": "product", "verb": "is for", "card": "N:1", "origin": "join_map", "measured": true}, {"id": "OrderItem_RELATES_TO_Order", "from": "order_item", "to": "order", "verb": "belongs to", "card": "N:1", "origin": "join_map", "measured": true}, {"id": "OrderItem_RELATES_TO_InventoryItem", "from": "order_item", "to": "inventory_item", "verb": "fulfilled from", "card": "1:1", "origin": "join_map", "measured": true}, {"id": "Product_RELATES_TO_DistributionCenter", "from": "product", "to": "distribution_center", "verb": "ships from", "card": "N:1", "origin": "join_map", "measured": true}, {"id": "InventoryItem_stored_at_DistributionCenter", "from": "inventory_item", "to": "distribution_center", "verb": "stored at", "card": "N:1", "origin": "human", "measured": true}, {"id": "OrderItem_of_product_Product", "from": "order_item", "to": "product", "verb": "of product", "card": "N:1", "origin": "human", "measured": true}, {"id": "Order_placed_by_User", "from": "order", "to": "user", "verb": "placed by", "card": "N:1", "origin": "human", "measured": true}, {"id": "Product_ships_from_DistributionCenter", "from": "product", "to": "distribution_center", "verb": "ships from", "card": "N:1", "origin": "human", "measured": true}], "processes": [{"id": "order_fulfilment", "display_name": "Order Fulfilment", "entity": "order", "origin": "human", "verified": true, "objects": 125285, "stages": ["placed", "shipped", "delivered", "returned"], "promises": [{"stage": "shipped", "name": "dispatch", "breach_rate": 0.168425, "verified": true, "flags": 0}, {"stage": "delivered", "name": "delivery", "breach_rate": 0.100737, "verified": true, "flags": 0}]}], "rules": [{"id": "completed_orders", "display_name": "Completed orders", "entity": "order", "kind": "value_set", "origin": "human", "verified": true, "admitted": 31132, "objects": 125285, "flags": 0, "scopes": []}]};
+const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const num = n => n == null ? "—" : n >= 1e6 ? (n / 1e6).toFixed(2) + "M" : n.toLocaleString("en-US");
+const snake = s => s.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
+const E = Object.fromEntries(D.entities.map(e => [snake(e.id), e]));
+D.entities.forEach(e => e.key2 = snake(e.id));
+const POS = { user: [12, 27], event: [12, 73], order: [37, 27], order_item: [37, 73], product: [62, 73], inventory_item: [62, 27], distribution_center: [87, 40], case: [87, 80] };
+const ZONES = [["Customer", 2, 22], ["Commerce", 27, 47], ["Catalog & stock", 52, 72], ["Operations", 77, 98]];
+// one line per pair of entities: the pair's first link names it
+const PAIRS = []; D.links.forEach(l => { if (!PAIRS.find(p => p.from === l.from && p.to === l.to)) PAIRS.push(l); });
+const linksOf = k => PAIRS.filter(l => l.from === k || l.to === k);
+let picked = null, linking = false, waiting = [];
+
+/* ---------- the Atlas ---------- */
+function drawWorld() {
+  const w = $("#world");
+  $$(".zone,.plot", w).forEach(n => n.remove());
+  ZONES.forEach(([n, a, b]) => w.insertAdjacentHTML("beforeend", `<div class="zone" style="left:${a}%;width:${b - a}%"><span>${n}</span></div>`));
+  $("#lines").innerHTML = PAIRS.map(l => { const [a, b] = [POS[l.from], POS[l.to]]; const on = picked && (l.from === picked || l.to === picked);
+    return `<line class="${on ? "is-on" : ""}" x1="${a[0] * 11}" y1="${a[1] * 4.3}" x2="${b[0] * 11}" y2="${b[1] * 4.3}"><title>${esc(E[l.from].name)} ${esc(l.verb)} ${esc(E[l.to].name)} · ${l.card}</title></line>`; }).join("");
+  D.entities.forEach(e => { const [x, y] = POS[e.key2];
+    const sub = !e.table ? "no table · held by the platform" : !e.key ? `<span class="needs">no key yet</span>` : `${num(e.rows)} · key ${esc(e.key)}`;
+    w.insertAdjacentHTML("beforeend", `<button class="plot${picked === e.key2 ? " is-picked" : ""}${linking && picked !== e.key2 ? " is-target" : ""}" style="left:${x}%;top:${y}%" data-e="${e.key2}"><b>${esc(e.name)}</b><small>${sub}</small></button>`); });
+  $$(".plot", w).forEach(b => b.onclick = () => pick(b.dataset.e));
+  const bar = $("#selbar");
+  if (!picked) bar.innerHTML = `<h2>theLook</h2><span class="muted sm">8 entities · 9 links · 1 process · 1 rule — click an entity to act on it</span>`;
+  else if (linking) bar.innerHTML = `<span class="who">${esc(E[picked].name)}</span><span class="chip is-blue">Now click the entity it links to</span><button class="btn is-sm" id="x-link">Cancel</button>`;
+  else { const e = E[picked];
+    bar.innerHTML = `<button class="btn is-sm" id="a-open"><span class="who">${esc(e.name)}</span> ›</button>
+      ${e.table && !e.key ? `<button class="btn is-sm is-main" id="a-key">Set its key</button>` : ""}
+      <button class="btn is-sm" id="a-link">Link to…</button><button class="btn is-sm" id="a-change">Change</button>
+      <button class="btn is-sm" id="a-proc">New process</button><button class="btn is-sm" id="a-rule">New rule</button><button class="btn is-sm" id="a-act">New action</button>
+      <span class="muted sm">${linksOf(picked).length} link${linksOf(picked).length === 1 ? "" : "s"} lit</span>`;
+    $("#a-open").onclick = () => show("page"); $("#a-link").onclick = () => { linking = true; drawWorld(); };
+    $("#a-change").onclick = () => entityForm(e); $("#a-rule").onclick = () => ruleForm(e); $("#a-proc").onclick = () => designer("process", e); $("#a-act").onclick = () => designer("action", e);
+    if ($("#a-key")) $("#a-key").onclick = () => entityForm(e, "key"); }
+  if ($("#x-link")) $("#x-link").onclick = () => { linking = false; drawWorld(); };
+}
+function pick(k) { if (linking && k !== picked) { linking = false; linkForm(E[picked], E[k]); drawWorld(); return; } picked = picked === k && !linking ? null : k; linking = false; drawWorld(); renderPage(); }
+
+/* ---------- the one dialog ---------- */
+function open(html) { $("#dlg").innerHTML = html; $("#veil").classList.add("is-open"); const c = $("[data-close]", $("#dlg")); $$("[data-close]").forEach(b => b.onclick = close); }
+function close() { $("#veil").classList.remove("is-open"); }
+$("#veil").onclick = e => { if (e.target.id === "veil") close(); };
+document.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
+function saved(line) { waiting.push(line); close(); drawWaiting(); }
+function drawWaiting() {
+  const n = waiting.length;
+  $("#waitn").textContent = n; $("#draft-chip").textContent = `draft · ${n} waiting`;
+  $("#waitlist").innerHTML = n ? waiting.map((w, i) => `<li><span class="chip is-blue">${w.kind}</span><span>${w.text}</span><span class="grow"></span><span class="chip ${w.safe ? "is-ok" : "is-warn"}">${w.safe ? "safe to publish" : "changes meaning · needs approval"}</span><button class="btn is-sm" data-i="${i}">Discard</button></li>`).join("")
+    : `<li class="muted">Nothing waits. Every save lands here first; agents and queries keep reading release 6 until you publish.</li>`;
+  $$("#waitlist [data-i]").forEach(b => b.onclick = () => { waiting.splice(+b.dataset.i, 1); drawWaiting(); });
+  $("#publish").disabled = $("#discard").disabled = !n;
+  $("#strip").classList.toggle("has", !!n);
+  $("#striptext").innerHTML = n ? `Saved to the draft · <b>${n} waiting</b> · last: ${waiting[n - 1].text}` : "theLook · BigQuery · release 6 published 10 Oct · nothing waiting";
+}
+$("#discard").onclick = () => { waiting = []; drawWaiting(); };
+$("#publish").onclick = () => { waiting = []; drawWaiting(); $("#striptext").textContent = "Published (in this mockup only)"; };
+
+const TABLES = [...new Set(D.entities.filter(e => e.table).map(e => e.table))];
+const readers = t => D.entities.filter(e => e.table === t);
+const DOMAINS = [...new Set(D.entities.map(e => e.domain).filter(Boolean))];
+
+/* New entity and Change an entity are the same form */
+function entityForm(e, focus) {
+  const isNew = !e; let table = e?.table || "", key = e?.key ? [e.key] : [], named = e?.named_by || "", guessed = false;
+  const body = () => { const src = readers(table)[0], cols = table ? src.cols.slice(0, 14) : []; const guess = cols.find(c => c === "id" || c.endsWith("_id") && c.startsWith(table.slice(0, 4)));
+    if (table && !key.length && guess && !guessed) { key = [guess]; guessed = true; }
+    return `<header><h2>${isNew ? "New entity" : "Change " + esc(e.name)}</h2><p>${isNew ? "Three answers make an entity: what it reads, what one row is, and what tells two rows apart." : "The same form that made it. Change any answer; it waits in the draft."}</p></header>
+    <div class="body">
+      <div class="fld"><label>What it reads</label><select id="f-table"><option value="">Choose a table…</option>${TABLES.map(t => `<option ${t === table ? "selected" : ""} value="${t}">${t} — ${readers(t)[0].rows == null ? "rows not counted" : num(readers(t)[0].rows) + " rows"}${isNew ? " · already read by " + readers(t).map(r => r.name).join(", ") : ""}</option>`).join("")}<option>A SELECT I will write…</option></select>
+        ${isNew ? `<small>All 7 of theLook's tables are read already; a second entity on a table is allowed and is said on both.</small>` : ""}</div>
+      <div class="row2"><div class="fld"><label>One row is one…</label><input type="text" id="f-name" placeholder="Purchase order" value="${esc(e?.name || "")}"></div>
+        <div class="fld"><label>Domain</label><select>${["", ...DOMAINS].map(d => `<option ${d === (e?.domain || "") ? "selected" : ""}>${d || "—"}</option>`).join("")}</select></div></div>
+      <div class="fld" id="keyfld"><label>What tells two apart — its key ${focus === "key" ? `<span class="chip is-warn">not set yet</span>` : ""}</label>
+        ${table ? `<div class="cols">${cols.map(c => `<button data-c="${c}" aria-pressed="${key.includes(c)}">${c}</button>`).join("")}</div>
+        <small>${key.length ? `${key.join(" + ")} — ${e?.key_ok && e.key === key[0] ? `counted: unique in all ${num(e.rows)} rows` : "counted on the data when you save; a key that repeats is refused, with the rows that repeat"}` : "Pick one column, or several that are unique together."}${guessed && key[0] === guess ? " · suggested from the column's name" : ""}</small>` : `<small>Choose what it reads first.</small>`}</div>
+      <div class="row2"><div class="fld"><label>Named by</label><select id="f-named"><option value="">its key</option>${cols.map(c => `<option ${c === named ? "selected" : ""}>${c}</option>`).join("")}</select><small>the column a person recognises one by</small></div>
+        <div class="fld"><label>Drawn on the Atlas as</label><button class="btn" style="width:100%;justify-content:space-between"><span>${isNew ? "Plain block" : "Plain block — no shape chosen"}</span><span class="muted">Choose a shape…</span></button></div></div>
+      <div class="fld"><label>What it is, in a sentence</label><textarea placeholder="Read by people and by the agent when it decides which entity a question is about.">${esc(e?.desc || "")}</textarea>${isNew ? "" : `<small>Today this sentence cannot be changed anywhere in the app.</small>`}</div>
+      <details class="more"><summary>Details — id${isNew ? "" : ", retiring, withdraw"}</summary><div>
+        <div class="fld"><label>Id</label><input type="text" value="${esc(e?.id || "")}" placeholder="made from the name — PurchaseOrder" ${isNew ? "" : "disabled"}><small>${isNew ? "Made for you from the name; change it only if you must." : "An id is what links, rules and metrics point at, so it does not change."}</small></div>
+        ${isNew ? "" : `<div style="display:flex;gap:8px"><button class="btn is-sm">Mark as retiring…</button><button class="btn is-sm is-danger" id="f-remove">Remove ${esc(e.name)}…</button></div>`}
+      </div></details>
+    </div>
+    <footer><span class="muted sm">Waits in the draft until published</span><span class="grow"></span><button class="btn" data-close>Cancel</button><button class="btn is-main" id="f-save">Save to the draft</button></footer>`; };
+  const paint = () => { open(body());
+    $("#f-table").onchange = ev => { table = TABLES.includes(ev.target.value) ? ev.target.value : ""; key = []; guessed = false; paint(); };
+    $$("#keyfld [data-c]").forEach(b => b.onclick = () => { key = key.includes(b.dataset.c) ? key.filter(c => c !== b.dataset.c) : [...key, b.dataset.c]; const nm = $("#f-name").value; paint(); $("#f-name").value = nm; });
+    if ($("#f-remove")) $("#f-remove").onclick = () => removeAsk("entity", e.name, `${linksOf(e.key2).length} links, ${e.counts.metrics} metric and ${e.counts.actions} actions point at it and stop reading it.`);
+    $("#f-save").onclick = () => { const nm = $("#f-name").value || "Unnamed"; saved(isNew ? { kind: "New entity", text: `<b>${esc(nm)}</b> reads <code>${table || "…"}</code>, key <code>${key.join(" + ") || "…"}</code>`, safe: true }
+      : { kind: "Changed", text: `<b>${esc(e.name)}</b>${focus === "key" || key[0] !== e.key ? ` — key is <code>${key.join(" + ") || "not chosen"}</code>` : " — its details"}`, safe: !(focus === "key" || key[0] !== e.key) }); }; };
+  paint();
+}
+
+/* New link — from the menu, or by clicking two entities */
+function linkForm(a, b, existing) {
+  let from = a?.key2 || "order", to = b?.key2 || "";
+  const paint = () => { const A = E[from], B = to ? E[to] : null;
+    const have = B && D.links.filter(l => (l.from === from && l.to === to) || (l.from === to && l.to === from));
+    const guessA = B ? A.cols.find(c => c === (B.table || "").replace(/s$/, "") + "_id" || c === B.key2 + "_id") || (B.key2 === "user" && A.cols.includes("user_id") ? "user_id" : "") : "";
+    const opt = (list, sel) => list.map(c => `<option ${c === sel ? "selected" : ""}>${c}</option>`).join("");
+    const ents = sel => D.entities.filter(e => e.table).map(e => `<option value="${e.key2}" ${e.key2 === sel ? "selected" : ""}>${esc(e.name)}</option>`).join("");
+    open(`<header><h2>${existing ? "Change a link" : "New link"}</h2><p>Say which two entities belong together and which columns match. How many of one belong to the other is counted on the data, never typed.</p></header>
+    <div class="body">
+      <div class="row3"><div class="fld"><label>From</label><select id="l-from">${ents(from)}</select></div><div class="muted" style="padding-bottom:6px">→</div><div class="fld"><label>To</label><select id="l-to"><option value="">Choose an entity…</option>${ents(to)}</select></div></div>
+      ${B ? `<div class="row3"><div class="fld"><label>${esc(A.name)}'s column</label><select>${guessA ? "" : "<option>Choose a column…</option>"}${opt(A.cols, guessA)}</select></div><div class="muted" style="padding-bottom:6px">=</div><div class="fld"><label>${esc(B.name)}'s column</label><select>${opt(B.cols, B.key)}</select></div></div>
+      ${guessA ? `<div class="say">Suggested: <code>${A.table}.${guessA}</code> = <code>${B.table}.${B.key || "?"}</code>, from the column names. ${have.length ? "" : "It is counted when you save."}</div>` : `<div class="say is-warn">No column of ${esc(A.name)} is named after ${esc(B.name)} — choose the two columns that match.</div>`}
+      <div class="fld"><label>In words: one ${esc(A.name)} is … one ${esc(B.name)}</label><input type="text" value="${esc(existing?.verb || (have[0] && !existing ? "" : ""))}" placeholder="${have[0] ? have[0].verb : "placed by"}"><small>How the link is read aloud: “${esc(A.name)} <i>${have[0]?.verb || "placed by"}</i> ${esc(B.name)}”.</small></div>
+      ${have.length && !existing ? `<div class="say is-warn">${esc(A.name)} and ${esc(B.name)} are linked already: ${have.map(l => `“${esc(E[l.from].name)} ${esc(l.verb)} ${esc(E[l.to].name)}” · ${l.card} · ${l.origin === "human" ? "said by a person" : "found in the data"}`).join("; ")}. A second link is allowed when it means something else.</div>` : ""}` : ""}
+    </div>
+    <footer><span class="muted sm">Waits in the draft until published</span><span class="grow"></span>${existing ? `<button class="btn is-danger" id="l-remove">Remove…</button>` : ""}<button class="btn" data-close>Cancel</button><button class="btn is-main" id="l-save" ${B ? "" : "disabled"}>Save to the draft</button></footer>`);
+    $("#l-from").onchange = ev => { from = ev.target.value; paint(); }; $("#l-to").onchange = ev => { to = ev.target.value; paint(); };
+    $("#l-save").onclick = () => saved({ kind: existing ? "Changed" : "New link", text: `<b>${esc(A.name)}</b> → <b>${esc(B.name)}</b>`, safe: true });
+    if ($("#l-remove")) $("#l-remove").onclick = () => removeAsk("link", `${A.name} ${existing.verb} ${B.name}`, "Questions that walk from one to the other stop being answerable until it is put back.");
+  };
+  paint();
+}
+
+function ruleForm(e, existing) {
+  const cols = e.cols.slice(0, 14);
+  open(`<header><h2>${existing ? "Change a rule" : "New rule"}</h2><p>A rule names a set of one entity's rows, so that people and metrics mean the same rows by the same word.</p></header>
+  <div class="body">
+    <div class="row2"><div class="fld"><label>Which entity</label><select>${D.entities.filter(x => x.table).map(x => `<option ${x === e ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></div>
+      <div class="fld"><label>The rule's name</label><input type="text" value="${esc(existing?.display_name || "")}" placeholder="Completed orders"></div></div>
+    <div class="row3" style="grid-template-columns:1fr 130px 1fr"><div class="fld"><label>Rows where</label><select>${cols.map(c => `<option ${c === "status" ? "selected" : ""}>${c}</option>`).join("")}</select></div>
+      <div class="fld"><label>&nbsp;</label><select><option>is one of</option><option>is none of</option><option>=</option><option>&gt;</option><option>&lt;</option><option>is empty</option><option>is not empty</option></select></div>
+      <div class="fld"><label>&nbsp;</label><input type="text" value="${existing ? "Complete" : ""}" placeholder="Complete, Shipped"></div></div>
+    ${existing ? `<div class="say">Counted: <b>${num(existing.admitted)}</b> of ${num(existing.objects)} ${esc(e.name.toLowerCase())}s are in it.</div>` : `<div class="say">The rows it admits are counted as you type, before anything is saved.</div>`}
+    ${existing ? `<div class="say">Today a rule can be made but never changed or removed from the app.</div>` : ""}
+  </div>
+  <footer><span class="muted sm">Waits in the draft until published</span><span class="grow"></span>${existing ? `<button class="btn is-danger" id="r-remove">Remove…</button>` : ""}<button class="btn" data-close>Cancel</button><button class="btn is-main" id="r-save">Save to the draft</button></footer>`);
+  $("#r-save").onclick = () => saved({ kind: existing ? "Changed" : "New rule", text: `a rule on <b>${esc(e.name)}</b>`, safe: !existing });
+  if ($("#r-remove")) $("#r-remove").onclick = () => removeAsk("rule", existing.display_name, "Metrics scoped by it lose that scope.");
+}
+
+function designer(kind, e) {
+  open(`<header><h2>New ${kind}${e ? " for " + esc(e.name) : ""}</h2><p>Opens the ${kind} designer that exists today — the full page, unchanged${e ? `, with ${esc(e.name)} already chosen` : ""}.</p></header>
+  <div class="body"><div class="say">A ${kind} has too many parts for a dialog (${kind === "process" ? "stages, promises, exits, checks before publishing" : "what a press does, what it asks, when it may be pressed, who decides"}). What changes is only how you get there — the same “New” menu and the same bar as everything else — and what it says at the end: “Saved to the draft”.</div></div>
+  <footer><span class="grow"></span><button class="btn" data-close>Cancel</button><button class="btn is-main" data-close>Open the designer</button></footer>`);
+}
+
+/* one question before anything is removed, the same everywhere */
+function removeAsk(kind, name, effect) {
+  open(`<header><h2>Remove ${esc(name)}?</h2><p>The same question before anything is removed, whatever it is.</p></header>
+  <div class="body"><div class="say is-danger">${esc(effect)}</div><div class="say">It is not deleted: it goes to History, where “Put back” returns it. Nothing changes for agents or queries until the draft is published.</div></div>
+  <footer><span class="grow"></span><button class="btn" data-close>Keep it</button><button class="btn is-danger" id="rm-yes">Remove</button></footer>`);
+  $("#rm-yes").onclick = () => saved({ kind: "Removed", text: `${kind} <b>${esc(name)}</b>`, safe: false });
+}
+
+/* ---------- the "New" menu ---------- */
+$("#newbtn").onclick = e => { e.stopPropagation(); $("#newmenu").classList.toggle("is-open"); };
+document.addEventListener("click", () => $("#newmenu").classList.remove("is-open"));
+$$("[data-new]").forEach(b => b.onclick = () => { const k = b.dataset.new, e = picked ? E[picked] : null;
+  k === "entity" ? entityForm(null) : k === "link" ? linkForm(e, null) : k === "rule" ? ruleForm(e || E.order) : designer(k, e); });
+
+/* ---------- an entity's page, Edit on ---------- */
+function renderPage() {
+  const e = E[picked || "order"], ls = D.links.filter(l => l.from === e.key2 || l.to === e.key2), rules = D.rules.filter(r => r.entity === e.key2), procs = D.processes.filter(p => p.entity === e.key2);
+  const sect = (title, n, newLabel, rows, id) => `<div class="frame"><div class="sect-head"><h3>${title}</h3><span class="n">${n}</span><span class="grow"></span><button class="btn is-sm" data-add="${id}">+ ${newLabel}</button></div><table><tbody>${rows || `<tr><td class="muted">None yet.</td></tr>`}</tbody></table></div>`;
+  const acts = (k, i) => `<td class="acts"><button class="btn is-sm" data-chg="${k}:${i}">Change</button><button class="btn is-sm is-danger" data-rm="${k}:${i}">Remove</button></td>`;
+  $("#v-page").innerHTML = `
+  <div class="frame"><div class="frame-head"><h2>${esc(e.name)}</h2><span class="chip">${e.table ? `reads ${e.table}` : "no table"}</span><span class="chip">${num(e.rows)} rows</span>
+    ${e.key ? `<span class="chip is-ok">✓ key ${esc(e.key)}</span>` : `<span class="chip is-warn">no key yet</span>`}<span class="chip">named by ${esc(e.named_by || "its key")}</span><span class="chip">${esc(e.domain || "no domain")}</span>
+    <span class="grow"></span><span class="seg"><button aria-pressed="false">Read</button><button aria-pressed="true">Edit</button></span><button class="btn is-sm is-main" id="p-change">Change its details</button></div>
+    <div style="padding:10px 12px" class="muted">${esc(e.desc || "No sentence says what it is yet.")}</div></div>
+  <div class="say">With Edit on, every section has the same two things: a <b>+ New</b> button at its head, and <b>Change</b> and <b>Remove</b> on each row. Each opens the same dialog. With Edit off, none of them shows — the page reads as it does today.</div>
+  <div class="two">
+    ${sect("Links", ls.length, "New link", ls.map((l, i) => `<tr><td>${esc(E[l.from].name)} <span class="muted">${esc(l.verb)}</span> ${esc(E[l.to].name)}</td><td><span class="chip">${l.card}</span> <span class="chip">${l.origin === "human" ? "said by a person" : "found in the data"}</span></td>${acts("link", i)}</tr>`).join(""), "link")}
+    ${sect("Rules", rules.length, "New rule", rules.map((r, i) => `<tr><td>${esc(r.display_name)}</td><td><span class="chip">${num(r.admitted)} of ${num(r.objects)}</span></td>${acts("rule", i)}</tr>`).join(""), "rule")}
+    ${sect("Processes", procs.length, "New process", procs.map((p, i) => `<tr><td>${esc(p.display_name)}</td><td><span class="chip">${p.stages.join(" → ")}</span></td>${acts("process", i)}</tr>`).join(""), "process")}
+    ${sect("Sources", e.counts.bindings, "New source", `<tr><td><code>${e.table || "—"}</code> <span class="muted">what it reads</span></td><td><span class="chip">${num(e.rows)} rows</span></td><td class="acts"><button class="btn is-sm" data-chg="entity:0">Change</button></td></tr>${e.counts.bindings > 1 ? `<tr><td class="muted">${e.counts.bindings - 1} more source${e.counts.bindings > 2 ? "s" : ""} joined to it</td><td></td>${acts("source", 0)}</tr>` : ""}`, "source")}
+    ${sect("Calculated properties", 0, "New calculated property", "", "expr")}
+    ${sect("Actions", e.counts.actions, "New action", e.counts.actions ? `<tr><td class="muted">${e.counts.actions} action${e.counts.actions > 1 ? "s" : ""} a person can press</td><td></td>${acts("action", 0)}</tr>` : "", "action")}
+  </div>`;
+  $("#p-change").onclick = () => entityForm(e);
+  const go = (k, i, rm) => { const l = ls[i];
+    if (rm) return removeAsk(k, k === "link" ? `${E[l.from].name} ${l.verb} ${E[l.to].name}` : k === "rule" ? rules[i].display_name : k === "process" ? procs[i].display_name : `a ${k} of ${e.name}`, k === "link" ? "Questions that walk from one to the other stop being answerable until it is put back." : "What reads it stops reading it once the draft is published.");
+    k === "link" ? linkForm(E[l.from], E[l.to], l) : k === "rule" ? ruleForm(e, rules[i]) : k === "entity" ? entityForm(e) : designer(k === "process" || k === "action" ? k : "process", e); };
+  $$("[data-chg]").forEach(b => b.onclick = () => { const [k, i] = b.dataset.chg.split(":"); k === "source" ? entityForm(e) : go(k, +i); });
+  $$("[data-rm]").forEach(b => b.onclick = () => { const [k, i] = b.dataset.rm.split(":"); go(k, +i, true); });
+  $$("[data-add]").forEach(b => b.onclick = () => { const k = b.dataset.add; k === "link" ? linkForm(e, null) : k === "rule" ? ruleForm(e) : k === "process" || k === "action" ? designer(k, e) : entityForm(e); });
+}
+
+/* ---------- words, ways, nothing lost ---------- */
+const WORDS = [
+  ["Make something", "New entity · Declare a process · Declare a rule · Declare a binding · Declare an expression · Add a relationship · Declare how one may move", "New …"],
+  ["Finish the form", "Declare · Declare the rule · Declare it · Bind · Save · Set as backing · Use as the key · Count it", "Save to the draft"],
+  ["Alter something", "Edit · Change this process · Rename · Edit its SELECT · Name it", "Change"],
+  ["Take something away", "Withdraw · Remove · Release · Delete · Take the mark off · Let go of the choice · Read its table again", "Remove"],
+  ["Bring it back", "Restore · Put back into the draft · Reconsider · Undo", "Put back"],
+  ["Say yes to a suggestion", "Confirm · Accept · Bind · Key it to …", "Confirm"],
+  ["Say no to a suggestion", "Dismiss · Not duplicates · (no way at all for the explorer's suggestions)", "Refuse"],
+  ["Count on the data", "Check · Measure", "Check"],
+  ["The thing itself", "entity · entity type · type · object type", "entity"],
+  ["How two belong together", "link · relationship", "link"],
+  ["Where it reads from", "Sources · Bindings · backing · Read from", "source"],
+];
+const WAYS = [
+  ["Where a new thing starts", "Bottom of a collapsed table (entity) · a fold's header (process, action) · a tab behind Edit (link, rule, source, expression)", "The “New” button in the title row, always there — and the bar of the entity you clicked"],
+  ["What a form looks like", "11 forms that push the page open in place · 2 full pages · 1 dialog · 5 side drawers · 1 overlay", "One dialog for everything; the two designers stay full pages"],
+  ["Making and changing", "Different forms — and a made entity, rule or action cannot be changed at all", "The same form, filled in"],
+  ["Before removing", "Two clicks for an entity; one click, no question, for a link, source, expression or merge", "One question, always, saying what stops working"],
+  ["After saving", "A toast, or green text, or nothing visible", "One line at the foot: “Saved to the draft · N waiting”, and the waiting list"],
+  ["Typing what the data knows", "Id, key column and link columns typed by hand", "Chosen from the table's real columns, suggested, then counted"],
+];
+const KEPT = [
+  ["Make an entity", "Map rail foot · bottom of the collapsed Entities table", "New ▾ → Entity"],
+  ["Rename an entity, change its sentence or domain", "Nowhere", "Entity → Change — new"],
+  ["Set an entity's key", "Entity → Properties tab → Edit → Key", "Entity → Change · “Set its key” on the Atlas bar when missing"],
+  ["Choose what names an entity", "Entity → Properties → Edit → Named by", "Entity → Change"],
+  ["Choose its Atlas shape", "Entity header → Edit → Choose a shape", "Entity → Change · stays on the header"],
+  ["Change what it reads (table or SELECT)", "Entity → Sources → Edit", "Entity → Change → What it reads"],
+  ["Add, change or remove a further source", "Entity → Sources → Edit → Declare a binding", "Entity → Sources → New source / Change / Remove"],
+  ["Accept a suggested source", "Sources tab row → Bind", "Same row → Confirm"],
+  ["Make a link", "Entity → Links → Edit → Add a relationship", "New ▾ → Link · “Link to…” then click the other entity · Links → New link"],
+  ["Rename a link", "Links row → Name it / Rename", "Links row → Change"],
+  ["Remove a link, put one back", "Links row → Withdraw · History → Restore", "Links row → Remove (asks) · History → Put back"],
+  ["Make an entity a part of another, release a part", "Only through a source's checkbox or a merge · Release in two places", "Entity → Change → Details → “Part of…” · Release stays"],
+  ["Make a rule", "Entity → Properties → Edit → Declare a rule", "New ▾ → Rule · entity bar · Rules → New rule"],
+  ["Change or remove a rule", "Nowhere", "Rules row → Change / Remove — new"],
+  ["Make a calculated property (expression), remove one", "Entity → Properties → Edit (section hidden until then)", "Entity → Calculated properties → New / Remove"],
+  ["Make a process", "Rail · fold header · Properties tab — three labels", "New ▾ → Process · entity bar — the same designer"],
+  ["Change or remove a process", "Process page", "Process page, same words: Change / Remove"],
+  ["Say what bears on a promise, remove it", "Process page, under a stage", "Unchanged, same words"],
+  ["Make an action", "Rail · fold header · Actions tab", "New ▾ → Action · entity bar — the same designer"],
+  ["Say how a state may move (edit states)", "Entity → Actions tab → Edit", "Entity → Actions → New / Remove"],
+  ["Mark an entity retiring, take the mark off", "Entity header → Edit", "Entity → Change → Details"],
+  ["Remove a made entity", "Entity header → Edit → Withdraw", "Entity → Change → Details → Remove (asks)"],
+  ["Put an earlier version back", "Entity → History → Edit", "Unchanged: History → Put back"],
+  ["Confirm a suggestion from the explorer", "Rail, Review, four places on the entity page", "Unchanged places, one word: Confirm"],
+  ["Refuse a suggestion from the explorer", "Nowhere", "Beside every Confirm: Refuse — new"],
+  ["Run the explorer", "Map rail · Review", "Unchanged"],
+  ["Check keys, links and names on the data", "Check / Measure", "Check"],
+  ["Publish or discard the draft", "Release chip in the header", "Release chip · the waiting list · the line at the foot"],
+  ["Merge duplicates, say two are not duplicates", "Tools → Find duplicates", "Unchanged — merge asks first"],
+  ["Human edits, export and re-import, suggestions, learned skills, refresh, rebuild", "Tools menu", "Unchanged"],
+  ["Key a word people use to an entity", "Entity → Properties → Words people use", "Unchanged"],
+  ["Make a dashboard from an entity or a process", "Entity header · process page", "Unchanged"],
+  ["Arrange the map's cards", "Map view", "Unchanged"],
+];
+$("#words").innerHTML = WORDS.map(r => `<tr><td>${r[0]}</td><td class="was">${r[1]}</td><td class="now">${r[2]}</td></tr>`).join("");
+$("#ways").innerHTML = WAYS.map(r => `<tr><td>${r[0]}</td><td class="was">${r[1]}</td><td class="now" style="font-weight:400">${r[2]}</td></tr>`).join("");
+$("#kept").innerHTML = KEPT.map(r => `<tr><td>${r[0]}</td><td class="was">${r[1]}</td><td>${r[2].replace("— new", `<span class="chip is-blue">new</span>`)}</td></tr>`).join("");
+$("#keptn").textContent = `${KEPT.length} rows · ${KEPT.filter(r => r[2].includes("new")).length} are new, none is dropped`;
+
+function show(v) { ["atlas", "page", "words", "kept"].forEach(k => { $("#v-" + k).classList.toggle("hide", k !== v); $(`#views [data-v=${k}]`).setAttribute("aria-pressed", k === v); });
+  $("#page-title").textContent = v === "page" ? "Ontology › " + E[picked || "order"].name : "Ontology"; if (v === "page") renderPage(); }
+$$("#views button").forEach(b => b.onclick = () => show(b.dataset.v));
+const theme = t => { document.documentElement.dataset.theme = t; $("#th-d").setAttribute("aria-pressed", t === "dark"); $("#th-l").setAttribute("aria-pressed", t === "light"); };
+$("#th-d").onclick = () => theme("dark"); $("#th-l").onclick = () => theme("light");
+drawWorld(); drawWaiting(); renderPage();
+</script>
+</body>
+</html>

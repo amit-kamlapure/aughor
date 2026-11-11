@@ -1,0 +1,18 @@
+id: logistics-map
+name: Logistics, 3PL and freight — the industry map
+version: 1
+persona: >
+  How a logistics, 3PL or freight business is usually shaped — shippers and consignees, bookings and
+  shipments with their legs and tracking, warehouse work, customs, delivery and freight billing — each
+  read as a thing or as a part of one. Expectations matched to the data, never facts.
+owner_team: Platform
+default_temporal_grain: period
+domains:
+  - logistics
+  - freight
+  - warehousing
+  - customs
+extends: []
+scope:
+  connections: ["*"]
+status: draft

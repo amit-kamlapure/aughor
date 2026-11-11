@@ -1,0 +1,174 @@
+/**
+ * exhibit.ts — the declarative exhibit spec a backend finding/answer can attach
+ * to steer HOW its chart encodes meaning (never WHAT data it shows).
+ *
+ * The spec is additive and optional: no spec → every builder renders exactly as
+ * before (byte-identical), so the backend can gate
+ * emission without any frontend flag plumbing. Grammar:
+ *   color.mode  "neutral"      one hue — color has nothing to say (default)
+ *               "categorical"  hue = a second dimension (legend carries it)
+ *               "severity"     single-hue ramp of the measure value itself —
+ *                              redundant encoding for worst/best-N rankings
+ *               "sign"         green/red by sign (change metrics; pre-existing)
+ *   ref_lines   dashed reference lines on the value axis (peer median, global
+ *               average, benchmark) — context the reader otherwise lacks
+ *   label_points scatter points carry their entity label (outlier identity)
+ *   quadrant    mean/median divider lines on a scatter (x and/or y)
+ */
+
+export interface ExhibitRefLine {
+  value: number;
+  label: string;
+  /** Provenance of the line — display-only, but kept for the receipt/tooltip. */
+  kind?: "peer_median" | "global_avg" | "benchmark" | "target";
+}
+
+export interface ExhibitColor {
+  mode: "neutral" | "categorical" | "severity" | "sign" | "continuous";
+  /** categorical/continuous: the column whose values pick the hue. When set, the
+   *  renderer colours each mark by THAT column instead of the plotted measure —
+   *  the editor's "Color" binding (a dimension → discrete legend, a measure →
+   *  gradient legend). Absent → the mode's own default (severity ramps the plotted
+   *  measure; categorical needs a field). */
+  field?: string | null;
+  /** Legend / gradient title — the "Display name" the user typed (else the field label). */
+  name?: string | null;
+  /** Where the colour legend sits ("right" | "bottom" | "top" | "none"). The colour legend
+   *  reflects THIS field (a discrete key for categorical, a gradient for continuous) — never
+   *  the plotted measure. */
+  legend?: string | null;
+}
+
+export interface ExhibitSpec {
+  color?: ExhibitColor | null;
+  ref_lines?: ExhibitRefLine[] | null;
+  label_points?: boolean | null;
+  quadrant?: { x?: number | null; y?: number | null } | null;
+  /** "asc" = the query asked for the BOTTOM of the ranking (ORDER BY measure ASC
+   *  LIMIT N), so lead with the row it led with instead of burying it at the far
+   *  end. Absent → the largest-first default. */
+  order?: "asc" | "desc" | null;
+  /** CA-4 emphasis form: the question's subject entities. Marks matching one of
+   *  these values wear the accent hue; everything else recedes to the
+   *  de-emphasis gray — "one series is the point, the rest are context". */
+  emphasis?: string[] | null;
+}
+
+/** Fail-open boundary for a backend-authored spec: drop any field that doesn't
+ *  conform (a malformed exhibit must never cost the reader the chart itself —
+ *  browser and print alike run through this). */
+export function sanitizeExhibit(spec: unknown): ExhibitSpec | null {
+  if (!spec || typeof spec !== "object") return null;
+  const s = spec as Record<string, unknown>;
+  const out: ExhibitSpec = {};
+  if (s.color && typeof s.color === "object") out.color = s.color as ExhibitColor;
+  if (Array.isArray(s.ref_lines)) {
+    const lines = (s.ref_lines as unknown[]).filter(
+      (l): l is ExhibitRefLine => !!l && typeof l === "object" && isFinite(Number((l as ExhibitRefLine).value)));
+    if (lines.length) out.ref_lines = lines;
+  }
+  if (typeof s.label_points === "boolean") out.label_points = s.label_points;
+  if (s.quadrant && typeof s.quadrant === "object") {
+    const q = s.quadrant as { x?: unknown; y?: unknown };
+    const x = isFinite(Number(q.x)) && q.x != null ? Number(q.x) : null;
+    const y = isFinite(Number(q.y)) && q.y != null ? Number(q.y) : null;
+    if (x != null || y != null) out.quadrant = { x, y };
+  }
+  if (s.order === "asc" || s.order === "desc") out.order = s.order;
+  if (Array.isArray(s.emphasis)) {
+    const em = (s.emphasis as unknown[]).filter((e): e is string => typeof e === "string" && !!e.trim());
+    if (em.length) out.emphasis = em;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/** Case-insensitive membership test against the exhibit's emphasis list. */
+export function isEmphasized(spec: ExhibitSpec | null | undefined, value: unknown): boolean {
+  const list = spec?.emphasis;
+  if (!list?.length) return false;
+  const v = String(value).trim().toLowerCase();
+  return list.some((e) => String(e).trim().toLowerCase() === v);
+}
+
+// ── severity ramp ────────────────────────────────────────────────────────────
+
+/** Columns where a big value is a COST (delay, loss, returns…) — those ramp in
+ *  the red family; everything else ramps in the calm primary blue. Deterministic
+ *  name test, same spirit as columnRoles' patterns. */
+export const COST_METRIC_COL =
+  /(delay|late|loss|lost|cancel|refund|return|churn|complaint|defect|error|fail|missing|overdue|wait|downtime|leak)/i;
+
+const BLUE_RAMP = ["#9DC4F5", "#4C8EEE", "#1D4E9E"];
+const RED_RAMP = ["#F5C0A0", "#E64848", "#8E1E1E"];
+
+function hexToRgb(h: string): [number, number, number] {
+  const v = h.replace("#", "");
+  return [parseInt(v.slice(0, 2), 16), parseInt(v.slice(2, 4), 16), parseInt(v.slice(4, 6), 16)];
+}
+
+function mix(a: [number, number, number], b: [number, number, number], t: number): string {
+  const c = a.map((av, i) => Math.round(av + (b[i] - av) * t));
+  return `#${c.map((n) => n.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** The 3-stop gradient (as ECharts linear-gradient colorStops) for a continuous color
+ *  field — cost metrics ramp red, everything else calm blue, mirroring severityRamp's
+ *  family choice. Used to draw the gradient legend beside a continuous color binding. */
+export function rampStops(field: string): { offset: number; color: string }[] {
+  const ramp = COST_METRIC_COL.test(field) ? RED_RAMP : BLUE_RAMP;
+  return ramp.map((color, k) => ({ offset: k / (ramp.length - 1), color }));
+}
+
+/** Piecewise-linear interpolation through a 3-stop ramp, normalised to [min, max].
+ *  Degenerate ranges (min === max) sit at the middle stop. */
+export function severityRamp(min: number, max: number, field: string): (v: number) => string {
+  const stops = (COST_METRIC_COL.test(field) ? RED_RAMP : BLUE_RAMP).map(hexToRgb);
+  return (v: number) => {
+    if (!isFinite(v)) return mix(stops[1], stops[1], 0);
+    const t = max > min ? Math.min(1, Math.max(0, (v - min) / (max - min))) : 0.5;
+    return t <= 0.5 ? mix(stops[0], stops[1], t * 2) : mix(stops[1], stops[2], (t - 0.5) * 2);
+  };
+}
+
+// ── markLine helper ──────────────────────────────────────────────────────────
+
+// A reference line is axis FURNITURE, not data: it must not claim a categorical hue from
+// the palette (ECharts would otherwise inherit the series colour — which reads as another
+// series, and would vanish outright into a same-family severity ramp). The tick colour is
+// the same neutral the axis labels use, and it reads on both themes.
+const REF_LINE_COLOR = "#9DA1A8";
+
+/** Build the ECharts markLine block for the given reference lines. `axis` picks
+ *  which axis carries the VALUE dimension ("x" for horizontal bars, "y" else). */
+export function refMarkLine(
+  lines: ExhibitRefLine[],
+  axis: "x" | "y",
+  fmt: (v: unknown) => string,
+): Record<string, unknown> | undefined {
+  const data = (lines ?? []).filter((l) => isFinite(Number(l.value)));
+  if (!data.length) return undefined;
+  return {
+    silent: true,
+    symbol: "none",
+    animation: false,
+    lineStyle: { type: "dashed", width: 1.25, color: REF_LINE_COLOR },
+    // A vertical (xAxis) markLine runs top→bottom, so "start" floats the label above the
+    // grid top; a horizontal (yAxis) line's "end" floats it right of the grid. rotate 0
+    // keeps the text horizontal — the inside positions rotate it along a vertical line,
+    // which is unreadable. Per-line distances stagger neighbouring labels so two close
+    // reference values (peer median beside the global average) can't overprint.
+    label: {
+      position: axis === "x" ? "start" : "end",
+      rotate: 0,
+      fontSize: 11,
+      color: REF_LINE_COLOR,
+      formatter: (p: { data?: { name?: string }; value?: unknown }) =>
+        `${p.data?.name ?? ""} ${fmt(p.value)}`.trim(),
+    },
+    data: data.map((l, k) => ({
+      name: l.label,
+      ...(axis === "x" ? { xAxis: l.value } : { yAxis: l.value }),
+      ...(axis === "x" ? { label: { distance: 4 + k * 13 } } : {}),
+    })),
+  };
+}

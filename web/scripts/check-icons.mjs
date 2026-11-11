@@ -1,0 +1,130 @@
+#!/usr/bin/env node
+/**
+ * Icon-system gate.
+ *
+ * ── WHY ──────────────────────────────────────────────────────────────────────
+ * The app drew its glyphs three ways at once: `lucide-react` in 4 files,
+ * `@atlaskit/icon` in 10, and 97 hand-written `<svg>` elements across 34 more —
+ * including FIVE separate path maps that had each re-drawn "database", "table" and
+ * "settings" a little differently. The same concept arrived at the eye as a different
+ * shape depending on which screen you were on, and nothing anywhere answered "which
+ * glyph means catalog".
+ *
+ * One set now (Tabler), imported in exactly one file. This gate keeps it that way.
+ *
+ * ── THE TWO RULES ────────────────────────────────────────────────────────────
+ *   THIRD-PARTY SETS   Baseline zero, hard fail. A second icon package is not a
+ *                      gradual problem — it is one import, and the fix is one import.
+ *   INLINE <svg>       Baseline zero in scope, hard fail. Anything that is a GLYPH
+ *                      goes through <Icon>; anything that is a DRAWING is listed
+ *                      below by name, with the reason it is not an icon.
+ *
+ * A drawing is not an icon: chart marks, graph edges, a sparkline's path and a
+ * vendor's logo are content, geometry or a trademark, and no icon set supplies them.
+ * They are enumerated rather than pattern-matched so that adding one is a decision
+ * somebody makes on purpose, in this file, with a reason beside it.
+ *
+ * No dependencies. Run via `npm run lint:icons`; wired into CI as a blocking job.
+ */
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const WEB = join(fileURLToPath(new URL(".", import.meta.url)), "..");
+const ROOTS = ["components", "app"];
+const EXTS = [".tsx", ".ts"];
+
+/** The one file allowed to name an icon package. */
+const ICON_MODULE = "components/ui/icon.tsx";
+
+/** Files whose `<svg>` is a drawing, not a glyph — each with why. */
+const DRAWINGS = {
+  "components/dashboards/FromFile.tsx": "a drafted card's shape from its run: bars computed per value, for a person to check",
+  "components/dashboards/MetricsLedger.tsx": "a metric's trend: its line, its usual range behind it and its newest point, computed per reading",
+  "components/home/LeadChart.tsx":  "the lead's metric as a line with its unsettled band and restatement, computed per width",
+  "components/BrandLogos.tsx":      "vendor trademarks — Snowflake, Stripe, Postgres et al",
+  "components/OntologyCanvas.tsx":  "graph edges and node geometry, computed per layout",
+  "components/ontology/EntityTypeMap.tsx": "the entity-type map's link lines and arrowheads, computed per layout",
+  "components/ontology/EntityShape.tsx":
+    "one Atlas shape drawn alone, by the Atlas's own pen — the shape an entity has, and the catalogue it is chosen from",
+  "components/ontology/BusinessAtlas.tsx":
+    "the Business Atlas's scene — the ground, each entity's structure and each process's route, composed per ontology",
+  "components/ontology/EntityTypeMap.test.tsx":
+    "the svg a test draws one map link inside, to read its path and prove it straight — an edge, not a glyph",
+  "components/ontology/SourceMapping.tsx":
+    "the source mapping's connectors from a table's columns to a type's properties, with their end dots — edges computed per row, not a glyph",
+  "components/dashboards/OntologyPieces.tsx": "a cockpit's chart of objects per day — bars, the line behind them, its axis",
+  "components/dashboards/ObjectDashboardStarter.tsx": "the starter's preview of objects per day, drawn small from measured counts",
+  "components/dashboards/AppPieces.tsx": "a timeline's bars between two moments, one lane per object, computed per page",
+  "components/ERDiagram.tsx":       "relationship edges between table cards",
+  "components/BrainMapPanel.tsx":   "the brain map's measured-link arrows between store boxes, computed per layout",
+  "components/ProcessMapper.tsx":   "the process map itself — nodes, edges, hit areas",
+  "components/brief/Sparkline.tsx": "the sparkline path, area fill and end dot",
+  "components/brief/EditionFigure.tsx":
+    "an edition's ranges as bars over their usual range, and its segments as signed bars — chart marks computed per figure",
+  "components/query/GeometryOutline.tsx": "a cell's geometry drawn to its own bounds — paths and dots computed per value (DE-5e)",
+  "components/DomainIntelPanel.tsx":"an empty-state illustration of a linked network",
+  "components/agentops/ActivityChart.tsx":
+    "stacked run bars, the hatch pattern and the brush overlay — chart marks with\n     pointer semantics (drag-to-brush over discrete buckets), not a glyph",
+};
+
+/** Icon packages that must not reappear. */
+const BANNED = [/from\s+["']lucide-react["']/, /from\s+["']@atlaskit\/icon/];
+
+function* walk(dir) {
+  for (const name of readdirSync(dir)) {
+    if (name === "node_modules") continue;
+    const p = join(dir, name);
+    const st = statSync(p);
+    if (st.isDirectory()) yield* walk(p);
+    else if (EXTS.some((e) => p.endsWith(e))) yield p;
+  }
+}
+
+const thirdParty = [];
+const inlineSvg = [];
+
+for (const root of ROOTS) {
+  for (const file of walk(join(WEB, root))) {
+    const rel = relative(WEB, file);
+    if (rel === ICON_MODULE) continue;
+    const lines = readFileSync(file, "utf8").split("\n");
+    lines.forEach((line, i) => {
+      for (const re of BANNED) {
+        if (re.test(line)) thirdParty.push({ file: rel, line: i + 1, text: line.trim() });
+      }
+      if (line.includes("<svg") && !DRAWINGS[rel]) {
+        inlineSvg.push({ file: rel, line: i + 1 });
+      }
+    });
+  }
+}
+
+let failed = false;
+
+if (thirdParty.length) {
+  failed = true;
+  console.error(`✗ icon gate: ${thirdParty.length} import(s) from a second icon set\n`);
+  for (const v of thirdParty.slice(0, 20)) {
+    console.error(`  ${v.file}:${v.line}  ${v.text}`);
+  }
+  console.error(`\n      → import { Icon } from "@/components/ui/icon" and add a role there.`);
+}
+
+if (inlineSvg.length) {
+  failed = true;
+  console.error(`\n✗ icon gate: ${inlineSvg.length} hand-drawn <svg> glyph(s)\n`);
+  for (const v of inlineSvg.slice(0, 30)) console.error(`  ${v.file}:${v.line}`);
+  if (inlineSvg.length > 30) console.error(`  … and ${inlineSvg.length - 30} more`);
+  console.error(
+    `\n      → a GLYPH becomes <Icon name="…" /> (add the role to ${ICON_MODULE}).\n` +
+    `        a DRAWING — chart marks, graph edges, a logo — goes in this gate's\n` +
+    `        DRAWINGS list with the reason it is not an icon.`);
+}
+
+if (failed) process.exit(1);
+
+console.log(
+  `✓ icon gate: one icon set (Tabler, via ${ICON_MODULE}); ` +
+  `no third-party imports, no hand-drawn glyphs ` +
+  `(${Object.keys(DRAWINGS).length} files hold drawings, listed by name).`);

@@ -1,0 +1,53 @@
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { DEFAULT_LOOK, LOOK_VALUES, PRESETS, cleanLook, forgetLook, getLook, setLook } from "./look";
+
+describe("the look", () => {
+  afterEach(() => { window.localStorage.clear(); forgetLook(); });
+
+  it("defaults to what the user chose for everyone: the Evidence → Action mockups' look (2026-11-10)", () => {
+    expect(getLook()).toEqual({ accent: "blue", grey: "slate", radius: "small", scaling: "100%", edges: "on", typeface: "inter", rows: "default" });
+  });
+
+  it("offers presets that are every knob, each a value the knob admits", () => {
+    expect(PRESETS.aughor).toBe(DEFAULT_LOOK);
+    for (const look of Object.values(PRESETS)) {
+      for (const key of Object.keys(LOOK_VALUES) as (keyof typeof LOOK_VALUES)[]) {
+        expect(LOOK_VALUES[key]).toContain(look[key]);
+      }
+    }
+    // the second preset is the denser one: since the default took the mockups' look (2026-11-10: blue, slate, small
+    // corners) it differs in what makes it dense and narrow — scaling, typeface and rows — and in nothing else
+    const moved = Object.keys(LOOK_VALUES).filter(key => PRESETS.workbench[key as keyof typeof PRESETS.workbench] !== DEFAULT_LOOK[key as keyof typeof DEFAULT_LOOK]);
+    expect(moved.sort()).toEqual(["rows", "scaling", "typeface"]);
+  });
+
+  it("never hands the Theme a value that is not one of a knob's own", () => {
+    // A person's settings hold other keys too, and an older build may have stored anything.
+    const cleaned = cleanLook({ accent: "chartreuse", grey: "slate", radius: 12, scaling: "95%", theme: "light" });
+    expect(cleaned).toEqual({ ...DEFAULT_LOOK, grey: "slate", scaling: "95%" });
+  });
+
+  it("keeps a knob the incoming settings do not hold", () => {
+    expect(cleanLook({ accent: "teal" }, { ...DEFAULT_LOOK, radius: "small" }))
+      .toEqual({ ...DEFAULT_LOOK, accent: "teal", radius: "small" });
+  });
+
+  it("remembers a change in this browser and tells whoever is listening", async () => {
+    const { useLook } = await import("./look");
+    const { renderHook, act } = await import("@testing-library/react");
+    const seen = renderHook(() => useLook());
+    act(() => { setLook({ accent: "jade", radius: "small" }); });
+    expect(seen.result.current).toEqual({ ...DEFAULT_LOOK, accent: "jade", radius: "small" });
+    forgetLook();   // a new page load reads what the browser kept
+    expect(getLook()).toEqual({ ...DEFAULT_LOOK, accent: "jade", radius: "small" });
+  });
+
+  it("reads a stored look that is not JSON as the default", () => {
+    window.localStorage.setItem("aughor_look", "{not json");
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(getLook()).toEqual(DEFAULT_LOOK);
+    quiet.mockRestore();
+  });
+});

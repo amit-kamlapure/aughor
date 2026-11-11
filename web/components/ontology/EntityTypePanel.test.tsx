@@ -1,0 +1,1132 @@
+// @vitest-environment jsdom
+
+/**
+ * Arc ON leftovers — the two declaration doors the panel was missing.
+ *
+ * The panel could BIND what the builder proposed and REMOVE what a person set, and that was all. A
+ * timeseries binding was never proposed then (many rows per object was what the proposal check rejected)
+ * and a keyed SELECT never is, so both were API-only; and a link kept the builder's generic name because
+ * no web door named one. These pin what the forms HAND the doors — the spec and the name — because
+ * that is where the bug would live: a form that looks right and posts a static binding with no time
+ * column is refused by the server, silently, one round trip later.
+ */
+import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
+import { render, screen, waitFor, within, change, choose, valueOf, fireEvent } from "@/lib/testing";
+import { cleanup } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+
+import type { BackingPreview, ObjectTypeDetail, ObjectTypeUses, ProcessDetail } from "@/lib/objectTypes";
+
+const addBinding = vi.fn(async (..._args: unknown[]) => undefined);
+const deleteLink = vi.fn(async (..._args: unknown[]) => undefined);
+const restoreLink = vi.fn(async (..._args: unknown[]) => undefined);
+const declareExpression = vi.fn(async (..._args: unknown[]) => undefined);
+const nameLink = vi.fn(async (..._args: unknown[]) => undefined);
+const declareLink = vi.fn(async (..._args: unknown[]) => undefined);
+const declareProcess = vi.fn(async (..._args: unknown[]) => ({ id: "order_fulfilment" }));
+const declareRule = vi.fn(async (..._args: unknown[]) => ({ id: "shipped_orders" }));
+const confirmProposals = vi.fn(async (..._args: unknown[]) => ({ confirmed: [], refused: [] as { why: string }[] }));
+const previewBacking = vi.fn(async (..._args: unknown[]): Promise<unknown> => undefined);
+const setQueryBacking = vi.fn(async (..._args: unknown[]) => undefined);
+const withdrawBacking = vi.fn(async (..._args: unknown[]) => undefined);
+const declareEditStates = vi.fn(async (..._args: unknown[]) => undefined);
+const measureOntology = vi.fn(async (..._args: unknown[]) => undefined);
+const setEntityKey = vi.fn(async (..._args: unknown[]) => undefined);
+const changeEntityWords = vi.fn(async (..._args: unknown[]) => undefined);
+const changeRule = vi.fn(async (..._args: unknown[]) => ({ id: "completed_orders" }));
+const deleteRule = vi.fn(async (..._args: unknown[]) => undefined);
+const deleteEntity = vi.fn(async (..._args: unknown[]) => undefined);
+/** The processes and rules the Overview reads for its funnel and its sets' counts — none, unless a test serves some. */
+const served = vi.hoisted(() => ({ scope: { processes: [] as unknown[], rules: [] as unknown[] } }));
+const getProcesses = vi.fn(async (..._args: unknown[]) => served.scope);
+/** The type the panel reads — the fixture below, unless a test shows another. */
+const shown: { detail?: ObjectTypeDetail; uses?: ObjectTypeUses } = {};
+// The words section reads the scope's keys on every panel — mocked, so no test here reaches a running API.
+const words = vi.hoisted(() => ({ vocabulary: [] as unknown[] }));
+const keyVocabularyEntry = vi.fn(async (..._args: unknown[]) => undefined);
+/** Arc FA, FA-3 — the declaration's history the History tab reads. */
+const history = vi.hoisted(() => ({ served: { element: "e", versions: [] as unknown[], put_back: { enabled: true, said: "" } } as Record<string, unknown> }));
+const putBackVersion = vi.fn(async (..._args: unknown[]) => ({
+  landed: "draft", said: "Version 2 of entity 'products' waits in the draft, classed MEANING — readers get it when a "
+    + "person publishes the draft.", change: null, warnings: [] }));
+const markRetiring = vi.fn(async (..._args: unknown[]) => ({ retiring: null, landed: "draft" }));
+const unmarkRetiring = vi.fn(async (..._args: unknown[]) => undefined);
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
+  getOntologyKeys: async () => ({ connection_id: "c1", schema_name: "s", entities: [], metrics: [], vocabulary: words.vocabulary }),
+  keyVocabularyEntry: (...a: unknown[]) => keyVocabularyEntry(...a),
+  // the Sources tab's mapping picture reads the table's columns; a test never reaches a connection for them
+  getTableColumns: async () => [{ name: "product_id", type: "BIGINT" }, { name: "title", type: "VARCHAR" }],
+}));
+
+vi.mock("@/lib/objectTypes", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/objectTypes")>()),
+  getObjectType: async () => shown.detail ?? detail,
+  getObjectTypeUses: async () => shown.uses ?? { path: "refused" as const, refused: "not served here", available: [],
+                                                  connection_id: "c1", schema_name: "s" },
+  addBinding: (...a: unknown[]) => addBinding(...a),
+  nameLink: (...a: unknown[]) => nameLink(...a),
+  declareLink: (...a: unknown[]) => declareLink(...a),
+  declareProcess: (...a: unknown[]) => declareProcess(...a),
+  declareRule: (...a: unknown[]) => declareRule(...a),
+  changeEntityWords: (...a: unknown[]) => changeEntityWords(...a),
+  changeRule: (...a: unknown[]) => changeRule(...a),
+  deleteRule: (...a: unknown[]) => deleteRule(...a),
+  deleteEntity: (...a: unknown[]) => deleteEntity(...a),
+  confirmProposals: (...a: unknown[]) => confirmProposals(...a),
+  previewBacking: (...a: unknown[]) => previewBacking(...a),
+  setQueryBacking: (...a: unknown[]) => setQueryBacking(...a),
+  withdrawBacking: (...a: unknown[]) => withdrawBacking(...a),
+  deleteLink: (...a: unknown[]) => deleteLink(...a),
+  restoreLink: (...a: unknown[]) => restoreLink(...a),
+  declareExpression: (...a: unknown[]) => declareExpression(...a),
+  declareEditStates: (...a: unknown[]) => declareEditStates(...a),
+  measureOntology: (...a: unknown[]) => measureOntology(...a),
+  setEntityKey: (...a: unknown[]) => setEntityKey(...a),
+  getProcesses: (...a: unknown[]) => getProcesses(...a),
+  getDeclarationHistory: async () => history.served,
+  putBackVersion: (...a: unknown[]) => putBackVersion(...a),
+  markRetiring: (...a: unknown[]) => markRetiring(...a),
+  unmarkRetiring: (...a: unknown[]) => unmarkRetiring(...a),
+}));
+
+import { EntityTypePanel } from "@/components/ontology/EntityTypePanel";
+
+const detail: ObjectTypeDetail = {
+  path: "object_type",
+  connection_id: "c1",
+  schema_name: "s",
+  object_type: "product",
+  id: "products",
+  display_name: "Product",
+  description: "",
+  role: "entity",
+  domain: "",
+  key: { property: "product_id", verified: true, rows: 1000, note: "1,000 of 1,000 distinct" },
+  display_property: { property: "product_name", source: "proposed", is_key: false, verified: true,
+                      rows: 1000, non_null: 1000, distinct: 990, note: "" },
+  time: "",
+  properties: [
+    { name: "product_id", display_name: "product_id", role: "identifier", data_type: "VARCHAR", unit: "",
+      is_key: true, null_rate: 0, description: "", source: { binding: "products", table: "products", column: "product_id" } },
+    { name: "product_name", display_name: "product_name", role: "text", data_type: "VARCHAR", unit: "",
+      is_key: false, null_rate: 0, description: "", source: { binding: "products", table: "products", column: "product_name" } },
+  ],
+  properties_truncated: false,
+  bindings: [{ name: "products", primary: true, kind: "static", reads: "table", table: "products",
+               key: "product_id", object_key: "product_id", source: "backing", verified: true, rows: 1000,
+               note: "", supplies: 2, usable: true }],
+  proposed_bindings: [],
+  links: [{ name: "product_to_order_item", business_name: "", business_name_source: "", verb: "relates to",
+            relationship: "rel_product_order_item", direction: "out", to: "order_item", to_type: "order_item",
+            to_name: "Order Line", cardinality: "1:N", measured: true, kind: "to-many",
+            on: "product_id = product_id", traversable: true }],
+  actions: [],
+  metrics: [],
+  unverified_metrics: [],
+  segments: [],
+  lifecycle: null,
+  counts: { properties: 2, bindings: 1, proposed_bindings: 0, links: 1, traversable_links: 1, actions: 0, metrics: 0 },
+  summary: "Product — 1,000 objects.",
+};
+
+const rows = [
+  { object_type: "product", id: "products", display_name: "Product" },
+  { object_type: "brand", id: "Brand", display_name: "Brand" },
+].map((t) => ({ ...t, role: "business_object", domain: "", key: `${t.object_type}_id`, key_verified: true, rows: 1,
+                table: t.object_type, display_property: "", display_is_key: true, properties: 1, bindings: 1,
+                proposed_bindings: 0, links: 0, traversable_links: 0, actions: 0, metrics: 0 }));
+
+function panel() {
+  return render(
+    <EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
+      onOpen={() => {}} onChanged={() => {}} />);
+}
+
+/** The panel reads first (the approved mockup, 2026-10-10): each section sits under its tab, and a door that writes
+ *  shows behind Edit. A Radix tab opens on mouseDown. */
+async function openTab(name: string) {
+  fireEvent.mouseDown(await screen.findByRole("tab", { name: new RegExp(`^${name}`) }));
+}
+async function editIn(name: string) {
+  await openTab(name);
+  const edit = await screen.findByTestId("entity-edit");
+  if (edit.getAttribute("aria-pressed") !== "true") fireEvent.click(edit);
+}
+
+describe("EntityTypePanel — a key of several columns (the Olist study, Gap 13)", () => {
+  it("names the key from two columns together, behind Edit, and the panel reads it again", async () => {
+    setEntityKey.mockClear();
+    const onChanged = vi.fn();
+    render(<EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
+      onOpen={() => {}} onChanged={onChanged} />);
+    await openTab("Properties");
+    expect(screen.queryByTestId("entity-key-door")).toBeNull();             // a door that writes waits for Edit
+    await editIn("Properties");
+    fireEvent.click(screen.getByTestId("entity-change-open"));              // the key is one of the entity's details
+    const door = await screen.findByTestId("entity-key-door");
+    fireEvent.click(within(door).getByText("product_id"));
+    fireEvent.click(within(door).getByText("product_name"));
+    fireEvent.click(within(door).getByText("Use these 2 as the key"));
+    await waitFor(() => expect(setEntityKey).toHaveBeenCalledWith("c1", "products", ["product_id", "product_name"], "s"));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+});
+
+describe("EntityTypePanel — declaring what the builder cannot propose", () => {
+  beforeEach(() => {
+    addBinding.mockClear();
+    nameLink.mockClear();
+  });
+
+  it("declares a TIMESERIES binding with its time column — the kind no proposal ever offers", async () => {
+    const user = userEvent.setup();
+    panel();
+    await editIn("Sources");
+    await user.click(await screen.findByRole("button", { name: "New source" }));
+
+    await user.type(screen.getByLabelText("Binding name"), "price_history");
+    await user.type(screen.getByLabelText("Table"), "price_history");
+    await choose(screen.getByLabelText("Binding kind"), "timeseries");
+    await user.type(screen.getByLabelText("Time column"), "observed_at");
+    await user.click(screen.getByRole("button", { name: "Save to the draft" }));
+
+    await waitFor(() => expect(addBinding).toHaveBeenCalled());
+    const [conn, entity, name, spec, schema] = addBinding.mock.calls[0];
+    expect([conn, entity, name, schema]).toEqual(["c1", "products", "price_history", "s"]);
+    // The key defaults to the type's own — the join is on the object's key, not on a column the person retypes.
+    expect(spec).toEqual({ kind: "timeseries", key: "product_id", table: "price_history", time_column: "observed_at" });
+  });
+
+  it("will not bind a timeseries source with no time column, and sends a SELECT as `sql`", async () => {
+    const user = userEvent.setup();
+    panel();
+    await editIn("Sources");
+    await user.click(await screen.findByRole("button", { name: "New source" }));
+    await user.type(screen.getByLabelText("Binding name"), "paid");
+    await choose(screen.getByLabelText("Source kind"), "query");
+    await user.type(screen.getByLabelText("SELECT"), "SELECT product_id, SUM(paid) AS paid FROM p GROUP BY 1");
+    await choose(screen.getByLabelText("Binding kind"), "timeseries");
+
+    // A timeseries with no time column cannot be reduced to a latest row: the form refuses before the round trip.
+    expect(screen.getByRole("button", { name: "Save to the draft" })).toBeDisabled();
+
+    await choose(screen.getByLabelText("Binding kind"), "static");
+    await user.click(screen.getByRole("button", { name: "Save to the draft" }));
+    await waitFor(() => expect(addBinding).toHaveBeenCalled());
+    expect(addBinding.mock.calls[0][3]).toEqual({
+      kind: "static", key: "product_id", sql: "SELECT product_id, SUM(paid) AS paid FROM p GROUP BY 1" });
+  });
+
+  it("names a link by its business verb, sending the RELATIONSHIP id rather than the link's own name", async () => {
+    const user = userEvent.setup();
+    panel();
+    await editIn("Links");
+    await user.click(await screen.findByTestId("link-name-open"));
+    const field = screen.getByLabelText("Business name for product_to_order_item");
+    await user.type(field, "sold_as");
+    await user.click(screen.getByRole("button", { name: "Save to the draft" }));
+
+    await waitFor(() => expect(nameLink).toHaveBeenCalled());
+    expect(nameLink.mock.calls[0]).toEqual(["c1", "rel_product_order_item", "sold_as", "s"]);
+  });
+});
+
+describe("EntityTypePanel — frames over a timeseries binding's readings", () => {
+  beforeEach(() => addBinding.mockClear());
+
+  it("declares the frames beside the binding, in the algebra the API takes", async () => {
+    const user = userEvent.setup();
+    panel();
+    await editIn("Sources");
+    await user.click(await screen.findByRole("button", { name: "New source" }));
+    await user.type(screen.getByLabelText("Binding name"), "price_history");
+    await user.type(screen.getByLabelText("Table"), "price_history");
+    await choose(screen.getByLabelText("Binding kind"), "timeseries");
+    await user.type(screen.getByLabelText("Time column"), "observed_at");
+
+    await user.click(screen.getByRole("button", { name: "+ Add a frame" }));
+    await user.type(screen.getByLabelText("Frame 1 property"), "avg_price_3");
+    await user.type(screen.getByLabelText("Frame 1 column"), "price");
+    await user.clear(screen.getByLabelText("Frame 1 readings"));
+    await user.type(screen.getByLabelText("Frame 1 readings"), "3");
+
+    await user.click(screen.getByRole("button", { name: "+ Add a frame" }));
+    await user.type(screen.getByLabelText("Frame 2 property"), "price_before");
+    await choose(screen.getByLabelText("Frame 2 shape"), "previous");
+    await user.type(screen.getByLabelText("Frame 2 column"), "price");
+
+    await user.click(screen.getByRole("button", { name: "Save to the draft" }));
+    await waitFor(() => expect(addBinding).toHaveBeenCalled());
+    expect(addBinding.mock.calls[0][3]).toEqual({
+      kind: "timeseries", key: "product_id", table: "price_history", time_column: "observed_at",
+      frames: {
+        // "the reading before" carries neither an aggregate nor a window: it is one row, not a span.
+        avg_price_3: { column: "price", agg: "avg", range: "trailing", window: 3 },
+        price_before: { column: "price", offset: 1 },
+      },
+    });
+  });
+
+  it("sends no frames on a static binding — a frame over one row is that row", async () => {
+    const user = userEvent.setup();
+    panel();
+    await editIn("Sources");
+    await user.click(await screen.findByRole("button", { name: "New source" }));
+    await user.type(screen.getByLabelText("Binding name"), "flags");
+    await user.type(screen.getByLabelText("Table"), "order_flags");
+
+    expect(screen.queryByRole("button", { name: "+ Add a frame" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Save to the draft" }));
+    await waitFor(() => expect(addBinding).toHaveBeenCalled());
+    expect(addBinding.mock.calls[0][3]).not.toHaveProperty("frames");
+  });
+});
+
+describe("EntityTypePanel — ON-7: a part, and a link the builder did not find", () => {
+  beforeEach(() => {
+    addBinding.mockClear();
+    declareLink.mockClear();
+  });
+
+  it("declares a DETAIL binding with its rollups, and folds the table's type in as a part", async () => {
+    const user = userEvent.setup();
+    panel();
+    await editIn("Sources");
+    await user.click(await screen.findByRole("button", { name: "New source" }));
+    await user.type(screen.getByLabelText("Binding name"), "lines");
+    await user.type(screen.getByLabelText("Table"), "order_items");
+    await choose(screen.getByLabelText("Binding kind"), "detail");
+
+    // a detail binding with no rollup supplies nothing: the form refuses before the round trip
+    expect(screen.getByRole("button", { name: "Save to the draft" })).toBeDisabled();
+    await user.type(screen.getByLabelText("Rollup 1 property"), "units");
+    await user.type(screen.getByLabelText("Rollup 1 column"), "quantity");
+    await user.click(screen.getByRole("button", { name: "+ Add a rollup" }));
+    await user.type(screen.getByLabelText("Rollup 2 property"), "line_count");
+    await choose(screen.getByLabelText("Rollup 2 agg"), "count");
+    await user.type(screen.getByLabelText("Rollup 2 column"), "item_id");
+    expect(screen.getByLabelText("Absorb its type as a part")).toBeChecked();
+
+    await user.click(screen.getByRole("button", { name: "Save to the draft" }));
+    await waitFor(() => expect(addBinding).toHaveBeenCalled());
+    expect(addBinding.mock.calls[0][3]).toEqual({
+      kind: "detail", key: "product_id", table: "order_items",
+      rollups: { units: { column: "quantity", agg: "sum" }, line_count: { column: "item_id", agg: "count" } },
+      absorb: true,
+    });
+  });
+
+  it("sends no absorb on a keyed SELECT — there is no table whose type could fold in", async () => {
+    const user = userEvent.setup();
+    panel();
+    await editIn("Sources");
+    await user.click(await screen.findByRole("button", { name: "New source" }));
+    await user.type(screen.getByLabelText("Binding name"), "lines");
+    await choose(screen.getByLabelText("Source kind"), "query");
+    await user.type(screen.getByLabelText("SELECT"), "SELECT product_id, quantity FROM order_items");
+    await choose(screen.getByLabelText("Binding kind"), "detail");
+    expect(screen.queryByLabelText("Absorb its type as a part")).toBeNull();
+    await user.type(screen.getByLabelText("Rollup 1 property"), "units");
+    await user.type(screen.getByLabelText("Rollup 1 column"), "quantity");
+    await user.click(screen.getByRole("button", { name: "Save to the draft" }));
+    await waitFor(() => expect(addBinding).toHaveBeenCalled());
+    expect(addBinding.mock.calls[0][3]).toEqual({
+      kind: "detail", key: "product_id", sql: "SELECT product_id, quantity FROM order_items",
+      rollups: { units: { column: "quantity", agg: "sum" } },
+    });
+  });
+
+  it("declares a relationship by ENTITY ids, with the verb and the column on each side", async () => {
+    const user = userEvent.setup();
+    panel();
+    await editIn("Links");
+    await user.click(await screen.findByRole("button", { name: "New link" }));
+    await user.type(screen.getByLabelText("Link verb"), "made_by");
+    await choose(screen.getByLabelText("Link target type"), "brand");
+    // each side's column is chosen from that entity's own where they were read, and typed where they were not
+    // a column the entity's first properties do not list is typed: "another column…" gives the field back
+    for (const label of ["Link column on this type", "Link column on the other type"]) {
+      await choose(screen.getByLabelText(label), "__another_column__");
+      await user.type(screen.getByLabelText(label), "brand_id");
+    }
+    await user.click(screen.getByRole("button", { name: "Save to the draft" }));
+    await waitFor(() => expect(declareLink).toHaveBeenCalled());
+    expect(declareLink.mock.calls[0]).toEqual(["c1", {
+      from_entity: "products", to_entity: "Brand", name: "made_by", from_column: "brand_id", to_column: "brand_id",
+    }, "s"]);
+  });
+});
+
+describe("EntityTypePanel — ON-7b: what an explorer proposed, and a person's confirmation", () => {
+  beforeEach(() => {
+    confirmProposals.mockClear();
+    shown.detail = {
+      ...detail,
+      origin: "model",
+      provenance: "model:m@1",
+      bindings: [...detail.bindings, {
+        name: "lines", primary: false, kind: "detail", reads: "table", table: "order_items", key: "product_id",
+        object_key: "product_id", source: "model", provenance: "model:m@1", verified: true, rows: 10, note: "",
+        supplies: 1, usable: true, rollups: { units: "the sum of quantity over each object's lines rows" } }],
+      links: detail.links.map((l) => ({ ...l, origin: "model" as const, provenance: "model:m@1" })),
+    };
+  });
+  afterEach(() => { shown.detail = undefined; });
+
+  it("marks the type, its binding and its link proposed, and confirms each by the declaration it was written as", async () => {
+    const user = userEvent.setup();
+    const changed = vi.fn();
+    render(
+      <EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
+        onOpen={() => {}} onChanged={changed} />);
+    // The type waits on a person on the Overview, under Needs you, with who proposed it; its binding and its link wait
+    // under their own tabs, and the Overview says how many do — a proposal behind a tab still reads as one.
+    const [type] = await screen.findAllByTestId("proposal-confirm");
+    expect(screen.getAllByTestId("proposal-confirm")).toHaveLength(1);
+    expect(screen.getByText("model:m@1")).toBeInTheDocument();
+    expect(screen.getByTestId("entity-needs-proposals")).toHaveTextContent("2 proposals here wait for a person");
+    await user.click(type);
+    await openTab("Sources");
+    expect(screen.getAllByTestId("proposal-confirm")).toHaveLength(1);
+    await user.click(screen.getByTestId("proposal-confirm"));
+    await openTab("Links");
+    expect(screen.getAllByTestId("proposal-confirm")).toHaveLength(1);
+    await user.click(screen.getByTestId("proposal-confirm"));
+    await waitFor(() => expect(confirmProposals).toHaveBeenCalledTimes(3));
+    expect(confirmProposals.mock.calls.map((call) => call[1])).toEqual([
+      { targets: [{ kind: "entity", entity: "products" }] },
+      { targets: [{ kind: "binding", entity: "products", binding: "lines" }] },
+      { targets: [{ kind: "link", relationship: "rel_product_order_item" }] },
+    ]);
+    expect(changed).toHaveBeenCalledTimes(3);
+  });
+
+  it("says why when a confirmation is refused, and changes nothing", async () => {
+    confirmProposals.mockResolvedValueOnce({
+      confirmed: [], refused: [{ why: "products was declared by a person — there is no proposal to confirm" }] });
+    const user = userEvent.setup();
+    const changed = vi.fn();
+    render(
+      <EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
+        onOpen={() => {}} onChanged={changed} />);
+    const [first] = await screen.findAllByTestId("proposal-confirm");
+    await user.click(first);
+    expect(await screen.findByText(/there is no proposal to confirm/)).toBeInTheDocument();
+    expect(changed).not.toHaveBeenCalled();
+  });
+});
+
+describe("EntityTypePanel — ON-8: a type of the organisation's ontology", () => {
+  const sources = { shop1: "Shop", crm1: "CRM" };
+  const onShop: ObjectTypeDetail = {
+    ...detail, connection_id: "shop1", schema_name: "",
+    bindings: [
+      { ...detail.bindings[0], connection_id: "shop1" },
+      { name: "reviews", primary: false, kind: "static", reads: "table", table: "support.reviews", key: "product_id",
+        object_key: "product_id", source: "human", verified: true, rows: 90, objects: 1000, covered: 90, orphans: 0,
+        note: "", supplies: 1, usable: true, connection_id: "crm1" },
+    ],
+    links: [{ ...detail.links[0], traversal: "cross-source" }],
+  };
+
+  beforeEach(() => {
+    shown.detail = onShop;
+    addBinding.mockClear();
+  });
+  afterEach(() => { shown.detail = undefined; });
+
+  function inDomain() {
+    return render(
+      <EntityTypePanel connectionId="domain:default" objectType="product" types={rows} version={0}
+        onOpen={() => {}} onChanged={() => {}} sources={sources} />);
+  }
+
+  it("says where the type and each binding are read from, marks a cross-source link, and offers no one-connection door", async () => {
+    inDomain();
+    expect(await screen.findByTestId("entity-connection")).toHaveTextContent("read from Shop");
+    await openTab("Sources");
+    expect(screen.getAllByTestId("entity-binding-connection").map((n) => n.textContent)).toEqual(["Shop", "CRM"]);
+    await editIn("Links");
+    expect(screen.getByTestId("entity-link-cross-source")).toHaveTextContent("cross-source");
+    // 2026-09-22 — naming is declarative and opens on a far link; the explorer's confirm and the SQL-bound doors do not,
+    // even while editing.
+    expect(screen.getByTestId("link-name-open")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("entity-read"));
+    await openTab("Properties");
+    expect(screen.queryByLabelText("Choose")).toBeNull();
+    expect(screen.getByRole("button", { name: "Check" })).toBeInTheDocument();
+  });
+
+  it("binds from another connection only as a static binding, naming that connection and its schema in the spec", async () => {
+    const user = userEvent.setup();
+    inDomain();
+    await editIn("Sources");
+    await user.click(await screen.findByRole("button", { name: "New source" }));
+    await choose(screen.getByTestId("declare-binding-connection"), "crm1");
+    expect(screen.getByTestId("declare-binding-crosses")).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Binding name"), "tickets");
+    await user.type(screen.getByLabelText("Table"), "tickets");
+    await user.type(screen.getByLabelText("Binding schema"), "support");
+    await choose(screen.getByLabelText("Binding kind"), "timeseries");
+    await user.type(screen.getByLabelText("Time column"), "opened_at");
+    expect(screen.getByRole("button", { name: "Save to the draft" })).toBeDisabled();    // across two connections: static only
+    await choose(screen.getByLabelText("Binding kind"), "static");
+    await user.click(screen.getByRole("button", { name: "Save to the draft" }));
+    await waitFor(() => expect(addBinding).toHaveBeenCalled());
+    const [conn, entity, name, spec] = addBinding.mock.calls[0];
+    expect([conn, entity, name]).toEqual(["domain:default", "products", "tickets"]);
+    expect(spec).toEqual({ kind: "static", key: "product_id", table: "tickets", connection_id: "crm1", schema_name: "support" });
+  });
+
+  it("sends no connection when the source is on the type's own connection", async () => {
+    const user = userEvent.setup();
+    inDomain();
+    await editIn("Sources");
+    await user.click(await screen.findByRole("button", { name: "New source" }));
+    expect(valueOf(screen.getByTestId("declare-binding-connection"))).toBe("shop1");
+    expect(screen.queryByTestId("declare-binding-crosses")).toBeNull();
+    await user.type(screen.getByLabelText("Binding name"), "stock");
+    await user.type(screen.getByLabelText("Table"), "stock");
+    await user.click(screen.getByRole("button", { name: "Save to the draft" }));
+    await waitFor(() => expect(addBinding).toHaveBeenCalled());
+    expect(addBinding.mock.calls[0][3]).toEqual({ kind: "static", key: "product_id", table: "stock" });
+  });
+});
+
+describe("EntityTypePanel — ON-9: a process and a rule declared from the type they are about", () => {
+  const property = (name: string, role: string, dataType: string) => ({
+    name, display_name: name, role, data_type: dataType, unit: "", is_key: false, null_rate: 0, description: "",
+    source: { binding: "products", table: "products", column: name } });
+  const timed: ObjectTypeDetail = {
+    ...detail,
+    properties: [...detail.properties, property("created_at", "timestamp", "TIMESTAMP"),
+                 property("shipped_at", "timestamp", "DATE"), property("status", "dimension", "VARCHAR")],
+    metrics: [{ id: "revenue", display_name: "Revenue", unit: "EUR", formula_sql: "SUM(total)" }],
+  };
+  beforeEach(() => {
+    shown.detail = timed;
+    declareProcess.mockClear();
+    declareRule.mockClear();
+  });
+  afterEach(() => { shown.detail = undefined; });
+
+  it("declares a process in stages at the type's moments, with a promise in hours on a stage after the first", async () => {
+    const user = userEvent.setup();
+    const onOpenProcess = vi.fn();
+    render(<EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
+      onOpen={() => {}} onChanged={() => {}} onOpenProcess={onOpenProcess} />);
+    await editIn("Properties");
+    await user.click(await screen.findByRole("button", { name: "New process" }));
+    const declare = screen.getByRole("button", { name: "Save to the draft" });
+    await user.type(screen.getByLabelText("Process id"), "order_fulfilment");
+    await user.type(screen.getByLabelText("Stage 1 name"), "placed");
+    await choose(screen.getByLabelText("Stage 1 moment"), "created_at");
+    await user.type(screen.getByLabelText("Stage 2 name"), "shipped");
+    await choose(screen.getByLabelText("Stage 2 moment"), "shipped_at");
+    expect(declare).toBeEnabled();
+    await choose(screen.getByLabelText("Stage 2 promise"), "within_hours");
+    expect(declare).toBeDisabled();                                  // a promise names its hours first
+    await user.type(screen.getByLabelText("Stage 2 promise hours"), "48");
+    await user.click(declare);
+    await waitFor(() => expect(declareProcess).toHaveBeenCalled());
+    expect(declareProcess.mock.calls[0]).toEqual(["c1", { id: "order_fulfilment", entity: "products", stages: [
+      { name: "placed", timestamp: "created_at" },
+      { name: "shipped", timestamp: "shipped_at", promise: { within_hours: 48 } }] }, "s"]);
+    await waitFor(() => expect(onOpenProcess).toHaveBeenCalledWith("order_fulfilment"));
+  });
+
+  it("declares a condition rule that scopes a metric, and a value set by its values", async () => {
+    const user = userEvent.setup();
+    panel();
+    await editIn("Properties");
+    await user.click(await screen.findByRole("button", { name: "New rule" }));
+    await user.type(screen.getByLabelText("Rule id"), "shipped_orders");
+    await choose(screen.getByLabelText("Rule property"), "status");
+    await choose(screen.getByLabelText("Rule operator"), "not_in");
+    await user.type(screen.getByLabelText("Rule value"), "cancelled, refunded");
+    await user.click(screen.getByRole("checkbox", { name: "Revenue" }));
+    await user.click(screen.getByRole("button", { name: "Save to the draft" }));
+    await waitFor(() => expect(declareRule).toHaveBeenCalled());
+    expect(declareRule.mock.calls[0]).toEqual(["c1", { id: "shipped_orders", entity: "products", kind: "condition",
+      conditions: [{ path: "status", op: "not_in", values: ["cancelled", "refunded"] }], scopes: ["revenue"] }, "s"]);
+
+    await user.click(await screen.findByRole("button", { name: "New rule" }));
+    await user.type(screen.getByLabelText("Rule id"), "dach");
+    await choose(screen.getByLabelText("Rule kind"), "value_set");
+    await choose(screen.getByLabelText("Rule property"), "status");
+    await user.type(screen.getByLabelText("Rule values"), "DE, AT , CH");
+    await user.click(screen.getByRole("button", { name: "Save to the draft" }));
+    await waitFor(() => expect(declareRule).toHaveBeenCalledTimes(2));
+    expect(declareRule.mock.calls[1]).toEqual(["c1", { id: "dach", entity: "products", kind: "value_set",
+      property: "status", values: ["DE", "AT", "CH"] }, "s"]);
+  });
+
+  it("offers no process on a type with fewer than two moments to run between", async () => {
+    shown.detail = undefined;
+    panel();
+    await editIn("Properties");
+    expect(await screen.findByRole("button", { name: "New process" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "New rule" })).toBeEnabled();
+  });
+});
+
+describe("EntityTypePanel — reading a type from a keyed SELECT", () => {
+  beforeEach(() => {
+    previewBacking.mockReset();
+    setQueryBacking.mockClear();
+    withdrawBacking.mockClear();
+    shown.detail = undefined;
+  });
+
+  const preview = (over: Partial<BackingPreview>): BackingPreview => ({
+    readable: true, note: "", rows: 3, unique: true, unique_note: "", columns: ["product_id", "name"],
+    kept: ["product_id", "name"], dropped: [], added: [],
+    current: { reads: "table", source: "products", key: "product_id", rows: 3, unique: true }, ...over,
+  });
+
+  it("previews the SELECT and sets it only when its key is unique and it drops nothing", async () => {
+    const user = userEvent.setup();
+    previewBacking.mockResolvedValueOnce(preview({ dropped: ["price"] }))
+      .mockResolvedValueOnce(preview({ added: ["avg_rating"] }));
+    render(<EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
+      onOpen={() => {}} onChanged={() => {}} onOpenProcess={() => {}} />);
+    await editIn("Sources");
+    await user.click(await screen.findByRole("button", { name: "Change what it reads" }));
+    await user.type(screen.getByLabelText("Backing SELECT"), "SELECT product_id, name FROM products");
+    await user.clear(screen.getByLabelText("Backing key"));
+    await user.type(screen.getByLabelText("Backing key"), "product_id");
+    expect(screen.getByRole("button", { name: "Save to the draft" })).toBeDisabled();       // never before a preview
+
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    expect(within(await screen.findByTestId("backing-preview")).getByText("price")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save to the draft" })).toBeDisabled();       // it drops a property
+    expect(screen.getByText("it drops price — select it too")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    expect(within(await screen.findByTestId("backing-preview")).getByText("avg_rating")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save to the draft" }));
+    expect(previewBacking).toHaveBeenLastCalledWith("c1", "products", "SELECT product_id, name FROM products", "product_id", "s");
+    expect(setQueryBacking).toHaveBeenCalledWith("c1", "products", "SELECT product_id, name FROM products", "product_id", "s");
+  });
+});
+
+describe("withdrawing what the builder found (2026-09-22)", () => {
+  it("offers Withdraw on a found link and lists a withdrawal with its door back", async () => {
+    const user = userEvent.setup();
+    deleteLink.mockClear();
+    restoreLink.mockClear();
+    shown.detail = {
+      ...detail,
+      withdrawn: { bindings: ["lines"], links: [{ relationship: "product_to_supplier", from_entity: "Product", to_entity: "Supplier" }] },
+    };
+    render(<EntityTypePanel connectionId="c1" objectType="product" types={rows} version={0} onOpen={() => {}} onChanged={() => {}} />);
+    await editIn("Links");
+    const link = await screen.findByTestId("entity-link");
+    await user.click(within(link).getByRole("button", { name: "Remove" }));
+    await user.click(await screen.findByTestId("remove-yes"));            // the one question, asked of a link too
+    await waitFor(() => expect(deleteLink).toHaveBeenCalled());
+    // editing, what was removed is a card on the same page — no tab to find it under
+    const rows_ = screen.getAllByTestId("entity-withdrawn");
+    expect(rows_).toHaveLength(2);
+    expect(rows_[1]).toHaveTextContent("product_to_supplier");
+    await user.click(within(rows_[1]).getByRole("button", { name: "Put back" }));
+    await waitFor(() => expect(restoreLink).toHaveBeenCalledWith("c1", "product_to_supplier", undefined));
+    shown.detail = undefined;
+  });
+});
+
+
+describe("expression properties (2026-09-22)", () => {
+  it("declares an expression through the door with its role and unit", async () => {
+    const user = userEvent.setup();
+    declareExpression.mockClear();
+    render(<EntityTypePanel connectionId="c1" objectType="product" types={rows} version={0} onOpen={() => {}} onChanged={() => {}} />);
+    await editIn("Properties");
+    await user.click(await screen.findByRole("button", { name: "New calculated property" }));
+    await user.type(screen.getByLabelText("Expression name"), "days_listed");
+    await user.type(screen.getByLabelText("Expression SQL"), "date_diff('day', listed_at, now())");
+    await choose(screen.getByLabelText("Expression role"), "dimension");
+    await user.type(screen.getByLabelText("Expression unit"), "days");
+    await user.click(screen.getByRole("button", { name: "Save to the draft" }));
+    await waitFor(() => expect(declareExpression).toHaveBeenCalledWith("c1", detail.id, "days_listed",
+      { expression: "date_diff('day', listed_at, now())", semantic_type: "dimension", unit: "days" }, undefined));
+  });
+});
+
+
+describe("EntityTypePanel — the words people use for a type (Arc OC-3, 2026-10-09)", () => {
+  afterEach(() => { words.vocabulary = []; keyVocabularyEntry.mockClear(); });
+
+  it("lists each keyed word with where it is read from, and keys a proposed one when a person says so", async () => {
+    words.vocabulary = [
+      { subject_kind: "property", subject_id: "products.retail_price", synonym: "list price", source: "human", note: "",
+        keyed: true, proposal: { kind: "property", subject: "products.retail_price", why: "keyed" },
+        reads: { table: "products", column: "retail_price" } },
+      { subject_kind: "table", subject_id: "products", synonym: "catalogue", source: "mined", note: "",
+        keyed: false, proposal: { kind: "entity", subject: "products", why: "its table, products, backs products" }, reads: null },
+      { subject_kind: "table", subject_id: "orders", synonym: "purchases", source: "human", note: "",
+        keyed: false, proposal: { kind: "entity", subject: "orders", why: "its table, orders, backs orders" }, reads: null },
+    ];
+    panel();
+    await openTab("Properties");                          // keying a proposed word is a yes, not an edit: no Edit needed
+    const listed = await screen.findAllByTestId("type-word");
+    expect(listed.map(w => w.textContent)).toEqual([
+      "“list price”means products · retail_price — read from products.retail_price",
+      "“catalogue”names table products — its table, products, backs productsKey it to products",
+    ]);                                                                                  // another type's word is not here
+    await userEvent.click(screen.getByTestId("type-word-key"));
+    await waitFor(() => expect(keyVocabularyEntry).toHaveBeenCalledWith("c1",
+      expect.objectContaining({ subject_kind: "table", subject_id: "products", synonym: "catalogue" }),
+      { kind: "entity", subject: "products" }, "s"));
+  });
+});
+
+
+// ── Arc OC-6 — the moves a property the edit layer holds may make ────────────────────────────────────────────────────
+
+describe("the moves the edit layer allows", () => {
+  afterEach(() => { shown.detail = undefined; });
+
+  it("lists each declared property's moves, and declares new ones from words", async () => {
+    const user = userEvent.setup();
+    shown.detail = { ...detail, edit_states: { review_status: { states: ["flagged", "reviewed"],
+      moves: [["", "flagged"], ["flagged", "reviewed"]], initial: "" } } };
+    panel();
+    await editIn("Actions");
+    const row = await screen.findByTestId("edit-states-row");
+    expect(row.textContent).toContain("review_status: unset → flagged · flagged → reviewed");
+    await user.click(screen.getByTestId("edit-states-open"));
+    await user.type(screen.getByLabelText("Property the edit layer holds"), "case_status");
+    await user.type(screen.getByLabelText("Its states"), "open, working, resolved");
+    await user.type(screen.getByLabelText("Its moves, one per line"), "unset → open{enter}open → working{enter}working → resolved");
+    await user.click(screen.getByRole("button", { name: "Save to the draft" }));
+    await waitFor(() => expect(declareEditStates).toHaveBeenCalledTimes(1));
+    expect(declareEditStates.mock.calls[0].slice(1, 4)).toEqual([detail.id, "case_status", {
+      states: ["open", "working", "resolved"], initial: "",
+      moves: [["", "open"], ["open", "working"], ["working", "resolved"]] }]);
+  });
+
+  it("asks nothing a warehouse answers of a platform-owned type — no title to measure", async () => {
+    shown.detail = { ...detail, platform: true };
+    panel();
+    await editIn("Actions");
+    await screen.findByTestId("edit-states-open");
+    fireEvent.click(screen.getByTestId("entity-read"));
+    await openTab("Properties");
+    expect(screen.getByTestId("entity-properties")).toBeInTheDocument();
+    expect(screen.queryByTestId("entity-display-property")).toBeNull();
+    shown.detail = { ...detail };
+  });
+});
+
+
+// ── The approved mockup (design-mockups/ontology-tab.html, 2026-10-10): one panel, six tabs, read first ──────────────
+
+describe("EntityTypePanel — the name, four figures and six tabs", () => {
+  afterEach(() => { shown.detail = undefined; });
+
+  it("says the entity's objects, its key, its properties and its links as four figures under its name", async () => {
+    shown.detail = { ...detail, parts: [{ object_type: "order_item", display_name: "Order Line", binding: "lines", kind: "detail" }],
+                     counts: { ...detail.counts, parts: 1 } };
+    panel();
+    expect(await screen.findByTestId("entity-figure-objects")).toHaveTextContent("1,000products");
+    expect(screen.getByTestId("entity-figure-key")).toHaveTextContent("✓ product_idkey, unique");
+    expect(screen.getByTestId("entity-figure-properties")).toHaveTextContent("2properties");
+    expect(screen.getByTestId("entity-figure-links")).toHaveTextContent("1link · 1 part");
+  });
+
+  it("says a key the data did not prove, and a platform-held entity, without a number it does not have", async () => {
+    shown.detail = { ...detail, key: { ...detail.key, verified: false, rows: null } };
+    const { unmount } = panel();
+    expect(await screen.findByTestId("entity-figure-key")).toHaveTextContent("product_idkey, not unique");
+    expect(screen.getByTestId("entity-figure-objects")).toHaveTextContent("—products, not counted");
+    unmount();
+    shown.detail = { ...detail, platform: true };
+    panel();
+    expect(await screen.findByTestId("entity-figure-objects")).toHaveTextContent("in Aughorkept by actions");
+  });
+
+  it("holds every section under its tab — none dropped, each where it belongs", async () => {
+    shown.detail = { ...detail, expressions: [{ name: "days_listed", expression: "date_diff('day', listed_at, now())",
+      role: "dimension", unit: "days", description: "", verified: true, note: "" }] };
+    panel();
+    // each tab says how many it holds, as the mockup's tabs do
+    expect(await screen.findAllByRole("tab")).toHaveLength(6);
+    for (const name of ["Overview", "Properties 2", "Links 1", "Actions 0", "Sources 1", "History"]) {
+      expect(screen.getByRole("tab", { name })).toBeInTheDocument();
+    }
+    const headings = () => screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
+    await openTab("Properties");
+    await screen.findByRole("heading", { name: "Words people use" });             // read on opening the tab
+    expect(headings()).toEqual(["Key", "Named by", "Properties", "Calculated properties", "Processes and rules", "Verified metrics",
+                                "Words people use"]);
+    await openTab("Links");
+    expect(headings()).toEqual(["Links", "Path to"]);
+    await openTab("Actions");
+    expect(headings()).toEqual(["Actions", "Moves the edit layer allows"]);
+    await openTab("Sources");
+    expect(headings()).toEqual(["Sources"]);
+    await openTab("History");
+    expect(headings()).toEqual(["Where it comes from", "Removed"]);
+    expect(screen.getByTestId("entity-origin")).toHaveTextContent("Found by the builder in products.");
+    expect(screen.getByText("Nothing on Product has been withdrawn.")).toBeInTheDocument();
+  });
+
+  it("reads first: no door that writes shows until Edit, and Done folds them away", async () => {
+    panel();
+    await openTab("Sources");
+    await screen.findByTestId("entity-binding");
+    expect(screen.queryByRole("button", { name: "New source" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Change what it reads" })).toBeNull();
+    await openTab("Links");
+    expect(screen.queryByTestId("link-name-open")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Remove" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "New link" })).toBeNull();
+    await openTab("Properties");
+    expect(screen.queryByRole("button", { name: "New process" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Calculated properties" })).toBeNull();      // none declared: only a door, behind Edit
+    fireEvent.click(screen.getByTestId("entity-edit"));
+    expect(screen.getByTestId("entity-edit")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "New process" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New calculated property" })).toBeInTheDocument();
+    // editing, the page is its cards: every section at once, each with its "+ New" at the head, and no tabs
+    expect(screen.queryByRole("tab")).toBeNull();
+    expect(screen.getAllByTestId("entity-card").map((c) => c.getAttribute("aria-label"))).toEqual(
+      ["Links", "Rules", "Processes", "Sources", "Calculated properties", "Actions", "Moves the edit layer allows", "Removed"]);   // and Versions, once its history is read
+    for (const card of ["Links", "Rules", "Processes", "Sources", "Calculated properties", "Moves the edit layer allows"]) {
+      const head = screen.getByRole("region", { name: card }).querySelector(".aug-entity-card-head .act");
+      expect(head?.querySelector("button"), card).not.toBeNull();                   // its "+ New", at the head
+    }
+    expect(screen.getByTestId("link-name-open")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New link" })).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("entity-read"));                            // Read
+    expect(screen.queryByRole("button", { name: "New link" })).toBeNull();
+    expect(screen.getAllByRole("tab")).toHaveLength(6);
+  });
+});
+
+describe("EntityTypePanel — the Overview: what needs a person, the flow, the sets, what uses it", () => {
+  const promise = (over: Partial<NonNullable<ProcessDetail["stages"][number]["promise"]>>) => ({
+    name: "dispatch", kind: "within_days" as const, deadline: "", within_days: 2, within_hours: null, grain: "product",
+    grain_id: "products", via: "", target: null, objects: 1000, reached: 650, breached: 108, kept: 542, open: 200,
+    open_overdue: 190, breach_rate: 0.166154, as_of: "2026-10-13", verified: true, flags: [], note: "",
+    segment: "late_dispatch", metric: "dispatch_breach_rate", overdue_segment: "overdue_dispatch", ...over });
+  const stage = (name: string, reached: number | null, share: number | null, p: ReturnType<typeof promise> | null = null) => ({
+    name, display_name: name, anchor: { timestamp: `${name}_at` }, reached, share, verified: true, note: "",
+    transition: null, promise: p });
+  const fulfilment: ProcessDetail = {
+    id: "order_fulfilment", display_name: "Order Fulfilment", description: "", entity: "product", entity_id: "products",
+    owner: "", origin: "human", provenance: "", objects: 1000, verified: true, note: "", measured_at: "",
+    stages: [
+      stage("placed", 1000, 1),
+      stage("shipped", 650, 0.65, promise({})),
+      stage("delivered", null, null, promise({ name: "delivery", within_days: 4, verified: null, breach_rate: null,
+        open_overdue: null, segment: "late_delivery", overdue_segment: "" })),
+    ],
+    derived: { segments: [], properties: [], metrics: [] },
+    leaves: { property: "status", values: ["Cancelled"], left: 150, missing: [], unknown: 0, note: "150 left the process" },
+  };
+  const flowing: ObjectTypeDetail = {
+    ...detail,
+    display_property: { ...detail.display_property, verified: null },
+    segments: ["active_products"],
+    processes: [{ id: "order_fulfilment", display_name: "Order Fulfilment", roles: ["goes through it"], verified: true,
+                  stages: ["placed", "shipped", "delivered"] }],
+    derived: {
+      segments: [
+        { name: "late_dispatch", kind: "segment", source: "the dispatch promise", description: "broke the dispatch promise", usable: true },
+        { name: "completed", kind: "segment", source: "rule completed", description: "status is Complete", usable: true },
+        { name: "late_delivery", kind: "segment", source: "the delivery promise", description: "", usable: false,
+          why_not: "the delivery promise is not counted yet" },
+      ],
+      properties: [], metrics: [],
+    },
+    metrics: [{ id: "average_delivery_time", display_name: "average_delivery_time", unit: "days", formula_sql: "AVG(x)" }],
+    actions: [{ id: "flag_for_review", display_name: "Flag for review", description: "", kind: "annotate", risk: "low",
+                why: "takes product", params: [], edits: [] }],
+    counts: { ...detail.counts, actions: 1, metrics: 1 },
+  };
+
+  beforeEach(() => {
+    shown.detail = flowing;
+    served.scope = { processes: [fulfilment], rules: [{ id: "completed", segment: "completed", admitted: 400 }] };
+    getProcesses.mockClear();
+    measureOntology.mockClear();
+  });
+  afterEach(() => {
+    shown.detail = undefined;
+    served.scope = { processes: [], rules: [] };
+  });
+
+  it("draws each process the entity goes through as a funnel — stage, bar, count — read from the processes door", async () => {
+    render(<EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
+      onOpen={() => {}} onChanged={() => {}} onOpenProcess={() => {}} />);
+    const flow = await screen.findByTestId("process-flow");
+    expect(getProcesses).toHaveBeenCalledWith("c1", "s");
+    expect(flow).toHaveTextContent("Order Fulfilment150 left · cancelled");
+    expect(within(flow).getAllByTestId("process-flow-count").map((c) => c.textContent)).toEqual(["1,000", "650", "—"]);
+    // a stage the data did not count has no bar — never a bar of zero
+    expect(within(flow).getAllByTestId("process-flow-bar").map((b) => (b as HTMLElement).style.width)).toEqual(["100%", "65%"]);
+  });
+
+  it("puts each promise on one line, and its overdue count is a button that opens the process", async () => {
+    const onOpenProcess = vi.fn();
+    render(<EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
+      onOpen={() => {}} onChanged={() => {}} onOpenProcess={onOpenProcess} />);
+    const [dispatch, delivery] = await screen.findAllByTestId("process-flow-promise");
+    expect(dispatch).toHaveTextContent("Dispatch within 2 daysbroken 16.6%190 overdue");
+    expect(delivery).toHaveTextContent("Delivery within 4 daysnot counted yet");          // never a rate it does not have
+    fireEvent.click(within(dispatch).getByTestId("process-flow-overdue"));
+    expect(onOpenProcess).toHaveBeenCalledWith("order_fulfilment");
+  });
+
+  it("asks how one object is named while nobody has checked it — Check measures, Change opens the door", async () => {
+    render(<EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
+      onOpen={() => {}} onChanged={() => {}} />);
+    const ask = await screen.findByTestId("entity-needs-title");
+    expect(ask).toHaveTextContent("How is one product named?Proposed: product_name · not checked yet");
+    expect(screen.getByRole("tab", { name: /^Overview/ })).toHaveTextContent("Overview1");   // the amber count waits on its tab
+    fireEvent.click(within(ask).getByRole("button", { name: "Check" }));
+    await waitFor(() => expect(measureOntology).toHaveBeenCalledWith("c1", "s"));
+    fireEvent.click(within(ask).getByRole("button", { name: "Change" }));
+    expect(await screen.findByTestId("entity-details-form")).toBeInTheDocument();          // its details, where one is named
+    expect(screen.getByLabelText("Choose")).toBeInTheDocument();                         // the door, open
+  });
+
+  it("lists the sets it is read in with the counts the data gave, a refused one as refused, and what uses it", async () => {
+    const user = userEvent.setup();
+    render(<EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
+      onOpen={() => {}} onChanged={() => {}} />);
+    await screen.findByTestId("process-flow");
+    expect(screen.getAllByTestId("entity-set").map((s) => s.textContent))
+      .toEqual(["Late dispatch108", "Completed400", "Late deliveryrefused", "Active products"]);
+    const used = screen.getByTestId("entity-used-by");
+    expect(used).toHaveTextContent("Metric · Average delivery time");
+    await user.click(within(used).getByRole("button", { name: /Flag for review/ }));
+    expect(await screen.findByTestId("entity-tab-actions")).toBeInTheDocument();
+  });
+
+  it("says what depends on it and how often its tables were read, only when the door answers", async () => {
+    shown.uses = {
+      path: "uses", connection_id: "c1", schema_name: "s", entity: "Product",
+      dependents: [
+        { consumer: "rule", id: "active", name: "Active products", how: "the rule is defined over it" },
+        { consumer: "metric", id: "adt", name: "Average delivery time", how: "a keyed metric on it" },   // said above, in Used by
+        { consumer: "automation", id: "a1", name: "Restock", how: "its trigger watches Product objects" },
+      ],
+      dashboards: [{ id: "late", title: "Late orders", pieces: ["t", "g"] }],
+      reads: { tables: ["products"], source: "the platform's log of statements run",
+               months: [{ month: "2026-09", reads: 0 }, { month: "2026-10", reads: 14 }] },
+    };
+    try {
+      panel();
+      const uses = await screen.findByTestId("entity-uses");
+      expect(uses).toHaveTextContent("1 dashboardLate orders");
+      expect(uses).toHaveTextContent("1 automationRestock");
+      expect(uses).toHaveTextContent("1 ruleActive products");
+      expect(uses).not.toHaveTextContent("Average delivery time");           // once, in Used by, not twice
+      expect(within(uses).getByTitle("reads it in 2 pieces")).toHaveTextContent("Late orders");
+      expect(within(uses).getByTitle("its trigger watches Product objects")).toHaveTextContent("Restock");
+      expect(uses).toHaveTextContent("Reads · 12 monthsproducts");
+      expect(screen.getByTestId("entity-reads")).toHaveTextContent("Sep 20260Oct 202614");
+    } finally {
+      delete shown.uses;
+    }
+    cleanup();
+    panel();                                                                  // the door says off: nothing of it is shown
+    await screen.findByTestId("entity-overview");
+    expect(screen.queryByTestId("entity-uses")).toBeNull();
+  });
+
+  it("reads no processes door for an entity no process or rule touches", async () => {
+    shown.detail = undefined;
+    panel();
+    await screen.findByTestId("entity-overview");
+    expect(getProcesses).not.toHaveBeenCalled();
+    expect(screen.getByTestId("entity-overview"))
+      .toHaveTextContent("Nothing waits on a person here, and no process, set, metric or action reads Product yet.");
+  });
+});
+
+describe("Arc FA, FA-3 — put back and retiring", () => {
+  const versions = [
+    { version: 3, state: "declared", in_force_from: "2026-10-24T10:00:00Z", recorded_at: "2026-10-24T10:00:00Z",
+      by: "person:ana", note: "", declaration_note: "", fields: {}, source: "human",
+      changes: ["changed display_name: 'Item' → 'Product'"] },
+    { version: 2, state: "declared", in_force_from: "2026-10-20T10:00:00Z", recorded_at: "2026-10-20T10:00:00Z",
+      by: "person:ben", note: "", declaration_note: "", fields: {}, source: "human", changes: [] },
+    { version: 1, state: "drafted", in_force_from: "2026-10-19T10:00:00Z", recorded_at: "2026-10-19T10:00:00Z",
+      by: "", note: "", declaration_note: "", fields: {}, source: "explorer", changes: [] },
+  ];
+  afterEach(() => {
+    history.served = { element: "e", versions: [], put_back: { enabled: true, said: "" } };
+    shown.detail = undefined;
+  });
+
+  it("lists the versions and puts an earlier one back into the draft, behind Edit", async () => {
+    putBackVersion.mockClear();
+    history.served = { element: "e", versions, put_back: { enabled: true, said: "" } };
+    const onChanged = vi.fn();
+    render(<EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
+      onOpen={() => {}} onChanged={onChanged} />);
+    await openTab("History");
+    const listed = await screen.findAllByTestId("entity-version");
+    expect(listed).toHaveLength(3);
+    expect(listed[0]).toHaveTextContent("v3declaredSat 24 Oct at 10:00 UTC · person:ana · human");
+    expect(listed[0]).toHaveTextContent("changed display_name: 'Item' → 'Product'");
+    expect(screen.queryByTestId("entity-version-put-back")).toBeNull();      // a door that writes waits for Edit
+    await editIn("History");
+    const buttons = await screen.findAllByTestId("entity-version-put-back");
+    expect(buttons).toHaveLength(2);                                          // never on the newest
+    fireEvent.click(within(screen.getAllByTestId("entity-version")[1]).getByTestId("entity-version-put-back"));
+    await waitFor(() => expect(putBackVersion).toHaveBeenCalledWith("c1", "entity", "products", 2, "s"));
+    expect(await screen.findByText(/waits in the draft, classed MEANING/)).toBeInTheDocument();
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+
+  it("says why a version cannot go back here, instead of a button", async () => {
+    history.served = { element: "e", versions,
+                       put_back: { enabled: false, said: "an organisation's ontology is outside releases" } };
+    panel();
+    await editIn("History");
+    expect(await screen.findByTestId("entity-version-why-not"))
+      .toHaveTextContent("An earlier version cannot be put back here: an organisation's ontology is outside releases.");
+    expect(screen.queryByTestId("entity-version-put-back")).toBeNull();
+  });
+
+  it("says a type is retiring, opens its successor, and takes the mark off behind Edit", async () => {
+    unmarkRetiring.mockClear();
+    const onOpen = vi.fn();
+    shown.detail = { ...detail, retiring: { successor: "Brand", successor_name: "Brand", on: "2026-12-01", past: false,
+                                            note: "merged into brands", said: "retiring on 2026-12-01 — use Brand instead" } };
+    render(<EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
+      onOpen={onOpen} onChanged={() => {}} />);
+    const line = await screen.findByTestId("entity-retiring");
+    expect(screen.getByTestId("entity-retiring-said")).toHaveTextContent("retiring on Tue 1 Dec 2026 — use Brand instead");
+    expect(line).toHaveTextContent("merged into brands");
+    fireEvent.click(within(line).getByRole("button", { name: "Brand" }));
+    expect(onOpen).toHaveBeenCalledWith("brand");
+    expect(within(line).queryByRole("button", { name: "Take the mark off" })).toBeNull();
+    fireEvent.click(screen.getByTestId("entity-edit"));
+    fireEvent.click(within(screen.getByTestId("entity-retiring")).getByRole("button", { name: "Take the mark off" }));
+    await waitFor(() => expect(unmarkRetiring).toHaveBeenCalledWith("c1", "entity", "products", "s"));
+  });
+
+  it("past the day it still reads, and says it is past its retiring date", async () => {
+    shown.detail = { ...detail, retiring: { successor: "Brand", successor_name: "Brand", on: "2026-10-01", past: true,
+                                            said: "past its retiring date, 2026-10-01 — use Brand instead" } };
+    panel();
+    expect(await screen.findByTestId("entity-retiring-said"))
+      .toHaveTextContent("past its retiring date, Thu 1 Oct 2026 — use Brand instead");
+  });
+
+  it("reads the last thirty days beside the twelve months: reads, readers, the last read and a shared table", async () => {
+    shown.uses = {
+      path: "uses", connection_id: "c1", schema_name: "s", entity: "Product", dependents: [], dashboards: [],
+      reads: { tables: ["products"], source: "the platform's log of statements run",
+               months: [{ month: "2026-09", reads: 0 }, { month: "2026-10", reads: 41 }],
+               window: { days: 30, reads: 41, last_read: "2026-10-23T09:00:00Z", readers: 3, unattributed: 12,
+                         readers_said: "Who ran 12 of 41 is not recorded — the session log names a person only for the runs it kept." },
+               shared: [{ table: "products", with: ["Catalogue item"] }],
+               shared_said: "a statement naming products counts for Catalogue item too." },
+    };
+    try {
+      panel();
+      const recent = await screen.findByTestId("entity-reads-recent");
+      expect(recent).toHaveTextContent("Reads · 30 dayslast read Fri 23 Oct41 reads · 3 readers");
+      expect(recent).toHaveTextContent("Who ran 12 of 41 is not recorded");
+      expect(screen.getByTestId("entity-reads-shared"))
+        .toHaveTextContent("Shared table: a statement naming products counts for Catalogue item too.");
+      shown.uses = { ...shown.uses, reads: { ...shown.uses.reads, window: undefined, shared: undefined, shared_said: undefined } };
+      cleanup();
+      panel();                                                                // a door without the window: as before
+      await screen.findByTestId("entity-uses");
+      expect(screen.queryByTestId("entity-reads-recent")).toBeNull();
+      expect(screen.queryByTestId("entity-reads-shared")).toBeNull();
+    } finally {
+      delete shown.uses;
+    }
+  });
+
+  it("marks a type retiring with another type and a day, behind Edit", async () => {
+    markRetiring.mockClear();
+    shown.detail = { ...detail, retiring: null };
+    panel();
+    await screen.findByTestId("entity-retiring");
+    expect(screen.queryByTestId("entity-retiring-open")).toBeNull();
+    fireEvent.click(screen.getByTestId("entity-edit"));
+    fireEvent.click(await screen.findByTestId("entity-retiring-open"));
+    const form = await screen.findByTestId("entity-retiring-form");
+    await choose(within(form).getByLabelText("Use instead"), "Brand");
+    change(within(form).getByLabelText("Retiring on"), { target: { value: "2026-12-01" } });
+    change(within(form).getByLabelText("Note"), { target: { value: "merged into brands" } });
+    fireEvent.click(screen.getByTestId("entity-retiring-save"));
+    await waitFor(() => expect(markRetiring).toHaveBeenCalledWith("c1",
+      { kind: "entity", target_id: "products", successor: "Brand", on: "2026-12-01", note: "merged into brands" }, "s"));
+  });
+});
+
+describe("making and changing, the one way (2026-11-11)", () => {
+  it("changes what an entity is called and the sentence that says what it is — only the words that changed, never its id", async () => {
+    const user = userEvent.setup();
+    panel();
+    await editIn("Properties");
+    await user.click(screen.getByTestId("entity-change-open"));
+    const form = await screen.findByTestId("entity-details-form");
+    expect(within(form).getByRole("button", { name: "Save to the draft" })).toBeDisabled();      // nothing changed yet
+    await user.clear(within(form).getByLabelText("Entity name"));
+    await user.type(within(form).getByLabelText("Entity name"), "Article");
+    await user.type(within(form).getByLabelText("Entity description"), "A thing we sell.");
+    await user.click(within(form).getByRole("button", { name: "Save to the draft" }));
+    await waitFor(() => expect(changeEntityWords).toHaveBeenCalled());
+    expect(changeEntityWords.mock.calls[0]).toEqual(["c1", "products", { display_name: "Article", description: "A thing we sell." }, "s"]);
+  });
+
+  it("lists a rule where it is made, changes it by the form that made it, and removes it only after the question", async () => {
+    const user = userEvent.setup();
+    const rule = { id: "completed_orders", display_name: "Completed orders", description: "", owner: "", entity: "product", entity_id: "products",
+      kind: "condition", property: "", values: [], conditions: [{ path: "product_name", op: "=", value: "x" }], origin: "human", provenance: "",
+      objects: 1000, admitted: 250, observed: {}, missing: [], verified: true, flags: [], note: "", scopes: [], scoped: {}, segment: "completed_orders", derived: [] };
+    served.scope = { processes: [], rules: [rule] };
+    shown.detail = { ...detail, derived: { segments: [{ name: "completed_orders", kind: "segment", source: "rule", description: "", usable: true }], metrics: [], properties: [] } } as ObjectTypeDetail;
+    try {
+      panel();
+      await editIn("Properties");
+      const row = await screen.findByTestId("type-rule");
+      expect(row).toHaveTextContent("250 of 1,000");
+      await user.click(within(row).getByTestId("rule-change-open"));
+      const form = await screen.findByTestId("rule-declare");
+      expect(within(form).getByLabelText("Rule id")).toBeDisabled();                               // its id is the set's name
+      expect(within(form).getByLabelText("Rule value")).toHaveValue("x");                          // the form that made it, filled in
+      await user.clear(within(form).getByLabelText("Rule value"));
+      await user.type(within(form).getByLabelText("Rule value"), "y");
+      await user.click(within(form).getByRole("button", { name: "Save to the draft" }));
+      await waitFor(() => expect(changeRule).toHaveBeenCalled());
+      expect(changeRule.mock.calls[0][1]).toMatchObject({ id: "completed_orders", entity: "products", conditions: [{ path: "product_name", op: "=", value: "y" }] });
+      await user.click(within(await screen.findByTestId("type-rule")).getByTestId("rule-remove"));
+      expect(deleteRule).not.toHaveBeenCalled();
+      await user.click(await screen.findByTestId("remove-yes"));
+      await waitFor(() => expect(deleteRule).toHaveBeenCalledWith("c1", "completed_orders", "s"));
+    } finally {
+      served.scope = { processes: [], rules: [] };
+      shown.detail = undefined;
+    }
+  });
+
+  it("gives a proposal its no: Refuse, beside Confirm, takes the proposed link out after the question", async () => {
+    const user = userEvent.setup();
+    shown.detail = { ...detail, links: detail.links.map((l, i) => (i ? l : { ...l, origin: "model" as const, provenance: "model:x@1" })) };
+    deleteLink.mockClear();
+    try {
+      panel();
+      await openTab("Links");
+      await user.click((await screen.findAllByTestId("proposal-refuse"))[0]);
+      expect(deleteLink).not.toHaveBeenCalled();
+      await user.click(await screen.findByTestId("remove-yes"));
+      await waitFor(() => expect(deleteLink).toHaveBeenCalledWith("c1", detail.links[0].relationship, "s"));
+    } finally {
+      shown.detail = undefined;
+    }
+  });
+});

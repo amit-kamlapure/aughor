@@ -1,0 +1,168 @@
+# Extends core-ecommerce with the rest of the e-commerce industry vocabulary (AUGHOR_ATLAS_INDUSTRY_VOCABULARY_v1,
+# 2026-11-11: 59 reference types). Nineteen of them are the core's objects, some under another name (Order Line, Cart
+# Line, Inventory Item, Product Variant, Return Request, Coupon, Customer Feedback); the other forty are here. The core
+# stays a map of ten to twenty objects; this is the wider one, for a business that records more.
+#
+# Two readings were made, and both are this package's, not the vocabulary's:
+#   * its ten classes are read onto the eight roles this map already has;
+#   * a record of activity is a PART of the thing it happened to (a payment's attempts, a shipment's tracking events, a
+#     customer's consents), never a thing beside it — the vocabulary lists each as a type of its own.
+# The vocabulary names no table spellings; every alias below is a guess the data confirms or leaves unmatched. Like the
+# core, nothing here creates an object: one the data has no table for is never proposed and never mentioned.
+objects:
+  # The core's objects restated — a child replaces an entry by name — to give each its parts and the vocabulary's names.
+  - name: Customer
+    roles: [party]
+    aliases: [customers, customer, users, clients, accounts, buyers, shoppers]
+    parts: [CustomerConsent]
+  - name: Order
+    roles: [transaction]
+    aliases: [orders, sales_orders, sales_order, purchases]
+    parts: [OrderItem, TaxLine]
+    description: an order is read with its lines — the products, quantities and prices on it
+  - name: SKU
+    roles: [catalog]
+    aliases: [skus, sku, product_skus, item_skus, stock_keeping_units, product_variants, product_variant, variants]
+    description: one sellable variant of a product
+  - name: Payment
+    roles: [transaction]
+    aliases: [payments, payment, order_payments, transactions]
+    parts: [PaymentAttempt]
+  - name: Shipment
+    roles: [event]
+    aliases: [shipments, shipment, deliveries, fulfillments, fulfilments]
+    parts: [Parcel, ShipmentEvent, DeliveryAttempt]
+  - name: Return
+    roles: [event]
+    aliases: [returns, return, order_returns, return_requests]
+    parts: [ReturnItem]
+  - name: Review
+    roles: [event]
+    aliases: [reviews, review, order_reviews, product_reviews, ratings, customer_feedback, feedback]
+  # What the vocabulary adds.
+  - name: Carrier
+    roles: [party]
+    aliases: [carriers, carrier, shipping_carriers, couriers]
+  - name: Visitor
+    roles: [party]
+    aliases: [visitors, visitor, anonymous_users]
+    description: someone browsing who has not been identified as a customer
+  - name: CustomerSegment
+    roles: [catalog]
+    aliases: [customer_segments, segments, cohorts]
+  - name: Collection
+    roles: [catalog]
+    aliases: [collections, collection, product_collections]
+  - name: Campaign
+    roles: [catalog]
+    aliases: [campaigns, campaign, marketing_campaigns, ad_campaigns]
+  - name: ContentAsset
+    roles: [asset]
+    aliases: [content_assets, product_media, product_images, media_assets]
+  - name: MerchandisingRule
+    roles: [catalog]
+    aliases: [merchandising_rules, merchandising_rule]
+  - name: ReorderRule
+    roles: [catalog]
+    aliases: [reorder_rules, reorder_points, replenishment_rules]
+  - name: LoyaltyAccount
+    roles: [asset]
+    aliases: [loyalty_accounts, loyalty_account, loyalty_members, rewards_accounts]
+  - name: Wishlist
+    roles: [event]
+    aliases: [wishlists, wishlist, favourites, favorites, saved_items]
+  - name: Session
+    roles: [event]
+    aliases: [sessions, session, web_sessions, visits]
+  - name: SearchQuery
+    roles: [event]
+    aliases: [search_queries, searches, site_searches]
+  - name: AdImpression
+    roles: [event]
+    aliases: [ad_impressions, impressions]
+  - name: Recommendation
+    roles: [event]
+    aliases: [recommendations, recommendation_impressions]
+  - name: AttributionTouch
+    roles: [event]
+    aliases: [attribution_touches, marketing_attribution, attribution, touchpoints]
+  - name: Checkout
+    roles: [transaction]
+    aliases: [checkouts, checkout, checkout_sessions]
+    parts: [ShippingQuote]
+  - name: ShippingQuote
+    roles: [event]
+    aliases: [shipping_quotes, shipping_rates, shipping_options]
+  - name: AbandonedCheckout
+    roles: [event]
+    aliases: [abandoned_checkouts, abandoned_carts]
+  - name: Invoice
+    roles: [transaction]
+    aliases: [invoices, invoice, order_invoices]
+  - name: TaxLine
+    roles: [event]
+    aliases: [tax_lines, order_taxes, tax_calculations]
+  - name: PaymentAttempt
+    roles: [event]
+    aliases: [payment_attempts, payment_authorizations, payment_authorisations, payment_events]
+  - name: FraudReview
+    roles: [event]
+    aliases: [fraud_reviews, fraud_checks, risk_reviews]
+  - name: ChargebackCase
+    roles: [transaction]
+    aliases: [chargebacks, chargeback, payment_disputes, disputes]
+  - name: PurchaseOrder
+    roles: [transaction]
+    aliases: [purchase_orders, purchase_order, supplier_orders]
+    parts: [GoodsReceipt]
+  - name: GoodsReceipt
+    roles: [event]
+    aliases: [goods_receipts, goods_receipt, inbound_receipts]
+  - name: StockMovement
+    roles: [event]
+    aliases: [stock_movements, inventory_movements, inventory_transactions, stock_transfers]
+  - name: InventoryPosition
+    roles: [stock]
+    aliases: [inventory_positions, inventory_snapshots, stock_levels, inventory_levels, stock_on_hand]
+    description: stock counted at a moment, per product and place
+  - name: Fulfilment
+    roles: [event]
+    aliases: [fulfilment_orders, fulfillment_orders, fulfilment_requests, fulfillment_requests]
+    parts: [PickingTask, PackingTask]
+  - name: PickingTask
+    roles: [event]
+    aliases: [picking_tasks, pick_tasks, picks]
+  - name: PackingTask
+    roles: [event]
+    aliases: [packing_tasks, pack_tasks]
+  - name: Parcel
+    roles: [asset]
+    aliases: [parcels, parcel, packages]
+  - name: ShipmentEvent
+    roles: [event]
+    aliases: [shipment_events, tracking_events, tracking_scans, shipment_tracking]
+  - name: DeliveryAttempt
+    roles: [event]
+    aliases: [delivery_attempts, delivery_attempt]
+  - name: ReturnItem
+    roles: [event]
+    aliases: [return_items, return_lines, returned_items]
+  - name: Exchange
+    roles: [transaction]
+    aliases: [exchanges, exchange, order_exchanges]
+  - name: SupportTicket
+    roles: [event]
+    aliases: [support_tickets, tickets, customer_service, service_tickets, support_cases]
+    parts: [Resolution]
+  - name: Resolution
+    roles: [event]
+    aliases: [resolutions, ticket_resolutions]
+  - name: MessageDelivery
+    roles: [event]
+    aliases: [message_deliveries, email_sends, email_engagement, email_events, crm_sends]
+  - name: CustomerConsent
+    roles: [event]
+    aliases: [customer_consents, consents, consent, marketing_consent, opt_ins]
+  - name: OfferRedemption
+    roles: [event]
+    aliases: [offer_redemptions, promotion_redemptions, coupon_redemptions, redemptions]

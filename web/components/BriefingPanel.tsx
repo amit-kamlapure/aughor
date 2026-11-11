@@ -1,0 +1,3727 @@
+"use client";
+
+import { ErrorState } from "@/components/ui/states";
+import { GuardChip } from "@/components/ui/trust";
+
+/**
+ * BriefingPanel — M24a + M24b Synthesis Layer
+ *
+ * Distils cross-domain intelligence into a coherent Monday morning brief.
+ *
+ * M24a: deterministic front-end synthesis (headline + signals + patterns)
+ * M24b: LLM-authored narrative with inline citation markers [1][2][3]
+ *
+ * Data sources:
+ *   • getDomainInsights()         — all domain findings, sorted by novelty
+ *   • getPatterns()               — cross-domain structural patterns
+ *   • getOrgIntelligence()        — promoted org-level signals
+ *   • generateBriefingNarrative() — LLM prose with citation links (M24b)
+ */
+
+import { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo, type ReactNode } from "react";
+import { ownFigures } from "@/lib/dashboards/figures";
+import { compactNumber, countNoun, formatCount, formatDateTime, formatMetricValue, formatTimestamp, formatVariance, normalizeNumberPrecision, pct } from "@/lib/format";
+import { noveltyLabel, noveltyOutOf, noveltyShare } from "@/lib/novelty";
+import {
+  runDirectQuery,
+  getDomainInsights,
+  getCanvasDomainInsights,
+  getPatterns,
+  getOrgIntelligence,
+  generateBriefingNarrative,
+  generateCanvasBriefingNarrative,
+  getExplorerStatus,
+  startExplorer,
+  stopExplorer,
+  restartExplorer,
+  triggerDomainIntelligence,
+  getCanvasExplorationStatus,
+  resumeCanvasExploration,
+  stopCanvasExploration,
+  restartCanvasExploration,
+  triggerCanvasDomainIntelligence,
+  promoteCanvasInsight,
+  promoteConnectionInsight,
+  dismissCanvasInsight,
+  dismissConnectionInsight,
+  createMonitor,
+  getActionTriggers,
+  sendFindingToTrigger,
+  pinInsightToDashboard,
+  type DomainInsights,
+  type ExplorationInsight,
+  type Pattern,
+  type OrgInsight,
+  type BriefingCitation,
+  type BriefingNarrativeResponse,
+  type ExplorerStatus,
+  type ActionTrigger,
+  getInsightReceipt,
+  revalidateInsight,
+  type InsightReceipt,
+  groundBriefingNumber,
+  insightKey,
+  type FindingDossier,
+  type RevalidateResult,
+  getFindingsReask,
+  type FindingsReask,
+  type FindingReask,
+} from "@/lib/api";
+import { subscribeKernelEvents } from "@/lib/events";
+import { useOpenInQuery } from "@/lib/openInQuery";
+import { Pending } from "@/components/ui/motion";
+import { IndustryKpiStrip } from "@/components/brief/IndustryKpiStrip";
+import { BriefSchedule } from "@/components/brief/BriefSchedule";
+import { periodUnavailable } from "@/components/brief/BriefPeriod";
+import { RangeControl, RangeFigures, rangeStats, type RangeChoice } from "@/components/brief/BriefRange";
+import {
+  AskBar, DeskColumns, InBrief, PaperDateline, PaperEdgeNotice, PaperFront, PaperLead, PaperMasthead, PaperNumbers, PaperSources,
+  numberDesk, openDeskAction, paperDate, rangeNumbers, type PaperNumber,
+} from "@/components/brief/BriefPaper";
+import { getBriefingDesk, type BriefingDesk } from "@/lib/api";
+import { buildRangeBriefing, isRangeBlock, readRangeBriefing, type BriefingOff, type BriefingRange, type BriefingRangeBlock } from "@/lib/api";
+import { StatTile } from "@/components/brief/StatTile";
+import { DecideDoor } from "@/components/decisions/DecideDoor";
+import { EditionCovers, scrollToCovers } from "@/components/brief/EditionCovers";
+import { extractKeyFigure } from "@/components/brief/keyFigure";
+import { claimBriefingEntrance } from "@/components/brief/firstOpen";
+import { PinnedCards } from "@/components/brief/PinnedCards";
+import { ResultChartCard } from "@/components/charts/ResultChartCard";
+import type { VizConfig } from "@/components/charts/vizConfig";
+import { useVizConfigs } from "@/lib/useVizConfigs";
+import { toast } from "@/components/ui/toast";
+import { useRegisterCommands, type Command } from "@/lib/commandRegistry";
+import { InlineInvestigationThread } from "@/components/brief/InlineInvestigationThread";
+import { GroundedNumber, withGroundedNumbers } from "@/components/brief/GroundedNumber";
+import { BriefAskPanel } from "@/components/brief/BriefAskPanel";
+import { BriefingSections, HiddenSection } from "@/components/brief/BriefingSections";
+import { BriefingStrip } from "@/components/brief/BriefingStrip";
+import { BriefingOffNotice } from "@/components/brief/BriefingOff";
+import { NewCardComposer } from "@/components/brief/NewCardComposer";
+import { getMyPreferences, listDashboards, putMyPreference } from "@/lib/api";
+import {
+  DEFAULT_SECTIONS, isPart, normalizeSections, toggled, type BriefingSectionsPref, type DashboardChoice, type SectionId,
+} from "@/lib/briefingSections";
+import {
+  PREF_KEY as FIGURES_PREF_KEY, arrange, choiceFor, normalizeFigures, scopeKey, withChoice,
+  type FigureChoice, type FiguresPref,
+} from "@/lib/briefingFigures";
+import { ChooseFigures, EveryFigure, FrontFooter } from "@/components/brief/BriefFigures";
+import { Button } from "@/components/ui/button";
+import { Segmented } from "@/components/ui/segmented";
+import { Icon } from "@/components/ui/icon";
+
+// ── Types ──────────────────────────────────────────────────────────────────────
+
+interface SynthesisSignal {
+  insight: ExplorationInsight;
+  domain: string;
+}
+
+interface DomainStat {
+  name:       string;
+  count:      number;
+  avgNovelty: number;
+  maxNovelty: number;
+}
+
+interface BriefingData {
+  headline:      SynthesisSignal | null;
+  signals:       SynthesisSignal[];
+  /** The full ranked, non-degenerate finding list (before the breadth-first dedup that
+   *  caps `signals` at one-per-domain) — the scope chips filter by domain and so need the
+   *  complete set, not the deduped six. */
+  allSignals:    SynthesisSignal[];
+  patterns:      Pattern[];
+  orgInsights:   OrgInsight[];
+  domains:       DomainStat[];
+  domainCount:   number;
+  totalInsights: number;
+  synthesizedAt: string;
+  /** insight_id → {insight, domain} so a narrative citation can resolve to the full
+   *  finding and offer the same actions a finding card has. */
+  insightById:   Map<string, SynthesisSignal>;
+}
+
+// ── Inline citation renderer ───────────────────────────────────────────────────
+// Parses narrative text for [N] markers and renders them as interactive chips.
+
+function CitationChip({
+  ref: refNum,
+  citation,
+  onCitationClick,
+}: {
+  ref: string;
+  citation: BriefingCitation | undefined;
+  onCitationClick: (citation: BriefingCitation, e: { clientX: number; clientY: number }) => void;
+}) {
+  const [tooltip, setTooltip] = useState(false);
+
+  return (
+    <span style={{ position: "relative", display: "inline" }}>
+      <span
+        onMouseEnter={() => setTooltip(true)}
+        onMouseLeave={() => setTooltip(false)}
+        onClick={e => { if (citation) { setTooltip(false); onCitationClick(citation, e); } }}
+        className="aug-fs-xs"
+        style={{
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          width: 18, height: 18, borderRadius: "50%",
+          fontWeight: 700, fontFamily: "var(--font-mono)",
+          background: "var(--blue3)", color: "var(--bg-0)",
+          cursor: citation ? "pointer" : "default",
+          verticalAlign: "middle", marginLeft: 2, flexShrink: 0,
+          transition: "background .1s",
+          userSelect: "none" as const,
+        }}
+        onMouseDown={e => { (e.currentTarget as HTMLElement).style.background = "var(--blue4)"; }}
+        onMouseUp={e => { (e.currentTarget as HTMLElement).style.background = "var(--blue3)"; }}
+      >
+        {refNum}
+      </span>
+      {tooltip && citation && (
+        <span style={{
+          position: "absolute", bottom: "calc(100% + 6px)", left: "50%",
+          transform: "translateX(-50%)",
+          width: 240, padding: "8px 10px",
+          background: "var(--bg-3)", border: "1px solid var(--b2)",
+          borderRadius: "var(--r2)", boxShadow: "var(--shadow-lg)",
+          zIndex: 50, pointerEvents: "none" as const,
+        }}>
+          <div className="aug-label" style={{ marginBottom: 4 }}>
+            {citation.domain}{citation.angle ? ` · ${citation.angle}` : ""}
+          </div>
+          <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
+            {citation.finding.length > 120 ? citation.finding.slice(0, 120) + "…" : citation.finding}
+          </div>
+        </span>
+      )}
+    </span>
+  );
+}
+
+function NarrativeText({
+  text,
+  citations,
+  onCitationClick,
+  connectionId,
+  schema,
+}: {
+  text: string;
+  citations: BriefingCitation[];
+  onCitationClick: (citation: BriefingCitation, e: { clientX: number; clientY: number }) => void;
+  /** Connection + schema scope so each magnitude number can be grounded ("show the receipt"). */
+  connectionId: string;
+  schema?: string;
+}) {
+  const citationMap = Object.fromEntries(citations.map(c => [c.ref, c]));
+  // Every cited finding — a synthesized number may have come from any of them, so we
+  // ground against all (primary = nearest) rather than only the nearest citation.
+  const allInsightIds = Array.from(new Set(citations.map(c => c.insight_id).filter(Boolean)));
+  // Render-boundary backstop for float noise. Upstream (aughor/util/format.py) now rounds on
+  // the way into the prompt AND at emit, so this is a no-op on fresh briefs — it exists to
+  // correct prose synthesized before that landed, including anything still in the 2h cache.
+  // Rounding only shortens a decimal run, so the GroundedNumber receipt still matches its cell.
+  const parts = normalizeNumberPrecision(text).split(/(\[\d+\])/g);
+  // The finding a number is grounded against = the NEAREST citation marker (claims usually
+  // precede their [N], so prefer the following marker, falling back to the preceding one).
+  const markerRefAt = (i: number): string | null => {
+    for (let d = 0; d < parts.length; d++) {
+      const after = parts[i + d]?.match(/^\[(\d+)\]$/);
+      if (after) return after[1];
+      const before = parts[i - d]?.match(/^\[(\d+)\]$/);
+      if (before) return before[1];
+    }
+    return null;
+  };
+
+  return (
+    <span>
+      {parts.map((part, i) => {
+        const match = part.match(/^\[(\d+)\]$/);
+        if (match) {
+          return (
+            <CitationChip
+              key={i}
+              ref={match[1]}
+              citation={citationMap[match[1]]}
+              onCitationClick={onCitationClick}
+            />
+          );
+        }
+        const ref = markerRefAt(i);
+        const insightId = ref ? citationMap[ref]?.insight_id : undefined;
+        if (!insightId) return <span key={i}>{part}</span>;
+        return (
+          <span key={i}>
+            {withGroundedNumbers(part, (tok, key) => (
+              <GroundedNumber
+                key={key}
+                token={tok}
+                resolve={async () => {
+                  const r = await groundBriefingNumber(connectionId, insightId, { text: tok, schema, insightIds: allInsightIds });
+                  if (r.error) return { sql: r.sql, grounded: null, matchedCell: null, error: r.error };
+                  const rec = r.numerals[0];
+                  return {
+                    sql: r.sql,
+                    grounded: rec ? (rec.enforce ? rec.grounded : null) : null,
+                    matchedCell: rec?.matched_cell ?? null,
+                  };
+                }}
+              />
+            ), `p${i}`)}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+// ── Narrative card ─────────────────────────────────────────────────────────────
+
+/** Shared context a narrative citation needs to open the same action menu a finding
+ *  card has (resolve the cited insight, then Monitor/Promote/Share/Evidence/Dismiss). */
+interface CitationActionContext {
+  insightById:    Map<string, SynthesisSignal>;
+  connectionId:   string;
+  canvasId?:      string;
+  /** Shared schema scope — threaded into a citation's inline investigation. */
+  schema?:        string;
+  triggers:       ActionTrigger[];
+  onEvidence:     (insight: ExplorationInsight, domain: string) => void;
+  onTriggersHint: () => void;
+  onDismissed:    () => void;
+  onInvestigate:  (q: string, insightId?: string) => void;
+}
+
+export function NarrativeCard({
+  narrative,
+  ctx,
+  hideHeadline = false,
+  collapsible = false,
+  paper = false,
+  body = true,
+}: {
+  narrative: BriefingNarrativeResponse;
+  ctx: CitationActionContext;
+  /** When the VerdictHero already leads with the conclusion, suppress this card's
+   *  header so the headline_theme / "AI Synthesis" tag aren't shown twice. */
+  hideHeadline?: boolean;
+  /** Direction B: render only the lede (clamped + bottom fade) with a "Read full
+   *  synthesis" toggle, so the synthesis reads as the argument's close, not a second wall. */
+  collapsible?: boolean;
+  /** The morning paper's lead (2026-10-12): no card; the first paragraph is the standfirst, the
+   *  rest the story, each paragraph its own block with its citations live. */
+  paper?: boolean;
+  /** In `paper`, whether the story after the standfirst is printed (the Sections switch "synthesis"). */
+  body?: boolean;
+}) {
+  const [active, setActive] = useState<{ citation: BriefingCitation; x: number; y: number } | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const clamped = collapsible && !expanded;
+  const onCitationClick = (citation: BriefingCitation, e: { clientX: number; clientY: number }) =>
+    setActive({ citation, x: e.clientX, y: e.clientY });
+  // Capability A — an inline investigation pulled from a citation, streamed below the prose.
+  const [thread, setThread] = useState<{ question: string; seedSql: string | null; seedContext: string; key: string } | null>(null);
+
+  const paras = paper ? narrative.narrative.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean) : [];
+  return (
+    // Flat panel in the shared card language (was a blue-gradient card). The section's .aug-label
+    // header outside already frames it; the prose carries the analysis.
+    <div style={paper ? undefined : { background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "18px 22px" }}>
+      {paper && (
+        <div data-testid="paper-lead-body">
+          {/* Each paragraph is a <div>, never a <p>: a citation's hover card and a figure's receipt are blocks,
+              and a <p> may hold no block (2026-10-12: React's "<div> cannot be a descendant of <p>" on hover). */}
+          {paras.map((p, i) => (i === 0 || body) && (
+            <div key={i} style={i === 0
+              ? { fontSize: 18, lineHeight: 1.5, color: "var(--t1)", margin: "0 0 12px", maxWidth: "70ch" }
+              : { fontSize: 15, lineHeight: 1.6, color: "var(--t2)", margin: "0 0 10px", maxWidth: "70ch" }}>
+              <NarrativeText text={p} citations={narrative.citations} onCitationClick={onCitationClick}
+                connectionId={ctx.connectionId} schema={ctx.schema} />
+            </div>
+          ))}
+        </div>
+      )}
+      {/* Header */}
+      {!hideHeadline && !paper && (
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <span className="aug-label">AI Synthesis</span>
+        {narrative.headline_theme && (
+          <span className="aug-fs-sm" style={{ fontWeight: 600, color: "var(--t1)" }}>
+            {narrative.headline_theme}
+          </span>
+        )}
+        {narrative.generated_at && (
+          <span className="aug-fs-xs" style={{ color: "var(--t3)", marginLeft: "auto" }}>
+            {timeAgo(narrative.generated_at)}
+          </span>
+        )}
+      </div>
+      )}
+
+      {/* Narrative prose with inline citations. When collapsible, only the lede shows —
+          clamped with a bottom fade to the card surface — until "Read full synthesis". */}
+      {!paper && (
+      <div style={{ position: "relative" }}>
+        {/* No measure cap: a 72ch column left most of a wide panel empty and wrapped the
+            synthesis into a narrow ribbon. The prose fills the card it was given. */}
+        <div className="aug-fs-ui" style={{
+          color: "var(--t1)", lineHeight: 1.7, fontWeight: 400,
+          // The narrative is multi-paragraph prose (blank-line separated). NarrativeText renders it
+          // into a <span> so citation chips can sit inline, and HTML would collapse those breaks
+          // into one run-on block — pre-wrap keeps the paragraphing the narrator wrote.
+          whiteSpace: "pre-wrap",
+          ...(clamped ? { maxHeight: 150, overflow: "hidden" as const } : {}),
+        }}>
+          <NarrativeText
+            text={narrative.narrative}
+            citations={narrative.citations}
+            onCitationClick={onCitationClick}
+            connectionId={ctx.connectionId}
+            schema={ctx.schema}
+          />
+          {/* CB-6 / CB-7 once drew, under the prose, one line per citation — the goal it bears on and
+              the playbook's play beside it. Taken off 2026-10-09 (the user: "those 8 points should not
+              be a part of the Full synthesis at all"): the synthesis is the narrative and its
+              citations, and a next step belongs with the finding, in the ledger or its analysis. */}
+        </div>
+        {clamped && (
+          <div aria-hidden style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 54, background: "linear-gradient(180deg, rgba(0,0,0,0), var(--bg-2))", pointerEvents: "none" }} />
+        )}
+      </div>
+      )}
+      {collapsible && !paper && (
+        <div style={{ marginTop: 8 }}>
+          <Button variant="ghost" size="xs" onClick={() => setExpanded(e => !e)}
+            style={{ color: "var(--blue4)", fontSize: 13, fontWeight: 500, padding: "2px 8px" }}>
+            {expanded ? "Show less ▴" : "Read full synthesis ▾"}
+          </Button>
+        </div>
+      )}
+
+      {/* Citation legend removed — the inline [n] chips in the prose are the pointers;
+          the repeated list below was redundant. */}
+
+      {/* The trust-gate audit trail used to render here, and it read as an error log at the
+          foot of the brief: red "Implausible ×7 — SUM() over the text column 'signup_fy'".
+          Those are DECISIONS ALREADY MADE — signals the gate correctly withheld — so a reader
+          gets nothing actionable, only the impression the brief is broken. Worse, the entries
+          were stale: nothing had produced them since the emission gate landed, and every brief
+          re-derived the same rejects from findings sitting in the store (now retired at source
+          by explorer/revalidate.py). `held_back` still ships on the response for the Trust
+          Receipt, which is where a provenance trail belongs. */}
+
+      {active && (
+        <CitationActionsPopover
+          citation={active.citation}
+          x={active.x}
+          y={active.y}
+          ctx={ctx}
+          onPull={(t) => { setThread(t); setActive(null); }}
+          onClose={() => setActive(null)}
+        />
+      )}
+
+      {/* Inline investigation pulled from a citation — seeded with the cited finding's SQL. */}
+      {thread && (
+        <InlineInvestigationThread
+          key={thread.key}
+          question={thread.question}
+          opts={{
+            connectionId: ctx.connectionId,
+            schema: ctx.schema ?? null,
+            canvasId: ctx.canvasId ?? null,
+            seedSql: thread.seedSql,
+            seedContext: thread.seedContext,
+            insightId: thread.key,  // the citation's insight id — seeds the rich dossier when present
+          }}
+          onClose={() => setThread(null)}
+          onOpenInAsk={ctx.onInvestigate}
+        />
+      )}
+    </div>
+  );
+}
+
+/** A measured figure as words, or "—" when it was never measured — never an invented 0. */
+function known(v: number | null | undefined, words: (v: number) => string): string {
+  return typeof v === "number" && Number.isFinite(v) ? words(v) : "—";
+}
+
+/** The finding a citation opens onto: the Briefing's own when its list holds it, else one made of what the citation
+ *  carries — its query, its measured confidence and novelty. A figure it does not carry is unknown (NaN, shown "—"),
+ *  never an invented 0: "Confidence 0%" and "no query recorded" stood beside a measured move (2026-10-11). */
+export function findingOfCitation(citation: BriefingCitation, held?: ExplorationInsight): ExplorationInsight {
+  return held ?? {
+    id: citation.insight_id, domain: citation.domain, angle: citation.angle,
+    entities_involved: [], dimensions: [], measures: [],
+    finding: citation.finding, sql: citation.sql ?? "",
+    confidence: citation.confidence ?? Number.NaN, novelty: citation.novelty ?? Number.NaN,
+    generated_at: citation.generated_at ?? "",
+  };
+}
+
+/** Anchored action menu for a narrative citation — resolves the cited insight (or a
+ *  minimal stand-in if it was filtered out) and offers the same actions as a finding
+ *  card: Monitor / Promote / Share / Evidence / Dismiss, plus Investigate. */
+function CitationActionsPopover({
+  citation,
+  x,
+  y,
+  ctx,
+  onPull,
+  onClose,
+}: {
+  citation: BriefingCitation;
+  x: number;
+  y: number;
+  ctx: CitationActionContext;
+  onPull: (t: { question: string; seedSql: string | null; seedContext: string; key: string }) => void;
+  onClose: () => void;
+}) {
+  const resolved = heldSignal(ctx, citation);
+  const cited = findingOfCitation(citation, resolved?.insight);
+  const domain = resolved?.domain ?? citation.domain;
+  const left = Math.max(12, Math.min(x, (typeof window !== "undefined" ? window.innerWidth : 1280) - 332));
+  const top  = Math.min(y + 10, (typeof window !== "undefined" ? window.innerHeight : 800) - 180);
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 99 }} />
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          position: "fixed", left, top, zIndex: 100, width: 320,
+          background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: "var(--r3)",
+          boxShadow: "var(--shadow-lg)", padding: 12,
+          display: "flex", flexDirection: "column", gap: 10,
+        }}
+      >
+        <div className="aug-label">
+          {domain}{citation.angle ? ` · ${citation.angle}` : ""}
+        </div>
+        <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
+          {citation.finding.length > 180 ? citation.finding.slice(0, 180) + "…" : citation.finding}
+        </div>
+        <FindingActions
+          insight={cited}
+          domain={domain}
+          connectionId={ctx.connectionId}
+          canvasId={ctx.canvasId}
+          triggers={ctx.triggers}
+          onEvidence={ins => { ctx.onEvidence(ins, domain); onClose(); }}
+          onTriggersHint={ctx.onTriggersHint}
+          onDismissed={() => { ctx.onDismissed(); onClose(); }}
+        />
+        <div style={{ display: "flex", gap: 8 }}>
+          <Button
+            variant="plain"
+            onClick={() => onPull({
+              question: `Why is this happening? ${citation.finding}`,
+              seedSql: cited.sql || null,
+              seedContext: `SEED FINDING (the briefing claim being investigated): ${citation.finding}`,
+              key: citation.insight_id,
+            })}
+            style={{
+              alignSelf: "flex-start", fontSize: 11, color: "var(--bg-0)",
+              background: "var(--blue5)", border: "1px solid var(--blue5)",
+              borderRadius: "var(--r2)", padding: "4px 10px", cursor: "pointer", fontWeight: 600,
+            }}
+            title="Investigate this citation in place"
+          >
+            Pull the thread →
+          </Button>
+          <Button
+            variant="plain"
+            onClick={() => { ctx.onInvestigate(`Investigate: ${citation.finding}`, citation.insight_id); onClose(); }}
+            style={{
+              alignSelf: "flex-start", fontSize: 11, color: "var(--blue5)",
+              background: "var(--bg-sel)", border: "1px solid var(--b1)",
+              borderRadius: "var(--r2)", padding: "4px 10px", cursor: "pointer",
+            }}
+            title="Open in the Ask workspace"
+          >
+            Open in Ask ↗
+          </Button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Narrative generate button ──────────────────────────────────────────────────
+
+function GenerateBriefButton({
+  loading,
+  hasNarrative,
+  onClick,
+}: {
+  loading: boolean;
+  hasNarrative: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      variant="secondary" size="sm"
+      onClick={onClick}
+      disabled={loading}
+    >
+      {loading ? (
+        <>
+          <Pending />
+          Generating…
+        </>
+      ) : (
+        <>
+          <Icon name="spark" size={12} />
+          {hasNarrative ? "Regenerate Briefing" : "Generate AI Briefing"}
+        </>
+      )}
+    </Button>
+  );
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+/** A novelty score's colour, on the explorer's 1–5 scale (`lib/novelty`). */
+function noveltyColor(n: number): string {
+  if (n >= 5) return "var(--grn3)";
+  if (n >= 4) return "var(--blue4)";
+  if (n >= 3) return "var(--amb3)";
+  return "var(--t3)";
+}
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+const PATTERN_TYPE_COLORS: Record<string, string> = {
+  angle:       "var(--blue4)",
+  entity:      "var(--vio3)",
+  convergence: "var(--grn3)",
+};
+
+const PATTERN_TYPE_ICONS: Record<string, string> = {
+  angle:       "↻",
+  entity:      "⊕",
+  convergence: "◎",
+};
+
+// ── Synthesis engine ───────────────────────────────────────────────────────────
+
+/** Stable identity for a finding, robust to the meta-domains ("Key Questions",
+ *  "Synthesis") that repeat the same finding and reuse non-unique ids: `insightKey`
+ *  alone collides there (bare `pinned__N` / `synth__…` ids, no source_schema), so we
+ *  fold the finding TEXT in. Used to dedup a scoped slice, count distinct per domain,
+ *  and key the cards. */
+const signalIdentity = (ins: ExplorationInsight): string => `${insightKey(ins)}|${ins.finding}`;
+
+/** Drop repeated findings from a list (first occurrence wins), by `signalIdentity`. */
+function dedupeSignals(list: SynthesisSignal[]): SynthesisSignal[] {
+  const seen = new Set<string>();
+  return list.filter(s => {
+    const k = signalIdentity(s.insight);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+function synthesize(
+  domainData:  Record<string, DomainInsights>,
+  patterns:    Pattern[],
+  orgInsights: OrgInsight[],
+): BriefingData {
+  const allSignals: SynthesisSignal[] = [];
+  let totalInsights = 0;
+
+  // Index every insight by id (including degenerate ones) so a citation referencing
+  // any finding can resolve to the full object for its action menu.
+  const insightById = new Map<string, SynthesisSignal>();
+
+  // Never surface a degenerate "no data" finding — it must not win the headline or a
+  // signal slot (the backend now drops these at the source; this also hides any that
+  // were stored before that fix). Such findings stay visible only in the full Hub ledger.
+  for (const [domain, data] of Object.entries(domainData)) {
+    for (const ins of data.insights) {
+      insightById.set(ins.id, { insight: ins, domain });
+      // Drop the impossible (e.g. inventory turnover 96,295×) from EVERY signal surface —
+      // the headline, supporting signals AND the key-questions grid — using the same trust
+      // gate as the AI synthesis. Confounds and everything else stay (ranked by impact below).
+      if (isDegenerateFinding(ins) || ins.plausibility === "implausible") continue;
+      allSignals.push({ insight: ins, domain });
+      totalInsights++;
+    }
+  }
+
+  // Rank by impact (the briefing-triage score stamped by /domains) — the same authority as
+  // the AI synthesis and the dashboard cards — falling back to novelty when unannotated.
+  const rankImpact = (i: ExplorationInsight) => i.impact ?? (i.novelty ?? 0);
+  allSignals.sort((a, b) => rankImpact(b.insight) - rankImpact(a.insight));
+
+  const headline = allSignals[0] ?? null;
+
+  // Build supporting signals: breadth first (one per domain), then fill to 6.
+  // Dedup by composite identity — bare ids collide across schemas in the aggregate.
+  const seenIds    = new Set<string>(headline ? [insightKey(headline.insight)] : []);
+  const seenDomains = new Set<string>();
+  const signals: SynthesisSignal[] = [];
+
+  // Pass 1 — breadth
+  for (const s of allSignals) {
+    if (signals.length >= 6) break;
+    if (seenIds.has(insightKey(s.insight))) continue;
+    if (seenDomains.has(s.domain)) continue;
+    seenIds.add(insightKey(s.insight));
+    seenDomains.add(s.domain);
+    signals.push(s);
+  }
+
+  // Pass 2 — fill with highest-novelty remainder
+  for (const s of allSignals) {
+    if (signals.length >= 6) break;
+    if (seenIds.has(insightKey(s.insight))) continue;
+    seenIds.add(insightKey(s.insight));
+    signals.push(s);
+  }
+
+  // Per-domain stats for the coverage chart (where the intelligence concentrates).
+  // Count DISTINCT findings (by signalIdentity) so a meta-domain that repeats the same
+  // finding many times isn't inflated — and its chip count matches the deduped scoped view.
+  const domains: DomainStat[] = Object.entries(domainData)
+    .map(([name, data]) => {
+      const valid = data.insights.filter(i => !isDegenerateFinding(i) && i.plausibility !== "implausible");
+      const seen = new Set<string>();
+      const ns = valid.filter(i => { const k = signalIdentity(i); if (seen.has(k)) return false; seen.add(k); return true; }).map(i => i.novelty);
+      return {
+        name,
+        count: ns.length,
+        avgNovelty: ns.length ? ns.reduce((a, b) => a + b, 0) / ns.length : 0,
+        maxNovelty: ns.length ? Math.max(...ns) : 0,
+      };
+    })
+    .filter(d => d.count > 0)
+    .sort((a, b) => b.count - a.count || b.maxNovelty - a.maxNovelty);
+
+  return {
+    headline,
+    signals,
+    allSignals,
+    patterns:      patterns.slice(0, 5),
+    orgInsights:   orgInsights.slice(0, 3),
+    domains,
+    domainCount:   domains.length,
+    totalInsights,
+    synthesizedAt: new Date().toISOString(),
+    insightById,
+  };
+}
+
+// ── Visual primitives ────────────────────────────────────────────────────────
+
+/** A compact bar showing a finding's novelty, on the explorer's 1–5 scale. */
+function NoveltyMeter({ novelty, width = 56, showValue = true }: { novelty: number; width?: number; showValue?: boolean }) {
+  const pct = Math.max(4, noveltyShare(novelty) * 100);
+  const color = noveltyColor(novelty);
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }} title={`Novelty ${noveltyOutOf(novelty)}`}>
+      <span style={{ width, height: 5, borderRadius: 3, background: "var(--bg-3)", display: "inline-block", overflow: "hidden", flexShrink: 0 }}>
+        <span style={{ display: "block", height: "100%", width: `${pct}%`, background: color, borderRadius: 3, transition: "width .5s ease" }} />
+      </span>
+      {showValue && <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color, fontWeight: 600 }}>{Math.round(novelty)}</span>}
+    </span>
+  );
+}
+
+/** Horizontal bar chart of findings per domain — shows the *shape* of the intelligence
+ *  (which domains dominate) at a glance, with novelty driving bar opacity. */
+function DomainCoverageChart({ domains }: { domains: DomainStat[] }) {
+  const max = Math.max(1, ...domains.map(d => d.count));
+  return (
+    <div style={{ display: "flex", flexDirection: "column" as const, gap: 9 }}>
+      {domains.slice(0, 8).map(d => {
+        const color = domainColor(d.name);
+        const pct = Math.max(5, (d.count / max) * 100);
+        return (
+          <div key={d.name} style={{ display: "flex", flexDirection: "column" as const, gap: 3 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+              <span style={{ fontSize: 11, color: "var(--t2)", textTransform: "capitalize" as const, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{d.name}</span>
+              <span className="aug-fs-xs" style={{ color: "var(--t3)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>{d.count}</span>
+            </div>
+            <div style={{ height: 6, borderRadius: 3, background: "var(--bg-3)", overflow: "hidden" }}>
+              <div style={{
+                height: "100%", width: `${pct}%`, background: color, borderRadius: 3,
+                opacity: 0.45 + 0.55 * noveltyShare(d.maxNovelty), transition: "width .5s ease",
+              }} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Domain tag ─────────────────────────────────────────────────────────────────
+
+const DOMAIN_COLORS = [
+  "var(--blue4)", "var(--vio3)", "var(--grn3)",
+  "var(--amb3)",  "var(--chart-4)", "var(--chart-5)",
+];
+
+function domainColor(domain: string): string {
+  let h = 0;
+  for (const c of domain) h = (h * 31 + c.charCodeAt(0)) & 0xffff;
+  return DOMAIN_COLORS[h % DOMAIN_COLORS.length];
+}
+
+function DomainTag({ domain }: { domain: string }) {
+  const color = domainColor(domain);
+  return (
+    <span className="aug-fs-xs" style={{
+      display: "inline-flex", alignItems: "center",
+      padding: "2px 8px", borderRadius: "var(--r2)",
+      background:  `color-mix(in srgb, ${color} 12%, transparent)`,
+      border:      `1px solid color-mix(in srgb, ${color} 28%, transparent)`,
+      color, fontWeight: 500, textTransform: "capitalize" as const,
+      letterSpacing: ".02em", flexShrink: 0,
+    }}>
+      {domain}
+    </span>
+  );
+}
+
+// ── Scope chips ─────────────────────────────────────────────────────────────────
+/** The filter on the Findings line that scopes the brief's narrative layer to one domain.
+ *  "All" clears the scope; each domain chip carries its finding count + colour dot. The
+ *  schema/connection scope is handled upstream by the workspace's context bar — these chips
+ *  scope *within* the brief, by domain, so the reader can focus the supporting signals +
+ *  patterns on one area.
+ *  Built on <Button> (the canonical system) styled as the app's FilterChip pill. */
+function ScopeChip({ label, dot, count, active, onClick }: {
+  label: string; dot?: string; count: number; active: boolean; onClick: () => void;
+}) {
+  return (
+    <Button
+      variant="plain" size="xs" onClick={onClick} className="px-3"
+      aria-pressed={active}
+      style={{
+        borderRadius: "var(--r-chip)", gap: 6, height: 26,
+        background: active ? "color-mix(in srgb, var(--blue4) 12%, var(--bg-2))" : "var(--bg-2)",
+        border: `1px solid ${active ? "var(--blue4)" : "var(--b1)"}`,
+        color: active ? "var(--blue4)" : "var(--t2)",
+        fontWeight: active ? 500 : 400,
+      }}
+    >
+      {dot && <span style={{ width: 7, height: 7, borderRadius: "var(--r-pill)", background: dot, flexShrink: 0 }} />}
+      {label}
+      <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: active ? "var(--blue4)" : "var(--t3)", opacity: 0.85 }}>{count}</span>
+    </Button>
+  );
+}
+
+function ScopeChips({ domains, total, active, onChange }: {
+  domains:  DomainStat[];
+  total:    number;
+  active:   string | null;
+  onChange: (domain: string | null) => void;
+}) {
+  return (
+    <div role="group" aria-label="Scope" style={{ display: "flex", flexWrap: "wrap" as const, gap: 8, alignItems: "center" }}>
+      <ScopeChip label="All" count={total} active={active == null} onClick={() => onChange(null)} />
+      {domains.map(d => (
+        <ScopeChip
+          key={d.name}
+          label={d.name.replace(/_/g, " ")}
+          dot={domainColor(d.name)}
+          count={d.count}
+          active={active === d.name}
+          onClick={() => onChange(active === d.name ? null : d.name)}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ── Headline card ──────────────────────────────────────────────────────────────
+
+// ── Finding-level actions ────────────────────────────────────────────────────
+// Create Monitor · Promote to Org · Share · Evidence — makes each finding
+// actionable so intelligence REACHES the user (backlog #4).
+
+// A "no data" finding (empty/all-NULL result) must not be actionable: monitoring,
+// promoting, or sharing it just propagates noise — and a monitor built from its SQL
+// fires "No condition met" forever. The explorer now drops these at the source; this
+// guards any that already exist or slip through. Investigate/Evidence stay enabled so
+// the user can still inspect *why* there's no data.
+const _NO_DATA_RE = /(returned no data|no data (found|available|to report|for)|0 \w+ (were |was )?found|null values for all|no rows (returned|found|matched)|query (failed|errored)|no matching (rows|records|data)|empty result set)/i;
+
+/** BR-9 — what a part of the page that is NOT measured for the selected range must say, in
+ *  the same type as its number: "all history, not 17–23 August" once the range Briefing is on
+ *  screen, "all history, not this range" while it is still pending. "" on the standing view,
+ *  where nothing is withheld. The user, 2026-09-26: *"the whole briefing page needs to adhere to
+ *  the range selected.. otherwise its quite useless"*; BR-3's falsifier: a person must be able
+ *  to tell from the page which days a figure covers. */
+export function rangeScopeNote(rangeSelected: boolean, block: { covers: string } | null | undefined): string {
+  if (!rangeSelected) return "";
+  return block ? `all history, not ${block.covers}` : "all history, not this range";
+}
+
+/** BR-7 — the ledger's order under a range: the findings re-asked for it first, by the size of
+ *  their change (an unknown change after a known one), then the ones that could not be
+ *  re-asked in their standing order (impact, else novelty). Pure, so the rule is testable. */
+export function orderByReask<T>(signals: T[], idOf: (t: T) => string, byId: Map<string, FindingReask>): T[] {
+  const rank = (t: T) => {
+    const r = byId.get(idOf(t));
+    if (!r) return [2, 0] as const;
+    return r.rel === null ? [1, 0] as const : [0, -Math.abs(r.rel)] as const;
+  };
+  return signals.map((t, i) => ({ t, i, k: rank(t) }))
+    .sort((a, b) => a.k[0] - b.k[0] || a.k[1] - b.k[1] || a.i - b.i)
+    .map(x => x.t);
+}
+
+/** Under a range the ledger lists ONLY the findings measured for it — the user, 2026-10-12: "all
+ *  that I see on the screen should belong to that particular period … if one wants to know about
+ *  everything … that person will click on What we know". The rest are not drawn; they are counted,
+ *  with why, so the page says where they went rather than implying there are none. */
+export function rangeLedger<T>(signals: T[], idOf: (t: T) => string, reask: FindingsReask):
+    { rows: T[]; elsewhere: number; reasons: [string, number][] } {
+  const byId = new Map(reask.reasked.map(r => [r.id, r] as const));
+  const rows = orderByReask(signals.filter(t => byId.has(idOf(t))), idOf, byId);
+  const why = new Map(reask.apart.map(a => [a.id, a.why] as const));
+  const counts = new Map<string, number>();
+  for (const t of signals) {
+    if (byId.has(idOf(t))) continue;
+    const w = why.get(idOf(t)) ?? "not measured for this range";
+    counts.set(w, (counts.get(w) ?? 0) + 1);
+  }
+  const reasons = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  return { rows, elsewhere: signals.length - rows.length, reasons };
+}
+
+/** Why findings were not measured for a range, in words: the two commonest reasons with their
+ *  counts ("3 — no date on customers · 2 — its data has no rows …"), the rest counted. */
+export function reasonWords(reasons: [string, number][], top = 2): string {
+  const said = reasons.slice(0, top).map(([w, n]) => `${formatCount(n)} — ${w}`);
+  const rest = reasons.slice(top).reduce((t, [, n]) => t + n, 0);
+  return [...said, ...(rest ? [`${formatCount(rest)} for other reasons`] : [])].join(" · ");
+}
+
+/** The Briefing's own signal for a citation, when its list holds the cited finding. */
+function heldSignal(held: { insightById: Map<string, SynthesisSignal> } | null | undefined, citation: BriefingCitation): SynthesisSignal | undefined {
+  return held?.insightById.get(citation.insight_id);
+}
+
+/** A finding's first sentence, for a one-line "In brief" — a decimal point is not a sentence end. */
+export function firstSentence(text: string, max = 180): string {
+  const t = (text ?? "").trim();
+  const m = t.match(/^(.+?[.!?])(?=\s+[A-Z("“]|$)/);
+  const s = m ? m[1] : t;
+  return s.length > max ? s.slice(0, max - 1).trimEnd() + "…" : s;
+}
+
+/** The sections a person keeps BELOW the paper; the lead, the story and the findings are the paper's. */
+const PAPER_BELOW = new Set<SectionId>(["key_metrics", "cockpit", "patterns"]);
+
+/** A re-asked figure, shown as the range's number: a rate-looking measure in 0..1 as a
+ *  percentage, a large count compact, anything else plain. */
+export function fmtReask(v: number | null, measure: string): string {
+  if (v === null || !Number.isFinite(v)) return "—";
+  if (/rate|ratio|share|pct|percent|margin/i.test(measure) && v >= 0 && v <= 1) return pct(v, 1);
+  return Math.abs(v) >= 100000 ? compactNumber(v, 1) : formatMetricValue(v);
+}
+
+/** A finding re-asked for the range on screen, with the words for the two ranges it was read over. */
+export interface RangeFigure {
+  reask:        FindingReask;
+  covers:       string;
+  comparedWith: string;
+}
+
+/** Which rows a finding's open detail draws under a range: the range's own (the figure on the
+ *  tile or row is read from them), the compared range's (its "vs" figure), or the finding's
+ *  evidence as it was recorded, over all history (what its statement reads). */
+export type FindingView = "range" | "compared" | "history";
+
+/** The statement a view runs: the re-ask's own cut of the finding's SQL for either range, the
+ *  finding's recorded SQL for all history. "" when the view has none to run. */
+export function viewSql(view: FindingView, recorded: string, fig: RangeFigure | null | undefined): string {
+  if (view === "range") return fig?.reask.sql ?? "";
+  if (view === "compared") return fig?.reask.sql_previous ?? "";
+  return recorded;
+}
+
+/** The row a re-asked figure is read from, as a reader names it ("Shipped"); "" when the figure
+ *  is not one row's. */
+export const rowWords = (r: FindingReask | null | undefined): string => (r?.how === "row" && r.row?.length ? r.row.join(" · ") : "");
+
+/** A measure is named only when it IS a name: the re-ask reports whatever the finding's SQL called
+ *  the column, and an anonymous alias ("f0_") tells a reader nothing. */
+const anonymous = (measure: string) => !measure.trim() || /^[a-z]*\d+_?$/i.test(measure.trim());
+
+/** The sentence over a view's rows, saying how the figure the reader clicked is read from them —
+ *  so "217 vs 184" sits over the rows that add up to 217, or to 184, and says so (the user,
+ *  2026-10-09: the cards' numbers and the charts under them had no relation they could see).
+ *  ``drawn`` is how many rows the chart holds, when it holds fewer than the query returned. */
+export function figureNote(view: FindingView, fig: RangeFigure | null | undefined, drawn?: number | null): string {
+  if (view === "history" || !fig) {
+    return fig
+      ? "The finding's own evidence, as it was recorded: all history. The statement above reads these rows."
+      : "";
+  }
+  const r = fig.reask;
+  const current = view === "range";
+  const when  = current ? fig.covers : fig.comparedWith;
+  const value = current ? r.current : r.previous;
+  const n     = current ? r.rows_current : r.rows_previous;
+  const what  = anonymous(r.measure) ? "its figure" : r.measure;
+  const tail  = current ? " The statement above is the finding as it was recorded, over all history." : "";
+  const shown = drawn != null && drawn < n ? ` The first ${drawn} are drawn.` : "";
+  const row   = rowWords(r);
+  if (row) {
+    const rows = n === 1 ? "one row" : `the ${n} rows below`;
+    if (n === 0) return `For ${when}, the finding's query returns no rows, so none for ${row}, the row the finding names.${tail}`;
+    if (value === null) return `For ${when}, the finding's query returns ${rows}, and none is ${row}, the row the finding names.${shown}${tail}`;
+    return `For ${when}, the finding's query returns ${rows}; ${fmtReask(value, r.measure)} is ${what} for ${row}, `
+      + `the row the finding names.${shown}${tail}`;
+  }
+  if (value === null || n === 0) return `For ${when}, the finding's query returns nothing to read a figure from.${tail}`;
+  if (r.how === "value" || n === 1) {
+    return `For ${when}, the finding's query returns one row, and ${what} is ${fmtReask(value, r.measure)}.${tail}`;
+  }
+  return `For ${when}, the finding's query returns the ${n} rows below; ${fmtReask(value, r.measure)} is the `
+    + `${r.how} of ${what} across them.${shown}${tail}`;
+}
+
+export function isDegenerateFinding(insight: ExplorationInsight): boolean {
+  const f = (insight.finding || "").trim();
+  if (!f) return true;
+  return _NO_DATA_RE.test(f);
+}
+
+type ActStatus = "idle" | "busy" | "done" | "error";
+
+function ActionButton({ label, title, status, color, onClick, disabled }: {
+  label: string; title: string; status: ActStatus;
+  color?: string; onClick: () => void; disabled?: boolean;
+}) {
+  const c = color || "var(--t3)";
+  const txt = status === "done" ? "✓" : status === "error" ? "!" : label;
+  return (
+    <Button
+      variant="outline" size="xs"
+      title={title}
+      onClick={onClick}
+      disabled={disabled || status === "busy" || status === "done"}
+      style={{ color: status === "done" ? "var(--grn4)" : status === "error" ? "var(--red4)" : c, whiteSpace: "nowrap" as const }}
+    >
+      {status === "busy" && <Pending />}
+      {status === "done" ? `${label} ${txt}` : label}
+    </Button>
+  );
+}
+
+export function FindingActions({ insight, domain, connectionId, canvasId, schema, triggers, onEvidence, onTriggersHint, onDismissed, onPinned, overflow }: {
+  insight:       ExplorationInsight;
+  domain:        string;
+  connectionId:  string;
+  canvasId?:     string;
+  schema?:       string;
+  triggers:      ActionTrigger[];
+  onEvidence:    (insight: ExplorationInsight) => void;
+  onTriggersHint: () => void;
+  onDismissed?:  (insightId: string) => void;
+  onPinned?:     () => void;
+  /** Hero de-clutter (Direction B): show Monitor + Pin, fold Promote/Share/Evidence/Dismiss
+   *  into a ⋯ overflow menu. */
+  overflow?:     boolean;
+}) {
+  const [monStatus, setMonStatus]   = useState<ActStatus>("idle");
+  const [promStatus, setPromStatus] = useState<ActStatus>(insight.promoted_to_org ? "done" : "idle");
+  const [pinStatus, setPinStatus]   = useState<ActStatus>("idle");
+  const [shareOpen, setShareOpen]   = useState(false);
+  const [shareMsg, setShareMsg]     = useState<string | null>(null);
+  const [dismissed, setDismissed]   = useState(false);
+  const [moreOpen, setMoreOpen]     = useState(false);   // ⋯ overflow menu (hero de-clutter)
+
+  const handleDismiss = useCallback(async () => {
+    // Capture a reason — it feeds the guard/eval backlog (finding_dismissals.jsonl),
+    // turning a one-off correction into systematic signal.
+    const reason = (window.prompt("Dismiss this finding. Why is it wrong or stale? (optional)") ?? "").trim();
+    try {
+      if (canvasId) await dismissCanvasInsight(canvasId, insight.id, reason);
+      else await dismissConnectionInsight(connectionId, insight.id, reason);
+      setDismissed(true);
+      onDismissed?.(insight.id);
+    } catch { /* non-fatal */ }
+  }, [insight.id, canvasId, connectionId, onDismissed]);
+
+  const handleMonitor = useCallback(async () => {
+    if (!insight.sql) return;
+    setMonStatus("busy");
+    try {
+      await createMonitor({
+        conn_id: connectionId,
+        name: `${domain}: ${insight.finding.slice(0, 48)}${insight.finding.length > 48 ? "…" : ""}`,
+        custom_sql: insight.sql,
+        alert_on: "anomaly",
+        // Re-anchor the finding's frozen date window to the live data edge at run time,
+        // so the monitor tracks a trailing window instead of going stale.
+        reanchor_window: true,
+      });
+      setMonStatus("done");
+    } catch { setMonStatus("error"); }
+  }, [insight, domain, connectionId]);
+
+  const handlePin = useCallback(async () => {
+    if (!insight.sql) return;
+    setPinStatus("busy");
+    try {
+      await pinInsightToDashboard(connectionId, insight.id, {
+        scope: "connection", scopeRef: connectionId, schema,
+      });
+      setPinStatus("done");
+      onPinned?.();
+      toast.success("Pinned to your dashboard");
+    } catch {
+      setPinStatus("error");
+      toast.error("Couldn't pin finding", { description: "The finding's query didn't pass the trust guards." });
+    }
+  }, [insight.id, insight.sql, connectionId, schema, onPinned]);
+
+  const handlePromote = useCallback(async () => {
+    setPromStatus("busy");
+    try {
+      if (canvasId) await promoteCanvasInsight(canvasId, insight.id);
+      else await promoteConnectionInsight(connectionId, insight.id);
+      setPromStatus("done");
+    } catch (e) {
+      setPromStatus("error");
+      // why it was not promoted — Org could not store it is not the same as "try again"
+      toast.error("Not promoted", { description: e instanceof Error ? e.message.slice(0, 200) : undefined });
+    }
+  }, [insight.id, canvasId, connectionId]);
+
+  const handleShareTo = useCallback(async (trigger: ActionTrigger) => {
+    setShareOpen(false);
+    setShareMsg("Sending…");
+    try {
+      const r = await sendFindingToTrigger(trigger.id, {
+        text: insight.finding,
+        metric_name: (insight.measures || []).join(", ") || undefined,
+        headline: `${domain}${insight.angle ? " · " + insight.angle : ""}`,
+        source_id: insight.id,
+        // HB-2 — the departure gate re-runs the finding's query on this connection before
+        // its numbers leave.
+        conn_id: connectionId,
+      });
+      // A hold is the gate's verdict, not a failure: say why, and leave it up long enough
+      // to read (the departures screen keeps the full record).
+      setShareMsg(r.status === "ok" ? `Sent to ${trigger.name} ✓`
+        : r.status === "held" ? `Not sent — ${r.error || "held at departure"}`
+        : `Failed: ${r.error || r.status}`);
+      setTimeout(() => setShareMsg(null), r.status === "held" ? 12000 : 4000);
+      return;
+    } catch { setShareMsg("Share failed"); }
+    setTimeout(() => setShareMsg(null), 4000);
+  }, [insight, domain, connectionId]);
+
+  const btnColor = "var(--t3)";
+  // A "no data" finding isn't actionable — disable Monitor/Promote/Share (a monitor
+  // built from its query would fire "No condition met" forever). Investigate + Evidence
+  // stay enabled so the user can inspect why there's no data.
+  const degenerate = isDegenerateFinding(insight);
+  const noData = "This finding has no data — nothing to act on";
+
+  if (dismissed) {
+    return (
+      <span className="aug-fs-xs" style={{ color: "var(--t3)", fontStyle: "italic" as const }}>
+        Dismissed ✓ — hidden from intelligence (kept for review)
+      </span>
+    );
+  }
+
+  // Overflow layout — Monitor + Pin stay inline; the rest fold into a ⋯ menu.
+  if (overflow) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 6, position: "relative", flexWrap: "wrap" as const }}>
+        <ActionButton label="Monitor"
+          title={degenerate ? noData : (insight.sql ? "Create an anomaly monitor from this finding's query" : "No query available to monitor")}
+          status={monStatus} color={btnColor} onClick={handleMonitor} disabled={!insight.sql || degenerate} />
+        <ActionButton label="Pin"
+          title={degenerate ? noData : (insight.sql ? "Pin this finding as a guard-checked card on your dashboard" : "No query available to pin")}
+          status={pinStatus} color={btnColor} onClick={handlePin} disabled={!insight.sql || degenerate} />
+        <div style={{ position: "relative" }}>
+          <ActionButton label="⋯" title="More actions" status="idle" color={btnColor} onClick={() => setMoreOpen(v => !v)} />
+          {moreOpen && (
+            <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 30, background: "var(--bg-1)", border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-lg)", minWidth: 150, padding: 4, display: "flex", flexDirection: "column" as const, gap: 2 }}>
+              <Button variant="plain" size="xs" className="w-full justify-start h-auto" disabled={degenerate}
+                onClick={() => { setMoreOpen(false); handlePromote(); }}
+                style={{ padding: "7px 10px", fontSize: 12, color: degenerate ? "var(--t3)" : "var(--t2)" }}>
+                {promStatus === "done" ? "Promoted ✓" : "Promote"}
+              </Button>
+              <div style={{ position: "relative" }}>
+                <Button variant="plain" size="xs" className="w-full justify-start h-auto" disabled={degenerate}
+                  onClick={() => { if (triggers.length === 0) { setMoreOpen(false); onTriggersHint(); } else { setShareOpen(v => !v); } }}
+                  style={{ padding: "7px 10px", fontSize: 12, color: degenerate ? "var(--t3)" : "var(--t2)" }}>
+                  Share
+                </Button>
+                {shareOpen && triggers.length > 0 && (
+                  <div style={{ position: "absolute", top: 0, right: "calc(100% + 4px)", zIndex: 40, background: "var(--bg-1)", border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-lg)", minWidth: 160, overflow: "hidden" }}>
+                    {triggers.map(t => (
+                      <Button key={t.id} variant="plain" size="xs" className="w-full justify-start h-auto"
+                        onClick={() => { handleShareTo(t); setMoreOpen(false); }}
+                        style={{ padding: "7px 10px", fontSize: 12, color: t.enabled ? "var(--t2)" : "var(--t3)" }}>
+                        <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--t3)", marginRight: 6 }}>{t.type}</span>{t.name}{!t.enabled && " (disabled)"}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <Button variant="plain" size="xs" className="w-full justify-start h-auto"
+                onClick={() => { setMoreOpen(false); onEvidence(insight); }}
+                style={{ padding: "7px 10px", fontSize: 12, color: "var(--t2)" }}>
+                Evidence
+              </Button>
+              <Button variant="plain" size="xs" className="w-full justify-start h-auto"
+                onClick={() => { setMoreOpen(false); handleDismiss(); }}
+                style={{ padding: "7px 10px", fontSize: 12, color: "var(--t2)" }}>
+                Dismiss
+              </Button>
+            </div>
+          )}
+        </div>
+        {degenerate && (
+          <span title={noData} className="aug-label" style={{ padding: "2px 6px", borderRadius: "var(--r1)", color: "var(--t3)", background: "var(--bg-3)", border: "1px solid var(--b1)" }}>no data</span>
+        )}
+        {shareMsg && (
+          <span className="aug-fs-xs" style={{ color: shareMsg.includes("✓") ? "var(--grn4)" : "var(--t3)" }}>{shareMsg}</span>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" as const, position: "relative" }}>
+      <ActionButton label="Monitor"
+        title={degenerate ? noData : (insight.sql ? "Create an anomaly monitor from this finding's query" : "No query available to monitor")}
+        status={monStatus} color={btnColor} onClick={handleMonitor} disabled={!insight.sql || degenerate} />
+      <ActionButton label="Pin"
+        title={degenerate ? noData : (insight.sql ? "Pin this finding as a guard-checked card on your dashboard" : "No query available to pin")}
+        status={pinStatus} color={btnColor} onClick={handlePin} disabled={!insight.sql || degenerate} />
+      <ActionButton label="Promote"
+        title={degenerate ? noData : (promStatus === "done" ? "Promoted to org intelligence" : "Promote this finding to org-wide intelligence")}
+        status={promStatus} color={btnColor} onClick={handlePromote} disabled={degenerate} />
+      <div style={{ position: "relative" }}>
+        <ActionButton label="Share" title={degenerate ? noData : "Share this finding to a delivery channel"} status="idle" color={btnColor}
+          disabled={degenerate}
+          onClick={() => { if (triggers.length === 0) { onTriggersHint(); } else { setShareOpen(v => !v); } }} />
+        {shareOpen && triggers.length > 0 && (
+          <div style={{
+            position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 20,
+            background: "var(--bg-1)", border: "1px solid var(--b2)", borderRadius: "var(--r2)",
+            boxShadow: "var(--shadow-lg)", minWidth: 160, overflow: "hidden",
+          }}>
+            <div className="aug-label" style={{ padding: "6px 10px", borderBottom: "1px solid var(--b1)" }}>
+              Send to channel
+            </div>
+            {triggers.map(t => (
+              <Button key={t.id} variant="plain" onClick={() => handleShareTo(t)}
+                className="aug-fs-sm font-normal"
+                style={{
+                  display: "block", width: "100%", height: "auto", textAlign: "left" as const,
+                  padding: "7px 10px", borderRadius: 0,
+                  color: t.enabled ? "var(--t2)" : "var(--t3)",
+                }}>
+                <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--t3)", marginRight: 6 }}>{t.type}</span>
+                {t.name}{!t.enabled && " (disabled)"}
+              </Button>
+            ))}
+          </div>
+        )}
+      </div>
+      <ActionButton label="Evidence" title="Show the query + provenance behind this finding" status="idle"
+        color={btnColor} onClick={() => onEvidence(insight)} />
+      <ActionButton label="Dismiss"
+        title="Hide this finding if it's wrong or stale — captures a reason for the guard backlog; reversible"
+        status="idle" color={btnColor} onClick={handleDismiss} />
+      {degenerate && (
+        <span title={noData} className="aug-label" style={{
+          padding: "2px 6px", borderRadius: "var(--r1)", color: "var(--t3)",
+          background: "var(--bg-3)", border: "1px solid var(--b1)",
+        }}>no data</span>
+      )}
+      {shareMsg && (
+        <span className="aug-fs-xs" style={{ color: shareMsg.includes("✓") ? "var(--grn4)" : "var(--t3)" }}>{shareMsg}</span>
+      )}
+    </div>
+  );
+}
+
+// ── Evidence drawer ──────────────────────────────────────────────────────────
+// The Finding Dossier — the explorer's OWN derivation, captured at emit time and
+// carried in the finding artifact's payload. Rendering it here means "how was this
+// derived?" is answered by a read of work already done, not a second deep analysis.
+// Exported so the Investigate (Tier-0) chat path renders the identical trace.
+export function DossierTrace({ dossier }: { dossier: FindingDossier }) {
+  const sc = dossier.structural_ctx || ({} as FindingDossier["structural_ctx"]);
+  const joins = sc.joins || [];
+  const dists = Object.entries(sc.distributions || {});
+  const lifecycles = Object.entries(sc.lifecycles || {});
+  const nulls = Object.entries(sc.null_meanings || {});
+  const hasStructural = joins.length > 0 || dists.length > 0 || lifecycles.length > 0 || nulls.length > 0;
+  const g = dossier.grounding;
+
+  const Label = ({ children }: { children: React.ReactNode }) => (
+    <div className="aug-label" style={{ marginBottom: 6 }}>{children}</div>
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column" as const, gap: 16 }}>
+      {dossier.question && (
+        <div>
+          <Label>{dossier.asked_by === "briefing" ? "Question the Briefing measured" : "Question the explorer asked"}</Label>
+          <div className="aug-fs-ui" style={{ color: "var(--t2)", lineHeight: 1.55, fontStyle: "italic" as const }}>“{dossier.question}”</div>
+        </div>
+      )}
+
+      {dossier.rationale && (
+        <div>
+          <Label>Why this holds — the mechanism</Label>
+          <div className="aug-fs-ui" style={{ color: "var(--t2)", lineHeight: 1.55 }}>{dossier.rationale}</div>
+        </div>
+      )}
+
+      {dossier.narrative && (
+        <div>
+          <Label>Why it matters — in the broader picture</Label>
+          <div className="aug-fs-ui" style={{ color: "var(--t2)", lineHeight: 1.55 }}>{dossier.narrative}</div>
+        </div>
+      )}
+
+      {dossier.result_cells && (
+        <div>
+          <Label>
+            {g
+              ? (g.checked === 0
+                  ? "Result values — no magnitude claims to verify"
+                  : g.grounded
+                    ? `Grounded figures — ${g.checked} verified against the data`
+                    : `Grounded figures — ${g.ungrounded.length} unverified`)
+              : "Grounded figures"}
+          </Label>
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", borderRadius: "var(--r2)",
+            background: "var(--bg-2)", border: "1px solid var(--b1)",
+          }}>
+            {g && (
+              <span style={{ flexShrink: 0, fontSize: 12, color: g.grounded ? "var(--grn4)" : "var(--amb4)" }}>
+                {g.grounded ? "✓" : "⚠"}
+              </span>
+            )}
+            <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--t3)", wordBreak: "break-word" as const, lineHeight: 1.5 }}>
+              {dossier.result_cells}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {hasStructural && (
+        <div>
+          <Label>Structural ground — facts this claim stands on</Label>
+          <div style={{ display: "flex", flexDirection: "column" as const, gap: 5, padding: "10px 12px", borderRadius: "var(--r2)", background: "var(--bg-2)", border: "1px solid var(--b1)" }}>
+            {joins.map((j, i) => (
+              <div key={`j${i}`} style={{ fontSize: 11, color: j.verified ? "var(--grn4)" : "var(--amb4)" }}>
+                {j.verified ? "✓" : "⚠"} {j.from_table} → {j.to_table} ({j.cardinality}
+                {j.verified ? ", 0 orphans" : `, ${j.orphan_count} orphans`})
+              </div>
+            ))}
+            {dists.map(([k, d]) => (
+              <div key={`d${k}`} className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+                <span style={{ fontFamily: "var(--font-mono)" }}>{k.replace(":", ".")}</span> — {d.shape || "—"}
+                {typeof d.p50 === "number" ? ` (median ${d.p50}` : ""}{typeof d.pct_zero === "number" ? `, ${Math.round(d.pct_zero * 100)}% zero)` : (typeof d.p50 === "number" ? ")" : "")}
+              </div>
+            ))}
+            {lifecycles.map(([t, lm]) => (
+              <div key={`l${t}`} className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+                <span style={{ fontFamily: "var(--font-mono)" }}>{t}.{lm.status_column || "status"}</span>: {(lm.states || []).join(" → ")}
+                {(lm.terminal_states || []).length > 0 ? ` · terminal: ${(lm.terminal_states || []).join(", ")}` : ""}
+              </div>
+            ))}
+            {nulls.map(([k, nm]) => (
+              <div key={`n${k}`} className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+                <span style={{ fontFamily: "var(--font-mono)" }}>{k.replace(":", ".")}</span> — {nm.meaning || "—"}
+                {nm.business_rule ? ` (${nm.business_rule})` : ""}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Living dossier: re-run the finding's SQL against current data and re-ground the
+// claim. "as of" reflects the last check; the badge says whether it still holds.
+function RevalidateRow({ dossier, connectionId, insightId }: {
+  dossier: FindingDossier; connectionId?: string; insightId: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<RevalidateResult | null>(null);
+  const asOf = (result?.revalidated_at ?? (dossier as { revalidated_at?: string }).revalidated_at ?? dossier.generated_at);
+  const asOfText = asOf ? formatTimestamp(asOf) : "—";
+  const badge =
+    result?.status === "confirmed" ? { c: "var(--grn4)", t: "Confirmed — still holds against current data" } :
+    result?.status === "drifted"   ? { c: "var(--amb4)", t: `Drifted — ${(result.ungrounded ?? []).join(", ") || "a value moved"}` } :
+    result?.status === "error"     ? { c: "var(--red4, #d66)", t: `Could not re-run — ${result.error ?? "query failed"}` } : null;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column" as const, gap: 8, paddingTop: 4 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <Button
+          variant="outline" size="xs"
+          disabled={busy || !connectionId}
+          onClick={async () => {
+            if (!connectionId) return;
+            setBusy(true);
+            try { setResult(await revalidateInsight(connectionId, insightId)); }
+            finally { setBusy(false); }
+          }}
+        >{busy ? "Re-validating…" : "Re-validate"}</Button>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>as of {asOfText}</span>
+      </div>
+      {badge && (
+        <div style={{ fontSize: 11, color: badge.c, lineHeight: 1.5 }}>
+          {result?.status === "confirmed" ? "✓ " : result?.status === "drifted" ? "⚠ " : "✕ "}{badge.t}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Drill-through: the exact SQL + confidence/novelty/freshness behind a finding.
+
+export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
+  insight: ExplorationInsight | null;
+  domain:  string;
+  onClose: () => void;
+  connectionId?: string;
+}) {
+  const openInQuery = useOpenInQuery();
+  // K3 Trust Receipt — provenance from the kernel ledger (job + lineage edges).
+  const [receipt, setReceipt] = useState<InsightReceipt | null>(null);
+  useEffect(() => {
+    setReceipt(null);
+    if (!insight || !connectionId) return;
+    getInsightReceipt(connectionId, insight.id).then(r => setReceipt(r)).catch(() => {});
+  }, [insight, connectionId]);
+  if (!insight) return null;
+  const fresh = insight.generated_at ? formatTimestamp(insight.generated_at) : "—";
+  // The explorer's captured derivation, if this finding postdates dossier tracking.
+  const dossier = receipt?.artifact?.payload?.dossier;
+  const Stat = ({ label, value }: { label: string; value: string }) => (
+    <div style={{ display: "flex", flexDirection: "column" as const, gap: 2 }}>
+      <span className="aug-label">{label}</span>
+      <span className="aug-fs-ui" style={{ color: "var(--t1)", fontWeight: 500 }}>{value}</span>
+    </div>
+  );
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, zIndex: 60, background: "var(--scrim)",
+      display: "flex", justifyContent: "flex-end",
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: "min(520px, 92vw)", height: "100%", background: "var(--bg-1)",
+        borderLeft: "1px solid var(--b2)", boxShadow: "-8px 0 28px rgba(0,0,0,.22)",
+        display: "flex", flexDirection: "column" as const, overflow: "hidden",
+      }}>
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--b1)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className="aug-label">Evidence</span>
+            <DomainTag domain={domain} />
+          </div>
+          <Button variant="ghost" size="icon-xs" className="aug-fs-h1" aria-label="Close" onClick={onClose} style={{ color: "var(--t3)", lineHeight: 1 }}>×</Button>
+        </div>
+        <div style={{ padding: "18px 20px", overflowY: "auto" as const, display: "flex", flexDirection: "column" as const, gap: 18 }}>
+          <div style={{ fontSize: 15, color: "var(--t1)", lineHeight: 1.6, fontWeight: 500 }}>{insight.finding}</div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
+            <Stat label="Confidence" value={known(insight.confidence, c => `${Math.round(c * 100)}%`)} />
+            <Stat label="Novelty" value={known(insight.novelty, n => noveltyOutOf(n))} />
+            <Stat label="Freshness" value={fresh} />
+          </div>
+
+          {(insight.entities_involved?.length > 0 || insight.measures?.length > 0) && (
+            <div style={{ display: "flex", flexDirection: "column" as const, gap: 10 }}>
+              {insight.entities_involved?.length > 0 && (
+                <div>
+                  <div className="aug-label" style={{ marginBottom: 5 }}>Entities</div>
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" as const }}>
+                    {insight.entities_involved.map(e => (
+                      <span key={e} className="aug-fs-xs" style={{ padding: "2px 7px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t3)", fontFamily: "var(--font-mono)" }}>{e.replace(/_/g, " ")}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {insight.measures?.length > 0 && (
+                <div>
+                  <div className="aug-label" style={{ marginBottom: 5 }}>Measures</div>
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" as const }}>
+                    {insight.measures.map(m => (
+                      <span key={m} className="aug-fs-xs" style={{ padding: "2px 7px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t3)", fontFamily: "var(--font-mono)" }}>{m}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {dossier && <DossierTrace dossier={dossier} />}
+          {dossier && <RevalidateRow dossier={dossier} connectionId={connectionId} insightId={insight.id} />}
+
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <span className="aug-label">Source query — the data behind this claim</span>
+              {insight.sql && openInQuery && (
+                <Button variant="ghost" size="xs" style={{ marginLeft: "auto" }}
+                  title="Open this query in a new SQL Editor tab, on the connection it ran against"
+                  onClick={() => {
+                    const words = insight.finding.split(/\s+/);
+                    openInQuery({
+                      sql: insight.sql, connId: connectionId, mode: "sql",
+                      name: `Evidence: ${words.slice(0, 5).join(" ")}${words.length > 5 ? "…" : ""}`,
+                    });
+                    onClose();
+                  }}>
+                  <Icon name="sql" size={12} /> Open in SQL Editor
+                </Button>
+              )}
+            </div>
+            <pre style={{
+              margin: 0, padding: "12px 14px", borderRadius: "var(--r2)",
+              background: "var(--bg-2)", border: "1px solid var(--b1)",
+              fontSize: 12, fontFamily: "var(--font-code)", color: "var(--t2)",
+              whiteSpace: "pre-wrap" as const, wordBreak: "break-word" as const, lineHeight: 1.55,
+            }}>{insight.sql || "— no query recorded —"}</pre>
+          </div>
+
+          {receipt && (
+            <div>
+              <div className="aug-label" style={{ marginBottom: 6 }}>
+                Trust receipt — how this finding was produced
+              </div>
+              <div style={{ display: "flex", flexDirection: "column" as const, gap: 6, padding: "10px 12px", borderRadius: "var(--r2)", background: "var(--bg-2)", border: "1px solid var(--b1)" }}>
+                {receipt.job && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--t2)" }}>
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: receipt.job.state === "SUCCEEDED" ? "var(--grn4)" : "var(--amb4)", flexShrink: 0 }} />
+                    Computed by {receipt.job.kind} job <span style={{ color: "var(--t1)", fontWeight: 500 }}>{receipt.job.id}</span>
+                    {receipt.job.finished_at ? ` · finished ${formatTimestamp(receipt.job.finished_at)}` : ""}
+                  </div>
+                )}
+                <div className="aug-fs-xs" style={{ color: "var(--t2)" }}>
+                  Version {receipt.artifact.version}{receipt.artifact.version > 1 ? " (earlier versions preserved)" : ""} · recorded {formatTimestamp(receipt.artifact.created_at)}
+                </div>
+                {receipt.lineage.filter(l => l.relation === "input").length > 0 && (
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" as const, alignItems: "center" }}>
+                    <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>Inputs:</span>
+                    {receipt.lineage.filter(l => l.relation === "input").map(l => (
+                      <span key={l.ref} className="aug-fs-xs" style={{ padding: "1px 6px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t3)" }}>{l.ref.replace("table:", "")}</span>
+                    ))}
+                  </div>
+                )}
+                {receipt.lineage.filter(l => l.relation === "validated_by").map(l => (
+                  <div key={l.ref} style={{ fontSize: 11, color: "var(--grn4)" }}>
+                    ✓ {l.ref.replace("guard:", "").replace(/_/g, " ")}{l.detail ? ` — ${l.detail}` : ""}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HeadlineCard({ signal, onInvestigate, actions }: {
+  signal:       SynthesisSignal;
+  onInvestigate: (q: string, insightId?: string) => void;
+  actions?:      ReactNode;
+}) {
+  const { insight, domain } = signal;
+
+  return (
+    // Flat card — the novelty is carried by the label + meter, not a colour-coded border.
+    <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "20px 24px" }}>
+      {/* Badge row */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" as const }}>
+        <span className="aug-label">{noveltyLabel(insight.novelty)}</span>
+        <DomainTag domain={domain} />
+        {insight.angle && (
+          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{insight.angle}</span>
+        )}
+        <span style={{ marginLeft: "auto" }}><NoveltyMeter novelty={insight.novelty} width={64} /></span>
+      </div>
+
+      {/* Finding */}
+      <div className="aug-fs-ui" style={{ fontWeight: 500, color: "var(--t1)", lineHeight: 1.65, marginBottom: 16 }}>
+        {insight.finding}
+      </div>
+
+      {/* Footer */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" as const }}>
+        {insight.entities_involved.length > 0 && (
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" as const }}>
+            {insight.entities_involved.slice(0, 4).map(e => (
+              <span key={e} className="aug-fs-xs" style={{
+                padding: "1px 6px", borderRadius: "var(--r1)",
+                background: "var(--bg-3)", border: "1px solid var(--b1)",
+                color: "var(--t3)", fontFamily: "var(--font-mono)",
+              }}>{e.replace(/_/g, " ")}</span>
+            ))}
+          </div>
+        )}
+        <Button
+          variant="minimal" size="sm"
+          onClick={() => onInvestigate(`Investigate: ${insight.finding}`, insight.id)}
+          style={{ marginLeft: "auto" }}
+        >
+          Investigate →
+        </Button>
+      </div>
+      {actions && (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--b1)" }}>{actions}</div>
+      )}
+    </div>
+  );
+}
+
+// ── Verdict hero ────────────────────────────────────────────────────────────────
+/** Conclusion-first briefing lede: ONE bold verdict, a one-line proof, and the
+ *  primary action — up front. The scope/provenance ("synthesized from N domains…")
+ *  is demoted to a quiet footer so the lede isn't cluttered with background process.
+ *  Falls back to the deterministic top finding when no AI narrative exists.
+ *  Confidence % is deliberately NOT shown — it carried no call to action. */
+// Small provenance chips for the verdict hero's meta strip (module-level so they aren't
+// re-created on every VerdictHero render).
+function HeroStatPill({ value, label }: { value: number; label: string }) {
+  return (
+    <span className="aug-fs-xs" style={{ display: "inline-flex", alignItems: "baseline", gap: 5 }}>
+      <span style={{ fontWeight: 600, color: "var(--t2)", fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums" as const }}>{value}</span>
+      <span style={{ color: "var(--t3)" }}>{label}</span>
+    </span>
+  );
+}
+function HeroDivider() {
+  return <span style={{ width: 1, height: 11, background: "var(--b2)" }} />;
+}
+
+/** One "Numbers that moved" tile — a key figure extracted from a finding this cycle,
+ *  carrying the identity to deep-link back to its ledger row. */
+interface MoverTile {
+  ident:      string;   // signalIdentity — the ledger row to scroll/expand
+  insightId:  string;   // the finding id — used to pin from the dashboard empty state
+  value:      string;
+  secondary?: string;
+  label:      string;   // the finding statement (clamped to 2 lines in the tile)
+  sublabel?:  string;   // a short descriptor (for the dashboard's suggested-pin chips)
+  domain:     string;
+  accent:     string;   // domain colour (honest — not a fabricated favorability judgement)
+  /** The finding itself, so a tile can open the same detail its ledger row does — the chart,
+   *  the untruncated statement, Evidence/Investigate — without a round-trip to find it. */
+  insight:    ExplorationInsight;
+  /** Under a range: the finding re-asked for it — the tile's figure — so its detail draws the
+   *  rows that figure is read from. Absent on the standing view. */
+  range?:     RangeFigure;
+}
+
+function VerdictHero({
+  narrative, headline, domainCount, totalInsights, synthesizedAt,
+  onInvestigate, controls, actions, scope, movers, figures, stats,
+  connectionId, onEvidence, vizConfigFor, onVizConfigChange,
+}: {
+  narrative:     BriefingNarrativeResponse | null;
+  headline:      SynthesisSignal | null;
+  domainCount:   number;
+  totalInsights: number;
+  synthesizedAt: string;
+  /** WP-5 — the schema this briefing is for; shown in the footer so two scopes can't be
+   *  confused (the flip used to swap a scoped verdict for an unscoped one with no signal). */
+  scope?:        string;
+  onInvestigate: (q: string, insightId?: string) => void;
+  controls?:     ReactNode;   // Generate / Reload buttons (top-right)
+  actions?:      ReactNode;   // FindingActions menu for the headline finding
+  /** "Numbers that moved" — figures extracted from this cycle's findings; each tile
+   *  opens its finding in place. Empty/absent → the row is omitted. */
+  movers?:       MoverTile[];
+  /** Arc BR-3 — a range's measured figures, BESIDE the tiles (BR-6 follow-up: under a range
+   *  the tiles carry the re-asked findings, so the two rows answer different questions). */
+  figures?:      ReactNode;
+
+  /** Arc BR-3 — a range's one-line proof, in place of the standing counts. */
+  stats?:        string;
+  /** Everything a tile needs to expand in place into its finding's detail. */
+  connectionId?: string;
+  onEvidence?:   (ins: ExplorationInsight, domain: string) => void;
+  vizConfigFor?:      (insightId: string) => VizConfig | null;
+  onVizConfigChange?: (insightId: string, c: VizConfig) => void;
+}) {
+  // Master-detail on the moved numbers: a tile opens its finding in place (chart + full statement)
+  // rather than only deep-linking down to the ledger. One open at a time, like the ledger.
+  const [openIdent, setOpenIdent] = useState<string | null>(null);
+  const openTile = movers?.find(d => d.ident === openIdent) ?? null;
+  // Both are grounded prose quoted verbatim — normalise float noise, never the wording.
+  const theme   = normalizeNumberPrecision(narrative?.headline_theme?.trim());
+  const finding = normalizeNumberPrecision(headline?.insight.finding?.trim());
+  const title   = theme || finding || "Intelligence briefing";
+  // When the AI theme is the headline, the top finding becomes the supporting lead.
+  const lead    = theme ? finding : undefined;
+
+  return (
+    // Flat panel in the shared card language (was a gradient + glow + shadow hero). Prominence now
+    // comes from position, the display-size verdict, and the primary action — not chrome.
+    <div data-brief-hero style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)" }}>
+      <div style={{ padding: "18px 26px 17px" }}>
+        {/* eyebrow (context) + controls */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 13, flexWrap: "wrap" as const }}>
+          <span className="aug-label">
+            Intelligence briefing{scope ? <span style={{ color: "var(--t3)" }}>{"  ·  "}{scope}</span> : null}
+          </span>
+          {controls && <span style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>{controls}</span>}
+        </div>
+
+        {/* the ONE verdict — 24px (the moved-numbers row below now shares the hero's weight) */}
+        <div style={{
+          fontSize: 22, fontWeight: 600, lineHeight: 1.2, color: "var(--t1)",
+          letterSpacing: "-.02em", maxWidth: "56ch", textWrap: "balance" as const,
+          marginBottom: lead ? 10 : 0,
+        }}>{title}</div>
+
+        {/* one-line proof */}
+        {lead && (
+          <p className="aug-fs-ui" style={{
+            color: "var(--t2)", lineHeight: 1.6, maxWidth: 880, margin: 0,
+            display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden",
+          }}>{lead}</p>
+        )}
+
+        {/* actions (left) + trust & provenance (right) on one confident strip */}
+        <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 18, flexWrap: "wrap" as const }}>
+          {(headline || actions) && (
+            <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" as const }}>
+              {headline && (
+                <Button
+                  variant="default" size="sm"
+                  onClick={() => onInvestigate(`Investigate: ${headline.insight.finding}`, headline.insight.id)}
+                >Investigate →</Button>
+              )}
+              {actions}
+            </div>
+          )}
+
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" as const }}>
+            {/* Aughor's differentiator, made explicit: every number is evidence-backed. */}
+            <span title="Every number is grounded in the data and cleared the trust guards"
+              className="aug-tag aug-tag-green">
+              ✓ Grounded &amp; guarded
+            </span>
+            {stats ? (
+              <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{stats}</span>
+            ) : (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 12 }}>
+                <HeroStatPill value={domainCount} label={domainCount === 1 ? "domain" : "domains"} />
+                <HeroDivider />
+                <HeroStatPill value={totalInsights} label={totalInsights === 1 ? "finding" : "findings"} />
+                <HeroDivider />
+                <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{timeAgo(synthesizedAt)}</span>
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* "Numbers that moved" — a 4-up row of key figures pulled from this cycle's
+            findings; each tile is one click from its ledger row (the "every number one click
+            from its why" guarantee). Not north-star KPIs — cycle-specific movers. */}
+        {figures}
+        {/* Under a range these are the RE-ASKED findings (period-scoped values), beside the
+            governed figures rather than instead of them; on the standing view they are the
+            cycle's own movers, as before. */}
+        {movers && movers.length > 0 && (
+          <div data-brief-movers style={{ marginTop: 18 }}>
+            <div className="aug-label" style={{ marginBottom: 8, color: "var(--t3)" }}>
+              {figures ? "What this period's findings found" : "Numbers that moved"}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(4, movers.length)}, minmax(0, 1fr))`, gap: 12 }}>
+              {movers.slice(0, 4).map(d => (
+                <StatTile
+                  key={d.ident}
+                  accent={d.accent}
+                  accentBar
+                  labelLines={2}
+                  label={d.label}
+                  value={<span>{d.value}{d.secondary && <span style={{ color: "var(--t3)", fontSize: 15 }}>{d.secondary}</span>}</span>}
+                  expandable={!!connectionId}
+                  open={openIdent === d.ident}
+                  onClick={connectionId ? () => setOpenIdent(id => (id === d.ident ? null : d.ident)) : undefined}
+                  title={connectionId ? (openIdent === d.ident ? "Collapse" : "Click to open the finding — chart, full statement, evidence") : d.label}
+                  footer={
+                    /* No "finding →" deep-link any more: the tile's own row is now excluded from
+                       the ledger below (it was printing twice), so the link had nothing left to
+                       jump to — and the tile already opens the same detail in place on click. */
+                    <div className="aug-fs-xs" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      {/* Under a range the figure is one row's — "Shipped" — and the tile says whose. */}
+                      <span style={{ fontFamily: "var(--font-mono)", color: "var(--t3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {rowWords(d.range?.reask) ? `${rowWords(d.range?.reask)} · ${d.domain}` : d.domain}
+                      </span>
+                    </div>
+                  }
+                />
+              ))}
+            </div>
+
+            {/* Master-detail: the clicked tile opens its finding IN PLACE — the untruncated
+                statement (the tile clamps to 2 lines) plus the grounded chart/table and the
+                same Evidence / Investigate actions the ledger row offers. Rendered below the
+                grid, not inside it, so it spans the full width regardless of column count. */}
+            {openTile && connectionId && (
+              <div className="aug-anim-up" style={{
+                marginTop: 12, padding: "12px 14px", borderRadius: "var(--r3)", background: "var(--bg-2)",
+                borderTop: "1px solid var(--b1)", borderRight: "1px solid var(--b1)",
+                borderBottom: "1px solid var(--b1)", borderLeft: `3px solid ${openTile.accent}`,
+              }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 10 }}>
+                  <div style={{ fontSize: 13, lineHeight: 1.5, color: "var(--t1)" }}>
+                    {normalizeNumberPrecision(openTile.insight.finding)}
+                  </div>
+                  <Button variant="plain" size="xs" onClick={() => setOpenIdent(null)}
+                    title="Close" aria-label="Close"
+                    style={{ marginLeft: "auto", color: "var(--t3)", fontSize: 15, lineHeight: 1, height: "auto", padding: 2, cursor: "pointer" }}>
+                    ×
+                  </Button>
+                </div>
+                {/* Under a range the tile carries THIS RANGE's figure, and the detail opens on
+                    the rows it is read from. It used to open on the finding's all-history
+                    evidence with a sentence saying so (2026-09-28), and a reader still could
+                    not connect "217 vs 184" to a chart of 37,483 shipped orders (2026-10-09). */}
+                <FindingDetail
+                  key={openTile.ident}
+                  range={openTile.range ?? null}
+                  insight={openTile.insight}
+                  domain={openTile.domain}
+                  connectionId={connectionId}
+                  chartHeight={LEDGER_CHART_H}
+                  onInvestigate={onInvestigate}
+                  onEvidence={onEvidence ?? (() => {})}
+                  vizConfig={vizConfigFor?.(openTile.insight.id) ?? null}
+                  onVizConfigChange={onVizConfigChange ? c => onVizConfigChange(openTile.insight.id, c) : undefined}
+                />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Findings — the bulletin ledger (Direction B) ────────────────────────────────
+/** The narrative layer's reading surface: every finding is ONE scannable row — the
+ *  statement with its figures inline, and the extracted key figure right-aligned. The eye
+ *  scans a single left edge instead of a card mosaic; a row's grounded chart is fetched
+ *  lazily only when it's expanded, so collapsed rows cost zero chart requests. Replaces
+ *  the uniform exhibit-card grid. */
+const LEDGER_DEFAULT = 7;     // first paint: seven rows ≈ the height of one row of old cards
+const LEDGER_STEP    = 12;    // each "Show next" click
+const LEDGER_CHART_H = 190;   // expanded-row chart height
+const LEDGER_COLS    = "1fr 150px 20px";         // [statement | key figure | chevron]
+
+/** Wrap the numeric tokens in a finding statement in bold mono, so figures read as figures
+ *  without the backend having to mark them up. Pure formatting of already-grounded text. */
+function renderFigures(text: string): ReactNode[] {
+  const re = /[$€£¥₹]?\d[\d,]*(?:\.\d+)?\s?[%×BMK]?/g;
+  const out: ReactNode[] = [];
+  let last = 0, m: RegExpExecArray | null, k = 0;
+  while ((m = re.exec(text))) {
+    if (m.index > last) out.push(<span key={k++}>{text.slice(last, m.index)}</span>);
+    out.push(<b key={k++} style={{ fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--t1)" }}>{m[0]}</b>);
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(<span key={k++}>{text.slice(last)}</span>);
+  return out;
+}
+
+/**
+ * The expanded body of a finding — its grounded result as a chart (or a big scalar, or an
+ * honest "no chartable result"), plus Evidence / Investigate.
+ *
+ * Extracted from the ledger row so a moved-number tile can open the SAME detail: the tile and the
+ * row are two entry points to one finding, and they were never going to stay in step as two
+ * copies. Display edits persist through `vizConfig`/`onVizConfigChange`, keyed by the insight.
+ */
+export function FindingDetail({
+  insight, domain, connectionId, chartHeight, onInvestigate, onEvidence,
+  vizConfig, onVizConfigChange, range,
+}: {
+  /** Under a range: the finding re-asked for it. The detail then opens on the range's own rows
+   *  — the ones the figure the reader clicked is read from — with the compared range's and the
+   *  recorded evidence one switch away. Absent on the standing view: the recorded evidence. */
+  range?:        RangeFigure | null;
+  insight:       ExplorationInsight;
+  domain:        string;
+  connectionId:  string;
+  chartHeight:   number;
+  onInvestigate: (q: string, insightId?: string) => void;
+  onEvidence:    (ins: ExplorationInsight, domain: string) => void;
+  vizConfig?:      VizConfig | null;
+  onVizConfigChange?: (c: VizConfig) => void;
+}) {
+  // The rows of the view on screen — fetched LAZILY when a view is first shown (server-cached;
+  // the recorded view is the same query the explorer ran). A single scalar shows as the big
+  // figure; anything richer renders through the chart card; error/empty → text only.
+  const views: FindingView[] = range
+    ? ["range", ...(range.reask.sql_previous && range.reask.previous !== null ? ["compared" as const] : []), "history"]
+    : ["history"];
+  const [view, setView] = useState<FindingView>(range ? "range" : "history");
+  const sql = viewSql(view, insight.sql || "", range).trim();
+  // Keyed by statement: switching back to a view shows what it already drew. `null` = nothing
+  // chartable came back. The ref, not the state, says what was asked — a dependency on the
+  // results would re-run the effect when an answer lands (StrictMode's second run included).
+  const [results, setResults] = useState<Record<string, { columns: string[]; rows: unknown[][] } | null>>({});
+  const asked = useRef(new Set<string>());
+  useEffect(() => {
+    if (!sql || !connectionId || asked.current.has(sql)) return;
+    asked.current.add(sql);
+    runDirectQuery(connectionId, sql, 200, { useCache: true })
+      .then(r => setResults(m => ({
+        ...m,
+        [sql]: r.error || !r.columns?.length || !r.rows?.length ? null : { columns: r.columns, rows: r.rows as unknown[][] },
+      })))
+      .catch(() => setResults(m => ({ ...m, [sql]: null })));
+  }, [sql, connectionId]);
+  const fetched = sql ? results[sql] : null;
+  const phase: "loading" | "chart" | "text" = !sql || !connectionId ? "text" : fetched === undefined ? "loading" : fetched === null ? "text" : "chart";
+  const run = fetched ?? null;
+  const note = figureNote(view, range, run?.rows.length ?? null);
+
+  const scalar = run && run.rows.length === 1 && run.columns.length === 1 && !isNaN(Number(run.rows[0][0]))
+    ? Number(run.rows[0][0]) : null;
+
+  return (
+    <div style={{ background: "var(--bg-1)", border: "1px solid var(--b0)", borderRadius: "var(--r2)", padding: 12 }}>
+      {range && (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" as const }}>
+          <Segmented<FindingView> label="Which rows the chart draws" value={view} onChange={setView}
+            options={views.map(v => v === "range"
+              ? { value: v, label: "This range", title: range.covers }
+              : v === "compared"
+                ? { value: v, label: "Compared range", title: range.comparedWith }
+                : { value: v, label: "All history", title: "The finding's evidence, as it was recorded" })} />
+          <span data-testid="finding-figure-note" className="aug-fs-xs" style={{ color: "var(--t3)", flex: "1 1 320px", minWidth: 0 }}>{note}</span>
+        </div>
+      )}
+      {phase === "loading" && <Shimmer h={chartHeight} r="var(--r2)" />}
+      {phase === "text" && (
+        <div className="aug-fs-xs" style={{ color: "var(--t3)", padding: "8px 2px" }}>
+          {view === "history"
+            ? "No chartable result for this finding — the statement above is the finding."
+            : "Nothing to draw for this range."}
+        </div>
+      )}
+      {phase === "chart" && run && (scalar != null ? (
+        <div className="aug-fs-display" style={{ color: "var(--t1)", fontWeight: 700, fontFamily: "var(--font-mono)", lineHeight: 1, padding: "18px 2px" }}>
+          {/* Rendered as a HEADLINE, not a grid cell, so it takes the prose precision policy —
+              otherwise it reads "45.4865" directly beneath a statement saying "45.49%".
+              `formatMetricValue` still owns the K/M/B abbreviation. */}
+          {normalizeNumberPrecision(formatMetricValue(scalar))}
+        </div>
+      ) : (
+        <div style={{ minHeight: chartHeight }}>
+          <ResultChartCard columns={run.columns} rows={run.rows} fillHeight={chartHeight}
+            config={vizConfig} onConfigChange={onVizConfigChange} />
+        </div>
+      ))}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{insight.angle || "The finding's grounded query"}</span>
+        <span style={{ marginLeft: "auto", display: "flex", gap: 12 }}>
+          <Button variant="ghost" size="xs" onClick={() => onEvidence(insight, domain)}
+            title="See the query + provenance behind this finding"
+            style={{ fontSize: 11, color: "var(--vio4)", padding: "2px 6px" }}>Evidence</Button>
+          <Button variant="ghost" size="xs" onClick={() => onInvestigate(`Investigate: ${insight.finding}`, insight.id)}
+            style={{ fontSize: 11, fontWeight: 600, color: "var(--blue4)", padding: "2px 6px" }}>Investigate →</Button>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, onEvidence, rowRef, vizConfig, onVizConfigChange, range }: {
+  signal:        SynthesisSignal;
+  /** BR-7 — this finding's figure for the range on screen, when it was re-asked; its detail
+   *  then opens on the rows that figure is read from. */
+  range?:        RangeFigure | null;
+  connectionId:  string;
+  expanded:      boolean;
+  onToggle:      () => void;
+  onInvestigate: (q: string, insightId?: string) => void;
+  onEvidence:    (ins: ExplorationInsight, domain: string) => void;
+  rowRef:        (el: HTMLDivElement | null) => void;
+  vizConfig?:      VizConfig | null;
+  onVizConfigChange?: (c: VizConfig) => void;
+}) {
+  const { insight, domain } = signal;
+  const reask = range?.reask ?? null;
+  const fig = extractKeyFigure(insight.finding);
+  const [hover, setHover] = useState(false);
+
+  return (
+    <div ref={rowRef} data-finding={signalIdentity(insight)}
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      style={{ borderBottom: "1px solid var(--b0)", background: expanded || hover ? "var(--bg-3)" : "transparent", transition: "background var(--dur-fast)" }}>
+      <div role="button" tabIndex={0} onClick={onToggle}
+        onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); } }}
+        style={{ display: "grid", gridTemplateColumns: LEDGER_COLS, gap: 14, alignItems: "center", padding: "13px 18px", cursor: "pointer" }}>
+        {/* statement — figures bold mono inline; trust caveat inline amber */}
+        <div style={{ fontSize: 13, lineHeight: 1.45, color: "var(--t1)", minWidth: 0,
+          display: "-webkit-box", WebkitLineClamp: expanded ? 99 : 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
+          {renderFigures(insight.finding)}
+          {insight.plausibility && (
+            <span className="aug-fs-xs" style={{ marginLeft: 6, color: "var(--amb4)", whiteSpace: "nowrap" }}>⚠ {insight.plausibility}</span>
+          )}
+        </div>
+        {/* key figure — extracted scalar, right-aligned, over a mono sub-label */}
+        <div style={{ textAlign: "right", minWidth: 0 }}>
+          {reask ? (<>
+            <div data-testid="ledger-reask" className="aug-fs-h2" style={{ fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--t1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {fmtReask(reask.current, reask.measure)}
+              {reask.previous !== null && <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>{` vs ${fmtReask(reask.previous, reask.measure)}`}</span>}
+            </div>
+            <div className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--t3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+              title={`${reask.grain} · ${reask.rows_current} row(s) in the range, ${reask.rows_previous} before`}>
+              {reask.rel !== null ? `${formatVariance(reask.rel, 0)} · ` : ""}{reask.how === "value" ? "" : reask.how === "row" ? `${rowWords(reask)} · ` : `${reask.how} of `}{reask.measure} · for the range
+            </div>
+          </>) : fig && (<>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 15, fontWeight: 600, color: "var(--t1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {fig.value}{fig.secondary && <span style={{ color: "var(--t3)", fontSize: 12 }}>{fig.secondary}</span>}
+            </div>
+            {fig.sublabel && <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--t3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fig.sublabel}</div>}
+          </>)}
+        </div>
+        {/* chevron */}
+        <span aria-hidden style={{ color: "var(--t3)", fontSize: 12, textAlign: "center" }}>{expanded ? "▴" : "▾"}</span>
+      </div>
+
+      {expanded && (
+        <div style={{ padding: "0 18px 16px" }}>
+          <FindingDetail insight={insight} domain={domain} connectionId={connectionId} range={range}
+            chartHeight={LEDGER_CHART_H} onInvestigate={onInvestigate} onEvidence={onEvidence}
+            vizConfig={vizConfig} onVizConfigChange={onVizConfigChange} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The finding's own id — the key the re-ask (BR-7) and the saved chart display are stored under. */
+const findingId = (s: SynthesisSignal) => findingOf(s).id;
+/** The finding a signal carries. */
+const findingOf = (s: SynthesisSignal) => s.insight;
+
+function FindingsLedger({ signals: given, filter, connectionId, onInvestigate, onEvidence, scrollRef, vizConfigFor, onVizConfigChange, onRange, reask }: {
+  signals:        SynthesisSignal[];
+  /** A range is on screen (absent on What we know): the ledger then lists only the findings
+   *  measured for it (`rangeLedger`), says the rest are in What we know, and leads there. */
+  onRange?:       { covers: string; failed: boolean; onStanding: () => void } | null;
+  /** BR-7 — the findings re-asked for the range: the ledger then orders by the change and each
+   *  row shows its figure for the range. */
+  reask?:         FindingsReask | null;
+  /** The scope chips — drawn on the ledger's own line, after its label. */
+  filter?:        ReactNode;
+  connectionId:   string;
+  onInvestigate:  (q: string, insightId?: string) => void;
+  onEvidence:     (ins: ExplorationInsight, domain: string) => void;
+  /** The ledger's own scroll container — so the jump menu scrolls the panel, not the app shell. */
+  scrollRef?:     { current: HTMLDivElement | null };
+  /** Saved chart display per finding — so an edit survives collapsing the row (or opening
+   *  another, since the ledger is single-open and used to destroy the first row's edits). */
+  vizConfigFor?:      (insightId: string) => VizConfig | null;
+  onVizConfigChange?: (insightId: string, c: VizConfig) => void;
+}) {
+  const reaskById  = useMemo(() => new Map((reask?.reasked ?? []).map(r => [r.id, r] as const)), [reask]);
+  const rangeFigure = (r: FindingReask | undefined): RangeFigure | null =>
+    r && reask ? { reask: r, covers: reask.covers, comparedWith: reask.compared_with } : null;
+  // Under a range: only what was measured for it, by the size of its change; nothing listed
+  // until the measuring answers. On What we know: every finding, in its standing order.
+  const ranged     = useMemo(() => (onRange && reask ? rangeLedger(given, findingId, reask) : null), [onRange, reask, given]);
+  const signals    = useMemo(() => (onRange ? (ranged?.rows ?? []) : given), [onRange, ranged, given]);
+  const [shown, setShown]           = useState(LEDGER_DEFAULT);
+  const [expandedId, setExpandedId] = useState<string | null>(null);   // one row open at a time
+  const [jumpOpen, setJumpOpen]     = useState(false);
+  const [pending, setPending]       = useState<{ ident: string; expand: boolean } | null>(null);
+  const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  const scrollToRow = useCallback((el: HTMLElement) => {
+    const reduce = typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const c = scrollRef?.current;
+    if (!c) { el.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" }); return; }
+    // Container-relative scroll — never a scrollIntoView that yanks the app shell.
+    const top = el.getBoundingClientRect().top - c.getBoundingClientRect().top + c.scrollTop - 72;
+    c.scrollTo({ top, behavior: reduce ? "auto" : "smooth" });
+  }, [scrollRef]);
+
+  // Resolve a jump request: grow the list to include the row (if past the visible count),
+  // expand it (unless it's a plain jump), then scroll it into view.
+  useEffect(() => {
+    if (!pending) return;
+    const idx = signals.findIndex(s => signalIdentity(s.insight) === pending.ident);
+    if (idx < 0) { setPending(null); return; }
+    if (idx >= shown) { setShown(Math.min(signals.length, Math.ceil((idx + 1) / LEDGER_STEP) * LEDGER_STEP)); return; }
+    if (pending.expand) setExpandedId(pending.ident);
+    const el = rowRefs.current.get(pending.ident);
+    if (el) requestAnimationFrame(() => scrollToRow(el));
+    setPending(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending, shown]);
+
+  // Under a scope chip the list can be empty (its findings are the verdict and the moved
+  // numbers above), and the line must still render: it carries the chip that leads back out.
+  if (signals.length === 0 && !filter && !onRange) return null;
+  const top = signals.slice(0, shown);
+  const remaining = signals.length - top.length;
+  const domainsInList = [...new Set(signals.map(s => s.domain))];
+
+  const jumpTo = (d: string) => {
+    setJumpOpen(false);
+    const s = signals.find(x => x.domain === d);
+    if (s) setPending({ ident: signalIdentity(s.insight), expand: false });
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap" as const, gap: "8px 12px", marginBottom: 10 }}>
+        <span className="aug-label" style={{ color: "var(--t2)" }}>Findings</span>
+        {filter}
+      </div>
+      {signals.length === 0 ? (
+        <div data-testid="ledger-range-empty" className="aug-fs-sm" style={{ color: "var(--t3)", padding: "4px 2px" }}>
+          {!onRange ? "Every finding in this scope is already shown above."
+            : !reask && !onRange.failed ? `Measuring the findings for ${onRange.covers}…`
+            : !reask ? `The findings could not be measured for ${onRange.covers} just now. ` +
+                       `${countNoun(given.length, "finding")} about all history ${given.length === 1 ? "is" : "are"} in What we know.`
+            : `No finding could be measured for ${onRange.covers}. ` +
+              (ranged && ranged.elsewhere ? `${ranged.elsewhere === 1 ? "The 1 finding is" : `All ${formatCount(ranged.elsewhere)} are`} about all history: ${reasonWords(ranged.reasons)}.` : "")}
+          {onRange && (reask || onRange.failed) && given.length > 0 && (
+            <Button variant="ghost" size="xs" data-testid="ledger-to-standing" onClick={onRange.onStanding}
+              style={{ marginLeft: 8, color: "var(--blue4)", fontWeight: 500, fontSize: 12, padding: "2px 6px" }}>
+              What we know →
+            </Button>
+          )}
+        </div>
+      ) : (
+        <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", overflow: "hidden" }}>
+          {top.map(sig => {
+            const ident = signalIdentity(findingOf(sig));
+            return (
+              <LedgerRow key={ident} signal={sig} connectionId={connectionId}
+                expanded={expandedId === ident}
+                onToggle={() => setExpandedId(id => (id === ident ? null : ident))}
+                onInvestigate={onInvestigate} onEvidence={onEvidence}
+                rowRef={el => { if (el) rowRefs.current.set(ident, el); else rowRefs.current.delete(ident); }}
+                vizConfig={vizConfigFor?.(findingId(sig)) ?? null}
+                onVizConfigChange={onVizConfigChange ? c => onVizConfigChange(findingId(sig), c) : undefined}
+                range={rangeFigure(reaskById.get(findingId(sig)))} />
+            );
+          })}
+          {/* footer — Show next N · count · jump to domain (replaces the removed sticky nav rail) */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 18px", background: "var(--bg-1)", fontSize: 12, color: "var(--t3)" }}>
+            {remaining > 0 ? (
+              <Button variant="ghost" size="xs" onClick={() => setShown(s => s + LEDGER_STEP)}
+                style={{ color: "var(--t2)", fontWeight: 500, fontSize: 12, padding: "2px 6px" }}>
+                Show next {Math.min(LEDGER_STEP, remaining)}
+              </Button>
+            ) : <span style={{ color: "var(--t3)" }}>All findings shown</span>}
+            {/* The ledger sorts by impact and falls back to novelty (rankImpact); the footer
+                used to say "novelty" alone. */}
+            <span style={{ color: "var(--t3)" }} data-testid="ledger-footer">
+              · {Math.min(shown, signals.length)} of {signals.length}
+              {reask && onRange
+                ? ` · measured for ${reask.covers} · ranked by the change against ${reask.compared_with}` +
+                  (reask.capped ? ` · ${reask.capped} not measured (cap)` : "")
+                : " · ranked by impact, else novelty"}
+            </span>
+            {onRange && ranged && ranged.elsewhere > 0 && (
+              <Button variant="ghost" size="xs" data-testid="ledger-to-standing" onClick={onRange.onStanding}
+                title={reasonWords(ranged.reasons, 99)}
+                style={{ color: "var(--blue4)", fontWeight: 500, fontSize: 12, padding: "2px 6px" }}>
+                {formatCount(ranged.elsewhere)} more about all history in What we know →
+              </Button>
+            )}
+            <div style={{ marginLeft: "auto", position: "relative" }}>
+              <Button variant="ghost" size="xs" onClick={() => setJumpOpen(o => !o)}
+                style={{ color: "var(--t3)", fontSize: 12, padding: "2px 6px" }}>
+                jump to domain ▾
+              </Button>
+              {jumpOpen && (
+                <div style={{ position: "absolute", bottom: "calc(100% + 6px)", right: 0, zIndex: 20, background: "var(--bg-1)", border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-lg)", minWidth: 170, overflow: "hidden", maxHeight: 260, overflowY: "auto" }}>
+                  {domainsInList.map(d => (
+                    <Button key={d} variant="plain" size="xs" onClick={() => jumpTo(d)}
+                      className="w-full justify-start h-auto"
+                      style={{ gap: 8, padding: "7px 11px", fontSize: 12, color: "var(--t2)" }}>
+                      <span style={{ width: 6, height: 6, borderRadius: "var(--r-pill)", background: domainColor(d), flex: "none" }} />{d}
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Signal card ────────────────────────────────────────────────────────────────
+
+function SignalCard({ signal, onInvestigate, actions }: {
+  signal:       SynthesisSignal;
+  onInvestigate: (q: string, insightId?: string) => void;
+  actions?:      ReactNode;
+}) {
+  const { insight, domain } = signal;
+
+  return (
+    <div style={{
+      background: "var(--bg-2)", border: "1px solid var(--b1)",
+      borderRadius: "var(--r3)", padding: "14px 16px",
+      display: "flex", flexDirection: "column" as const, gap: 10,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" as const }}>
+        <DomainTag domain={domain} />
+        {insight.angle && (
+          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{insight.angle}</span>
+        )}
+        <span style={{ marginLeft: "auto" }}><NoveltyMeter novelty={insight.novelty} width={40} /></span>
+      </div>
+      <div className="aug-fs-sm" style={{ color: "var(--t2)", lineHeight: 1.55, flex: 1 }}>
+        {insight.finding.length > 160 ? insight.finding.slice(0, 160) + "…" : insight.finding}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" as const }}>
+        <Button
+          variant="minimal" size="xs"
+          onClick={() => onInvestigate(`Investigate: ${insight.finding}`, insight.id)}
+        >
+          Investigate →
+        </Button>
+        {actions}
+      </div>
+    </div>
+  );
+}
+
+// ── Pattern row (sidebar) ──────────────────────────────────────────────────────
+
+function PatternRow({ pattern, onInvestigate }: {
+  pattern:      Pattern;
+  onInvestigate: (q: string, insightId?: string) => void;
+}) {
+  const color = PATTERN_TYPE_COLORS[pattern.type] ?? "var(--t3)";
+  const icon  = PATTERN_TYPE_ICONS[pattern.type]  ?? "·";
+
+  return (
+    <div
+      onClick={() => onInvestigate(`Investigate the pattern: ${pattern.title}`)}
+      className="group"
+      style={{
+        display: "flex", alignItems: "flex-start", gap: 10,
+        padding: "10px 12px", borderRadius: "var(--r2)",
+        background: "var(--bg-2)", border: "1px solid var(--b1)",
+        cursor: "pointer", transition: "background .1s",
+      }}
+      onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = "var(--bg-3)"; }}
+      onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = "var(--bg-2)"; }}
+    >
+      <span className="aug-fs-ui" style={{ color, flexShrink: 0, lineHeight: 1.4 }}>{icon}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="aug-fs-xs" style={{
+          fontWeight: 500, color: "var(--t1)",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const,
+        }}>
+          {pattern.title}
+        </div>
+        <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 2 }}>
+          {pattern.domains.length} domain{pattern.domains.length !== 1 ? "s" : ""} · {pattern.evidence_count} findings
+        </div>
+      </div>
+      <span className="aug-label" style={{ flexShrink: 0 }}>{pattern.type}</span>
+      {/* Hover-row affordance: a quiet chevron that confirms the row navigates, revealed on
+          hover in a fixed 12px slot so it never nudges the layout. */}
+      <span aria-hidden className="opacity-0 group-hover:opacity-100 transition-opacity"
+        style={{ flexShrink: 0, width: 12, textAlign: "right" as const, color: "var(--blue4)", fontWeight: 700, lineHeight: 1.4 }}>→</span>
+    </div>
+  );
+}
+
+// ── Org signal row (sidebar) ───────────────────────────────────────────────────
+
+function OrgSignalRow({ insight }: { insight: OrgInsight }) {
+  return (
+    <div style={{
+      padding: "10px 12px", borderRadius: "var(--r2)",
+      background: "var(--bg-2)", border: "1px solid var(--b1)",
+    }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center", flexWrap: "wrap" as const }}>
+        <DomainTag domain={insight.domain} />
+        {insight.angle && (
+          <span className="aug-fs-xs" style={{ color: "var(--t3)", marginLeft: "auto" }}>{insight.angle}</span>
+        )}
+      </div>
+      <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
+        {insight.text.length > 120 ? insight.text.slice(0, 120) + "…" : insight.text}
+      </div>
+    </div>
+  );
+}
+
+// ── Empty state ────────────────────────────────────────────────────────────────
+//
+// "Empty" is never silent: we diagnose *why* the briefing has no domain
+// intelligence from the explorer status and offer the matching next action.
+// The four causes map 1:1 to the explorer lifecycle:
+//   never        → no exploration has run (phase pending / no status)   → Start
+//   running      → explorer mid-flight (phases 3-8 in progress)         → wait
+//   failed       → the run errored out                                  → Restart
+//   completeEmpty→ run finished but Phase-8 domain intel is empty        → Trigger
+//                  (ontology gate skipped it, or the schema is too sparse)
+
+type EmptyReason =
+  | { kind: "never" }
+  | { kind: "running"; queries: number; insights: number; phase: string }
+  | { kind: "failed"; error: string | null }
+  | { kind: "ontologyFailed"; note: string | null }
+  | { kind: "completeEmpty"; insights: number };
+
+function emptyReason(status: ExplorerStatus | null): EmptyReason {
+  const phase = status?.phase;
+  // "pending" is not "never": a queued or boot-resumed run reads pending for its
+  // first seconds while prior findings still exist, and rendering "No exploration
+  // has run yet" over real data was a visible flicker. Pending with ANY recorded
+  // work shows as a run in flight; only a truly blank status means never.
+  if (
+    status &&
+    phase === "pending" &&
+    (status.insights_found > 0 || status.facts_discovered > 0 || status.queries_executed > 0)
+  ) {
+    return {
+      kind: "running",
+      queries: status.queries_executed,
+      insights: status.insights_found,
+      phase,
+    };
+  }
+  if (!status || !phase || phase === "pending") return { kind: "never" };
+  if (phase === "failed")   return { kind: "failed", error: status.error };
+  if (phase === "complete") {
+    // Phase-8 ran the gate but its prerequisite ontology couldn't be built — a
+    // specific, retryable failure, not just "nothing generated yet".
+    if (status.domain_intel_skipped) return { kind: "ontologyFailed", note: status.domain_intel_note ?? null };
+    return { kind: "completeEmpty", insights: status.insights_found };
+  }
+  return { kind: "running", queries: status.queries_executed, insights: status.insights_found, phase };
+}
+
+const IDLE_PHASES = new Set(["", "pending", "complete", "failed"]);
+
+/** What is exploring this connection now, from the schema's status and the connection's: the
+ *  schemas mid-run (with their phase words), and whether this page's own
+ *  schema is among them. Null when nothing is — paused and interrupted runs are not running. */
+export function runningNow(scoped: ExplorerStatus | null, conn: ExplorerStatus | null, schema?: string):
+    { schemas: [string, string][]; here: boolean } | null {
+  const live = (st: ExplorerStatus | null) => !!st && !st.paused && !st.interrupted && !IDLE_PHASES.has(String(st.phase ?? ""));
+  const here = live(scoped);
+  if (!here && !live(conn)) return null;
+  const per = Object.entries(conn?.per_schema ?? {}).filter(([, ph]) => !IDLE_PHASES.has(ph));
+  const schemas: [string, string][] = per.length ? per
+    : [[schema ?? "", String((here ? scoped : conn)!.phase)]];
+  return { schemas, here: here || per.some(([sch]) => sch === schema) };
+}
+
+/** The notice a running exploration puts on the Briefing — said before anyone clicks, so the
+ *  controls it makes pointless are not tried (the user, 2026-10-12: a red "already running" after
+ *  a click is the wrong way to learn it). */
+function RunningNotice({ run }: { run: NonNullable<ReturnType<typeof runningNow>> }) {
+  const where = run.schemas.map(([sch, ph]) => `${sch ? `${sch}: ` : ""}${PHASE_LABELS[ph] ?? ph.replace(/_/g, " ")}`).join(" · ");
+  return (
+    <div data-testid="briefing-running" role="status"
+      style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 16px", padding: "10px 14px",
+               background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)" }}>
+      <span aria-hidden className="aug-dot aug-dot-live" style={{ width: 7, height: 7, flex: "none" }} />
+      <span className="aug-fs-sm" style={{ color: "var(--t1)", fontWeight: 500 }}>Exploring now</span>
+      <span className="aug-fs-sm" style={{ color: "var(--t2)", minWidth: 0 }}>
+        {where}
+      </span>
+      <span className="aug-fs-sm" style={{ color: "var(--t3)", marginLeft: "auto" }}>
+        {run.here ? "This page updates as it goes. " : ""}Start and Refresh wait until it finishes.
+      </span>
+    </div>
+  );
+}
+
+const PHASE_LABELS: Record<string, string> = {
+  null_meaning:      "resolving null meanings",
+  join_verification: "verifying joins",
+  lifecycle_mapping: "mapping lifecycles",
+  distribution:      "profiling distributions",
+  cross_table:       "finding cross-table patterns",
+  domain_intel:      "asking its questions",
+  synthesis:         "composing cross-domain findings",
+};
+
+// The birth rite's steps, which run BEFORE the first exploration phase exists. Measured
+// on a 38-table schema: intelligence 7.6s, popularity 8.9s — so this names ~16.5s that
+// otherwise reads as a stalled Start button. Same voice as PHASE_LABELS: what it is
+// doing, not what it is called internally.
+const BIRTH_STEP_LABELS: Record<string, string> = {
+  intelligence: "Building intelligence…",
+  popularity:   "Reading query history…",
+  exploration:  "Starting exploration…",
+};
+
+function BriefingEmpty({
+  status,
+  busy,
+  onStart,
+  onTrigger,
+  canvasId,
+}: {
+  status: ExplorerStatus | null;
+  busy: boolean;
+  onStart: () => void;
+  onTrigger: () => void;
+  canvasId?: string;
+}) {
+  const reason = emptyReason(status);
+  const scope = canvasId ? "this canvas's tables" : "this connection";
+
+  let title: string;
+  let body: string;
+  let cta: { label: string; onClick: () => void } | null = null;
+  let spinning = false;
+
+  switch (reason.kind) {
+    case "never":
+      title = "No exploration has run yet";
+      body  = `Briefings synthesise the domain intelligence discovered by the autonomous explorer. Run an exploration on ${scope} to surface findings — they'll appear here automatically.`;
+      cta   = { label: "Start exploration", onClick: onStart };
+      break;
+    case "running":
+      spinning = true;
+      title = "Exploration in progress";
+      body  = `The explorer is ${PHASE_LABELS[reason.phase] ?? reason.phase} — ${reason.queries} ${reason.queries === 1 ? "query" : "queries"} run, ${reason.insights} raw finding${reason.insights === 1 ? "" : "s"} so far. Domain intelligence appears here once the run completes.`;
+      break;
+    case "failed":
+      title = "Exploration failed";
+      body  = reason.error
+        ? `The last run stopped: ${reason.error}. Restart to try discovering domain intelligence again.`
+        : "The last exploration run did not complete. Restart to try again.";
+      cta   = { label: "Restart exploration", onClick: onStart };
+      break;
+    case "ontologyFailed":
+      title = "Intelligence couldn't be built";
+      body  = `${reason.note || "Domain intelligence is derived from an ontology (object model) of your schema, and that build didn't succeed — usually the schema is too sparse to model."} Rebuild to try again, or query ${scope} directly via Ask or Investigate.`;
+      cta   = { label: "Rebuild & retry", onClick: onTrigger };
+      break;
+    case "completeEmpty":
+      title = "No domain intelligence yet";
+      body  = `Exploration completed${reason.insights > 0 ? ` with ${reason.insights} raw finding${reason.insights === 1 ? "" : "s"}` : ""}, but no domain intelligence has been synthesised for ${scope} — that's the layer briefings are built from. Generate it now; if it stays empty, the schema may be too sparse to build an ontology (you can still Ask or Investigate the data directly).`;
+      cta   = { label: "Generate domain intelligence", onClick: onTrigger };
+      break;
+  }
+
+  return (
+    <div style={{
+      flex: 1, display: "flex", flexDirection: "column" as const,
+      alignItems: "center", justifyContent: "center", gap: 16, padding: 48,
+    }}>
+      <div style={{
+        width: 56, height: 56, borderRadius: "var(--r3)",
+        background: "var(--bg-2)", border: "1px solid var(--b1)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        {spinning ? (
+          <Pending label="Generating the briefing" className="aug-fs-h1" style={{ color: "var(--t3)" }} />
+        ) : (
+          <span style={{ color: "var(--t3)", display: "inline-flex" }}><Icon name="brief" size={22} /></span>
+        )}
+      </div>
+      <div style={{ textAlign: "center" as const, maxWidth: 400 }}>
+        <div style={{ fontSize: 15, fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>
+          {title}
+        </div>
+        <div style={{ fontSize: 12, color: "var(--t3)", lineHeight: 1.6 }}>
+          {body}
+        </div>
+      </div>
+      {cta && (
+        <Button
+          variant="secondary" size="sm"
+          onClick={cta.onClick}
+          disabled={busy}
+        >
+          {busy ? (
+            <>
+              <Pending />
+              Working…
+            </>
+          ) : (
+            <>
+              <Icon name="spark" size={12} />
+              {cta.label}
+            </>
+          )}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+// ── Loading state — content-shaped skeletons ────────────────────────────────────
+// Not a bare spinner: the briefing's OWN shape shimmers in place, so the layout doesn't
+// jump when the real content lands (the old spinner grew the section and shoved
+// everything below it down). Uses the app's standard skeleton idiom (the .aug-skeleton shimmer on a
+// muted fill) and the same flat card language as the reskinned briefing.
+
+/** One shimmer bar. */
+function Shimmer({ w = "100%", h = 12, r = "var(--r1)", mt = 0 }: { w?: number | string; h?: number; r?: string; mt?: number }) {
+  return <div className="aug-skeleton" style={{ width: w, height: h, marginTop: mt, borderRadius: r }} />;
+}
+
+const skelCard: React.CSSProperties = { background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)" };
+
+/** The full-synthesis prose block while the narrative streams — mirrors NarrativeCard's shape. */
+function SynthesisSkeleton() {
+  return (
+    <div style={{ ...skelCard, padding: "18px 22px", display: "flex", flexDirection: "column", gap: 9 }}
+      aria-busy="true" aria-label="Writing briefing">
+      {["100%", "97%", "99%", "94%", "98%", "62%"].map((w, i) => <Shimmer key={i} w={w} h={12} />)}
+    </div>
+  );
+}
+
+/** Whole-briefing first load — verdict hero + 3 supporting signals + synthesis, in shape. */
+function BriefingLoading() {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }} aria-busy="true" aria-label="Synthesizing intelligence">
+      {/* Verdict hero */}
+      <div style={{ ...skelCard, padding: "18px 26px 20px" }}>
+        <Shimmer w={130} h={10} />
+        <Shimmer w={70} h={10} mt={16} />
+        <Shimmer w="68%" h={22} mt={14} />
+        <Shimmer w="46%" h={22} mt={8} />
+        <Shimmer w="88%" h={13} mt={16} />
+        <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+          <Shimmer w={120} h={30} />
+          <Shimmer w={180} h={30} />
+        </div>
+      </div>
+      {/* Supporting signals — 3-up */}
+      <div>
+        <Shimmer w={120} h={11} />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginTop: 10 }}>
+          {[0, 1, 2].map(i => (
+            <div key={i} style={{ ...skelCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
+              <Shimmer w={80} h={20} r="var(--r-chip)" />
+              <Shimmer w="100%" h={12} mt={4} />
+              <Shimmer w="92%" h={12} />
+              <Shimmer w="70%" h={12} />
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* Full synthesis */}
+      <div>
+        <Shimmer w={110} h={11} />
+        <div style={{ marginTop: 10 }}><SynthesisSkeleton /></div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main component ─────────────────────────────────────────────────────────────
+
+export function BriefingPanel({
+  connectionId,
+  onInvestigate,
+  canvasId,
+  schema,
+  workspaceId,
+  schemaReady = true,
+}: {
+  connectionId: string;
+  onInvestigate: (q: string, insightId?: string) => void;
+  /** When set, the briefing is scoped to this Canvas's curated tables (not the whole
+   *  connection) — keeps Briefing consistent with the already-canvas-scoped Domains. */
+  canvasId?: string;
+  /** Shared schema scope from the workspace header (filters findings + narrative).
+   *  Undefined = all schemas. N/A for a canvas (already table-scoped). */
+  schema?: string;
+  /** Active workspace — lets a workspace-scoped currency/industry override win in the
+   *  backend briefing (override-wins over the app default). Undefined = app default. */
+  workspaceId?: string;
+  /** WP-5 — whether the parent's schema selector has settled. The narrative auto-fetch
+   *  waits for this so it never fires an unscoped request before the schema resolves.
+   *  Defaults true for callers without a schema selector (e.g. a canvas mount). */
+  schemaReady?: boolean;
+}) {
+  const [briefing, setBriefing]             = useState<BriefingData | null>(null);
+  const [pinnedRefresh, setPinnedRefresh]   = useState(0);
+  // Arc CT-7 — the person's dashboards are a tab beside the Briefing (IntelligenceWorkspace), so
+  // the standing layer below is not drawn. A canvas's Briefing has no such tab and keeps the layer.
+  const dashboardsOn = !canvasId;
+  // The canvas (B1) — the Briefing's switches: which sections this person shows, in what order,
+  // and which dashboard of theirs rides with it. A preference, kept on the server; the content of
+  // a section is never theirs to change. Until the store answers, the product's order.
+  const [sections, setSections]             = useState<BriefingSectionsPref>(DEFAULT_SECTIONS);
+  const [sectionsOpen, setSectionsOpen]     = useState(false);
+  const [sectionsBusy, setSectionsBusy]     = useState(false);
+  const [myDashboards, setMyDashboards]         = useState<DashboardChoice[]>([]);
+  useEffect(() => {
+    let alive = true;
+    getMyPreferences().then(p => {
+      if (!alive) return;
+      setSections(normalizeSections(p.preferences.briefing_sections));
+      setFiguresPref(normalizeFigures(p.preferences[FIGURES_PREF_KEY]));
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  useEffect(() => {
+    if (!dashboardsOn) { setMyDashboards([]); return; }
+    let alive = true;
+    listDashboards(connectionId).then(l => {
+      if (alive) setMyDashboards(l.cockpits.filter(c => !c.retired).map(c => ({ id: c.cockpit_id, title: c.title || c.cockpit_id })));
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [connectionId, dashboardsOn]);
+  // The figures a reader keeps on the front, below, or hidden — per dataset, theirs alone (2026-10-26).
+  const [figuresPref, setFiguresPref] = useState<FiguresPref>({});
+  const [choosing, setChoosing] = useState(false);
+  const [figuresBusy, setFiguresBusy] = useState(false);
+  const figScope = scopeKey(connectionId, schema);
+  const saveFigures = useCallback(async (next: FigureChoice, said: string) => {
+    const before = figuresPref;
+    const pref = withChoice(figuresPref, figScope, next);
+    setFiguresPref(pref);
+    setFiguresBusy(true);
+    try {
+      await putMyPreference(FIGURES_PREF_KEY, pref);
+      toast.success(said);
+    } catch (e) {
+      setFiguresPref(before);
+      toast.error("Your choice of figures was not kept", { description: (e as Error).message.slice(0, 160) });
+    } finally { setFiguresBusy(false); }
+  }, [figuresPref, figScope]);
+  const saveSections = useCallback(async (next: BriefingSectionsPref, said: string) => {
+    const before = sections;
+    setSections(next);
+    setSectionsBusy(true);
+    try {
+      await putMyPreference("briefing_sections", next);
+      toast.success(said);
+    } catch (e) {
+      setSections(before);
+      toast.error("Your Briefing's switches were not kept", { description: (e as Error).message.slice(0, 160) });
+    } finally { setSectionsBusy(false); }
+  }, [sections]);
+  // The ask side panel. Closed by default — the brief is the page; asking is a mode
+  // you enter, and an always-mounted panel would cost every reader ~420px of width.
+  const [askOpen, setAskOpen]               = useState(false);
+  // Scope chips: narrow the narrative layer (supporting signals + top patterns) to one
+  // domain; null = all. The standing dashboard layer is intentionally left unscoped — it's
+  // the user's arranged surface, not a per-cycle finding view.
+  const [scope, setScope]                   = useState<string | null>(null);
+  const [loading, setLoading]               = useState(false);
+  const [error, setError]                   = useState<string | null>(null);
+  const [narrative, setNarrative]           = useState<BriefingNarrativeResponse | null>(null);
+  const [narrativeLoading, setNarrativeLoading] = useState(false);
+  const [narrativeError, setNarrativeError] = useState<string | null>(null);
+  // A period with nothing to brief on is a statement about the period, not a failure.
+  const [periodNote, setPeriodNote]         = useState<string | null>(null);
+  // The scope is turned off for analysis: the page says so and nothing found before is shown.
+  const [offScope, setOffScope]             = useState<BriefingOff | null>(null);
+  // Arc BR-3 — one control for any range, the standing view being what the platform knows. The
+  // range scopes the page; never on a canvas (its endpoint has no range).
+  // §6 item 34(d): the Briefing OPENS on the Day; "What we know" is one click away.
+  const [chosen, setRange]                  = useState<RangeChoice | null>(null);
+  // BR-7 — the findings re-asked for the range on screen, keyed by that range so a stale
+  // answer never renders under a newer heading; null on the standing view.
+  const [reaskFor, setReaskFor]             = useState<{ key: string; data: FindingsReask } | null>(null);
+  // The range whose findings could not be measured (the read failed) — said, never read as "none".
+  const [reaskFailedFor, setReaskFailedFor] = useState<string | null>(null);
+  const range = useMemo<RangeChoice>(() => chosen ?? { preset: "yesterday" }, [chosen]);
+  // The scope this panel is currently rendering. Mirrors the server's `scope_key` EXACTLY
+  // (`canvas:<id>` | `<conn>:<schema>` | `<conn>`) so a returned brief can be checked
+  // against it — see the scope guard in `generateNarrative`.
+  const narrativeScope = canvasId ? `canvas:${canvasId}` : (schema ? `${connectionId}:${schema}` : connectionId);
+  // Scope the narrative auto-fetch by connection+schema so the AI Synthesis card
+  // re-fetches when the shared schema selector changes (it previously short-circuited
+  // on `narrative !== null`, leaving the synthesis stale while every other card updated).
+  const fetchedScope = useRef<string | null>(null);
+  // WP-5 — monotonically increasing request id: only the LATEST narrative fetch may apply
+  // its result. Kills the headline-flip when two briefings (e.g. an unscoped one that raced
+  // ahead, or a StrictMode double-invoke) resolve out of order — the stale one is discarded.
+  const reqSeq = useRef(0);
+  const [explorerStatus, setExplorerStatus]   = useState<ExplorerStatus | null>(null);
+  // The CONNECTION's run, read beside the schema's: a multi-schema connection explores its
+  // schemas one after another, so a schema's own status reads "complete" while the connection
+  // is busy on another — and Start then met "already running" (2026-10-12).
+  const [connStatus, setConnStatus]           = useState<ExplorerStatus | null>(null);
+  const [explorerBusy, setExplorerBusy]       = useState(false);
+  const [explorerError, setExplorerError]     = useState<string | null>(null);
+  // The label of the action dispatched but not yet VISIBLE in the status ("Starting…").
+  // Measured: the POST behind Start answers in 42ms, so a spinner tied to the request
+  // lasts 42ms — below perception — while the phase it triggers takes seconds to appear.
+  // For ~17s the panel then showed the pre-click state with an enabled Start button, so
+  // the only feedback a click produced was none, and clicking again was invited.
+  const [explorerPending, setExplorerPending] = useState<string | null>(null);
+  // The birth-rite step currently running, from the `birth.step` events the backend
+  // already emits. Names the wait instead of leaving it blank.
+  const [birthStep, setBirthStep] = useState<string | null>(null);
+  // Locked while a request is in flight, while a dispatched action has not yet become
+  // visible, AND while a birth rite is running — including one this user did not start
+  // (a connection auto-explores on boot). Offering "Start" during a run in progress was
+  // itself part of what made the controls feel unreliable.
+  const controlsLocked = explorerBusy || !!explorerPending || !!birthStep;
+  const [triggers, setTriggers]               = useState<ActionTrigger[]>([]);
+  const [evidenceInsight, setEvidenceInsight] = useState<ExplorationInsight | null>(null);
+  const [evidenceDomain, setEvidenceDomain]   = useState<string>("");
+  // The ledger's jump menu expands + scrolls to a finding, and it scrolls THIS container
+  // (never a shell-yanking scrollIntoView).
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Available delivery channels for the Share action (Action Hub triggers).
+  useEffect(() => {
+    let alive = true;
+    getActionTriggers().then(t => { if (alive) setTriggers(t); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const openEvidence = useCallback((ins: ExplorationInsight, domain: string) => {
+    setEvidenceDomain(domain);
+    setEvidenceInsight(ins);
+  }, []);
+
+  const showTriggersHint = useCallback(() => {
+    toast.info("No delivery channel yet", { description: "Add a Slack/webhook trigger in Notifications to share findings." });
+  }, []);
+
+  const load = useCallback(async () => {
+    if (!canvasId && !connectionId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      // Canvas scope: use the canvas's domain insights; patterns aren't computed per-canvas
+      // (the canvas briefing endpoint derives them internally for the narrative).
+      const [domainRaw, patternsRes, orgInsights] = await Promise.all([
+        canvasId ? getCanvasDomainInsights(canvasId) : getDomainInsights(connectionId, schema),
+        canvasId
+          ? Promise.resolve({ patterns: [] as Pattern[], count: 0 })
+          : getPatterns(connectionId, false, schema).catch(() => ({ patterns: [] as Pattern[], count: 0 })),
+        getOrgIntelligence().catch(() => [] as OrgInsight[]),
+      ]);
+      setBriefing(synthesize(domainRaw, patternsRes.patterns, orgInsights));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load briefing");
+    } finally {
+      setLoading(false);
+    }
+  }, [connectionId, canvasId, schema]);
+
+  const generateNarrative = useCallback(async (forceRefresh = false) => {
+    if (!canvasId && !connectionId) return;
+    const myReq = ++reqSeq.current;   // WP-5 — this call is now the latest
+    const forScope = narrativeScope;
+    setNarrativeLoading(true);
+    setNarrativeError(null);
+    setPeriodNote(null);
+    setOffScope(null);
+    // Drop the OUTGOING brief up front. It belongs to whatever scope was current when it
+    // was fetched; from here on the only correct thing to paint is this call's result or
+    // an error. Leaving it up is how a previous schema's synthesis ended up rendered under
+    // a new schema's verdict (the two are separate state; only the hero re-derived).
+    setNarrative(null);
+    try {
+      const onRange = !canvasId && range.preset !== "standing";
+      const readRange = async () => {
+        // A READ never builds: the snapshot when there is one; otherwise it is built — the
+        // user's call (§6 item 34(g)): a custom range is built without asking.
+        const r = range as BriefingRange;
+        const snap = forceRefresh ? null : await readRangeBriefing(connectionId, r, schema, workspaceId);
+        if (snap && isRangeBlock(snap.period)) setEditionFor({ key: JSON.stringify(r), block: snap.period as BriefingRangeBlock });
+        return snap && (snap.built || snap.off) ? snap : buildRangeBriefing(connectionId, r, schema, workspaceId, forceRefresh);
+      };
+      const result = onRange ? await readRange() : canvasId
+        ? await generateCanvasBriefingNarrative(canvasId, forceRefresh, workspaceId)
+        // the standing brief is requested exactly as it always was
+        : await generateBriefingNarrative(connectionId, forceRefresh, schema, workspaceId);
+      if (myReq !== reqSeq.current) return;   // superseded → don't paint a stale brief (the flip guard)
+      // Scope guard: the server stamps the scope it generated FOR. A brief that doesn't
+      // claim THIS scope is never painted — that makes a cross-scope leak structurally
+      // impossible rather than merely unlikely. (Briefs cached before `scope_key` existed
+      // carry none; those are refused too and simply regenerate.)
+      if (result.available && result.scope_key && result.scope_key !== forScope) {
+        setNarrativeError("This briefing was generated for a different scope — regenerating.");
+        return;
+      }
+      if (result.off) setOffScope(result.off);
+      else if (result.available) setNarrative(result);
+      else if (result.period) setPeriodNote(periodUnavailable(result.period));
+      // every finding here reads a table turned off: that is why there is no story, not a missing exploration
+      else if (result.left_out) setPeriodNote(`No story to write: ${result.left_out.said}`);
+      else setNarrativeError("No domain intelligence available — run an exploration first.");
+    } catch (e) {
+      if (myReq === reqSeq.current) setNarrativeError(e instanceof Error ? e.message : "Failed to generate narrative");
+    } finally {
+      if (myReq === reqSeq.current) setNarrativeLoading(false);
+    }
+  }, [connectionId, canvasId, schema, workspaceId, narrativeScope, range]);
+
+  // Shared explorer actions — used by both the control bar and the empty-state CTA.
+  // In canvas mode (canvasId set) every action drives the *canvas* explorer, scoped to
+  // the canvas's curated tables (#7) — not the underlying connection.
+  //
+  // Two failure modes these must NOT swallow (both made the buttons read as dead):
+  //  1. The backend refuses politely with HTTP 200 + {ok:false, reason} ("already
+  //     running", "phases 3-7 not complete", "connection not ready") — only thrown
+  //     errors ever reached the catch, so a refusal changed nothing on screen.
+  //  2. Nothing re-polled status after a click — the 60s fallback interval was the
+  //     only guarantee of visible change when kernel events are quiet.
+  // `pollRef` is filled by the status-poll effect below; actions call it on completion.
+  const pollRef = useRef<() => Promise<ExplorerStatus | null>>(async () => null);
+
+  // Wait for a dispatched action to become VISIBLE, holding the pending label meanwhile.
+  //
+  // The old sequence polled once, immediately, and that poll almost always lost: the POST
+  // returns as soon as the job is accepted, before the phase moves, so the refresh spent
+  // on the click re-read the state the click was meant to change. Nothing polled again
+  // until a kernel event or the 60s fallback — measured at 17 seconds of a screen
+  // identical to the one before the click.
+  //
+  // So poll on a backoff until the phase differs from what it was, then hand back to the
+  // event path. The cap matters: an action whose phase never moves must not pin the
+  // controls forever, so after it the buttons return to the live status even if that
+  // status is unchanged. `seq` guards against a second click racing the first.
+  const confirmSeq = useRef(0);
+  const confirmAction = useCallback(async (label: string, phaseBefore: string | null) => {
+    const seq = ++confirmSeq.current;
+    setExplorerPending(label);
+    const backoff = [300, 500, 800, 1200, 1800, 2500, 3000, 3000, 3000, 3000, 3000, 3000];
+    for (const wait of backoff) {
+      await new Promise(r => setTimeout(r, wait));
+      if (confirmSeq.current !== seq) return;      // superseded by a newer action
+      const s = await pollRef.current();
+      if (confirmSeq.current !== seq) return;
+      if ((s?.phase ?? null) !== phaseBefore) break;
+    }
+    if (confirmSeq.current === seq) setExplorerPending(null);
+  }, []);
+
+  /** Surface a 200-level refusal — strictly `ok === false`, because the canvas
+   *  endpoints answer {status:"started"} with no `ok` at all (and fail by throwing).
+   *  Trigger-intel fans out per schema and reports {results:[{schema, ok, reason}]} —
+   *  show the first failing schema's reason. */
+  /** Shows the refusal, and REPORTS it: a refused action started nothing, so its caller
+   *  must not then wait for a phase change that is never coming. */
+  const surfaceRefusal = useCallback(
+    (res: { ok?: boolean; status?: string; reason?: string; results?: { schema?: string | null; ok: boolean; reason?: string }[] }, fallback: string): boolean => {
+      if (res.ok !== false) return false;
+      const failed = res.results?.find(r => !r.ok);
+      const reason = res.reason ?? failed?.reason;
+      // A run is already going: nothing failed. Read the status again, and the running notice
+      // says what is going on instead of a red chip.
+      if (/already running/i.test(reason ?? "")) { setExplorerError(null); void pollRef.current(); return true; }
+      const scope = failed?.schema ? `[${failed.schema}] ` : "";
+      setExplorerError(reason ? `${scope}${reason}` : fallback);
+      return true;
+    }, []);
+
+  const runExplorer = useCallback(async () => {
+    if (!canvasId && !connectionId) { setExplorerError("No connection selected"); return; }
+    const before = explorerStatus?.phase ?? null;
+    setExplorerBusy(true);
+    setExplorerError(null);
+    try {
+      const res = canvasId ? await resumeCanvasExploration(canvasId)
+                           : await startExplorer(connectionId, schema);
+      if (surfaceRefusal(res, "The explorer did not start")) { setExplorerBusy(false); return; }
+    } catch (e) {
+      setExplorerError(e instanceof Error ? e.message : "Could not start the explorer");
+      setExplorerBusy(false);
+      return;                          // nothing started, so nothing to wait to become visible
+    }
+    setExplorerBusy(false);
+    confirmAction("Starting…", before);
+  }, [connectionId, canvasId, schema, surfaceRefusal, explorerStatus?.phase, confirmAction]);
+
+  /** Does this connection already hold findings? — the discriminator the explorer control
+   *  bar keys on, replacing `phase === "complete"`.
+   *
+   *  A phase is the verdict of the LAST run; findings are the accumulated result of every
+   *  run. Those come apart exactly when it matters: a run that fails after (or on top of)
+   *  a successful one leaves a full briefing behind a phase that says failed, and keying
+   *  the controls on the phase then hides the only two actions that make sense.
+   *
+   *  `facts_discovered` rather than the findings count: it is the superset (findings plus
+   *  mapped lifecycles), so a run that verified structure without landing a finding still
+   *  has a body of work worth extending — and "is there anything here at all" is the
+   *  question these controls actually turn on. */
+  const hasFindings = (explorerStatus?.facts_discovered ?? 0) > 0;
+  // Is anything exploring this connection right now — this schema or another of its schemas?
+  // While it is, Start / Trigger Intel / Refresh / Restart can only be refused, so they are not
+  // offered; the running notice says what is going on, and Stop stays.
+  const run = runningNow(explorerStatus, connStatus, schema);
+
+  const runTriggerIntel = useCallback(async () => {
+    if (!canvasId && !connectionId) { setExplorerError("No connection selected"); return; }
+    const before = explorerStatus?.phase ?? null;
+    setExplorerBusy(true);
+    setExplorerError(null);
+    try {
+      const res = canvasId ? await triggerCanvasDomainIntelligence(canvasId)
+                           : await triggerDomainIntelligence(connectionId);
+      if (surfaceRefusal(res, "Intelligence did not trigger")) { setExplorerBusy(false); return; }
+    } catch (e) {
+      setExplorerError(e instanceof Error ? e.message : "Could not trigger intelligence");
+      setExplorerBusy(false);
+      return;
+    }
+    setExplorerBusy(false);
+    confirmAction("Triggering…", before);
+  }, [connectionId, canvasId, surfaceRefusal, explorerStatus?.phase, confirmAction]);
+
+  // One-click refresh: clears stale findings and re-runs the full pipeline under the
+  // current (corrected) explorer — drops "no data" / cross-dataset findings, re-anchors
+  // the temporal window. The honest way to make a stale headline reliable + up to date.
+  const runRefresh = useCallback(async () => {
+    if (!canvasId && !connectionId) { setExplorerError("No connection selected"); return; }
+    const before = explorerStatus?.phase ?? null;
+    setExplorerBusy(true);
+    setExplorerError(null);
+    try {
+      const res = canvasId ? await restartCanvasExploration(canvasId)
+                           : await restartExplorer(connectionId);
+      if (surfaceRefusal(res, "The refresh did not start")) { setExplorerBusy(false); return; }
+    } catch (e) {
+      setExplorerError(e instanceof Error ? e.message : "Refresh failed");
+      setExplorerBusy(false);
+      return;
+    }
+    setExplorerBusy(false);
+    confirmAction("Refreshing…", before);
+  }, [connectionId, canvasId, surfaceRefusal, explorerStatus?.phase, confirmAction]);
+
+  const runStop = useCallback(async () => {
+    if (!canvasId && !connectionId) { setExplorerError("No connection selected"); return; }
+    const before = explorerStatus?.phase ?? null;
+    setExplorerBusy(true);
+    setExplorerError(null);
+    try {
+      const res = canvasId ? await stopCanvasExploration(canvasId)
+                           : await stopExplorer(connectionId);
+      if (surfaceRefusal(res, "The explorer did not stop")) { setExplorerBusy(false); return; }
+    } catch (e) {
+      setExplorerError(e instanceof Error ? e.message : "Stop failed");
+      setExplorerBusy(false);
+      return;
+    }
+    setExplorerBusy(false);
+    confirmAction("Stopping…", before);
+  }, [connectionId, canvasId, surfaceRefusal, explorerStatus?.phase, confirmAction]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Auto-fetch the cached narrative on mount and whenever the scope (connection or
+  // shared schema) changes. Guard on the scope we last fetched — not on `narrative
+  // !== null` — so a schema switch actually re-fetches instead of keeping the old one.
+  useEffect(() => {
+    if (!canvasId && !connectionId) return;
+    // WP-5 — wait for the shared schema selector to settle before the first connection-scoped
+    // fetch, so we never issue an unscoped briefing request that then races the scoped one.
+    if (!canvasId && !schemaReady) return;
+    // the version on screen is part of what was fetched: switching range re-fetches
+    const fetchKey = `${narrativeScope}#${JSON.stringify(range)}`;
+    if (fetchKey === fetchedScope.current) return;
+    fetchedScope.current = fetchKey;
+    generateNarrative(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectionId, canvasId, schema, schemaReady, narrativeScope, range]);
+
+  // Poll explorer status — canvas-scoped when a canvasId is set (#7), so the control
+  // bar + empty-state reflect the *canvas* explorer's phase, not the connection's.
+  useEffect(() => {
+    const scopeId = canvasId || connectionId;
+    if (!scopeId) return;
+    let mounted = true;
+    // Returns what it read, so an action can wait for its OWN effect to become visible
+    // instead of firing one poll that races the backend and loses.
+    const poll = () => {
+      const req = canvasId ? getCanvasExplorationStatus(canvasId) : getExplorerStatus(connectionId, schema);
+      if (!canvasId && schema) {
+        getExplorerStatus(connectionId)
+          .then(s => { if (mounted) setConnStatus(s); })
+          .catch(() => { if (mounted) setConnStatus(null); });
+      }
+      return req
+        .then(s => { if (mounted) { setExplorerStatus(s); if (canvasId || !schema) setConnStatus(s); } return s; })
+        .catch(() => { if (mounted) setExplorerStatus(null); return null; });
+    };
+    pollRef.current = poll;   // let the action handlers refresh status immediately
+    poll();
+    // The subscription fires the callback ONCE PER EVENT, and events arrive in bursts —
+    // a single kernel tick was measured issuing NINE identical status requests in the
+    // same millisecond. Coalesce them: a burst schedules one refresh, not one each.
+    let burst: ReturnType<typeof setTimeout> | null = null;
+    const coalescedPoll = () => {
+      if (burst !== null) return;
+      burst = setTimeout(() => { burst = null; poll(); }, 120);
+    };
+    // K2: phase-change events drive this; the interval is only a slow fallback
+    // (was a 3s poll — the worst offender of the seven).
+    const iv = setInterval(poll, 60_000);
+    // `birth.` is subscribed because the backend ALREADY narrates this wait and nobody
+    // was listening. A Start hands off to the birth rite, which runs two preparatory
+    // steps before exploration begins — measured at 7.6s (intelligence) and 8.9s
+    // (popularity, 4,785 queries over 38 tables). Only after both does the first
+    // `exploration.phase` arrive, which is the ONLY thing this panel used to react to.
+    // So ~16.5s of real, named work looked like a hang. The events carry `step` and a
+    // started/done status; showing them costs nothing and changes the wait from
+    // "nothing is happening" to "this is what is happening".
+    const unsub = subscribeKernelEvents(ev => {
+      if (ev.kind === "birth.step" || ev.kind === "birth.done") {
+        const p = (ev.payload ?? {}) as { step?: string; status?: string; schema?: string | null };
+        // Events for a sibling schema must not narrate THIS panel's wait.
+        const sameScope = !schema || !p.schema || p.schema === schema;
+        if (sameScope) {
+          if (ev.kind === "birth.done") setBirthStep(null);
+          else if (p.status === "started" && p.step) setBirthStep(p.step);
+        }
+      }
+      coalescedPoll();
+    }, {
+      kinds: ["exploration.", "job.state", "birth."],
+      ...(canvasId ? { canvasId } : { connId: connectionId }),
+    });
+    return () => {
+      mounted = false;
+      clearInterval(iv);
+      if (burst !== null) clearTimeout(burst);
+      unsub();
+    };
+  }, [connectionId, canvasId, schema]);
+
+  // Auto-refresh the briefing the moment an exploration run reaches "complete" —
+  // newly-synthesised domain intelligence would otherwise stay hidden until a manual Reload.
+  const prevPhaseRef = useRef<string | null>(null);
+  useEffect(() => {
+    const phase = explorerStatus?.phase ?? null;
+    if (prevPhaseRef.current && prevPhaseRef.current !== "complete" && phase === "complete") {
+      load();
+      fetchedScope.current = null; // WP-5 — clear the scope guard so the auto-fetch refires
+      setNarrative(null); // let the cached-narrative auto-fetch pick up fresh intel
+    }
+    prevPhaseRef.current = phase;
+  }, [explorerStatus?.phase, load]);
+
+  // ── ⌘K contextual commands (present only while the Briefing is mounted) ──
+  const regenRefCmd = useRef(generateNarrative);
+  const startRefCmd = useRef(runExplorer);
+  useEffect(() => { regenRefCmd.current = generateNarrative; startRefCmd.current = runExplorer; });
+  const briefCommands = useMemo<Command[]>(() => [
+    { id: "brief-regen",   label: "Regenerate briefing", sublabel: "Re-synthesize the intelligence briefing",        icon: "spark",   accent: "var(--blue3)", keywords: "regenerate refresh brief narrative synthesis",  run: () => regenRefCmd.current(true) },
+    { id: "brief-explore", label: "Start exploration", sublabel: "Run the autonomous explorer on this connection",   icon: "process", accent: "var(--cyn3)",  keywords: "explore exploration run analyze discover signals", run: () => startRefCmd.current() },
+  ], []);
+  useRegisterCommands("briefing", briefCommands);
+
+  // Scope-chip derivations — filter the narrative-layer findings + patterns to the active
+  // domain. Guard the scope against a stale value (a reload can drop the domain), and drop
+  // the headline (it already leads the verdict hero) by IDENTITY — not id, which collides
+  // across the meta-domains. Unscoped, the strip starts breadth-first (the deduped one-per-
+  // domain signals) and extends into the full impact-ranked list behind "Show more".
+  const scopeDomain    = scope && briefing?.domains.some(d => d.name === scope) ? scope : null;
+  const headlineIdent  = briefing?.headline ? signalIdentity(briefing.headline.insight) : null;
+
+  // "Numbers that moved" (the hero tiles) + the dashboard's suggested pins share ONE extraction:
+  // the top findings (unscoped, headline excluded) that yield a key figure, in impact order.
+  // Every figure is quoted from a grounded finding statement — never invented.
+  const movers = useMemo<MoverTile[]>(() => {
+    if (!briefing) return [];
+    const headlineId = briefing.headline ? signalIdentity(briefing.headline.insight) : null;
+    const ranked = dedupeSignals([...briefing.signals, ...briefing.allSignals])
+      .filter(s => signalIdentity(s.insight) !== headlineId);
+    const out: MoverTile[] = [];
+    for (const s of ranked) {
+      const found = s.insight;
+      const fig = extractKeyFigure(found.finding);
+      if (!fig) continue;
+      out.push({
+        ident: signalIdentity(found), insightId: found.id,
+        value: fig.value, secondary: fig.secondary, sublabel: fig.sublabel,
+        // PX-1 — the tile quotes the finding's prose, and stored prose can carry raw
+        // float64s ("0.315801 of total Gross Sales"). Precision policy at the render
+        // boundary, same as everywhere else; the stored finding is untouched.
+        label: normalizeNumberPrecision(found.finding),
+        domain: s.domain, accent: domainColor(s.domain),
+        insight: found,
+      });
+      if (out.length >= 6) break;
+    }
+    return out;
+  }, [briefing]);
+
+
+  // The moved-number tiles and the ledger were reading the SAME ranked list, so the tiles WERE the ledger's
+  // first rows — every "Number that moved" printed twice on one screen. The tiles win: they lead
+  // the page and (since #190) expand in place into the same detail the ledger row offers, so
+  // nothing is lost by dropping them from the list below. Excluded by IDENTITY, like the
+  // headline, and unscoped — a tile stays on screen under a scope chip, so its ledger row would
+  // still be the duplicate.
+  const moverIdents    = useMemo(() => new Set(movers.map(m => m.ident)), [movers]);
+  // Every finding in scope, each with its identity — the pool both views' lists are cut from.
+  const scopePool      = !briefing
+    ? []
+    : dedupeSignals(
+        scopeDomain
+          ? briefing.allSignals.filter(s => s.domain === scopeDomain)
+          : [...briefing.signals, ...briefing.allSignals],
+      ).map(s => ({ s, ident: signalIdentity(findingOf(s)) }));
+  const scopedSignals  = scopePool.filter(x => x.ident !== headlineIdent && !moverIdents.has(x.ident)).map(x => x.s);
+  const scopedPatterns = !briefing
+    ? []
+    : scopeDomain
+      ? briefing.patterns.filter(p => p.domains?.includes(scopeDomain))
+      : briefing.patterns;
+
+  const hasPatterns    = scopedPatterns.length > 0;
+  const hasNarrative   = !!narrative?.narrative;
+  // Arc BR-3 — the range on screen, when the Briefing is a range's; the page reads it. Its figures are its own: an
+  // edition stored before 2026-10-23 is read by that rule, so no tile, strip or box shows another period's figure.
+  const storedBlock    = hasNarrative && isRangeBlock(narrative?.period) ? narrative!.period as BriefingRangeBlock : null;
+  const rangeBlock     = useMemo(() => (storedBlock ? ownFigures(storedBlock) : null), [storedBlock]);
+  // A range is chosen but its Briefing is not on screen yet (building, or refused): the hero
+  // must not fall back to the standing view's figures, which read as this range's.
+  const rangePending   = !canvasId && range.preset !== "standing" && !rangeBlock;
+  // BR-9 — every part below the hero that is not measured for the range says so.
+  const rangeSelected  = !canvasId && range.preset !== "standing";
+  const scopeNote      = rangeScopeNote(rangeSelected, rangeBlock);
+  // BR-7 — re-ask the findings for the range: their own SQL over it and the previous range,
+  // no model, once per range. The state is set only when the answer arrives, keyed by the
+  // range it answers; the render reads it only while that range is still the one on screen.
+  const rangeKey       = JSON.stringify(range);
+  useEffect(() => {
+    // `rangeSelected` already excludes the standing view, and TypeScript narrows `range`
+    // through that alias, so the call below receives a BriefingRange.
+    if (!rangeSelected) return;
+    let alive = true;
+    getFindingsReask(connectionId, range, schema, workspaceId)
+      .then(data => { if (alive) setReaskFor({ key: rangeKey, data }); })
+      .catch(() => { if (alive) setReaskFailedFor(rangeKey); });
+    return () => { alive = false; };
+  }, [rangeSelected, connectionId, schema, range, rangeKey]);
+  const reask          = rangeSelected && reaskFor && reaskFor.key === rangeKey ? reaskFor.data : null;
+  // The morning paper's desk (Trends · Gaps · Decide): records the platform already kept, read for
+  // the edition on screen — no warehouse query, no model call. Keyed like the re-ask, so a column
+  // never prints under another edition's heading.
+  const deskKey        = `${connectionId}|${schema ?? ""}|${rangeSelected ? rangeKey : "standing"}`;
+  const [deskFor, setDeskFor] = useState<{ key: string; data: BriefingDesk | null; error: string | null } | null>(null);
+  useEffect(() => {
+    if (canvasId || !connectionId) return;
+    let alive = true;
+    getBriefingDesk(connectionId, rangeSelected ? (range as BriefingRange) : null, schema, workspaceId)
+      .then(data => { if (alive) setDeskFor({ key: deskKey, data, error: null }); })
+      .catch(e => { if (alive) setDeskFor({ key: deskKey, data: null, error: e instanceof Error ? e.message : "The desk could not be read" }); });
+    return () => { alive = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deskKey, canvasId]);
+  const desk           = deskFor && deskFor.key === deskKey ? deskFor : null;
+  const [allFindings, setAllFindings] = useState(false);
+  // The edition's dates and lag, as the range READ gave them — known before its story is written
+  // (a read never builds), so the dateline names the days even while the story is being written.
+  const [editionFor, setEditionFor]   = useState<{ key: string; block: BriefingRangeBlock } | null>(null);
+  const [toolsOpen, setToolsOpen]     = useState(false);
+  const isEmpty        = !briefing || briefing.totalInsights === 0;
+
+  // BR-7's re-ask, as TILES. Under a range the hero showed the governed figures and nothing
+  // else: these were suppressed by `!figures`, so a period read as a metrics table while the
+  // standing view read as findings (the user, 2026-09-28: the cards should form from the
+  // findings for that period, and each period should read as strongly as "What we know").
+  //
+  // Un-suppressing the standing tiles would have been worse than the gap — their values are
+  // read from ALL-HISTORY prose, and printing those under a range heading is the mislabelling
+  // BR-9 went and fixed. So the same tiles are RE-VALUED from the re-ask, which carries each
+  // finding's own SQL run over this range and the one before it. Mapping the built tiles
+  // rather than rebuilding them keeps one construction site for a tile, not two that drift.
+  const rangeMovers = useMemo<MoverTile[]>(() => {
+    if (!reask) return [];
+    const byId = new Map(reask.reasked.map(r => [r.id, r] as const));
+    const seen = new Set<string>();
+    const scored: { tile: MoverTile; size: number }[] = [];
+    for (const m of movers) {
+      const r = byId.get(m.insightId);
+      if (!r || r.current === null) continue;
+      // Two findings can re-ask to the SAME measure — the re-ask counts those as `duplicates`
+      // — and the row then printed one number twice under two statements, which reads as a
+      // coincidence rather than as the same quantity. Keep the first.
+      const shape = `${r.measure}|${r.current}|${r.previous}`;
+      if (seen.has(shape)) continue;
+      seen.add(shape);
+      scored.push({
+        // Biggest move first; one this range could not move scores 0 and sorts last rather
+        // than being dropped — it is still a finding about this range.
+        size: Math.abs(r.rel ?? 0),
+        tile: {
+          ...m,
+          value: fmtReask(r.current, r.measure),
+          secondary: r.previous !== null ? ` vs ${fmtReask(r.previous, r.measure)}` : undefined,
+          sublabel: r.how === "value" ? r.measure : r.how === "row" ? `${rowWords(r)} · ${r.measure}` : `${r.how} of ${r.measure}`,
+          range: { reask: r, covers: reask.covers, comparedWith: reask.compared_with },
+        },
+      });
+    }
+    scored.sort((a, b) => b.size - a.size);
+    return scored.slice(0, 6).map(x => x.tile);
+  }, [movers, reask]);
+
+  // The ledger's pool. On What we know: every finding but the headline and the moved numbers
+  // shown above it. Under a range those two are NOT on screen — the range's own re-asked tiles
+  // are — so the pool is every finding but those tiles; leaving the standing exclusion in place
+  // dropped the headline and the movers from the range's page and from its count (2026-10-12).
+  const rangeTileIdents = new Set(rangeMovers.map(m => m.ident));
+  const ledgerSignals   = !rangeSelected ? scopedSignals
+    : scopePool.filter(x => !rangeTileIdents.has(x.ident)).map(x => x.s);
+
+  // Saved chart display per finding, for every card-less chart in the brief (ledger rows and
+  // moved-number tile details). Scoped exactly like the narrative, so one schema's edits never show
+  // up under another's. Pinned cards persist their own display in `card.render` instead.
+  const { configFor: vizConfigFor, save: saveVizConfigFor } = useVizConfigs(narrativeScope);
+
+  // PX-6 — the scheduled-delivery card, toggled from the control bar.
+  const [showSchedule, setShowSchedule] = useState(false);
+
+  // The first open of a session enters verdict → numbers → cards (.aug-brief-entering in globals.css,
+  // components/brief/firstOpen.ts). Claimed before paint, the moment there is a brief to show, and
+  // dropped once the entrance has run, so a Reload or Regenerate that re-renders the brief paints at once.
+  const [entering, setEntering] = useState(false);
+  const entranceClaimed = useRef(false);
+  const hasBrief = !loading && !isEmpty;
+  useLayoutEffect(() => {
+    if (!hasBrief || entranceClaimed.current) return;
+    entranceClaimed.current = true;
+    if (claimBriefingEntrance()) setEntering(true);
+  }, [hasBrief]);
+  useEffect(() => {
+    if (!entering) return;
+    const done = setTimeout(() => setEntering(false), 600);
+    return () => clearTimeout(done);
+  }, [entering]);
+
+  const findingsTotal = briefing?.totalInsights ?? 0;
+  // One context for every citation on the page — the lead's and the story's.
+  const citationCtx: CitationActionContext | null = briefing ? {
+    insightById: briefing.insightById, connectionId, canvasId, schema, triggers, onEvidence: openEvidence,
+    onTriggersHint: showTriggersHint, onDismissed: load, onInvestigate,
+  } : null;
+  // ── The paper's numbers box, its desk's numbering and its sources (read by `paper()`).
+  const numberRows: PaperNumber[] = rangeBlock
+    ? rangeNumbers(rangeBlock)
+    // What we know: the record's own counts. A figure lifted from a finding's prose carries its
+    // finding's subject, not a label a box can print ("total inventory cost" was Jeans' alone).
+    : !rangeSelected && briefing
+      ? [{ key: "findings", label: "Findings", value: formatCount(findingsTotal) },
+         { key: "domains", label: "Domains", value: formatCount(briefing.domainCount) },
+         ...(explorerStatus?.tables_total ? [{ key: "tables", label: "Tables explored", value: formatCount(explorerStatus.tables_total) }] : []),
+         ...(explorerStatus?.completed_at ? [{ key: "explored", label: "Last explored", value: new Date(explorerStatus.completed_at).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) }] : [])]
+      : [];
+  // The front holds six beside the lead; the rest read under the desk, by area — so the desk never moves down.
+  const arranged = rangeBlock ? arrange(numberRows, choiceFor(figuresPref, figScope)) : null;
+  const editionBlock = rangeBlock ?? (editionFor && editionFor.key === rangeKey ? editionFor.block : null);
+  const numbersTitle = rangeBlock ? `The ${rangeBlock.period && rangeBlock.period !== "custom" ? rangeBlock.period : "range"} in numbers`
+    : rangeSelected ? "In numbers" : "The record, in numbers";
+  const numbersNote = rangeBlock?.unreachable
+    ? `The data could not be reached, so nothing was measured — ${rangeBlock.unreachable}.`
+    : rangeBlock?.compare_withheld
+    ? `Not compared: ${rangeBlock.compare_withheld}.`
+    : rangeBlock
+    ? `Each against ${rangeBlock.compared_with}.`
+    : rangeSelected ? (narrativeLoading ? "Measuring this edition…" : undefined)
+    : "Pick Day, Week or Month for the business's own figures.";
+  const citationNs = hasNarrative && narrative ? narrative.citations.map(c => Number(c.ref)).filter(Number.isFinite) : [];
+  const deskRefs = numberDesk(desk?.data ?? null, (citationNs.length ? Math.max(...citationNs) : 0) + 1);
+  const paperRefs = [
+    ...(hasNarrative && narrative ? narrative.citations.map(c => ({
+      n: Number(c.ref),
+      label: `${c.domain ? `${c.domain} · ` : ""}${c.finding.length > 110 ? c.finding.slice(0, 110) + "…" : c.finding}`,
+      onOpen: () => { const sig = heldSignal(briefing, c); if (sig) openEvidence(findingOf(sig), sig.domain); },
+    })) : []),
+    ...[...deskRefs.entries()].map(([it, n]) => ({ n, label: it.source.label,
+      onOpen: it.action ? () => openDeskAction(it.action!, connectionId) : undefined })),
+  ].filter(r => Number.isFinite(r.n)).sort((x, y) => x.n - y.n);
+  const ranged = rangeSelected && reask ? rangeLedger(ledgerSignals, findingId, reask) : null;
+  const briefSignals = rangeSelected ? (ranged?.rows ?? []) : scopedSignals;
+
+  if (loading)  return <BriefingLoading />;
+
+  if (error) {
+    return (
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div className="aug-fs-sm" style={{ color: "var(--red4)" }}>{error}</div>
+      </div>
+    );
+  }
+
+  if (offScope && !canvasId) {
+    return (
+      <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "20px 28px" }}>
+        <BriefingOffNotice off={offScope} connectionId={connectionId} />
+      </div>
+    );
+  }
+
+  return (
+    // Row, not a column: the ask panel is a fixed-width SIBLING that pushes the brief left
+    // rather than overlaying it — the whole point is reading an answer against the brief it
+    // is about. (Same shape as ChatPanel's source drawer.) The brief keeps its own scroller.
+    <div style={{ flex: 1, display: "flex", minHeight: 0, minWidth: 0 }}>
+    <div ref={scrollRef} className={entering ? "aug-brief-entering" : undefined} style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "20px 28px" }}>
+
+      {/* Evidence drill-through drawer (finding actions, #4). Transient hints/side-effect
+          feedback now go through the shared <Toaster/> (toast.*), mounted in the root layout. */}
+      <EvidenceDrawer insight={evidenceInsight} domain={evidenceDomain} connectionId={connectionId} onClose={() => setEvidenceInsight(null)} />
+
+      {/* ── The masthead: the paper's name, its scope, the edition (the range, which scopes the whole
+          page) and its tools in one menu. The run's phase is not said here (2026-10-06: it is machinery);
+          what a control is doing, an action that was refused, and a run in flight still are. */}
+      <PaperMasthead
+        scope={schema ?? ""}
+        edition={!canvasId ? <RangeControl value={range} onChange={setRange} disabled={narrativeLoading} /> : null}
+        tools={<>
+          {run && (
+            <Button variant="secondary" size="xs" disabled={controlsLocked} onClick={runStop}>
+              {explorerPending === "Stopping…" ? "Stopping…" : "Stop"}
+            </Button>
+          )}
+          <div style={{ position: "relative" }}>
+            <Button variant={toolsOpen ? "secondary" : "ghost"} size="xs" data-testid="briefing-tools" aria-expanded={toolsOpen}
+              onClick={() => setToolsOpen(o => !o)}>Tools ▾</Button>
+            {toolsOpen && (
+              <div role="menu" style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", zIndex: 30, minWidth: 210,
+                background: "var(--bg-1)", border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-lg)",
+                padding: 8, display: "flex", flexDirection: "column", alignItems: "stretch", gap: 6 }}>
+                <GenerateBriefButton loading={narrativeLoading} hasNarrative={hasNarrative} onClick={() => generateNarrative(hasNarrative)} />
+                <Button variant="ghost" size="xs" onClick={load}>↻ Reload</Button>
+          {!run && (!explorerStatus || explorerStatus.phase === "complete" || explorerStatus.phase === "pending" || explorerStatus.phase === "failed") ? (
+                  <>
+                    {/* "Start" only when starting is the honest verb — nothing has run yet.
+                        A completed run already has findings on screen behind these controls,
+                        and offering to start one implies none exists; the two things you can
+                        actually do to it are add intelligence or redo it, which is what
+                        Trigger Intel and Refresh are. `runRefresh` IS the restart
+                        (`restartExplorer`), so Start alongside it was also a duplicate.
+                        This is the taxonomy `BriefingEmpty` already uses one level down —
+                        "Start exploration" for never, "Restart exploration" for failed —
+                        which the control bar was contradicting. */}
+                    {/* 🔴 These keyed on `phase === "complete"`, which contradicted the very
+                        taxonomy described above. A run that FAILED after producing findings —
+                        or, as seen live, a later run that failed on top of an earlier
+                        successful one — kept 54 findings and a grounded briefing on screen
+                        while the control bar offered only "Start". Trigger Intel and Refresh,
+                        the two things the comment says you can actually do to a body of
+                        findings, were both hidden precisely when someone would reach for them.
+
+                        The honest discriminator is not the phase, it is whether there ARE
+                        findings: "offering to start one implies none exists" is exactly as
+                        true for a failed run with 54 of them. So `hasFindings` decides, and
+                        the phase decides only the VERB — Start when nothing has ever run,
+                        Restart when something ran and did not finish. */}
+                    {!hasFindings && (
+                      <Button
+                        variant="secondary" size="xs"
+                        disabled={controlsLocked} onClick={runExplorer}
+                      >{explorerPending === "Starting…" ? "Starting…"
+                        : explorerStatus?.phase === "failed" ? "Restart" : "Start"}</Button>
+                    )}
+                    {hasFindings && (
+                      <Button
+                        variant="secondary" size="xs"
+                        disabled={controlsLocked} onClick={runTriggerIntel}
+                      >{explorerPending === "Triggering…" ? "Triggering…" : "Trigger Intel"}</Button>
+                    )}
+                    {hasFindings && (
+                      <Button
+                        variant="secondary" size="xs"
+                        disabled={controlsLocked} onClick={runRefresh}
+                        title="Clear stale findings and re-run intelligence from scratch (drops 'no data' findings, re-anchors the window)"
+                      >{explorerPending === "Refreshing…" ? "Refreshing…" : "↻ Refresh"}</Button>
+                    )}
+                  </>
+                ) : (
+                  <Button
+                    variant="secondary" size="xs"
+                    disabled={controlsLocked} onClick={runStop}
+                  >{explorerPending === "Stopping…" ? "Stopping…" : "Stop"}</Button>
+                )}
+                {/* PX-6 — the scheduled-delivery door. */}
+                <Button variant={showSchedule ? "secondary" : "ghost"} size="xs"
+                  onClick={() => setShowSchedule(s => !s)}>Schedule</Button>
+                {/* The canvas (B1) — the Briefing's switches: a person's own view of the platform's Briefing. */}
+                <Button variant={sectionsOpen ? "secondary" : "ghost"} size="xs" data-testid="briefing-sections-open"
+                  aria-expanded={sectionsOpen} onClick={() => setSectionsOpen(s => !s)}>Sections</Button>
+              </div>
+            )}
+          </div>
+        </>}
+      />
+      <PaperDateline today={paperDate(new Date())}
+        covers={editionBlock ? `covering ${editionBlock.covers}` : rangeSelected ? "covering this range" : "everything recorded, not tied to dates"}
+        lagDays={editionBlock?.lag_days} records={paperRefs.length}
+        endedOn={rangeSelected && editionBlock?.data_ended ? editionBlock.data_through ?? null : null}
+        stillMoving={editionBlock?.still_moving} />
+      {/* The data ENDED (design-mockups/briefing-data-ended.html): one line saying where, and what this
+          edition became because of it; the table below lists where every edition landed. */}
+      {rangeSelected && editionBlock?.data_ended && editionBlock.edge_note && (
+        <PaperEdgeNotice note={editionBlock.edge_note} onCovers={scrollToCovers} />
+      )}
+      {(explorerError || explorerPending || birthStep) && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+          {explorerError && (
+            <GuardChip verdict="refused" title={explorerError}>
+              {explorerError.length > 60 ? explorerError.slice(0, 60) + "…" : explorerError}
+            </GuardChip>
+          )}
+          {/* A dispatched action, named, until the status shows it. */}
+          {(explorerPending || birthStep) && (
+            <span style={{ fontSize: 11, color: "var(--blue4)", fontWeight: 500 }}>
+              {birthStep ? (BIRTH_STEP_LABELS[birthStep] ?? `${birthStep}…`) : explorerPending}
+            </span>
+          )}
+        </div>
+      )}
+      <div style={{ height: 14 }} />
+
+      {run && !canvasId && <RunningNotice run={run} />}
+      {showSchedule && <BriefSchedule connId={connectionId} />}
+      {sectionsOpen && (
+        <BriefingSections pref={sections} onChange={(next, said) => void saveSections(next, said)}
+          cockpits={myDashboards} dashboardsOn={dashboardsOn} busy={sectionsBusy} />
+      )}
+
+      {isEmpty ? (
+        <BriefingEmpty
+          status={explorerStatus}
+          // Its CTA already renders a spinner + "Working…" on `busy`; the bug was that
+          // `explorerBusy` tracked only the 42ms request, so that state was never seen.
+          // Holding it through the pending window is the whole fix for this surface.
+          busy={controlsLocked}
+          onStart={runExplorer}
+          onTrigger={runTriggerIntel}
+          canvasId={canvasId}
+        />
+      ) : (
+        <div>
+          {/* ── The morning paper (2026-10-12; design-mockups/briefing.html): the lead story beside the
+              edition's numbers, then Trends · Gaps · Decide, then In brief, the sources, a follow-up. */}
+          {paper()}
+          {/* The person's own sections ride below the paper, in their order, each shown or hidden by
+              their switches; the lead, the story and the findings are the paper's own. */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 18, marginTop: 22 }}>
+            {sections.sections.filter(s => !isPart(s.id) && PAPER_BELOW.has(s.id)).map(s => (s.on
+              ? <div key={s.id} data-testid={`briefing-section-${s.id}`}>{section(s.id)}</div>
+              : <HiddenSection key={s.id} id={s.id} onShow={() => void saveSections(toggled(sections, s.id, true), `Shown: ${s.id.replace("_", " ")}.`)} />))}
+          </div>
+        </div>
+      )}
+
+          </div>
+
+      {askOpen && (
+        <BriefAskPanel
+          connectionId={connectionId}
+          schema={schema}
+          canvasId={canvasId}
+          periodKey={rangeBlock?.key}
+          periodCovers={rangeBlock?.covers}
+          onClose={() => setAskOpen(false)}
+          onOpenInAsk={onInvestigate}
+        />
+      )}
+    </div>
+  );
+
+  /** The morning paper: the lead story beside the edition's numbers, the desk's three columns, In
+   *  brief with the door to every finding, the sources, and a follow-up. */
+  function paper(): ReactNode {
+    if (!briefing) return null;
+    const on = (id: SectionId) => sections.sections.find(s => s.id === id)?.on !== false;
+    const synthesisOn = on("synthesis");
+    const headlineText = hasNarrative && narrative?.headline_theme ? narrative.headline_theme
+      : hasNarrative && narrative ? firstSentence(narrative.narrative, 120)
+      : !rangeSelected && briefing.headline ? firstSentence(findingOf(briefing.headline).finding, 220)
+      : narrativeLoading ? "Writing this edition…" : "This edition hasn't been written yet";
+    const lead = (
+      <PaperLead kicker={rangeSelected ? `Lead · ${editionBlock?.covers ?? "this range"}` : "Lead · what we know"} headline={headlineText}>
+        {narrativeLoading && <SynthesisSkeleton />}
+        {!narrativeLoading && narrativeError && (
+          <ErrorState kind="The story could not be written" what={narrativeError}
+            means="The columns and findings below are unaffected; only the written story is missing." />
+        )}
+        {!narrativeLoading && periodNote && <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>{periodNote}</div>}
+        {!narrativeLoading && hasNarrative && narrative && (
+          <NarrativeCard narrative={narrative} paper body={synthesisOn} ctx={citationCtx!} />
+        )}
+        {!narrativeLoading && !hasNarrative && !narrativeError && (
+          <div className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", color: "var(--t3)", marginTop: 4 }}>
+            The written story for this edition has not been generated.
+            <GenerateBriefButton loading={narrativeLoading} hasNarrative={false} onClick={() => generateNarrative(false)} />
+          </div>
+        )}
+      </PaperLead>
+    );
+    const briefEmpty = !rangeSelected ? undefined
+      : !reask ? (reaskFailedFor === rangeKey ? "The findings could not be measured for this range just now — they are in What we know."
+                                               : `Measuring the findings for ${rangeBlock?.covers ?? "this range"}…`)
+      : `No finding could be measured for ${reask.covers}${ranged && ranged.elsewhere ? `. ${ranged.elsewhere === 1 ? "The 1 finding is" : `All ${ranged.elsewhere} are`} about all history: ${reasonWords(ranged.reasons)}` : ""}.`;
+    return (
+      <>
+        {on("verdict") && <PaperFront lead={lead} side={<PaperNumbers title={numbersTitle}
+          // the front's six read as one box; their areas are said in Every figure, below the desk
+          rows={arranged ? arranged.front.map(r => ({ ...r, area: undefined })) : numberRows} note={numbersNote}
+          footer={arranged && numberRows.some(r => r.metric) ? <FrontFooter arranged={arranged} onChoose={() => setChoosing(c => !c)} /> : undefined}
+          connectionId={rangeBlock ? connectionId : undefined}
+          after={rangeBlock && !canvasId ? (
+            // a decision taken on an edition's figure cites that figure, measured for the edition's days (study §3.2)
+            <DecideDoor connectionId={connectionId} question={`${rangeBlock.label}: ${rangeBlock.covers || `${rangeBlock.start} to ${rangeBlock.last_day}`}`}
+              on={{ kind: "figure", start: rangeBlock.start, end: rangeBlock.end,
+                    figures: rangeBlock.measured.filter(m => m.current !== null).map(m => ({ metric: m.metric, label: m.name })) }}
+              testId="briefing-decide" />
+          ) : undefined} />} />}
+        {choosing && arranged && (
+          <ChooseFigures rows={numberRows} choice={choiceFor(figuresPref, figScope)} busy={figuresBusy}
+            onChange={(next, said) => void saveFigures(next, said)} onClose={() => setChoosing(false)} />
+        )}
+        {rangeSelected && editionBlock?.data_ended && (
+          <EditionCovers connectionId={connectionId} schema={schema} workspaceId={workspaceId} current={editionBlock.preset} />
+        )}
+        {!canvasId && (
+          <DeskColumns desk={desk ? desk.data : undefined} error={desk?.error ?? null} refs={deskRefs} connectionId={connectionId} />
+        )}
+        {on("verdict") && arranged && !arranged.fits && (
+          <EveryFigure arranged={arranged} connectionId={connectionId} comparedWith={rangeBlock?.compared_with}
+            onChoose={() => {
+              setChoosing(true);
+              // the choice opens under the front; bring it into view from down here
+              setTimeout(() => document.querySelector('[data-testid="paper-choose"]')?.scrollIntoView?.({ block: "start", behavior: "smooth" }), 60);
+            }} />
+        )}
+        {on("findings") && <InBrief
+          title={rangeSelected ? `In brief — measured for ${rangeBlock?.covers ?? "this range"}` : "In brief — what we know"}
+          items={briefSignals.slice(0, 6).map(sig => ({ id: signalIdentity(findingOf(sig)), node: renderFigures(firstSentence(findingOf(sig).finding)) }))}
+          total={rangeSelected ? (ranged?.rows.length ?? 0) : findingsTotal}
+          empty={briefEmpty}
+          onAll={() => setAllFindings(o => !o)} allOpen={allFindings}
+          standing={rangeSelected ? () => setRange({ preset: "standing" }) : undefined}
+          leftOut={narrative?.left_out?.said} />}
+        {allFindings && <div style={{ padding: "14px 0" }}>{section("findings")}</div>}
+        <PaperSources refs={paperRefs} />
+        {!askOpen && <AskBar onOpen={() => setAskOpen(true)} />}
+      </>
+    );
+  }
+
+  /** One of the Briefing's sections, as the product writes it. */
+  function section(id: SectionId): ReactNode {
+    if (!briefing) return null;          // the sections are drawn only once the brief is read
+    // The verdict's two parts — its measured figures and what the findings found — are switches
+    // of their own (the user, 2026-10-08): each can be hidden under the headline.
+    const partOn = (part: SectionId) => sections.sections.find(s => s.id === part)?.on !== false;
+    switch (id) {
+      case "verdict": return (
+        <>
+      {/* ── Verdict hero ── conclusion-first lede: the synthesized verdict + the top
+          finding + proof stats + the primary action, ahead of the full prose. */}
+      <VerdictHero
+        narrative={hasNarrative ? narrative : null}
+        headline={rangeBlock || rangePending ? null : briefing.headline}
+        domainCount={briefing.domainCount}
+        totalInsights={briefing.totalInsights}
+        synthesizedAt={briefing.synthesizedAt}
+        scope={schema}
+        onInvestigate={onInvestigate}
+        // Under a range the tiles are the RE-ASKED findings, whose values belong to THAT range;
+        // the standing view keeps its own movers. While a range's re-ask is still in flight the
+        // row stays empty rather than showing all-history numbers under a range heading.
+        movers={rangePending || !partOn("moves") ? [] : (rangeSelected ? rangeMovers : movers)}
+        figures={rangeBlock && partOn("measured") ? <RangeFigures block={rangeBlock} /> : undefined}
+        stats={rangeBlock ? rangeStats(rangeBlock)
+          : rangePending ? (narrativeLoading ? "measuring this range…" : "this range has no briefing yet")
+          : undefined}
+        connectionId={connectionId}
+        onEvidence={openEvidence}
+        vizConfigFor={vizConfigFor}
+        onVizConfigChange={saveVizConfigFor}
+        controls={
+          <>
+            <GenerateBriefButton
+              loading={narrativeLoading}
+              hasNarrative={hasNarrative}
+              onClick={() => generateNarrative(hasNarrative)}
+            />
+            <Button
+              variant="ghost" size="xs"
+              onClick={load}
+            >
+              ↻ Reload
+            </Button>
+          </>
+        }
+        actions={!rangeBlock && !rangePending && briefing.headline && (
+          <FindingActions
+            insight={briefing.headline.insight} domain={briefing.headline.domain}
+            connectionId={connectionId} canvasId={canvasId} schema={schema} triggers={triggers}
+            overflow
+            onEvidence={(ins) => openEvidence(ins, briefing.headline!.domain)}
+            onTriggersHint={showTriggersHint} onDismissed={() => load()}
+            onPinned={() => setPinnedRefresh(n => n + 1)} />
+        )}
+      />
+
+      {/* ── Ask this briefing ── a launcher, not the surface. The conversation lives in a
+          side panel (BriefAskPanel) so it can hold a real multi-turn thread beside the brief
+          instead of stacking one-shot cards down the middle of the page. */}
+      {!askOpen && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Button variant="default" onClick={() => setAskOpen(true)}
+            style={{ padding: "9px 16px", height: "auto" }}>
+            Ask this briefing →
+          </Button>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+            quick answers, scoped to this brief and its schema
+          </span>
+        </div>
+      )}
+
+        </>
+      );
+      case "key_metrics": return (
+        /* ── Industry key metrics ── the vertical's north-star KPIs, computed live; click a
+              card to expand its trend. Under the brief and above its findings. Renders a
+              define-CTA (not nothing) when none are set. */
+        <IndustryKpiStrip connectionId={connectionId} schema={schema} scopeKey={narrativeScope}
+          rangeBlock={rangeBlock} note={scopeNote} onStanding={() => setRange({ preset: "standing" })} />
+      );
+      case "findings": return (
+        /* ── Findings ── the bulletin ledger: one scannable row per finding, chart on expand,
+            impact-ordered; the scope chips (focus signals + patterns on one domain) share its
+            line. Keyed by scope so it resets on a scope change. */
+        <FindingsLedger key={scopeDomain ?? "all"} signals={ledgerSignals} connectionId={connectionId} reask={reask}
+          onRange={rangeSelected ? { covers: rangeBlock?.covers ?? reask?.covers ?? "this range",
+                                     failed: reaskFailedFor === rangeKey && !reask,
+                                     onStanding: () => setRange({ preset: "standing" }) } : null}
+          // Nothing to scope when the brief spans a single domain.
+          filter={briefing!.domains.length > 1
+            ? <ScopeChips domains={briefing!.domains} total={briefing!.totalInsights} active={scopeDomain} onChange={setScope} />
+            : undefined}
+          onInvestigate={onInvestigate} onEvidence={openEvidence} scrollRef={scrollRef}
+          vizConfigFor={vizConfigFor} onVizConfigChange={saveVizConfigFor} />
+      );
+      case "synthesis": return (
+      /* ── Full synthesis ── the multi-paragraph narrative + interactive citations.
+          The hero above already carries the conclusion, so this card hides its header. */
+      (hasNarrative || narrativeLoading || narrativeError || periodNote) && (
+        <div>
+          <div className="aug-label" style={{ marginBottom: 10 }}>Full synthesis</div>
+          {narrativeLoading && <SynthesisSkeleton />}
+          {!narrativeLoading && narrativeError && (
+            <ErrorState kind="Synthesis failed" what={narrativeError}
+              means="The findings below are unaffected; only the written synthesis is missing." />
+          )}
+          {!narrativeLoading && periodNote && (
+            <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>{periodNote}</div>
+          )}
+          {/* The measured table, its segment breakdown and the early read are the Metrics cockpit's
+              (the user, 2026-10-08: "remove it"); the narrative cites the figures it needs. Where it
+              was sent went too (2026-10-09: "the delivered part doesn't need to be here — the
+              departures is enough"): every send stands in Agent Ops › Departures, with its receipt. */}
+          {!narrativeLoading && hasNarrative && narrative && (
+            <NarrativeCard
+              narrative={narrative}
+              hideHeadline
+              collapsible
+              ctx={citationCtx!}
+            />
+          )}
+        </div>
+      )
+      );
+      case "cockpit": return (
+        <>
+      {/* ── Standing layer ── the cockpit, marked off from this cycle's narrative by a
+            single violet rule (violet = user/pinned, already the system's semantic). The layer
+            is ALWAYS present now — even with no pins — so the cockpit teaches itself (empty
+            state) instead of vanishing. The cycle's findings read above in the ledger; the
+            cockpit is the surface the user curates, not a dump of the brief. */}
+      {/* Arc CT-7 — a person's cockpits have a tab of their own beside the Briefing, and this layer
+          is not drawn here; a canvas's Briefing, which has no such tab, draws it as it always was.
+          The canvas (B1): on, the cockpit of theirs they chose under Sections rides here, read for
+          the Briefing's range and arranged in its own tab. */}
+      {dashboardsOn && sections.strip && (
+        <div style={{ marginTop: 16, paddingTop: 20, borderTop: "1px solid var(--vio2)" }}>
+          <BriefingStrip connectionId={connectionId} schema={schema} dashboardId={sections.strip}
+            range={rangeSelected ? range : null} />
+        </div>
+      )}
+      {dashboardsOn && !sections.strip && (
+        <div className="aug-fs-sm" data-testid="briefing-strip-none" style={{ color: "var(--t3)", borderTop: "1px solid var(--vio2)", paddingTop: 12 }}>
+          No dashboard rides with your Briefing. Choose one of yours under Sections; it is arranged in the Dashboards tab.
+        </div>
+      )}
+      {!dashboardsOn && (
+        <div style={{ marginTop: 16, paddingTop: 20, borderTop: "1px solid var(--vio2)" }}>
+          <div className="aug-label" style={{ color: "var(--vio4)", marginBottom: 12 }}>
+            Your dashboard
+            {/* BR-9 — under a range each card runs cut to it and says what it covers (or that it
+                could not be); the label names the range the cards were asked for. */}
+            {rangeSelected ? <span data-testid="dashboard-note" style={{ fontWeight: 400, color: "var(--t3)" }}>{rangeBlock ? ` · asked for ${rangeBlock.covers}` : " · asked for this range"}</span> : null}
+          </div>
+          {/* Door 3 (inline authoring) sits at the top so the first card can be composed even when empty. */}
+          <NewCardComposer connectionId={connectionId} schema={schema}
+            onCreated={() => setPinnedRefresh(n => n + 1)} />
+          <PinnedCards connectionId={connectionId} schema={schema} refreshKey={pinnedRefresh} range={rangeSelected ? range : null}
+            suggestions={movers.slice(0, 3).map(m => ({ insightId: m.insightId, value: m.value, label: m.sublabel || m.domain }))}
+            onPinned={() => setPinnedRefresh(n => n + 1)}
+            onOpenSource={(iid) => onInvestigate("Investigate this finding", iid)}
+            onEvidence={(iid) => { const sig = briefing!.insightById.get(iid); if (sig) openEvidence(findingOf(sig), sig.domain); }} />
+        </div>
+      )}
+        </>
+      );
+      case "patterns": return (
+      /* ── Top patterns ── a full-width row below the dashboard. */
+      hasPatterns && (
+        <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 280px", minWidth: 240 }}>
+            <div className="aug-label" style={{ marginBottom: 10 }}>Top Patterns</div>
+            <div style={{ display: "flex", flexDirection: "column" as const, gap: 6 }}>
+              {scopedPatterns.map(p => (
+                <PatternRow key={p.id} pattern={p} onInvestigate={onInvestigate} />
+              ))}
+            </div>
+          </div>
+        </div>
+      )
+      );
+    }
+  }
+}

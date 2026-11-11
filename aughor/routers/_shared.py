@@ -1,0 +1,772 @@
+"""Shared mutable state and helpers used across multiple routers.
+
+These objects are module-level singletons — Python's import system guarantees
+all routers importing from this module share the same dict instances.
+"""
+from __future__ import annotations
+
+import time as _time
+
+# ── Schema cache ──────────────────────────────────────────────────────────────
+_schema_cache: dict[str, tuple[float, str]] = {}
+_SCHEMA_CACHE_TTL = 300.0  # seconds
+
+
+def _schema_cache_key(conn_id: str, db) -> str:
+    # Keyed on (conn_id, schema-SCOPE). Permission-independent still holds — the RBAC row policy
+    # filters ROWS not schema, and there is no column-level security — so this stays a raw shared
+    # key (unlike matcache, which caches post-RLS rows and folds in tenancy). But a schema-SCOPED
+    # connection (open_connection_for_with_schema pins ._schema_name) returns a NARROWER
+    # get_schema() than the full connection, so the scope IS part of the cached value's identity.
+    # Keying on conn_id alone let a single-schema op (e.g. a canvas scoped to `main`) poison the
+    # cache with a one-schema view that a later full-connection consumer (the overview tour)
+    # inherited — silently dropping every other schema on a multi-schema connection.
+    scope = getattr(db, "_schema_name", None) or getattr(db, "schema_name", None) or ""
+    return f"{conn_id}\x00{scope}"
+
+
+def get_schema_cached(conn_id: str, db) -> str:
+    key = _schema_cache_key(conn_id, db)
+    cached = _schema_cache.get(key)
+    if cached and (_time.monotonic() - cached[0]) < _SCHEMA_CACHE_TTL:
+        return cached[1]
+    schema = db.get_schema()
+    _schema_cache[key] = (_time.monotonic(), schema)
+    return schema
+
+
+def peek_schema_cached(conn_id: str) -> str | None:
+    """The cached schema text for a connection, under any scope, WITHOUT rendering one when
+    it is cold. For a reader that wants the schema if it is already in hand and can do
+    without it otherwise (DE-4's receipt lineage): the widest scope wins, since a broader
+    view binds every column a narrower one would."""
+    best: tuple[int, str] | None = None
+    now = _time.monotonic()
+    for key, (at, text) in list(_schema_cache.items()):
+        if not key.startswith(f"{conn_id}\x00") or (now - at) >= _SCHEMA_CACHE_TTL:
+            continue
+        if best is None or len(text) > best[0]:
+            best = (len(text), text)
+    return best[1] if best else None
+
+
+def invalidate_schema_cache(conn_id: str) -> None:
+    # Drop every schema-scope variant cached for this connection (keys are "conn_id\x00scope").
+    prefix = f"{conn_id}\x00"
+    for k in [k for k in _schema_cache if k.startswith(prefix)]:
+        _schema_cache.pop(k, None)
+    # A schema change (file add/delete, type override, manual refresh) means any
+    # pooled physical connection is stale — evict so the next open re-reads.
+    try:
+        from aughor.db.pool import evict_conn
+        evict_conn(conn_id)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "pool eviction is best-effort; a stale pooled conn self-heals on next open",
+                 counter="pool.evict", conn_id=conn_id)
+
+
+# ── Background explorer registry ──────────────────────────────────────────────
+explorers: dict = {}              # conn_id → SchemaExplorer
+explorer_tasks: dict = {}         # conn_id → asyncio.Task
+canvas_explorers: dict = {}       # canvas_id → SchemaExplorer
+canvas_explorer_tasks: dict = {}  # canvas_id → asyncio.Task
+
+
+def explorers_for_connection(connection_id: str, *, include_paused: bool = False) -> list:
+    """Every live explorer bound to a connection — the connection explorer plus any canvas
+    explorers running on the same connection. Used to pause ALL background exploration
+    during a user investigation so it doesn't contend with the investigation's queries. By
+    default skips already-paused explorers (so the caller only resumes what it paused)."""
+    out = []
+    e = explorers.get(connection_id)
+    if e is not None:
+        out.append(e)
+    for cx in list(canvas_explorers.values()):
+        if getattr(cx, "connection_id", None) == connection_id:
+            out.append(cx)
+    if not include_paused:
+        out = [x for x in out if not getattr(getattr(x, "_status", None), "paused", False)]
+    return out
+
+
+def explorer_refusal(conn_id: str) -> str:
+    """Why the Explorer may not explore this connection, or "" when it may. The Explorer does not look beyond the
+    connection it explores (the user's rule, 2026-09-14), and a federated connection attaches other connections by
+    construction: people query it, and the Explorer skips it and says why."""
+    try:
+        from aughor.db.registry import get_conn_type
+        if get_conn_type(conn_id) == "federated":
+            return ("a federated connection attaches other connections, and the Explorer does not look beyond the "
+                    "connection it explores — explore each of the connections it attaches instead")
+    except Exception:
+        return ""
+    return ""
+
+
+async def spawn_explorer(
+    conn_id: str,
+    *,
+    canvas_id: str | None = None,
+    tables_filter: list | None = None,
+    domain_intel_only: bool = False,
+    schema_name: str | None = None,
+    structure_only: bool = False,
+    gaps_only: bool = False,
+    reason: str = "",
+    token_cap: int | None = None,
+) -> dict:
+    """THE explorer spawn path — every surface (start, resume, restart, extend,
+    trigger-intel, canvas start/restart, boot recovery) goes through here, so an
+    exploration is always a supervised kernel job: persisted state machine,
+    heartbeats, crash-resume at boot, cancellation on owner deletion. Replaces
+    the eight hand-rolled SchemaExplorer + create_task dances.
+
+    Returns ``{"ok": bool, "reason": str | None, "job_id": str | None}``.
+    Must be awaited from a running event loop.
+    """
+    refusal = explorer_refusal(conn_id)
+    if refusal:
+        return {"ok": False, "reason": refusal, "job_id": None}
+    import asyncio
+    import logging
+
+    logger = logging.getLogger(__name__)
+    from aughor.explorer.models import ExplorationPhase
+
+    # Canonical key: a single-schema connection always uses the bare key, so an explicit
+    # ?schema= can't split state between {conn} and {conn}__{the_only_schema} (canvas runs
+    # key by canvas_id and are unaffected).
+    if not canvas_id:
+        schema_name = canonical_schema(conn_id, schema_name)
+
+    registry = canvas_explorers if canvas_id else explorers
+    tasks_registry = canvas_explorer_tasks if canvas_id else explorer_tasks
+    # A per-schema run gets its OWN registry/state/idempotency key so several schemas of
+    # one connection can explore independently (and concurrently, under the cap).
+    key = canvas_id or (f"{conn_id}__{schema_name}" if schema_name else conn_id)
+
+    existing = registry.get(key)
+    if existing is not None:
+        phase = getattr(getattr(existing, "status", None), "phase", None)
+        if phase not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED, None):
+            return {"ok": False, "reason": "already running", "job_id": None}
+
+    loop = asyncio.get_running_loop()
+    from aughor.db.connection import open_connection_for, open_connection_for_with_schema
+
+    def _open_and_test():
+        # Schema-scoped open so a per-schema run resolves ONLY that schema's tables.
+        db = (open_connection_for_with_schema(conn_id, schema_name)
+              if schema_name else open_connection_for(conn_id))
+        ok, msg = db.test()
+        if not ok:
+            db.close()
+            return None, False, msg
+        return db, True, msg
+
+    try:
+        db, ok, msg = await loop.run_in_executor(None, _open_and_test)
+    except Exception as exc:
+        db, ok, msg = None, False, str(exc)
+    if not ok or db is None:
+        logger.warning("spawn_explorer: %s not ready — %s", conn_id, msg)
+        return {"ok": False, "reason": f"connection not ready: {msg}", "job_id": None}
+
+    from aughor.explorer.agent import SchemaExplorer
+    explorer = SchemaExplorer(conn_id, db, canvas_id=canvas_id, tables_filter=tables_filter,
+                              schema_name=schema_name)
+    registry[key] = explorer
+
+    def _cleanup(_job_id: str, _final: str) -> None:
+        # On ANY terminal job state (succeeded/failed/cancelled), drop the explorer from the
+        # registry too — not just the task. The registry holds *active* explorers; leaving a
+        # finished one (especially a budget-cancelled run stuck mid-phase) makes the next
+        # start/spawn refuse "already running". Status falls back to the persisted disk state.
+        tasks_registry.pop(key, None)
+        registry.pop(key, None)
+
+    from aughor.kernel.jobs import kernel
+    job_id = await kernel().submit(
+        "exploration",
+        lambda: explorer.explore(domain_intel_only=domain_intel_only, structure_only=structure_only,
+                                 gaps_only=gaps_only, reason=reason),
+        conn_id=conn_id,
+        canvas_id=canvas_id,
+        idempotency_key=f"explore:{'canvas:' + canvas_id if canvas_id else key}",
+        # `schema_name` rides the job so a restart resumes THIS dataset's run by its own key —
+        # without it boot recovery respawned the bare connection key, a fresh connection-wide
+        # run, and the dataset's own run stayed mid-phase for good.
+        payload={"domain_intel_only": domain_intel_only,
+                 "tables_filter": tables_filter or None,
+                 "schema_name": schema_name or None,
+                 # the job rides the payload too, so a restart resumes the same job (§2)
+                 "structure_only": structure_only, "gaps_only": gaps_only, "reason": reason or "",
+                 # an automatic run is capped at what is left of the month's budget (kernel reads it)
+                 **({"token_cap": int(token_cap)} if token_cap else {})},
+        on_finish=_cleanup,
+    )
+    # The kernel task is the cancellation handle — stop endpoints keep working.
+    _t = kernel()._tasks.get(job_id)
+    if _t is not None:
+        tasks_registry[key] = _t
+    logger.info("spawn_explorer: %s started for %s (job %s)",
+                "canvas " + canvas_id if canvas_id else "connection", conn_id, job_id)
+    return {"ok": True, "reason": None, "job_id": job_id}
+
+
+def run_pack_structure(conn_id: str, schema_name: str | None, emit) -> str:
+    """2026-10-10 — the birth rite's pack step: every industry pack DEPLOYED on the scope (active and bound — a
+    person's two acts) proposes its structure over the tables the build found (`POST /ontology/explore/pack`): an
+    order read with its lines, its found links named with the industry's verbs, the stages its objects move
+    through. Run before the business explorer, so the model fills what the pack left. No model call. Returns
+    ``none`` (no pack deployed — no step emitted, the rite exactly what it was) | ``skipped`` | ``done`` | ``failed``."""
+    from aughor.kernel.errors import tolerate
+    try:
+        from aughor.packs.bindings import packs_bound_on
+        from aughor.routers.ontology import resolve_effective_schema
+        effective = resolve_effective_schema(conn_id, schema_name)
+        bound = packs_bound_on(conn_id, effective)      # one indexed read; no pack is loaded unless one is bound
+        packs = []
+        if bound:
+            from aughor.packs.ontology_map import load_pack_by_id, resolve_ontology
+            for pid in bound:
+                pack = load_pack_by_id(pid)
+                if pack is not None and pack.manifest.steers and resolve_ontology(pid) is not None:
+                    packs.append(pid)
+    except Exception as exc:  # noqa: BLE001 — no readable deployment is no pack, never a failed rite
+        tolerate(exc, "the deployed packs could not be read; the rite stands without their structure",
+                 counter="birth.pack_structure.read")
+        return "none"
+    if not packs:
+        return "none"
+    from aughor.licensing.capabilities import Capability
+    from aughor.licensing.resolver import has_capability
+    if not has_capability(Capability.ONTOLOGY_EDIT, conn_id=conn_id):
+        emit("pack_structure", "skipped", reason="this plan does not include ontology edits")
+        return "skipped"
+    try:
+        from aughor.ontology.store import load_latest_ontology
+        built = load_latest_ontology(conn_id, schema_name) is not None
+    except Exception as exc:  # noqa: BLE001
+        tolerate(exc, "the ontology store is unreadable; the pack step will say so itself",
+                 counter="birth.pack_structure.ontology")
+        built = True
+    if not built:
+        emit("pack_structure", "skipped", reason="no ontology is built on this scope yet, so there is nothing to shape")
+        return "skipped"
+    emit("pack_structure", "started", packs=packs)
+    outcome = "done"
+    for pid in packs:
+        try:
+            from aughor.ontology.overrides import viewing
+            from aughor.routers.ontology import explore_ontology_with_pack
+            with viewing("draft"):          # Arc OC-2: its proposals wait in the draft, like the explorer's
+                out = explore_ontology_with_pack(pack=pid, connection_id=conn_id, schema_name=schema_name)
+            emit("pack_structure", "done", pack=pid, run_id=((out or {}).get("run") or {}).get("id", ""))
+        except Exception as exc:  # noqa: BLE001 — the business layer is never a precondition
+            tolerate(exc, "a pack's structure step failed; the rite stands without it", counter="birth.pack_structure")
+            emit("pack_structure", "failed", pack=pid, error=f"{type(exc).__name__}: {str(exc)[:200]}")
+            outcome = "failed"
+    return outcome
+
+
+def run_business_terms(conn_id: str, schema_name: str | None, emit) -> str:
+    """PENDING item 11 — the birth rite's business-terms step: run the business explorer once on
+    a scope nobody has explored. Returns what it did (``skipped`` | ``done`` | ``failed``) and emits a
+    ``birth.step`` for every outcome."""
+    from aughor.kernel.errors import tolerate
+    from aughor.licensing.capabilities import Capability
+    from aughor.licensing.resolver import has_capability
+    if not has_capability(Capability.ONTOLOGY_EDIT, conn_id=conn_id):
+        emit("business_terms", "skipped", reason="this plan does not include ontology edits")
+        return "skipped"
+    try:
+        from aughor.ontology.drafts import load_draft
+        from aughor.routers.ontology import resolve_effective_schema
+        # the scope the explorer itself files its run under (meta's schema when none is named) —
+        # reading "default" instead never found the run, and every restart paid again (branch review)
+        # a pack's run is not the explorer's (2026-10-10): the pack step runs first and records one, and counting it
+        # here would stop the explorer on every scope a pack is deployed on
+        if any(not str(getattr(r, "provenance", "") or "").startswith("pack:")
+               for r in load_draft(conn_id, resolve_effective_schema(conn_id, schema_name)).runs):
+            # a restart re-runs the rite; the explorer ran here already, and a second run would
+            # spend a model call to write nothing twice
+            emit("business_terms", "skipped", reason="the business explorer already ran on this scope")
+            return "skipped"
+    except Exception as exc:  # noqa: BLE001
+        tolerate(exc, "the explorer's run record is unreadable; it runs, and writes nothing twice",
+                 counter="birth.business_terms.record")
+    try:
+        from aughor.ontology.store import load_latest_ontology
+        built = load_latest_ontology(conn_id, schema_name) is not None
+    except Exception as exc:  # noqa: BLE001
+        tolerate(exc, "the ontology store is unreadable; the explorer will say so itself",
+                 counter="birth.business_terms.ontology")
+        built = True
+    if not built:
+        # measured on the first real run (2026-09-23): the intelligence step reports done when
+        # its build was a skip, and the explorer then refused with a 404 — a precondition not
+        # met, not a failure; the next rite after a build proposes the terms
+        emit("business_terms", "skipped",
+             reason="no ontology is built on this scope yet, so there is nothing for the explorer to read")
+        return "skipped"
+    emit("business_terms", "started")
+    try:
+        from aughor.ontology.overrides import viewing
+        from aughor.routers.ontology import explore_ontology
+        with viewing("draft"):          # Arc OC-2: its proposals wait in the draft, and it reads them back there
+            out = explore_ontology(connection_id=conn_id, schema_name=schema_name)
+        emit("business_terms", "done", run_id=((out or {}).get("run") or {}).get("id", ""))
+        return "done"
+    except Exception as exc:  # noqa: BLE001 — the business layer is never a precondition
+        tolerate(exc, "birth business-terms step failed; the rite stands without it",
+                 counter="birth.business_terms")
+        emit("business_terms", "failed", error=f"{type(exc).__name__}: {str(exc)[:200]}")
+        return "failed"
+
+
+async def run_birth(
+    conn_id: str,
+    *,
+    schema_name: str | None = None,
+    canvas_id: str | None = None,
+    tables_filter: list | None = None,
+    token_cap: int | None = None,
+) -> dict:
+    """R12 — the "understand this data" job body (the knowledge/start-mining analog).
+
+    Step 1 ``intelligence`` builds the durable understanding EAGERLY — profiles →
+    ontology (enrich + validate) → R8 doc tree → R11 column config, everything the
+    heavy annotator chain produces — instead of lazily on the first question.
+    Step 2 hands off to exploration, which stays its own supervised kernel job
+    (chained, independently observable). Every step emits a ``birth.step`` event
+    on the K2 spine and the terminal ``birth.done`` carries the summary, so the
+    rite is legible in Fleet / events / (flag ``obs.task_table``) task_history.
+
+    Resilient by design: an intelligence failure still lets exploration run (its
+    own ontology gate can retry the build); the job fails only when NOTHING was
+    accomplished.
+    """
+    import asyncio
+    import logging
+
+    from aughor.kernel.jobs import current_job_id
+    from aughor.kernel.ledger import Ledger
+
+    logger = logging.getLogger(__name__)
+    steps: list[dict] = []
+
+    def _emit(step: str, status: str, **detail) -> None:
+        rec = {"step": step, "status": status,
+               **{k: v for k, v in detail.items() if v not in (None, "")}}
+        steps.append(rec)
+        try:
+            Ledger.default().emit(
+                "birth.step", {"connection_id": conn_id, "schema": schema_name, **rec},
+                conn_id=conn_id, canvas_id=canvas_id, job_id=current_job_id())
+        except Exception:
+            logger.debug("birth.step emit failed", exc_info=True)
+
+    loop = asyncio.get_running_loop()
+    from aughor.db.connection import open_connection_for, open_connection_for_with_schema
+
+    def _build():
+        db = (open_connection_for_with_schema(conn_id, schema_name)
+              if schema_name else open_connection_for(conn_id))
+        try:
+            if not hasattr(db, "build_intelligence"):
+                # Only the DuckDB-family connectors carry an eager intelligence pass.
+                # On warehouse engines the AttributeError here read as a FAILED birth
+                # step on every connection; having no pass to run is a skip.
+                return {"ok": True, "stage": "skipped"}
+            from aughor import telemetry
+            with telemetry.span(f"birth:{conn_id}", "birth.intelligence",
+                                {"connection_id": conn_id, "schema": schema_name or ""}):
+                db.build_intelligence()
+            return getattr(db, "last_build", None)
+        finally:
+            try:
+                db.close()
+            except Exception:
+                logger.debug("birth: connection close failed", exc_info=True)
+
+    async def _intelligence_step() -> bool:
+        _emit("intelligence", "started")
+        try:
+            last_build = await loop.run_in_executor(None, _build)
+            lb = last_build if isinstance(last_build, dict) else {}
+            ok = bool(lb.get("ok", True))
+            _emit("intelligence", "done" if ok else "failed",
+                  stage=lb.get("stage"), error=lb.get("error"))
+            return ok
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "birth intelligence step failed; exploration still runs",
+                     counter="birth.job", conn_id=conn_id)
+            _emit("intelligence", "failed", error=str(exc)[:300])
+            return False
+
+    # Arc NV-5 — what the query-history feature needs from this engine, probed at birth and provisioned where the
+    # platform can (Postgres: CREATE EXTENSION once preloaded) while the organisation reads warehouse history; the
+    # admin's step is journaled otherwise, so a connection says at birth what would make a feature whole.
+    async def _prerequisites_step() -> None:
+        _emit("prerequisites", "started")
+        try:
+            def _probe() -> dict:
+                from aughor.db.connection import open_connection_for
+                from aughor.db.query_history import check_query_history
+                from aughor.orgsettings.allows import allows
+                db = open_connection_for(conn_id)
+                try:
+                    readiness = check_query_history(db)
+                    enabled = None
+                    if readiness.can_enable and allows("read_query_history") and hasattr(db, "enable_query_history"):
+                        ok, message = db.enable_query_history()
+                        enabled = {"ok": ok, "message": message}
+                        readiness = check_query_history(db)
+                    return {"readiness": readiness.as_dict(), "enabled": enabled}
+                finally:
+                    db.close()
+            res = await loop.run_in_executor(None, _probe)
+            r = res["readiness"]
+            _emit("prerequisites", "done", query_history=r["sentence"], ok=r["ok"], applies=r["applies"],
+                  fix=r["fix"], enabled=res["enabled"])
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "birth prerequisites step is best-effort", counter="birth.job", conn_id=conn_id)
+            _emit("prerequisites", "failed", error=str(exc)[:300])
+
+    # R14 — mine query popularity (deterministic, sqlglot only). A mining hiccup never
+    # dents the rite.
+    async def _popularity_step() -> None:
+        _emit("popularity", "started")
+        try:
+            from aughor.sql.popularity import refresh_popularity
+            sig = await loop.run_in_executor(None, lambda: refresh_popularity(conn_id))
+            _emit("popularity", "done", n_queries=sig.n_queries,
+                  tables=len(sig.table_counts))
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "birth popularity step is best-effort",
+                     counter="obs.popularity", conn_id=conn_id)
+            _emit("popularity", "failed", error=str(exc)[:300])
+
+    async def _business_terms_step() -> None:
+        import contextvars
+        # a copy of this rite's context, so the step's `birth.step` events carry the birth job's id
+        ctx = contextvars.copy_context()
+        await asyncio.get_running_loop().run_in_executor(
+            None, ctx.run, lambda: run_business_terms(conn_id, schema_name, _emit))
+
+    async def _pack_structure_step() -> None:
+        import contextvars
+        ctx = contextvars.copy_context()
+        await asyncio.get_running_loop().run_in_executor(
+            None, ctx.run, lambda: run_pack_structure(conn_id, schema_name, _emit))
+
+    async def _exploration_step() -> bool:
+        _emit("exploration", "started")
+        try:
+            res = await spawn_explorer(conn_id, canvas_id=canvas_id,
+                                       tables_filter=tables_filter, schema_name=schema_name,
+                                       token_cap=token_cap)
+            ok = bool(res.get("ok"))
+            # "already running" / "connection not ready" are handoff declines, not crashes.
+            _emit("exploration", "done" if ok else "skipped",
+                  job_id=res.get("job_id"), reason=res.get("reason"))
+            return ok
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "birth exploration handoff failed", counter="birth.job", conn_id=conn_id)
+            _emit("exploration", "failed", error=str(exc)[:300])
+            return False
+
+    # EXPLORATION GOES FIRST, and the prep runs alongside it.
+    #
+    # It used to go last, so the first `exploration.phase` — the only event the Briefing
+    # reacts to — could not exist until the prep finished. Measured on a 38-table schema
+    # that was 16.5 seconds of a screen showing exactly what it showed before the click.
+    # The prep was never a precondition: phases 3-7 need no ontology, which is why the
+    # gate that does need one sits before PHASE 8, roughly ten seconds in, and why the
+    # rite already promised "an intelligence failure still lets exploration run".
+    #
+    # What made this unsafe before, and no longer does: that Phase-8 gate builds the
+    # ontology when it finds none, so an early exploration could reach it mid-build and
+    # start a SECOND concurrent build of the same thing. `build_intelligence` is now
+    # single-flight per (connection, schema), so the gate's call waits for the build
+    # already running here and then hits its cache. The ordering below is only correct
+    # BECAUSE of that guard — moving it back without one reintroduces the race.
+    #
+    # `spawn_explorer` only submits a supervised job (its readiness check is `db.test()`,
+    # not "is intelligence built"), so this returns in milliseconds and the exploration
+    # then runs concurrently with the two steps below.
+    exploration_ok = await _exploration_step()
+
+    # These two do not depend on each other either. Independence is a property of what
+    # popularity READS, not a guess: `mine_popularity` takes its SQL from the query log
+    # and task history and parses it with sqlglot — it never opens the user's data
+    # connection and never reads the ontology, profiles or doc tree that
+    # `build_intelligence` writes. The old comment said "mine popularity while the
+    # understanding is fresh", which reads like a dependency and is only a preference.
+    #
+    # `gather` and not `TaskGroup`: each step already swallows its own failures (the rite
+    # is resilient by contract — the job fails only when NOTHING was accomplished), and a
+    # TaskGroup would cancel the sibling on the first raise, turning a best-effort mining
+    # hiccup into a lost intelligence build.
+    intelligence_ok, _, _ = await asyncio.gather(_intelligence_step(), _popularity_step(), _prerequisites_step())
+
+    # PENDING item 11 — the BUSINESS layer, once the build it reads exists: the explorer that
+    # proposes entities, links, processes and rules (`POST /ontology/explore`, one model call),
+    # run for a scope nobody has explored yet — part of what connecting means since 2026-09-24,
+    # the user's call taken over the explorer's unrun paid quality re-check: its one live check
+    # fused two groups that should stay apart, and every proposal stays PROPOSED until a person
+    # confirms it.
+    if intelligence_ok and not canvas_id:
+        # 2026-10-10 — the packs deployed here shape what the build found first; the explorer fills what they left.
+        await _pack_structure_step()
+        await _business_terms_step()
+
+    summary = {"connection_id": conn_id, "schema": schema_name,
+               "canvas_id": canvas_id, "steps": steps}
+    try:
+        Ledger.default().emit("birth.done", summary, conn_id=conn_id,
+                              canvas_id=canvas_id, job_id=current_job_id())
+    except Exception:
+        logger.debug("birth.done emit failed", exc_info=True)
+
+    if not intelligence_ok and not exploration_ok:
+        raise RuntimeError("birth accomplished nothing — intelligence and exploration both failed")
+    return summary
+
+
+async def spawn_birth(
+    conn_id: str,
+    *,
+    schema_name: str | None = None,
+    canvas_id: str | None = None,
+    tables_filter: list | None = None,
+    token_cap: int | None = None,
+) -> dict:
+    """R12 — submit the birth rite as ONE supervised kernel job (kind ``profile``,
+    the Curator charter): persisted state machine, heartbeats, budget governance,
+    Fleet visibility, cancellation on owner deletion. The idempotency key debounces
+    bursts — an upload storm or a create/upload race can't stack birth jobs for the
+    same connection/schema/canvas. Must be awaited from a running event loop."""
+    if not canvas_id:
+        schema_name = canonical_schema(conn_id, schema_name)
+    key = (f"canvas:{canvas_id}" if canvas_id
+           else (f"{conn_id}__{schema_name}" if schema_name else conn_id))
+    from aughor.kernel.jobs import kernel
+    job_id = await kernel().submit(
+        "profile",
+        # A person's capped run (`explorer.budget.person_run`): the rite's intelligence build and its
+        # exploration run side by side, so each is capped at half of what is left.
+        lambda: run_birth(conn_id, schema_name=schema_name, canvas_id=canvas_id,
+                          tables_filter=tables_filter, token_cap=(max(1, token_cap // 2) if token_cap else None)),
+        conn_id=conn_id,
+        canvas_id=canvas_id,
+        idempotency_key=f"birth:{key}",
+        payload={"schema_name": schema_name, "canvas_id": canvas_id,
+                 "tables_filter": tables_filter or None,
+                 **({"token_cap": max(1, token_cap // 2)} if token_cap else {})},
+    )
+    return {"ok": True, "job_id": job_id}
+
+
+def schemas_of_connection(conn_id: str) -> list[str]:
+    """The non-system schemas a connection exposes. Used to fan exploration out per schema
+    so a multi-schema connection (e.g. a workspace folding ecommerce + missimi + …) gives
+    EACH schema its own intelligence instead of one run that starves the smaller schemas.
+    Best-effort: returns [] on any failure (caller falls back to a connection-level run).
+
+    ``main`` counts as a REAL schema whenever it holds tables. It used to be excluded
+    wholesale (treating it as DuckDB's default namespace), which made a connection with
+    data in BOTH main and other schemas look single-schema: canonical_schema() collapsed
+    an explicit "explore schema main" to the bare key, silently resuming whatever old
+    run lived there and never exploring the main-schema data at all. A DB whose only
+    schema is main still resolves to the bare key via the callers' len<=1 rule."""
+    try:
+        from aughor.db.connection import open_connection_for
+        db = open_connection_for(conn_id)
+        # A connector scoped to one schema: exploring the rest would read the server's own (mysql, sys, system), and spend on them.
+        if getattr(db, "reads_one_schema", False) and getattr(db, "_schema_name", None):
+            return [str(db._schema_name)]
+        res = db.execute(
+            "__schemas__",
+            # Uppercase INFORMATION_SCHEMA: required by BigQuery, folded by Postgres.
+            "SELECT DISTINCT table_schema FROM INFORMATION_SCHEMA.TABLES "
+            "WHERE table_type = 'BASE TABLE' AND table_schema NOT IN "
+            "('information_schema', 'pg_catalog', 'temp') ORDER BY 1",
+         internal=True)
+        server_schema = getattr(db, "is_server_schema", lambda _schema: False)
+        return [str(r[0]) for r in (getattr(res, "rows", None) or []) if r and r[0] and not server_schema(str(r[0]))]
+    except Exception:
+        return []
+
+
+def canonical_schema(conn_id: str, schema: str | None) -> str | None:
+    """Normalise a requested schema to the canonical key dimension. A single-schema connection
+    has exactly one user schema == the connection itself, so it must ALWAYS use the bare key
+    (schema=None) — otherwise state splits between `{conn}` and `{conn}__{the_only_schema}`
+    depending on whether a caller passed `?schema=`. Returns None for the bare key, else the
+    schema unchanged. Best-effort: on any lookup failure, leave the schema as given."""
+    if not schema:
+        return None
+    try:
+        schemas = schemas_of_connection(conn_id)
+    except Exception:
+        return schema
+    return None if len(schemas) <= 1 else schema
+
+
+def kickoff_exploration(conn_id: str, schema_name: str | None = None, *, auto: bool = False,
+                        token_cap: int | None = None) -> bool:
+    """Schedule background schema-exploration, unless already active. Returns True if any run
+    was scheduled. An explicit schema_name explores just that schema; otherwise a MULTI-schema
+    connection fans out into one run PER schema (the 'every schema gets understood' guarantee),
+    and a single-schema connection runs connection-level (unchanged).
+
+    ``auto=True`` marks a background kick (on-connect / startup): it runs only when the Org
+    has the **Scout** agent enabled. An explicit user 'Start' (``auto=False``) always runs.
+
+    Thin sync wrapper over ``spawn_explorer``. Must be called from within a running event loop.
+    """
+    from aughor.explorer.models import ExplorationPhase
+
+    refusal = explorer_refusal(conn_id)
+    if refusal:
+        import logging
+        logging.getLogger(__name__).info("kickoff_exploration: not exploring %s — %s", conn_id, refusal)
+        try:
+            from aughor.kernel.ledger import Ledger
+            Ledger.default().emit("exploration.skipped",
+                                  {"reason": "federated_connection", "connection_id": conn_id}, conn_id=conn_id)
+        except Exception:
+            logging.getLogger(__name__).debug("exploration.skipped emit failed", exc_info=True)
+        return False
+
+    if auto:
+        from aughor.kernel.agents import is_enabled
+        from aughor.workspace.store import workspace_for_connection
+        if not is_enabled("scout", workspace_for_connection(conn_id)):
+            import logging
+            logging.getLogger(__name__).info(
+                "kickoff_exploration: Scout disabled by governance — skipping auto run for %s", conn_id)
+            # WP-6/6c — surface the silent skip: an auto run (on-connect or the continuous
+            # tick) that never happens because Scout is disabled was previously log-only, so
+            # a connection that never explores was invisible. Emit a ledger event the event
+            # spine carries to the UI (Inbox / the EXPLORER status chip).
+            try:
+                from aughor.kernel.ledger import Ledger
+                Ledger.default().emit(
+                    "exploration.skipped",
+                    {"reason": "scout_disabled", "connection_id": conn_id}, conn_id=conn_id)
+            except Exception:
+                logging.getLogger(__name__).debug("exploration.skipped emit failed", exc_info=True)
+            return False
+
+    if schema_name:
+        targets: list[str | None] = [schema_name]
+    else:
+        _schemas = schemas_of_connection(conn_id)
+        targets = list(_schemas) if len(_schemas) >= 2 else [None]
+    # Exploration principles §6 — a schema a person turned off is never explored. Filtered HERE, not in
+    # `schemas_of_connection`: that list also decides a connection's canonical keys, and a schema turned off must not
+    # turn a two-schema connection into a one-schema one.
+    from aughor.ontology.visibility import excluded as _excluded
+    _off = [t for t in targets if t and _excluded(conn_id, t) is not None]
+    if _off:
+        import logging
+        logging.getLogger(__name__).info("kickoff_exploration: %s turned off on %s — not explored", _off, conn_id)
+        targets = [t for t in targets if t not in _off]
+        if not targets:
+            return False
+
+    # R12 — when the Curator agent is enabled for this workspace, a kick elevates to
+    # the full birth rite: eager intelligence first, then the exploration handoff,
+    # one supervised kernel job per target schema. Otherwise exploration alone.
+    birth = False
+    try:
+        from aughor.kernel.agents import is_enabled
+        from aughor.workspace.store import workspace_for_connection
+        birth = is_enabled("curator", workspace_for_connection(conn_id))
+    except Exception:
+        birth = True   # governance lookup hiccup → run the rite rather than skip it
+
+    # A person's capped run (`token_cap`) fanned out over several datasets shares the cap between them.
+    each_cap = max(1, token_cap // max(1, len(targets))) if token_cap else None
+    started = False
+    for sch in targets:
+        key = f"{conn_id}__{sch}" if sch else conn_id
+        existing = explorers.get(key)
+        if existing is not None:
+            phase = getattr(getattr(existing, "status", None), "phase", None)
+            if phase not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED, None):
+                continue  # this schema's run is already active
+        # Tracked, not discarded: `create_task`'s return value is the only strong
+        # reference to the task, and a kick whose reference is dropped can be collected
+        # mid-exploration. It also gives a test a way to end what it started.
+        from aughor.kernel.concurrency import spawn
+        jobs = automatic_jobs(conn_id, sch) if auto else None
+        if jobs is not None and not jobs:
+            continue          # a system dataset is never read
+        if jobs is not None and "questions" not in jobs:
+            # Exploration principles §5, decision 2 — on its own the platform learns this dataset's structure only:
+            # its layer is unset (a person sets it) or says it is not explored. Nothing below calls a model, so no
+            # birth rite either (its eager intelligence build is one).
+            spawn(spawn_explorer(conn_id, schema_name=sch, structure_only=True,
+                                 reason=structure_only_reason(conn_id, sch)),
+                  name=f"kickoff-{key}")
+        elif birth:
+            spawn(spawn_birth(conn_id, schema_name=sch, token_cap=each_cap), name=f"birth-{key}")
+        else:
+            spawn(spawn_explorer(conn_id, schema_name=sch, token_cap=each_cap), name=f"kickoff-{key}")
+        started = True
+    return started
+
+
+def layer_scope(conn_id: str, schema: str | None) -> str:
+    """The schema a dataset's layer is filed under: its own, else the connection's one schema."""
+    if schema:
+        return schema
+    try:
+        from aughor.db.registry import get_meta
+        named = get_meta(conn_id).get("schema_name")
+        if named:
+            return str(named)
+        only = schemas_of_connection(conn_id)
+        return only[0] if len(only) == 1 else "default"
+    except Exception:  # noqa: BLE001 — "default" is where an unnamed scope is filed
+        return "default"
+
+
+def connection_has_business(conn_id: str) -> bool:
+    """Whether a person set any dataset of this connection to the business layer."""
+    from aughor.ontology.dataset_layers import LAYERS_FILE, load_declared
+    from aughor.ontology.recommendations import recommendations_root, safe_name
+    root = recommendations_root() / safe_name(conn_id)
+    if not root.is_dir():
+        return False
+    for f in root.glob(f"*/{LAYERS_FILE}"):
+        d = load_declared(conn_id, f.parent.name)
+        if (d["schema"] or {}).get("layer") == "business" or any(
+                t.get("layer") == "business" for t in d["tables"].values()):
+            return True
+    return False
+
+
+def automatic_jobs(conn_id: str, schema: str | None) -> frozenset:
+    """The jobs the platform runs on its own for this dataset, by the layer a person set (§5)."""
+    from aughor.ontology.dataset_layers import auto_jobs, layer_of
+    layer = layer_of(conn_id, layer_scope(conn_id, schema))
+    return auto_jobs(layer, connection_has_business=connection_has_business(conn_id))
+
+
+def structure_only_reason(conn_id: str, schema: str | None) -> str:
+    """What a structure-only run says about the questions it did not ask."""
+    from aughor.ontology.dataset_layers import LABEL, POLICY, layer_of
+    layer = layer_of(conn_id, layer_scope(conn_id, schema))
+    if not layer:
+        return "structure learned; its questions wait for a person to set this dataset's layer"
+    return f"structure learned; a {LABEL[layer].lower()} dataset is {POLICY[layer]}"

@@ -1,0 +1,18 @@
+id: healthcare-map
+name: Healthcare providers and hospitals, the industry map
+version: 1
+persona: >
+  What a hospital or provider group usually records — scheduling, encounters, clinical
+  assessment, diagnostics, medications, beds and resources, revenue and quality — each read as
+  a thing or as a part of one. Expectations, measured against the data.
+owner_team: Platform
+default_temporal_grain: period
+domains:
+  - healthcare
+  - clinical operations
+  - revenue cycle
+  - quality
+extends: []
+scope:
+  connections: ["*"]
+status: draft

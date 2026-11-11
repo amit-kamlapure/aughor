@@ -1,0 +1,18 @@
+id: ecommerce-extended
+name: E-commerce, the wider vocabulary
+version: 1
+persona: >
+  Core e-commerce with the rest of what an online business usually records — browsing,
+  checkout, purchasing, warehouse work, tracking, service and messaging — each read as a
+  thing or as a part of one. Still expectations, still measured.
+owner_team: Platform
+default_temporal_grain: period
+domains:
+  - e-commerce
+  - marketing
+  - procurement
+  - customer service
+extends: [core-ecommerce]
+scope:
+  connections: ["*"]
+status: draft

@@ -1,0 +1,803 @@
+/**
+ * format.ts — the SINGLE home for value formatting across the web app.
+ *
+ * Before this module, the same handful of operations were re-implemented in a
+ * dozen components, each subtly different:
+ *   - large-number abbreviation (1.2M / 1.2m / 1.23M / 12K / 12.3K)  ×8
+ *   - ratio → percent                                                ×5
+ *   - "revenue_usd" → "Revenue USD" label cleanup                    ×3
+ *   - date normalization + granularity detection                    ×2
+ * That drift is exactly the class of bug the platform keeps re-fixing. Anything
+ * that formats a number, percent, label, or date for display MUST come from here
+ * so a change lands once and propagates everywhere.
+ *
+ * The column-aware *cell* formatter (share-column detection, ordinal passthrough)
+ * still lives in ./formatCell and is re-exported below — it is the table-cell
+ * formatter that `<DataTable>` will own in Phase 3. Use the leaf helpers here
+ * (compactNumber / formatPercent / cleanLabel / date suite) for everything else.
+ *
+ * ── PRECISION: two contexts, one rule each ──────────────────────────────────
+ *
+ * PROSE (a headline, a finding, a synthesis, a figure lifted out of one) — the
+ * platform policy, mirrored from `aughor/util/format.py`:
+ *      |v| >= 1 → 2dp        |v| < 1 → 6dp        whole → no decimal point
+ * Applied by `normalizeNumberPrecision`. Prose is quoted verbatim from grounded
+ * text, so this is a CORRECTION of someone else's string, never our own output.
+ *
+ * DATA CELLS (a results grid) keep more precision on purpose — `formatMetricValue`
+ * allows up to 4 decimals, because dropping digits from a table is information
+ * loss, whereas in a sentence they are noise. Don't collapse the two.
+ */
+
+export {
+  SHARE_COL_PATTERN,
+  ORDINAL_COL_PATTERN,
+  isShareColumn,
+  formatCell,
+  buildColumnFormatter,
+} from "./formatCell";
+
+import { effectiveDateFormat, effectiveTimezone } from "./orgSettings";
+
+// ── Column types ─────────────────────────────────────────────────────────────
+
+/**
+ * What a column's declared SQL type MEANS — nine kinds, one per thing you can do with
+ * the column rather than one per keyword a dialect happens to spell.
+ *
+ * This is the definition behind the type mark every catalog surface now draws
+ * (`components/icons/columnType.tsx`), and behind `isNumericType`, which used to be a
+ * separate regex here. Two definitions of "is this a number" is how the rail came to
+ * call a column INTEGER while the Catalog screen called the same column INT64 and drew
+ * nothing at all for it.
+ *
+ * ── THE SPELLINGS ARE MEASURED, NOT IMAGINED ────────────────────────────────
+ * The frontend's old `isNum` read `\bINT\b`, which does not match `INT64`: there is no
+ * word boundary between `T` and `6`. Every BigQuery-shaped column in this product —
+ * which is how the Catalog screen serves theLook — fell through to "not a number". The
+ * backend hit this exact bug and fixed it in `aughor/tools/profiler.py::_NUMERIC_TYPES`
+ * ("no measure could ever exist there"); this is the same vocabulary, on this side of
+ * the wire, and `lib/columnType.test.ts` holds the two in step.
+ */
+export type ColumnTypeKind =
+  | "num" | "date" | "time" | "text" | "bool" | "json" | "binary" | "geo" | "unknown";
+
+/** Pattern → kind, in resolution order. ORDER IS LOAD-BEARING — see the containers. */
+const TYPE_RULES: ReadonlyArray<readonly [RegExp, ColumnTypeKind]> = [
+  // CONTAINERS FIRST, and this is the whole reason the list is ordered. A container
+  // spells its element types inside itself: `STRUCT<a INT>` and `ARRAY<DATE>` match the
+  // number and date rules on text that describes a FIELD, not the column. The column is
+  // a struct. `INTEGER[]` is the same claim written the other way round.
+  [/(\[\s*\])|\b(JSONB?|STRUCT|MAP|ARRAY|VARIANT|OBJECT|RECORD|ROW|LIST|SUPER)\b/i, "json"],
+  [/\b(GEOGRAPHY|GEOMETRY|GEOPOINT)\b/i,                                       "geo"],
+  [/\b(BLOB|BYTEA|VARBINARY|BINARY|BYTES|IMAGE)\b/i,                           "binary"],
+  [/\b(BOOLEAN|BOOL|BIT)\b/i,                                                  "bool"],
+  // `TIMESTAMP` before `DATE`: a DATETIME is an instant, not a day.
+  [/\b(TIMESTAMP\w*|DATETIME\w*|TIME\w*|INTERVAL)\b/i,                          "time"],
+  [/\bDATE\b/i,                                                                "date"],
+  // `U?` DuckDB's unsigned ints · `\d*` BigQuery's INT64/FLOAT64 and Postgres'
+  // int2/int4/int8/float8 · the rest as `profiler.py` spells them.
+  [/\b(U?(?:TINYINT|SMALLINT|MEDIUMINT|INTEGER|BIGINT|HUGEINT|INT)\d*|FLOAT\d*|DOUBLE|REAL|DECIMAL|BIGDECIMAL|NUMERIC|BIGNUMERIC|NUMBER|MONEY|BIGSERIAL|SERIAL\d*|YEAR)\b/i, "num"],
+  [/\b(VARCHAR\w*|NVARCHAR|CHARACTER|CHAR\w*|BPCHAR|VARYING|TEXT|STRING|CLOB|ENUM|UUID|CATEGORICAL)\b/i, "text"],
+];
+
+/**
+ * Which kind a declared SQL type belongs to.
+ *
+ * Unrecognised — or absent — is `unknown`, never silently "text": a catalog that never
+ * learned a column's type and a genuine VARCHAR are different facts, and a confident
+ * wrong glyph is worse than an honest blank one.
+ */
+export function columnTypeKind(type: string | null | undefined): ColumnTypeKind {
+  if (!type) return "unknown";
+  for (const [re, kind] of TYPE_RULES) if (re.test(type)) return kind;
+  return "unknown";
+}
+
+/** What the mark would say out loud — for a tooltip, and for the reader who cannot see
+ *  that the glyph is a tiny calendar. */
+export const COLUMN_KIND_LABEL: Record<ColumnTypeKind, string> = {
+  num: "number", date: "date", time: "time", text: "text", bool: "true/false",
+  json: "structured", geo: "geography", binary: "binary", unknown: "type unknown",
+};
+
+/** True when a column's declared SQL type is numeric (int/float/decimal/…).
+ *  Distributions and percentiles only make sense for these, so the UI gates the
+ *  per-column distribution on it. */
+export function isNumericType(type: string | null | undefined): boolean {
+  return columnTypeKind(type) === "num";
+}
+
+// ── Numbers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Compact abbreviation for badges, stat chips, and axis ticks:
+ *   1_234_567 → "1.2M",  45_300 → "45.3K",  2_400_000_000 → "2.4B".
+ * Below 1000: integers render as-is, decimals to `digits`. Negatives keep sign.
+ * This replaces the eight hand-rolled K/M/B formatters — pass `digits` to match
+ * a caller that needs more precision (e.g. 2 for a data cell).
+ */
+export function compactNumber(n: number | null | undefined, digits = 1): string {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  const a = Math.abs(n);
+  if (a >= 1e9) return `${(n / 1e9).toFixed(digits)}B`;
+  if (a >= 1e6) return `${(n / 1e6).toFixed(digits)}M`;
+  if (a >= 1e3) return `${(n / 1e3).toFixed(digits)}K`;
+  return Number.isInteger(n) ? String(n) : n.toFixed(digits);
+}
+
+/** Thousands-separated number (e.g. row counts in a table): 1234567 → "1,234,567". */
+export function formatCount(n: number | null | undefined): string {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  return n.toLocaleString("en-US");
+}
+
+/**
+ * Compact metric value for a TILE or BADGE — somewhere with no room for twelve digits:
+ *   ≥1B → "1.23B", ≥1M → "4.56M", ≥1K → "12,345" (thousands separators),
+ *   integers as-is, small decimals trimmed ("3.1400" → "3.14").
+ * NOT for table cells — see `formatTableNumber`. For a known ratio use `pct`/`formatPercent`.
+ */
+export function formatMetricValue(n: number | null | undefined): string {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  const a = Math.abs(n);
+  if (a >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
+  if (a >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
+  if (a >= 1e3) return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  if (Number.isInteger(n)) return String(n);
+  // Four decimals on a figure of ordinary size is float noise wearing a business face: a
+  // re-asked finding read "9.6983 vs 14.0688" on the Briefing. Two decimals is as much
+  // precision as such a figure carries. BELOW one it is kept at four, because a small rate
+  // (0.0034) rounded to two decimals is not less precise, it is gone.
+  return (Math.abs(n) >= 1 ? n.toFixed(2) : n.toFixed(4)).replace(/\.?0+$/, "");
+}
+
+/**
+ * A money figure for a reader: the symbol, then the full amount to the cent with thousands
+ * separators — `$114.99`, `-€1,820,497.55`. The symbol is the caller's to choose (the metric's
+ * declared currency, else the organisation's reporting currency; `lib/orgSettings.ts`), and an
+ * empty symbol is legal: it is how a page says the currency is undeclared without inventing one.
+ * The object page used to print `114.98999977111816 USD` beside `114.99 EUR` and `114.99 $` for
+ * one value (docs/UI_UX_STUDY_2026-09-25.md §2.6).
+ */
+export function formatMoney(n: number | null | undefined, symbol: string): string {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  const amount = Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${n < 0 ? "-" : ""}${symbol}${amount}`;
+}
+
+/** Money in whole units, for a figure read across a room: "$1,072,874". */
+export function formatWholeMoney(n: number | null | undefined, symbol: string): string {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  return `${n < 0 ? "-" : ""}${symbol}${Math.abs(Math.round(n)).toLocaleString("en-US")}`;
+}
+
+/** A file's size: "1.7 MB". */
+export function formatFileSize(bytes: number): string {
+  if (bytes >= 1 << 20) return `${(bytes / (1 << 20)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
+}
+
+/**
+ * A MODEL-SPEND tile's value (Arc AO-3): the priced total in USD, "unpriced" when calls ran
+ * and not one of them had a price, "—" when nothing is known. `$0.00` on a tile whose every
+ * call was unpriced was the measured defect — it read as "free" on five screens while the
+ * platform's own model had no rate declared. A partial total is still a figure (a floor),
+ * and the caller captions it as one from `unpricedCalls`.
+ */
+export function formatCost(usd: number | null | undefined, calls: number | null | undefined,
+                           unpricedCalls: number | null | undefined): string {
+  if (usd === null || usd === undefined || isNaN(usd)) return "—";
+  const n = calls ?? 0;
+  if (n > 0 && (unpricedCalls ?? 0) >= n) return "unpriced";
+  return formatMoney(usd, "$");
+}
+
+/**
+ * Canonical DATA-TABLE cell value — the FULL number, always, with thousands separators:
+ * 102870539329 → "102,870,539,329". Small decimals trimmed ("3.1400" → "3.14").
+ *
+ * A column is a set of values read against each other, and K/M/B abbreviation fights that:
+ * it silently re-scales per row (one cell "980K", the next "1.02M"), so a reader has to
+ * decode each magnitude suffix before they can compare two numbers in the same column, and
+ * "€102.87B" hides the digits that would have shown the total was absurd. Tiles and badges
+ * still abbreviate via `formatMetricValue` — they have one number and no room.
+ */
+export function formatTableNumber(n: number | null | undefined): string {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  if (Number.isInteger(n)) return n.toLocaleString("en-US");
+  // Keep up to 4dp for small magnitudes, 2dp once the integer part carries the signal.
+  const digits = Math.abs(n) >= 1e3 ? 2 : 4;
+  return n.toLocaleString("en-US", { maximumFractionDigits: digits });
+}
+
+// ── Percentages ──────────────────────────────────────────────────────────────
+
+/**
+ * Display a value that *might* be a stored ratio OR an already-computed percent.
+ * |n| ≤ 1 is treated as a ratio and scaled ×100; anything larger is assumed to be
+ * already a percentage (e.g. 11.8 → "11.8%", -60.89 → "-60.89%"). Use for data
+ * cells where the scale is ambiguous. For a value you KNOW is a ratio (confidence,
+ * conversion rate, null rate) use `pct` instead — it never second-guesses.
+ */
+export function formatPercent(n: number | null | undefined, digits = 1): string {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  const p = Math.abs(n) <= 1 ? n * 100 : n;
+  return `${p.toFixed(digits)}%`;
+}
+
+/** A known ratio in [0,1+] → percent, always ×100: 0.118 → "12%" (digits 0). */
+export function pct(ratio: number | null | undefined, digits = 0): string {
+  if (ratio === null || ratio === undefined || isNaN(ratio)) return "—";
+  return `${(ratio * 100).toFixed(digits)}%`;
+}
+
+// A decimal run long enough to be float noise rather than intended precision. MIRRORS
+// `_LONG_DECIMAL_RE` in aughor/util/format.py — keep the two in step.
+const LONG_DECIMAL_RE = /-?\d+\.\d{4,}/g;
+// Scientific notation that leaked out of a float64 into prose: `7.49e+06` reached a
+// Briefing tile as its headline figure (docs/UI_UX_STUDY_2026-09-25.md §2.6).
+const E_NOTATION_RE = /-?\d+(?:\.\d+)?e[+-]?\d+/gi;
+// A bare magnitude of five digits or more, with an optional short fraction, that carries no
+// grouping — `180925`, `1820497.55` — and is not the tail of a longer number, a fraction, a
+// date (2026-06-25), a time or a path. Four-digit runs are left alone: they are years more
+// often than counts, and a year with a comma in it is wrong in a way a reader notices.
+const UNGROUPED_RE = /(?<![\d,.\-/:])(\d{5,})(\.\d{1,3})?(?![\d,]|[-/:]\d)/g;
+const group = (digits: string) => digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+/**
+ * Make the numbers inside a STRING we did not compose read as a reader reads them — grounded
+ * prose the backend wrote, or a figure lifted out of it. The platform quotes its own numbers
+ * verbatim ("never invent a number"), so whatever a float64 looked like when it reached a
+ * finding is reproduced here exactly: `…is 43.959061407888164%`, `180925 total`, `7.49e+06`.
+ *
+ * Three rewrites, none of which changes a value: scientific notation is expanded; over-long
+ * decimal runs collapse to the platform's precision (|v| ≥ 1 → 2dp, |v| < 1 → 6dp, whole
+ * results drop the point — the backend's policy in aughor/util/format.py); and a bare
+ * magnitude of five digits or more gains thousands grouping (2026-09-25, the Briefing tiles
+ * that read `180925` and `1820497.55`). Already-grouped numbers, currency symbols, years,
+ * dates and short numbers are untouched. Idempotent; safe on null/empty.
+ */
+export function normalizeNumberPrecision(text: string | null | undefined): string {
+  if (!text) return text ?? "";
+  return text
+    .replace(E_NOTATION_RE, m => {
+      const v = Number(m);
+      if (!Number.isFinite(v)) return m;
+      return String(Math.abs(v) >= 1 ? Math.round(v * 1e2) / 1e2 : Math.round(v * 1e6) / 1e6);
+    })
+    .replace(LONG_DECIMAL_RE, m => {
+      const v = parseFloat(m);
+      const r = Math.abs(v) >= 1 ? Math.round(v * 1e2) / 1e2 : Math.round(v * 1e6) / 1e6;
+      return String(r);
+    })
+    .replace(UNGROUPED_RE, (_m, int: string, frac: string | undefined) => group(int) + (frac ?? ""));
+}
+
+const RATIO_WORD = /\b(margin|rate|share|ratio|conversion)\b/i;
+
+/**
+ * Figures a model wrote into a sentence, as a reader reads them: grouped (`231,521.3`), and a long fraction in a sentence
+ * about a margin, rate, share or ratio as the percent it is (`0.599699` → `60.0%`). Display only: the stored text stands.
+ */
+export function readableFigures(text: string | null | undefined): string {
+  return normalizeNumberPrecision(text).split(/(?<=[.!?])\s+/).map(sentence => (RATIO_WORD.test(sentence)
+    ? sentence.replace(/\b0\.\d{3,}\b/g, m => `${(Number(m) * 100).toFixed(1)}%`) : sentence)).join(" ");
+}
+
+/** "1 entity" / "3 entities" — a count with its correctly-inflected noun (PX-1:
+ *  "1 entities" is machine text; a screen never shows it). One home, like the rest
+ *  of this file. */
+const MONTH_WORDS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** A calendar month key, `YYYY-MM`, as a reader says it: "Oct 2026". Anything else comes back as given. */
+export function formatMonth(key: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(key);
+  const i = m ? Number(m[2]) - 1 : -1;
+  return m && i >= 0 && i < 12 ? `${MONTH_WORDS[i]} ${m[1]}` : key;
+}
+
+export function countNoun(n: number, singular: string, plural?: string): string {
+  return `${formatCount(n)} ${n === 1 ? singular : (plural ?? `${singular}s`)}`;
+}
+
+/** A change between two SHARES (0..1) in percentage points: 0.151 → 0.143 is "-0.8 pts" — never
+ *  "-5.6%", which reads a rate's move as a percent of a percent (Arc BR, 2026-09-25). */
+export function formatPoints(from: number | null | undefined, to: number | null | undefined, digits = 1): string {
+  if (from === null || from === undefined || to === null || to === undefined || isNaN(from) || isNaN(to)) return "";
+  const p = ((to - from) * 100).toFixed(digits);
+  return `${to - from >= 0 ? "+" : ""}${p} pts`;
+}
+
+/** Signed variance percent for scorecards: +12.5% / -3.0%. Input is a ratio. */
+/** A day with its year, for data that ended long ago: "Wed 17 Oct 2018". */
+/** "Fri 23 Oct", or "Fri 23 Oct at 09:07 UTC" — an instant as the day (and UTC time) a reader says; "" without one.
+ *  A dashboard's Question dates its answers by it (PENDING 54). */
+export function utcDayWords(iso: string | null | undefined, withTime = false): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const day = d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+  if (!withTime) return day;
+  return `${day} at ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" })} UTC`;
+}
+
+export function endedDay(iso: string): string {
+  const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
+  if (isNaN(d.getTime())) return iso;
+  const part = (o: Intl.DateTimeFormatOptions) => d.toLocaleDateString("en-GB", { ...o, timeZone: "UTC" });
+  return `${part({ weekday: "short" })} ${part({ day: "numeric", month: "short", year: "numeric" })}`;
+}
+
+/** A span of days as a table cell says it: "Wed 17 Oct 2018", "September 2018", "2017", "1–17 Oct 2018",
+ *  "1 Jan – 17 Oct 2018". The full sentence ("the year to the data's last day, …") rides as its title. */
+export function spanWords(start?: string | null, last?: string | null): string {
+  if (!start || !last) return "";
+  const a = new Date(`${start.slice(0, 10)}T00:00:00Z`), b = new Date(`${last.slice(0, 10)}T00:00:00Z`);
+  if (isNaN(a.getTime()) || isNaN(b.getTime())) return `${start} to ${last}`;
+  const f = (d: Date, o: Intl.DateTimeFormatOptions) => d.toLocaleDateString("en-GB", { ...o, timeZone: "UTC" });
+  const full: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric" };
+  if (a.getTime() === b.getTime()) return endedDay(start);
+  const sameYear = a.getUTCFullYear() === b.getUTCFullYear();
+  const sameMonth = sameYear && a.getUTCMonth() === b.getUTCMonth();
+  const monthEnd = new Date(Date.UTC(b.getUTCFullYear(), b.getUTCMonth() + 1, 0)).getUTCDate();
+  if (sameMonth && a.getUTCDate() === 1 && b.getUTCDate() === monthEnd) return f(a, { month: "long", year: "numeric" });
+  if (sameYear && a.getUTCMonth() === 0 && a.getUTCDate() === 1 && b.getUTCMonth() === 11 && b.getUTCDate() === 31) {
+    return String(a.getUTCFullYear());
+  }
+  if (sameMonth) return `${a.getUTCDate()}–${f(b, full)}`;
+  if (sameYear) return `${f(a, { day: "numeric", month: "short" })} – ${f(b, full)}`;
+  return `${f(a, full)} – ${f(b, full)}`;
+}
+
+export function formatVariance(ratio: number | null | undefined, digits = 1): string {
+  if (ratio === null || ratio === undefined || isNaN(ratio)) return "";
+  const p = (ratio * 100).toFixed(digits);
+  return ratio >= 0 ? `+${p}%` : `${p}%`;
+}
+
+// ── Labels ───────────────────────────────────────────────────────────────────
+
+// Acronyms that should stay fully upper-cased rather than title-cased.
+// Whole-word only, and deliberately conservative: an entry that is ALSO an English word
+// (mom, wow, asp) would upper-case ordinary prose, so those are left out however common
+// they are as metric shorthand. `cogs` was the omission that rendered a real report's
+// axis as "Total Cost Of Goods Sold Cogs" (2026-09-23).
+const ABBREVS = /^(usd|id|uk|us|eu|vat|sku|url|api|crm|gmv|mrr|arr|ltv|cac|ctr|aov|roi|pnl|gp|kpi|cogs|nps|arpu|cpa|cpc|cpm|sla|sql|etl|csv|upc|ean|gtin|ytd|mtd|qtd|yoy)$/i;
+
+/**
+ * Humanize a raw column / field name for a header, axis title, or legend:
+ *   "revenue_usd"    → "Revenue USD"
+ *   "payment_method" → "Payment Method"
+ * Known acronyms are upper-cased; every other word is title-cased.
+ */
+/** Strip the explore wave's internal planner directives from reader-facing prose.
+ *  Paragraphs/lines beginning with "→" are forward-chaining notes to the NEXT
+ *  question ("→ Q5 should investigate…") — process, not analysis; a reader never
+ *  sees the machine's to-do list. */
+export function stripPlannerNotes(text: string): string {
+  return (text || "")
+    .split(/\n{2,}/)
+    .filter((p) => !p.trim().startsWith("→"))   // a directive paragraph goes whole
+    .map((p) => p.split("\n").filter((l) => !l.trim().startsWith("→")).join("\n"))
+    .filter((p) => p.trim())
+    .join("\n\n")
+    .trim();
+}
+
+export function cleanLabel(s: string): string {
+  return (s ?? "")
+    .replace(/_/g, " ")
+    .replace(/\b\w+/g, (w) =>
+      ABBREVS.test(w) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+    );
+}
+
+/**
+ * Lower-case humanize for ontology relationship verbs:
+ *   "HAS_MANY" → "has many",  "REFERENCES" → "references".
+ * Ontology edges use lower-case verbs by convention — distinct from the
+ * Title-Case `cleanLabel`. Centralised so the four edge-label sites agree.
+ */
+export function verbLabel(verb: string): string {
+  return (verb ?? "").toLowerCase().replace(/_/g, " ");
+}
+
+// ── Dates & granularity ──────────────────────────────────────────────────────
+// A date column produced by DATE_TRUNC('week'/'day'/'month'/…) is ALREADY
+// aggregated. We match the label/axis granularity to the data rather than re-bin,
+// inferring the grain from the column name first, then median spacing of values.
+
+export type Gran = "minute" | "hour" | "day" | "week" | "month" | "quarter" | "year";
+
+/**
+ * Tidy a raw cell value for tabular display. A DATE_TRUNC'd dimension comes back as a
+ * midnight timestamp ("2025-04-01 00:00:00"); the trailing 00:00:00 is noise in a table,
+ * so collapse it to the date ("2025-04-01"). Everything else passes through unchanged.
+ */
+export function displayCellValue(v: unknown): string {
+  if (v == null) return "";
+  const s = String(v);
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})[ T]00:00:00(?:\.0+)?$/);
+  const dateStr = m ? m[1] : s;
+  // A user date_format applies to bare ISO dates in table cells; non-dates pass through.
+  const pref = effectiveDateFormat();
+  if (pref && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return applyUserDateFormat(dateStr, pref);
+  return dateStr;
+}
+
+/**
+ * "2024-01-01 00:00:00" / "2024-01" → a string `new Date()` can parse.
+ * DuckDB returns a space-separated timestamp; DATE_TRUNC('month') yields "2018-01".
+ * Returns the input unchanged when it doesn't look like a timestamp.
+ */
+/** The name a fresh query tab is born with: "New Query 2026-08-21 15:08:29".
+ *
+ *  A tab is a thing you come back to, and "Query", "Query 2", "Query 3" tells you
+ *  nothing about which one you were in. The stamp is local time and sortable, and it
+ *  survives being renamed — this only supplies the default.
+ *
+ *  Built from the parts rather than toLocaleString(): the gate forbids ad-hoc
+ *  Intl/toLocale date rendering in the UI precisely so the format cannot drift
+ *  between locales, and a tab label must read the same for everyone on a team. */
+export function queryTabName(now: Date = new Date()): string {
+  const p = (n: number, w = 2) => String(n).padStart(w, "0");
+  const d = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`;
+  const t = `${p(now.getHours())}:${p(now.getMinutes())}:${p(now.getSeconds())}`;
+  return `New Query ${d} ${t}`;
+}
+
+export function normDateStr(v: string): string {
+  let s = (v ?? "").replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/, "$1T$2");
+  if (/^\d{4}-\d{2}$/.test(s)) s += "-01";
+  return s;
+}
+
+export function granFromName(col: string): Gran | null {
+  const n = (col || "").toLowerCase();
+  if (/\bminute\b|_minute|per_minute/.test(n)) return "minute";
+  if (/\bhour\b|_hour|hourly/.test(n)) return "hour";
+  if (/\bweek\b|wk\b|_week|iso_week|week_/.test(n)) return "week";
+  if (/\bquarter\b|\bqtr\b|_q$|fiscal_q/.test(n)) return "quarter";
+  if (/\bmonth\b|_month|yyyymm/.test(n)) return "month";
+  if (/\byear\b|_year|yyyy$/.test(n)) return "year";
+  if (/\bday\b|_day|\bdate\b|_date$|^date$/.test(n)) return "day";
+  return null;
+}
+
+const _DAY_MS = 86_400_000;
+
+export function detectGranularity(col: string, values: unknown[]): Gran {
+  const named = granFromName(col);
+  if (named) return named;
+
+  // Sub-day grain from the time-of-day component, BEFORE the spacing heuristic —
+  // DATE_TRUNC('minute') leaves a varying MM, DATE_TRUNC('hour') a varying HH with
+  // MM=00, and day+ are all midnight. Sparse minute data (orders hours apart) would
+  // otherwise be misread as "day" by the median-delta test and lose its time labels.
+  let anyMinute = false, anyHour = false;
+  for (const v of values) {
+    const mt = String(v ?? "").match(/\d{4}-\d{2}-\d{2}[ T](\d{2}):(\d{2}):\d{2}/);
+    if (!mt) continue;
+    if (mt[2] !== "00") { anyMinute = true; break; }  // non-zero minutes → minute grain
+    if (mt[1] !== "00") anyHour = true;               // non-zero hour, zero minutes → hour grain
+  }
+  if (anyMinute) return "minute";
+  if (anyHour) return "hour";
+
+  const ts = Array.from(
+    new Set(values.map((v) => String(v ?? "")).filter((s) => /^\d{4}-\d{2}(-\d{2})?/.test(s)))
+  )
+    .map((s) => new Date(normDateStr(s)).getTime())
+    .filter((t) => !isNaN(t))
+    .sort((a, b) => a - b);
+  if (ts.length >= 2) {
+    const deltas = ts.slice(1).map((t, i) => t - ts[i]).sort((a, b) => a - b);
+    const med = deltas[Math.floor(deltas.length / 2)];
+    if (med <= 1.5 * _DAY_MS) return "day";
+    if (med <= 10 * _DAY_MS) return "week";
+    if (med <= 45 * _DAY_MS) return "month";
+    if (med <= 135 * _DAY_MS) return "quarter";
+    return "year";
+  }
+  return "day";
+}
+
+export const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** A cell that names a month by its first day: "2025-09-01", or "2025-09". */
+const MONTH_CELL = /^(\d{4})-(0[1-9]|1[0-2])(?:-01)?$/;
+const isTableRow = (line: string) => line.trim().startsWith("|");
+
+/** A markdown table column whose every cell names a month by its first day reads as months — "Sep 2025", as
+ *  the titles and axes beside it read. Q3's answer table wrote "2025-09-01" under an axis reading "Sep 2025"
+ *  (2026-10-03). Two rows at least: one first-of-month date may be the day itself. */
+export function monthsInTables(text: string): string {
+  const lines = text.split("\n");
+  for (let i = 0; i + 2 < lines.length; i++) {
+    if (!isTableRow(lines[i]) || !/^\s*\|?\s*:?-{3,}/.test(lines[i + 1])) continue;   // a header and its rule
+    let end = i + 2;
+    while (end < lines.length && isTableRow(lines[end])) end++;
+    const body = lines.slice(i + 2, end).map((line) => line.split("|"));
+    if (body.length >= 2) {
+      const width = Math.min(...body.map((parts) => parts.length));
+      for (let c = 1; c < width; c++) {
+        if (!body.every((parts) => MONTH_CELL.test(parts[c].trim()))) continue;
+        for (const parts of body) {
+          const [, year, month] = parts[c].trim().match(MONTH_CELL)!;
+          parts[c] = ` ${MONTHS_SHORT[Number(month) - 1]} ${year} `;
+        }
+      }
+      lines.splice(i + 2, end - i - 2, ...body.map((parts) => parts.join("|")));
+    }
+    i = end - 1;
+  }
+  return lines.join("\n");
+}
+
+const MONTH_WORD = "(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?";
+const monthNo = (m: string) => ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+  .indexOf(m.slice(0, 3).toLowerCase()) + 1;
+const two = (n: number | string) => String(n).padStart(2, "0");
+
+/** The days and months a text names in full: "March 5, 2026", "5 March 2026" and "2026-03-05" as "2026-03-05";
+ *  "September 2025" as "2025-09". */
+function datesNamed(text: string): Set<string> {
+  const out = new Set<string>();
+  let rest = text;
+  const take = (re: RegExp, key: (g: string[]) => string) => {
+    rest = rest.replace(re, (_whole: string, ...g: string[]) => { out.add(key(g)); return " "; });
+  };
+  take(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (g) => `${g[0]}-${g[1]}-${g[2]}`);
+  take(new RegExp(`\\b${MONTH_WORD}\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})\\b`, "gi"),
+       (g) => `${g[2]}-${two(monthNo(g[0]))}-${two(g[1])}`);
+  take(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+${MONTH_WORD},?\\s+(\\d{4})\\b`, "gi"),
+       (g) => `${g[2]}-${two(monthNo(g[1]))}-${two(g[0])}`);
+  take(new RegExp(`\\b${MONTH_WORD},?\\s+(\\d{4})\\b`, "gi"), (g) => `${g[1]}-${two(monthNo(g[0]))}`);
+  return out;
+}
+
+/** Does the answer name the period a label states, in any common form? Q2's headline said "between March 5, 2026,
+ *  and September 4, 2026", and the line beneath it said "5 March – 4 September 2026" again (2026-10-03). Read from
+ *  the label's two ends, as the windows are written ("5 March – 4 September 2026", "4–20 July 2026",
+ *  "September 2025–August 2026", "July 2026"); a note after " — " is not the period. */
+export function namesPeriod(text: string, label: string): boolean {
+  const ends = (label || "").split(" — ")[0].split(/\s*–\s*/);
+  if (!text || ends.length > 2) return false;
+  const part = (s: string) => {
+    const m = s.trim().match(new RegExp(`^(?:(\\d{1,2})\\s*)?(?:${MONTH_WORD})?\\s*(\\d{4})?$`, "i"));
+    return m && (m[1] || m[2] || m[3]) ? { d: m[1], m: m[2], y: m[3] } : null;
+  };
+  const last = part(ends[ends.length - 1]);
+  const first = ends.length === 2 ? part(ends[0]) : last;
+  if (!last?.m || !last.y || !first || !!first.d !== !!last.d) return false;
+  const key = (y: string, m: string, d?: string) => `${y}-${two(monthNo(m))}` + (d ? `-${two(d)}` : "");
+  const named = datesNamed(text);
+  return named.has(key(first.y ?? last.y, first.m ?? last.m, first.d)) && named.has(key(last.y, last.m, last.d));
+}
+
+/** Render a date per a user date_format token. Pulls Y-M-D straight from the string
+ *  (no Date parse) so a "…T00:00:00" timestamp never drifts a day across the local
+ *  timezone. Returns the input unchanged for an unknown token or a non-date. */
+function applyUserDateFormat(dateStr: string, pref: string): string {
+  const m = dateStr.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?/);
+  if (!m) return dateStr;
+  const [, yyyy, mm, dd = "01"] = m;
+  const mmm = MONTHS_SHORT[parseInt(mm, 10) - 1] ?? mm;
+  switch (pref) {
+    case "YYYY-MM-DD": return `${yyyy}-${mm}-${dd}`;
+    case "DD/MM/YYYY": return `${dd}/${mm}/${yyyy}`;
+    case "MM/DD/YYYY": return `${mm}/${dd}/${yyyy}`;
+    case "DD MMM YYYY": return `${dd} ${mmm} ${yyyy}`;
+    default: return dateStr;
+  }
+}
+
+/**
+ * Human label for a single date value at the detected grain. Always carries the
+ * year for day/week so a table is unambiguous across years ("19 Sep 2017").
+ * A user date_format (Settings ▸ Localization) overrides the day/week label; the
+ * aggregated month/quarter/year labels stay smart ("Sep 2024", "Q1 2024").
+ */
+export function fmtDate(v: string, gran: Gran): string {
+  if (!/^\d{4}-\d{2}(-\d{2})?/.test(v)) return v;
+  const d = new Date(normDateStr(v));
+  if (isNaN(d.getTime())) return v;
+  // Org timezone applies ONLY to time-bearing grains (minute/hour) — shifting a date-only
+  // bucket (day/month/…) across midnight would be wrong. Empty = the viewer's local zone.
+  const _tz = effectiveTimezone();
+  const _tzOpt = _tz ? { timeZone: _tz } : {};
+  switch (gran) {
+    case "minute":
+      return d.toLocaleString("default", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", ..._tzOpt });
+    case "hour":
+      return d.toLocaleString("default", { day: "numeric", month: "short", hour: "numeric", ..._tzOpt });
+    case "day":
+    case "week": {
+      const pref = effectiveDateFormat();
+      if (pref) return applyUserDateFormat(v, pref);
+      return d.toLocaleString("default", { day: "numeric", month: "short", year: "numeric" });
+    }
+    case "quarter":
+      return `Q${Math.floor(d.getUTCMonth() / 3) + 1} ${d.getUTCFullYear()}`;
+    case "year":
+      return String(d.getUTCFullYear());
+    case "month":
+    default:
+      // The chart axes' own month names (d3's `%b`): the viewer's locale wrote "Sept 2025" under a
+      // change chart beside a trend whose axis read "Sep 2025" (2026-10-03).
+      return `${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`;
+  }
+}
+
+/**
+ * Wall-clock timestamp for receipts / sync-status / "data as of" chrome — the ONE
+ * home for the `new Date(x).toLocaleString()` calls that were scattered across
+ * components (REC-U8). `style`: "full" → locale date+time; "short" → "Jan 5, 03:42 PM".
+ * Returns "—" for empty and echoes the raw input for an unparseable value.
+ */
+export function formatTimestamp(
+  v: string | number | Date | null | undefined,
+  style: "full" | "short" = "full",
+): string {
+  if (v === null || v === undefined || v === "") return "—";
+  const d = v instanceof Date ? v : new Date(v);
+  if (isNaN(d.getTime())) return String(v);
+  if (style === "short") {
+    return d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+  return d.toLocaleString();
+}
+
+/**
+ * A moment as `YYYY-MM-DD HH:mm` in the reader's own time — the ledger-column form
+ * (tabular, sortable by eye) where `formatTimestamp` is the receipt form. "—" for empty;
+ * the raw input for an unparseable value.
+ */
+export function formatDateTime(v: string | number | Date | null | undefined): string {
+  if (v === null || v === undefined || v === "") return "—";
+  const d = v instanceof Date ? v : new Date(v);
+  if (isNaN(d.getTime())) return String(v);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/**
+ * d3-time-format spec for a temporal (continuous) axis at the detected grain.
+ * Shows the year on every tick only when the range spans multiple years.
+ */
+export function chartDateFormat(gran: Gran, multiYear: boolean): string {
+  switch (gran) {
+    case "minute":
+    case "hour":
+      return "%b %d %H:%M";
+    case "day":
+    case "week":
+      return multiYear ? "%b %Y" : "%b %d";
+    case "year":
+      return "%Y";
+    case "quarter":
+    case "month":
+    default:
+      return "%b %Y";
+  }
+}
+
+export const GRAN_WORD: Record<Gran, string> = {
+  minute: "Per-minute",
+  hour: "Hourly",
+  day: "Daily",
+  week: "Weekly",
+  month: "Monthly",
+  quarter: "Quarterly",
+  year: "Yearly",
+};
+
+/** Compact relative time — "12s", "4m", "3h", "2d" — for feed/table rows.
+ *  Returns "—" for a missing timestamp. */
+export function relTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return "—";
+  const s = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
+}
+
+
+/** SP-13 — an instant in a chain's OWN clock, with UTC beside it for operators:
+ *  "Wed, 16 Sept, 09:00 Europe/Berlin (07:00 UTC)". An unknown zone falls back to
+ *  the UTC words alone — a card must degrade, never break, on a zone this browser
+ *  does not know. */
+export function zonedTimeWords(iso: string, tz?: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const utcOnly = d.toUTCString().replace(/:\d{2} GMT$/, " UTC");
+  if (!tz) return utcOnly;
+  try {
+    const local = new Intl.DateTimeFormat("en-GB", {
+      weekday: "short", day: "numeric", month: "short",
+      hour: "2-digit", minute: "2-digit", hour12: false, timeZone: tz,
+    }).format(d);
+    const utc = new Intl.DateTimeFormat("en-GB", {
+      hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC",
+    }).format(d);
+    return `${local} ${tz} (${utc} UTC)`;
+  } catch {
+    return utcOnly;
+  }
+}
+
+/** How long a read took, as a person reads it: "0.42 s", "3.1 s", "2 min 5 s" (Arc AP-6 — a set's read time). */
+export function formatSeconds(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "—";
+  const s = ms / 1000;
+  if (s < 1) return `${s.toFixed(2)} s`;
+  if (s < 60) return `${s.toFixed(1)} s`;
+  const m = Math.floor(s / 60);
+  return `${m} min ${Math.round(s - m * 60)} s`;
+}
+
+// ── a number column's display format ─────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * How a number column shows its values — a spreadsheet's number formats (the menu the user pointed at,
+ * 2026-11-09). What a cell SHOWS, never what it holds: copying, CSV and every filter read the value itself. "" is None:
+ * the value as it came. Percentage is a spreadsheet's — the value times a hundred (0.124 → 12.4%) — so a column already in
+ * percent stays on None.
+ */
+export type NumberFormat = "" | "grouped" | "standard" | "compact" | "currency" | "percent" | "scientific" | "bytes";
+
+export const NUMBER_FORMATS: readonly { id: NumberFormat; label: string; example: number }[] = [
+  { id: "", label: "None", example: 1240.35 },
+  { id: "standard", label: "Standard", example: 1240.35 },
+  { id: "compact", label: "Compact", example: 12400 },
+  { id: "currency", label: "Currency", example: 1240.35 },
+  { id: "percent", label: "Percentage", example: 0.124 },
+  { id: "scientific", label: "Scientific", example: 1240.35 },
+  { id: "bytes", label: "Bytes", example: 1240 },
+];
+
+const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"];
+
+/** A value in a number format; a value that is not a number is shown as it is, and a blank stays blank. */
+export function formatNumberAs(v: unknown, fmt: NumberFormat, symbol = "$"): string {
+  if (v === null || v === undefined) return "";
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
+  if (!fmt || !Number.isFinite(n)) return String(v);
+  switch (fmt) {
+    // Thousands separators, and every digit after the point the value had — nothing rounded, so a ratio of 0.0034567
+    // stays itself (2026-11-10, the SQL results' default for a measure).
+    case "grouped": {
+      const m = /^(-?)(\d+)(\.\d+)?$/.exec(typeof v === "number" ? String(n) : String(v).trim());
+      return m ? `${m[1]}${m[2].replace(/\B(?=(\d{3})+(?!\d))/g, ",")}${m[3] ?? ""}` : String(v);
+    }
+    case "standard": return n.toLocaleString("en-US", { maximumFractionDigits: 2 });
+    case "compact": return compactNumber(n, 1);
+    case "currency": return formatMoney(n, symbol);
+    case "percent": return `${(n * 100).toLocaleString("en-US", { maximumFractionDigits: 1 })}%`;
+    case "scientific": return n.toExponential(1).toUpperCase().replace("E+", "E");
+    case "bytes": {
+      let x = Math.abs(n);
+      let u = 0;
+      while (x >= 1024 && u < BYTE_UNITS.length - 1) { x /= 1024; u += 1; }
+      return `${n < 0 ? "-" : ""}${u === 0 ? x : x.toFixed(2)} ${BYTE_UNITS[u]}`;
+    }
+  }
+  return String(v);
+}
+
+/** A number column that names a thing rather than measures one — an id, a key, a year, a code: its digits are never
+ *  grouped by default ("48,377" is not an order, "2,024" not a year). The user, 2026-11-10: separators, "not on ids". */
+/** The SQL results' formats: the shared list with "Grouped" — the results' default for a measure — after None. Not a
+ *  sheet's format: the sheet's server holds its own list (`aughor/sheets/kinds.py`), equal to `NUMBER_FORMATS`. */
+export const RESULT_NUMBER_FORMATS: readonly { id: NumberFormat; label: string; example: number }[] = [
+  NUMBER_FORMATS[0], { id: "grouped", label: "Grouped", example: 1240.35 }, ...NUMBER_FORMATS.slice(1),
+];
+
+export function namesAThing(column: string): boolean {
+  return /(^|_)(id|key|year|yr|zip|code|number|no)$/i.test(column) || /[a-z]Id$/.test(column);
+}

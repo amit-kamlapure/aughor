@@ -1,0 +1,219 @@
+# The telecommunications and ISP industry vocabulary (AUGHOR_ATLAS_INDUSTRY_VOCABULARY_v1, 2026-11-11: 62 reference
+# types) as an industry map: expectations matched to tables by name or alias, never facts. Sixty objects; two reference
+# types are folded into a near-identical one and kept as its aliases:
+#   * Cell Site         → NetworkSite
+#   * Service Inventory → Service (the services a customer has are the inventory of them)
+#
+# Two readings were made, and both are this package's, not the vocabulary's:
+#   * its ten classes are read onto the eight roles this map has — by meaning, not by its class column (it calls a
+#     Customer Bill a party, a Bill Cycle a transaction and a Port a place);
+#   * a record of activity is a PART of the thing it happened to (a service order's provisioning tasks, an agreement's
+#     renewals, a bill's tax charges, a site's power events), never a thing beside it — the vocabulary lists each as a
+#     type of its own.
+# The vocabulary names no table spellings; every alias below is a guess the data confirms or leaves unmatched. Nothing
+# here creates an object: one the data has no table for is never proposed and never mentioned.
+objects:
+  # Who, and the selling of it.
+  - name: Party
+    roles: [party]
+    aliases: [parties, party, party_roles, individuals, organizations]
+    description: any person or organisation the operator deals with, customer or not
+  - name: Customer
+    roles: [party]
+    aliases: [customers, customer, subscribers, subscriber, account_holders]
+  - name: CustomerSegment
+    roles: [catalog]
+    aliases: [customer_segments, customer_segment, segments, market_segments]
+  - name: SalesLead
+    roles: [party]
+    aliases: [sales_leads, leads, lead, prospects]
+  - name: ChannelInteraction
+    roles: [event]
+    aliases: [channel_interactions, channel_interaction, sales_interactions, store_visits, channel_touchpoints]
+  - name: Quote
+    roles: [transaction]
+    aliases: [quotes, quote, quotations, sales_quotes]
+  - name: CustomerAgreement
+    roles: [asset]
+    drawn_as: contract
+    aliases: [customer_agreements, agreements, agreement, contracts, customer_contracts]
+    parts: [ContractRenewal]
+  - name: ContractRenewal
+    roles: [event]
+    aliases: [contract_renewals, renewals, agreement_renewals, recontracts]
+  # The catalogue.
+  - name: ProductOffering
+    roles: [catalog]
+    aliases: [product_offerings, product_offering, offerings, offers, products]
+  - name: ProductSpecification
+    roles: [catalog]
+    aliases: [product_specifications, product_specification, product_specs]
+  - name: ServiceSpecification
+    roles: [catalog]
+    aliases: [service_specifications, service_specification, service_specs, service_catalog]
+  - name: Bundle
+    roles: [catalog]
+    aliases: [bundles, bundle, product_bundles, packages]
+  - name: PricePlan
+    roles: [catalog]
+    aliases: [price_plans, price_plan, tariff_plans, rate_plans, plans, tariffs]
+  - name: Promotion
+    roles: [catalog]
+    aliases: [promotions, promotion, promos, discounts]
+  - name: ProductEligibility
+    roles: [catalog]
+    aliases: [product_eligibility, eligibility_rules, offer_eligibility, eligibility]
+    description: the rules for who may take which offering
+  - name: MeteringRule
+    roles: [catalog]
+    aliases: [metering_rules, metering_rule, rating_rules, charging_rules]
+  - name: RetentionOffer
+    roles: [catalog]
+    aliases: [retention_offers, retention_offer, save_offers, winback_offers]
+  # What a customer holds, and getting it to them.
+  - name: ProductInventory
+    roles: [asset]
+    aliases: [product_inventory, subscriptions, subscription, customer_products, installed_products]
+    description: the products a customer currently holds
+  - name: Service
+    roles: [asset]
+    drawn_as: services
+    aliases: [services, service, service_instances, service_inventory, customer_services]
+    description: a service running for a customer — the vocabulary's Service and Service Inventory
+  - name: ProductOrder
+    roles: [transaction]
+    aliases: [product_orders, product_order, orders, customer_orders, sales_orders]
+  - name: ServiceOrder
+    roles: [event]
+    aliases: [service_orders, service_order, fulfilment_orders, fulfillment_orders, work_orders]
+    parts: [ProvisioningTask]
+  - name: ProvisioningTask
+    roles: [event]
+    aliases: [provisioning_tasks, provisioning_task, provisioning_jobs, provisioning]
+  - name: ActivationRequest
+    roles: [event]
+    aliases: [activation_requests, activation_request, activations, sim_activations]
+  - name: InstallationAppointment
+    roles: [event]
+    aliases: [installation_appointments, installations, install_appointments, technician_visits, appointments]
+  - name: ConfigurationChange
+    roles: [event]
+    aliases: [configuration_changes, configuration_change, config_changes, service_changes]
+  # The network.
+  - name: NetworkSite
+    roles: [place]
+    aliases: [network_sites, network_site, sites, cell_sites, cell_site, towers]
+    parts: [SitePowerEvent]
+  - name: SitePowerEvent
+    roles: [event]
+    aliases: [site_power_events, power_events, power_outages, site_power]
+  - name: BaseStation
+    roles: [asset]
+    drawn_as: mast
+    aliases: [base_stations, base_station, enodebs, gnodebs, radio_cells]
+  - name: NetworkElement
+    roles: [asset]
+    aliases: [network_elements, network_element, network_nodes, network_devices, network_equipment]
+  - name: Port
+    roles: [asset]
+    aliases: [ports, port, network_ports, device_ports]
+    description: a connection point on a network element
+  - name: Circuit
+    roles: [asset]
+    aliases: [circuits, circuit, leased_lines, transport_circuits]
+  - name: FiberSegment
+    roles: [asset]
+    aliases: [fiber_segments, fibre_segments, fiber_segment, fiber_spans, fiber_cables]
+  - name: TopologyLink
+    roles: [asset]
+    aliases: [topology_links, topology_link, network_links, network_topology]
+  - name: Resource
+    roles: [asset]
+    aliases: [resources, resource, resource_inventory, network_resources, logical_resources]
+    description: a number, address, SIM or device the network assigns to a service
+  - name: ResourceReservation
+    roles: [stock]
+    aliases: [resource_reservations, resource_reservation, reserved_resources, number_reservations]
+  # Usage and rating.
+  - name: UsageRecord
+    roles: [event]
+    aliases: [usage_records, usage_record, cdrs, call_detail_records, usage_events, usage]
+  - name: RatedUsage
+    roles: [event]
+    aliases: [rated_usage, rated_usage_records, rated_cdrs, rated_events, charged_usage]
+  - name: SessionRecord
+    roles: [event]
+    aliases: [session_records, session_record, data_sessions, pdp_sessions, sessions]
+  - name: RoamingEvent
+    roles: [event]
+    aliases: [roaming_events, roaming_event, roaming_records, roaming_usage, tap_records]
+  - name: UsageBalance
+    roles: [stock]
+    aliases: [usage_balances, usage_balance, balances, allowance_balances, buckets]
+    description: what is left of an allowance at a moment
+  # Billing and collections.
+  - name: BillingAccount
+    roles: [asset]
+    drawn_as: vault
+    aliases: [billing_accounts, billing_account, accounts, customer_accounts]
+  - name: BillCycle
+    roles: [calendar]
+    aliases: [bill_cycles, bill_cycle, billing_cycles, billing_periods]
+  - name: CustomerBill
+    roles: [transaction]
+    aliases: [customer_bills, customer_bill, bills, bill, invoices, invoice]
+    parts: [TaxCharge]
+  - name: TaxCharge
+    roles: [event]
+    aliases: [tax_charges, tax_charge, bill_taxes, tax_lines, invoice_taxes]
+  - name: Payment
+    roles: [transaction]
+    aliases: [payments, payment, bill_payments, customer_payments]
+  - name: Adjustment
+    roles: [transaction]
+    aliases: [adjustments, adjustment, bill_adjustments, account_adjustments]
+  - name: CreditNote
+    roles: [transaction]
+    aliases: [credit_notes, credit_note, credit_memos]
+  - name: ServiceCredit
+    roles: [transaction]
+    aliases: [service_credits, service_credit, sla_credits, goodwill_credits]
+    description: money credited to a customer for a service failure
+  - name: DunningCase
+    roles: [event]
+    aliases: [dunning_cases, dunning_case, dunning, collections_cases, collection_cases]
+  # Faults and service quality.
+  - name: Alarm
+    roles: [event]
+    aliases: [alarms, alarm, network_alarms, fault_alarms]
+  - name: Incident
+    roles: [event]
+    aliases: [incidents, incident, network_incidents, service_incidents]
+  - name: Outage
+    roles: [event]
+    aliases: [outages, outage, service_outages, network_outages]
+  - name: TroubleTicket
+    roles: [event]
+    aliases: [trouble_tickets, trouble_ticket, tickets, fault_tickets, service_tickets]
+  - name: ChangeRequest
+    roles: [event]
+    aliases: [change_requests, change_request, network_changes, planned_works]
+  - name: SlaViolation
+    roles: [event]
+    aliases: [sla_violations, sla_violation, sla_breaches, sla_breach]
+  - name: PerformanceMeasure
+    roles: [event]
+    aliases: [performance_measures, performance_measurements, network_kpis, pm_counters, network_performance]
+  # Retention and support.
+  - name: SupportInteraction
+    roles: [event]
+    aliases: [support_interactions, support_interaction, customer_interactions, support_calls, contact_center_calls]
+  - name: Escalation
+    roles: [event]
+    aliases: [escalations, escalation, escalated_cases, complaint_escalations]
+  - name: CustomerSatisfaction
+    roles: [event]
+    aliases: [customer_satisfaction, csat, csat_surveys, nps_responses, satisfaction_surveys]
+  - name: ChurnEvent
+    roles: [event]
+    aliases: [churn_events, churn_event, churn, disconnections, cancellations]

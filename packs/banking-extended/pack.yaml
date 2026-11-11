@@ -1,0 +1,19 @@
+id: banking-extended
+name: Banking and payments, the wider vocabulary
+version: 1
+persona: >
+  Banking and lending with the rest of what a bank usually records — onboarding and screening,
+  payments and settlement, cards, treasury, disputes and service — each read as a thing or as
+  a part of one. Still expectations, still measured.
+owner_team: Platform
+default_temporal_grain: period
+domains:
+  - banking
+  - payments
+  - lending
+  - compliance
+  - treasury
+extends: [banking]
+scope:
+  connections: ["*"]
+status: draft

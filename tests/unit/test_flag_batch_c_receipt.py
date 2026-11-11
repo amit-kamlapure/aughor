@@ -1,0 +1,129 @@
+"""Flag strategy batch C — the deterministic graduation suite for the Knowledge-Graph
+and connection-birth bundles, plus the last two migration flips.
+
+Hermetic: no LLM, no warehouse, no writes; synthetic probe connections throughout.
+"""
+from __future__ import annotations
+
+import pytest
+
+from aughor.evals.evaluator import EvalCase
+from aughor.evals.flag_batch_c_receipt import (
+    FLAGS, SCENARIO_PREFIX, SCENARIOS, receipt_target,
+)
+
+
+@pytest.mark.parametrize("name", sorted(SCENARIOS))
+def test_scenario_holds(name):
+    comparison = SCENARIOS[name]()
+    assert comparison.equivalent, (
+        f"{name}: expected {comparison.expected!r}, observed {comparison.observed!r}")
+
+
+def test_every_scenario_declares_an_oracle():
+    for name, fn in SCENARIOS.items():
+        assert fn().oracle, f"{name} declares no oracle"
+
+
+def test_every_graduated_flag_has_at_least_one_scenario():
+    covered = {n.split("__")[0] for n in SCENARIOS}
+    assert set(SCENARIO_PREFIX) == set(FLAGS)
+    for flag in FLAGS:
+        assert SCENARIO_PREFIX[flag] in covered, f"{flag} has no scenario backing it"
+
+
+def test_unknown_scenario_is_an_error_not_an_empty_pass():
+    obs = receipt_target()(EvalCase(id="x", question="?", expected={"scenario": "nope"}))
+    assert obs.error and "nope" in obs.error
+
+
+def test_batch_c_behaviour_is_unconditional_or_still_default_on():
+    """Batch C's graph and birth bundles were HARDWIRED 2026-08-02 — their flags are
+    gone and the behaviour is permanent. The two migration flips still hold flags
+    (they owe a legacy-path deletion first), and those must stay default-on."""
+    from aughor.kernel.flags import FLAG_DEFAULT, FLAG_ENV
+
+    for flag in FLAGS:
+        if flag in FLAG_ENV:
+            assert FLAG_DEFAULT.get(flag) is True, flag
+        else:
+            assert flag not in FLAG_DEFAULT, f"{flag} is deleted; it must not linger"
+
+
+def test_the_queue_is_named_and_migrations_are_empty():
+    """The strategy's steady state: every flag is graduated, auto, an opt-in, an
+    experiment, or in the performance profile — and a queued/migration flag must
+    declare itself with its exit AND be named here, so joining the queue is a
+    reviewed decision, not a side effect (this assertion going red on an unnamed
+    entry is the mechanism, and is exactly how FL-1b's entry arrived — and how
+    its removal left, 2026-08-28, when `ask.resume_stream` graduated on its
+    delivered receipts: browser-soak reattach + interrupt-cancels-the-job. The
+    receipt record lives on the GRADUATION_QUEUE tombstone in kernel/flags.py)."""
+    from aughor.kernel.flags import GRADUATION_QUEUE, MIGRATION
+
+    # Arc CT-4 (ROADMAP §3.50), 2026-09-28: `dashboard.composed` — a Dashboards tab in the Data Canvas.
+    # It adds no model call, so it has no grid to pass: it is queued on a receipt of USE, and
+    # its entry in kernel/flags.py says which, and what would delete it instead.
+    # Arc AO-2b (ROADMAP §3.52), 2026-10-03: `slack.managed_supervisor` — the API runs the
+    # Slack supervisor. No model call either; it graduates on the arc's own measure (Create
+    # agent → a Slack answer, one person, no terminal, under five minutes, on two machines)
+    # and its entry names the falsifier that reopens the in-process spike instead.
+    # Arc OC-0 (ROADMAP §3.56), 2026-10-09: `ontology.census` — the daily census in the journal. No model
+    # call and no warehouse query; it graduates on being READ by a later wave's receipt, and its entry names
+    # the falsifier that deletes it instead.
+    # Arc OC-1, the same day: `ontology.history` — every declaration's versions, and a withdrawal refused where
+    # something depends on it. Its entry names the receipt and the falsifier.
+    # …and `ontology.release` (Arc OC-2): a change waits in a draft until a person publishes it.
+    # Arc OC-4, the same day: `ontology.dashboard_pieces` — dashboard pieces bound to the ontology. No model call; it
+    # graduates on its live receipt, and its entry names the falsifier that deletes it instead.
+    # Arc OC-6, 2026-10-10: `actions.outbox` — a declared action's calls through an outbox, retried by cause and an
+    # unknown one checked before it is sent again. No model call; it graduates on its live receipt (a forced timeout
+    # reconciled by the action's check), and its entry names the falsifier that sends it back.
+    # Arc OC-7 and OC-8, the same day: `ontology.security` (row policies and masked properties; its receipt is on a
+    # scratch install until sign-in) and `ontology.builder_doors` (the contract, listed and proposed on from outside).
+    # Neither calls a model; each entry names its receipt and the falsifier.
+    # …and on 2026-10-10 history, release, cockpit_pieces, outbox and builder_doors graduated on their receipts
+    # (FLAG_DEFAULT, each a kill switch): security waits for sign-in, the census for seven daily readings.
+    # Arc ED, ED-1 (ROADMAP §3.58), 2026-10-24: `ontology.security_sql` — OC-7's declarations at a connection's own
+    # door. No model call; it needs `ontology.security`, so it waits for sign-in with it, and its entry names the
+    # receipt (one count through either door) and the falsifier.
+    # Arc ED, ED-2, the same day: `mcp.caller_principals` (an outside program connects to the MCP server as its own
+    # service principal) and `security.principal_scopes` (that principal's grant narrows the agent policy). Neither
+    # calls a model; each entry names its receipt and the falsifier.
+    # …and `quality.expectations` (ED-3): an automation step measures a table's expectations into the quality plane.
+    # …and `dashboard.app_versions` (ED-4): an App's readers read the version last published, a later keep a draft.
+    # …and `ontology.impacts_only` (ED-5): the declared impacts are the one record of what bears on what.
+    # …and `objects.completeness` (ED-6): every object read says how complete it is.
+    # Arc FA, FA-5 (ROADMAP §3.60), 2026-10-26: `automations.objects_admitted` — a trigger for the objects a rule or
+    # segment newly admits. No model call; its entry names the receipt (records first, fires later, under the
+    # owner's row policy) and the falsifier.
+    # Arc FA, FA-6 (ROADMAP §3.60), 2026-10-26: `packs.installed_versions` (a binding records the manifest's version
+    # and what the pack offered, and an upgrade proposes only the new and changed) and `packs.dashboard_templates` (a
+    # pack's dashboard template becomes a draft a person keeps). Neither calls a model; each entry names its receipt
+    # and the falsifier.
+    # Arc FA, FA-7 (ROADMAP §3.60), 2026-10-26: `agents.grounding_read` — what a custom agent would read, at its key door
+    # and as a read-level MCP tool. No chat model; the embedder may be called and is said. Its entry names the receipt
+    # and the falsifier.
+    # Arc FA, FA-1 (ROADMAP §3.60), 2026-10-26: `graph.declarations` (published declarations are graph nodes),
+    # `objects.find` (⌘K finds an object by name across entities) and `knowledge.hybrid_documents` (documents ranked by
+    # their words while the embedder is down). None calls a model; each entry names its receipt and the falsifier.
+    # Arc FA, FA-2 (ROADMAP §3.60), 2026-10-26: `canvas.ask_about_chosen` — ticked objects or a set a piece reads, asked
+    # about in the Data Canvas; and FA-4, `ontology.set_segments` — a dashboard set kept as a segment. Neither calls a
+    # model; each entry names its receipt and the falsifier.
+    # Arc FA, FA-3 (ROADMAP §3.60), 2026-10-26: `ontology.put_back` (an earlier version back into the draft) and
+    # `ontology.retiring` (a declaration marked retiring with a successor and a day). Neither calls a model; each entry
+    # names its receipt and the falsifier.
+    # Arc MC (ROADMAP §3.62), 2026-10-26: `metrics.figure_gates` (a metric's figures checked at approval),
+    # `metrics.coverage_map` (the areas, placement and the matrix), `metrics.coverage_proposals` (recipes and the
+    # ontology's derivations proposed by code), `metrics.coverage_writer` (one model call per uncovered area when
+    # profiled — the only one that spends), `metrics.blind_spot_proposals` and `briefing.metric_cap`. Each entry names
+    # the receipt and the falsifier.
+    # Arc SH (ROADMAP §3.64), 2026-10-27: `sheets.core`, `sheets.grid` and `sheets.combine` — the sheets, editing them and
+    # combining them; no model call; each graduates on its wave's falsifier read on the live install.
+    # Arc SV, SV-2 (ROADMAP §3.63), 2026-10-27: `state.backups` — the API's hourly backups of its own state. No model
+    # call; it graduates on a week of the live install's backups read and one restore proven on a copy, and its entry
+    # names the p95 falsifier that moves it to a quiet hour.
+    # 2026-10-28: the entries that were on moved to ALWAYS_ON (ROADMAP §3.65), and the last eight were made unconditional
+    # the same day once each was checked on live data — the queue is empty, and no product flag is left to join it.
+    assert GRADUATION_QUEUE == {}
+    assert MIGRATION == {}

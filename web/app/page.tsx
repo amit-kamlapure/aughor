@@ -1,0 +1,2412 @@
+"use client";
+import { CONNECTORS } from "@/lib/connectors.gen";
+import { ErrorState } from "@/components/ui/states";
+import { toast } from "@/components/ui/toast";
+
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+
+// Always-eager: on the critical path at first render
+import { ChatPanel } from "@/components/ChatPanel";
+import { ThreadsRail } from "@/components/ThreadsRail";
+import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
+import { AuthControl } from "@/components/AuthControl";
+import { applyTheme, THEME_KEY } from "@/lib/themeSwitch";
+import { cleanLook, getLook, setLook } from "@/lib/look";
+import { AppearancePanel } from "@/components/settings/AppearancePanel";
+import { useNavCollapsed, useNavCollapsedState } from "@/components/shell/useNavCollapsed";
+import { Tooltip } from "@/components/ui/tooltip";
+import { installAuthFetch } from "@/lib/auth";
+import { installWorkspaceHeader, setActiveWorkspace } from "@/lib/workspace";
+import { InferencePanel } from "@/components/InferencePanel";
+import { OrgSettingsPanel } from "@/components/OrgSettingsPanel";
+import { OwnersPanel } from "@/components/OwnersPanel";
+import { registerCurrencyLoader, setCurrentDataset, setDataCurrency, setOrgSettingsCache } from "@/lib/orgSettings";
+import { rememberedSchema } from "@/lib/schemaChoice";
+import { formatCount } from "@/lib/format";
+import { ExplorationBadge } from "@/components/ExplorationBadge";
+import { SchemaProvider } from "@/lib/schema-context";
+import { OpenInQueryProvider, type OpenInQueryRequest } from "@/lib/openInQuery";
+import { getCanvases } from "@/lib/api";
+import { CommandPalette, GlobalCommands } from "@/components/CommandPalette";
+import { Button } from "@/components/ui/button";
+import { Icon, type IconName } from "@/components/ui/icon";
+import { SkeletonRows } from "@/components/ui/motion";
+import { ActivityStrip } from "@/components/shell/ActivityStrip";
+import { useNavCounts, waitingOnAPerson, type NavCounts } from "@/components/shell/useNavCounts";
+import { UpgradeModal } from "@/components/UpgradeModal";
+import { ApprovalModal } from "@/components/ApprovalModal";
+import type { IntelLayer } from "@/components/IntelligenceWorkspace";
+import type { OpsLayer } from "@/components/OperationsWorkspace";
+import type { EvalsLayer } from "@/components/EvalsWorkspace";
+import { Workspace as WorkspaceShell, type WorkspaceLayer } from "@/components/Workspace";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { NAVIGATE_EVENT, type NavigateRequest } from "@/lib/navigate";
+import { NAV_DESTINATIONS, NAV_SECTION_IDS, destinationOf } from "@/lib/navDestinations";
+import { ChromeActions, ChromeFacts, ChromeToolbar, PageChromeProvider, PageHeader, StatusStrip } from "@/components/shell/PageChrome";
+import { InspectorHost, InspectorProvider } from "@/components/shell/Inspector";
+import { OVERVIEW_LAYER, agentOpsLayerOf, type AgentOpsLayer as AgentsLayer } from "@/lib/agentOpsLayers";
+import type { RecordLayer } from "@/components/record/RecordWorkspace";
+
+function LoadingPanel() {
+  // A lazy panel's first paint: skeleton rows the height of the lists and tables most
+  // panels open on. Never a spinner — there are none anywhere in the product.
+  return (
+    <div style={{ flex: 1, background: "var(--bg-0)", padding: 16 }}>
+      <SkeletonRows rows={6} />
+    </div>
+  );
+}
+
+// Lazy panels — only bundled & parsed when the user first navigates to them
+const loading = () => <LoadingPanel />;
+const ConfigurePanel    = dynamic(() => import("@/components/ConfigurePanel").then(m => ({ default: m.ConfigurePanel })),    { ssr: false, loading });
+const HistoryPanel      = dynamic(() => import("@/components/HistoryPanel").then(m => ({ default: m.HistoryPanel })),        { ssr: false, loading });
+const HistoryDetailPanel= dynamic(() => import("@/components/HistoryDetailPanel").then(m => ({ default: m.HistoryDetailPanel })), { ssr: false, loading });
+// The Intelligence perspectives are lazily loaded *inside* IntelligenceWorkspace,
+// which fans them into layers of one unified workspace.
+const IntelligenceWorkspace = dynamic(() => import("@/components/IntelligenceWorkspace").then(m => ({ default: m.IntelligenceWorkspace })), { ssr: false, loading });
+const OperationsWorkspace = dynamic(() => import("@/components/OperationsWorkspace").then(m => ({ default: m.OperationsWorkspace })), { ssr: false, loading });
+const EvalsWorkspace = dynamic(() => import("@/components/EvalsWorkspace").then(m => ({ default: m.EvalsWorkspace })), { ssr: false, loading });
+const SystemPanel       = dynamic(() => import("@/components/SystemPanel").then(m => ({ default: m.SystemPanel })),          { ssr: false, loading });
+const IntegrationsPanel = dynamic(() => import("@/components/IntegrationsPanel").then(m => ({ default: m.IntegrationsPanel })), { ssr: false, loading });
+const RolesPanel        = dynamic(() => import("@/components/RolesPanel").then(m => ({ default: m.RolesPanel })),            { ssr: false, loading });
+const ProcessHealthPanel= dynamic(() => import("@/components/ProcessHealthPanel").then(m => ({ default: m.ProcessHealthPanel })), { ssr: false, loading });
+const PlaybookPanel     = dynamic(() => import("@/components/PlaybookPanel").then(m => ({ default: m.PlaybookPanel })),      { ssr: false, loading });
+const RecommendationInbox= dynamic(() => import("@/components/RecommendationInbox").then(m => ({ default: m.RecommendationInbox })), { ssr: false, loading });
+const DocumentsPage     = dynamic(() => import("@/components/documents/DocumentsPage").then(m => ({ default: m.DocumentsPage })),{ ssr: false, loading });
+const SpreadsheetsPage  = dynamic(() => import("@/components/sheets/SpreadsheetsPage").then(m => ({ default: m.SpreadsheetsPage })),{ ssr: false, loading });
+const CatalogScreen     = dynamic(() => import("@/components/CatalogScreen").then(m => ({ default: m.CatalogScreen })),      { ssr: false, loading });
+const CanvasBrowser     = dynamic(() => import("@/components/CanvasBrowser").then(m => ({ default: m.CanvasBrowser })),      { ssr: false, loading });
+const CanvasCreator     = dynamic(() => import("@/components/CanvasCreator").then(m => ({ default: m.CanvasCreator })),      { ssr: false, loading });
+const CanvasWorkspace   = dynamic(() => import("@/components/CanvasWorkspace").then(m => ({ default: m.CanvasWorkspace })),  { ssr: false, loading });
+// Monitors / Action Hub / Security & Audit now render inside OperationsWorkspace (REC-U5).
+// SE-1: the workbench replaces the bare builder at the Data ▸ Query layer. Lazy with
+// ssr:false because CodeMirror touches `document` at construction, and because the
+// SQL parser worker it pulls is ~20 MB — neither belongs in the first-render path.
+const QueryWorkbench    = dynamic(() => import("@/components/query/QueryWorkbench").then(m => ({ default: m.QueryWorkbench })), { ssr: false, loading });
+const MetricsPanel      = dynamic(() => import("@/components/MetricsPanel").then(m => ({ default: m.MetricsPanel })),        { ssr: false, loading });
+const SemanticLayerPanel= dynamic(() => import("@/components/SemanticLayerPanel").then(m => ({ default: m.SemanticLayerPanel })), { ssr: false, loading });
+// The 2027 study's screens (docs/PLATFORM_2027_STUDY_2026-10-04.md §V), each inside the rail that
+// was already here: Now beside Home and the Inbox, and Record under Intelligence — one rail item
+// whose five views (Inquiries · Decisions · Missions · Claims · Corrections) are its tabs. "By
+// duty", the Action centre and Developer are Agent Ops layers, loaded by that workspace; the gate
+// map and the policies are lenses of Security & Audit.
+const NowPanel          = dynamic(() => import("@/components/now/NowPanel").then(m => ({ default: m.NowPanel })),                   { ssr: false, loading });
+const RecordWorkspace   = dynamic(() => import("@/components/record/RecordWorkspace").then(m => ({ default: m.RecordWorkspace })), { ssr: false, loading });
+const AgenticOpsWorkspace = dynamic(() => import("@/components/AgenticOpsWorkspace").then(m => ({ default: m.AgenticOpsWorkspace })), { ssr: false, loading });
+import { getApiBase, DEMO_PACK } from "@/lib/config";
+
+// VA-10: the ID-token fetch wrapper must exist before ANY component's first
+// fetch, so it installs at module load — an effect would run after children
+// already raced their initial reads out unauthenticated.
+if (typeof window !== "undefined") installAuthFetch(getApiBase());
+// AFTER the auth wrapper on purpose, so this one ends up OUTERMOST: it writes the
+// workspace into `init.headers`, which is exactly what the auth wrapper spreads when it
+// adds the bearer token. Installed the other way round, the workspace header would be
+// built before auth replaced the init and would be dropped.
+if (typeof window !== "undefined") installWorkspaceHeader();
+import {
+  getConnections,
+  seedDemoConnection,
+  getWorkspaces,
+  createWorkspace as apiCreateWorkspace,
+  updateWorkspace as apiUpdateWorkspace,
+  deleteWorkspace as apiDeleteWorkspace,
+  type Workspace,
+  addConnection as apiAddConnection,
+  deleteConnection as apiDeleteConnection,
+  getConnectionFreshness,
+  getDataCurrency, getEffectiveSettings,
+  getJobs,
+  cancelJob,
+  getAgents,
+  patchAgent,
+  getMyPreferences,
+  putMyPreference,
+  type Connection,
+  type Canvas,
+  type FleetJob,
+  type AgentRosterEntry,
+} from "@/lib/api";
+import { costSummary, fmtCompact, fmtMs } from "@/lib/cost";
+import { Segmented } from "@/components/ui/segmented";
+import { TabStrip } from "@/components/ui/tab-strip";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { AskRecall } from "@/components/home/AskRecall";
+import { HomeDesk } from "@/components/home/HomeDesk";
+
+// ── Types ──────────────────────────────────────────────────────────────────────
+
+type NavTab =
+  | "home"              // overview dashboard — stats, health, recents, quick input
+  | "now"               // what needs me this week — slots used, what waits on a person, what was held
+  | "record"            // the Record workspace: Inquiries · Decisions · Missions · Claims · Corrections
+  | "inquiries"         // link → record/inquiries
+  | "decisions"         // link → record/decisions
+  | "missions"          // link → record/missions
+  | "claims"            // link → record/claims
+  | "corrections"       // link → record/corrections
+  | "action-centre"     // link → agentic-ops/action-centre (the authority table)
+  | "developer"         // link → agentic-ops/developer
+  | "spend"             // PX-2 — Operations ▸ Spend (caps, usage, model health, audit feed)
+  | "chat"              // active investigation / chat (hidden from nav)
+  | "canvases"
+  | "canvas-workspace"
+  | "recents"
+  | "fleet"              // agent runs, status, cost (legacy tab id)
+  | "integrations"       // VA-11 — provider catalog: Set up / Connect / revoke
+  | "agents"             // user-defined agents (domain personas, flag agents.user_defined)
+  | "inbox"
+  | "briefing"
+  | "intelligence"      // unified multi-layered Intelligence workspace
+  | "intel-hub"         // legacy deep-link → intelligence/hub layer
+  | "intel"             // legacy deep-link → intelligence/domains layer
+  | "org-intel"         // the Org row (Define) → intelligence/org layer
+  | "graph"             // the Graph row (Define) → intelligence/graph layer
+  | "memory"            // the Memory row (Define) → intelligence/memory layer
+  | "declared-actions"  // the Actions row (Define) → intelligence's declared-actions layer
+  | "evidence"          // the Evidence row (Decide) → intelligence/evidence layer
+  | "brain"             // the Brain map row (Operations) → intelligence/brain layer
+  | "ontology"          // legacy deep-link → intelligence/ontology layer
+  | "dashboards"        // deep-link → intelligence/dashboards layer (the process designer hands a new dashboard over)
+  | "operations"        // unified Operations workspace (Monitors / Action Hub / Security)
+  | "agentic-ops"       // Agentic Ops — runs · agents · attention · activity · run graphs
+  | "control-room"      // legacy deep-link → agentic-ops (Wave CR's original id)
+  | "evals"             // unified Evals workspace (Suites / Runs) — Wave E
+  | "data"              // unified Data workspace (Catalog / Query Builder / Semantic Layer)
+  | "health"
+  | "playbook"
+  | "documents"        // the global document corpus — see the nav comment on why it is here
+  | "spreadsheets"     // Arc SH — the sheets people make, edit, combine and chat with
+  | "catalog"
+  | "builder"           // legacy deep link — resolves to the Query workbench (SE-1)
+  | "query"
+  | "connections"
+  | "metrics"
+  | "monitors"
+  | "actions"
+  | "activity"
+  | "security"
+  | "semantic"
+  | "settings";
+
+type Theme = "dark" | "light";
+type AskMode = "ask" | "investigate";
+
+// ── Icon primitives ────────────────────────────────────────────────────────────
+
+// The nav's glyphs come from the ONE icon set (components/ui/icon.tsx). Thirty
+// hand-written paths stood here — one of four such maps in this tree, each having
+// re-drawn the same glyphs slightly differently. `NavIcon` survives as a thin adapter
+// so the ~40 call sites below keep their `name`/`size`/`color` shape.
+function NavIcon({ name, size = 14, color = "currentColor", className }: { name: string; size?: number; color?: string; className?: string }) {
+  return (
+    <span className={className} style={{ color, display: "inline-flex", flexShrink: 0 }}>
+      <Icon name={name as IconName} size={size} />
+    </span>
+  );
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+function freshnessLabel(ts: string | null): string | null {
+  if (!ts) return null;
+  const num = Number(ts);
+  const d = !isNaN(num) ? new Date(num > 1e10 ? num : num * 1000) : new Date(ts);
+  if (isNaN(d.getTime())) return null;
+  const diffMs = Date.now() - d.getTime();
+  const diffH = diffMs / 3_600_000;
+  if (diffH < 1) return "< 1h ago";
+  if (diffH < 24) return `${Math.round(diffH)}h ago`;
+  const diffD = diffMs / 86_400_000;
+  if (diffD < 7) return `${Math.round(diffD)}d ago`;
+  return `${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+}
+
+function Topbar({
+  onSearchOpen,
+  onNavigate,
+  connections,
+  selectedConn,
+  workspaces,
+  selectedWorkspace,
+  allConnections,
+  onWorkspaceChange,
+  onCreateWorkspace,
+  onUpdateWorkspace,
+  onDeleteWorkspace,
+  theme,
+  onThemeChange,
+}: {
+  onSearchOpen: () => void;
+  onNavigate: (t: NavTab) => void;
+  connections: Connection[];
+  selectedConn: string;
+  workspaces: Workspace[];
+  selectedWorkspace: string;
+  /** The whole org's connections — the switcher's membership editor needs the
+   *  full set, while `connections` above is the workspace-scoped slice. */
+  allConnections: Connection[];
+  onWorkspaceChange: (id: string) => void;
+  onCreateWorkspace: (name: string) => Promise<Workspace>;
+  onUpdateWorkspace: (id: string, connectionIds: string[]) => Promise<void>;
+  onDeleteWorkspace: (id: string) => Promise<void>;
+  /** The active theme and the setter Settings uses — a click here persists exactly as a click there. */
+  theme: Theme;
+  onThemeChange: (t: Theme) => void;
+}) {
+  // The rail's toggle, left of the wordmark (the user, 2026-11-10: "Place the collapse icon right at the top, left of
+  // Aughor logo/text.. this will reduce the overall length of the rail"). It owns ⌘\ too.
+  const [navCollapsed, toggleNav] = useNavCollapsed();
+  return (
+    <div className="aug-topbar">
+      <Tooltip content={`${navCollapsed ? "Expand" : "Collapse"} navigation · ⌘\\`} side="bottom" sideOffset={6} delayDuration={400}>
+        <Button variant="ghost" size="icon-xs" className="aug-nav-toggle" data-testid="nav-toggle"
+          aria-label={navCollapsed ? "Expand navigation" : "Collapse navigation"} aria-expanded={!navCollapsed}
+          onClick={toggleNav}>
+          <NavIcon name="panel" size={15} />
+        </Button>
+      </Tooltip>
+      {/* The wordmark, then the scope it applies to — the workspace switcher sits beside
+          the name because everything below the topbar is read through it. */}
+      <span className="aug-wordmark">Aughor</span>
+      <WorkspaceSwitcher
+        workspaces={workspaces}
+        selectedWorkspace={selectedWorkspace}
+        allConnections={allConnections}
+        onWorkspaceChange={onWorkspaceChange}
+        onCreateWorkspace={onCreateWorkspace}
+        onUpdateWorkspace={onUpdateWorkspace}
+        onDeleteWorkspace={onDeleteWorkspace}
+      />
+      <ActivityStrip connectionId={selectedConn || undefined} onOpen={() => onNavigate("agentic-ops")} />
+
+      {/* Right: ⌘K — search, ask, or run a command — and the user menu */}
+      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+        <button onClick={onSearchOpen} className="aug-command" aria-label="Search, ask, or run a command">
+          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            Search, ask, or run a command
+          </span>
+          <kbd>⌘K</kbd>
+        </button>
+        {/* The theme toggle: a segmented pair, one click from every screen. */}
+        <Segmented label="Theme" value={theme} onChange={onThemeChange}
+          options={[{ value: "dark", label: "dark" }, { value: "light", label: "light" }]} />
+        <AuthControl />
+      </div>
+    </div>
+  );
+}
+
+// ── Sidebar ────────────────────────────────────────────────────────────────────
+
+// ── The rail: seven destinations (`lib/navDestinations.ts`, 2026-11-10). It replaced a short primary rail and
+// three labelled groups — 22 rows that filled 1440×900 — after the user saw it drawn (design-mockups/evidence-to-action/nav.html).
+// Playbook still lives in Settings ▸ Organization (2026-09-19) and ⌘K still reaches it; Integrations joined Settings.
+
+// The Data rail items render as layers of one Data workspace (REC-U5), mirroring
+// Intelligence / Operations. The switcher labels/icons match the sidebar.
+// SE-1: the `builder` layer becomes `query` — ONE Query workbench holding both a
+// visual and a SQL mode, rather than a visual composer with no text surface. The
+// legacy `builder` id keeps working as a deep link (LEGACY_DATA_LAYER below), so
+// every bookmark and stored link lands on the workbench's Visual mode.
+type DataLayer = "catalog" | "query" | "semantic";
+const DATA_LAYERS: WorkspaceLayer<DataLayer>[] = [
+  { id: "catalog",  icon: "db",      label: "Catalog",       blurb: "Tables, schemas & profiles" },
+  { id: "query",    icon: "builder", label: "SQL Editor",    blurb: "Write SQL, or compose visually" },
+  { id: "semantic", icon: "layers",  label: "Semantic Layer", blurb: "Metrics, entities & glossary" },
+];
+
+function Sidebar({
+  tab,
+  onNavigate,
+  selectedConn,
+  counts,
+}: {
+  tab: NavTab;
+  onNavigate: (t: NavTab) => void;
+  selectedConn: string;
+  /** Badge counts from read-only sources — see components/shell/useNavCounts.ts. */
+  counts?: NavCounts;
+}) {
+  // A badge is amber when what it counts waits on a human, neutral when it is only a count.
+  const badgeFor = (id: string): { value: number; waiting: boolean; noun: string } | null => {
+    if (id === "monitors" && counts?.unackedAlerts) return { value: counts.unackedAlerts, waiting: true, noun: "unacknowledged" };
+    if (id === "recents" && counts?.runningRuns) return { value: counts.runningRuns, waiting: false, noun: "running" };
+    if (id === "now" && counts && waitingOnAPerson(counts)) return { value: waitingOnAPerson(counts), waiting: true, noun: "waiting on a person" };
+    return null;
+  };
+  // Collapsed (the toggle at the head, or ⌘\), the rail is a column of icons: every row keeps its
+  // aria-label, and a hover names it — after 600ms for the first label, then its neighbours at once.
+  const collapsed = useNavCollapsedState();
+  const navRow = (key: string, row: {
+    /** Empty for a section row: it sits under its destination's icon, indented to the labels. */
+    icon: string; label: string; name: string; tip: string;
+    active?: boolean; expanded?: boolean; onClick: () => void; trailing?: React.ReactNode;
+    // An icon with no label has nothing to read, so its tooltip is not optional the way a
+    // labelled row's is — that one only needs one once the rail is collapsed.
+    alwaysTip?: boolean;
+    className?: string;
+  }) => (
+    <Tooltip key={key} content={row.tip} side="right" sideOffset={10} delayDuration={600}
+      disabled={!collapsed && !row.alwaysTip}>
+      <button
+        className={`aug-nav-item${row.active ? " active" : ""}${row.className ? ` ${row.className}` : ""}`}
+        onClick={row.onClick}
+        // WP-11 a11y (§1.7-7): the visible <span> label wasn't computing an accessible name,
+        // so every nav button read as anonymous. An explicit aria-label guarantees the name
+        // (and now the badge's count); aria-current marks the active destination.
+        aria-label={row.name}
+        aria-current={row.active ? "page" : undefined}
+        aria-expanded={row.expanded}
+      >
+        {/* A section's glyph is drawn only on the collapsed rail; open, it is its words under its destination's icon. */}
+        {row.icon && (collapsed || !row.className?.includes("aug-nav-sub")) && <NavIcon name={row.icon} size={14.7} className="aug-nav-glyph" />}
+        <span className="aug-nav-label">{row.label}</span>
+        {row.trailing}
+      </button>
+    </Tooltip>
+  );
+  const badgeTrail = (badge: { value: number; waiting: boolean } | null) => badge && (
+    <span className={`aug-nav-badge${badge.waiting ? " aug-nav-badge-waiting" : ""}`}>{formatCount(badge.value)}</span>
+  );
+  const renderItem = (item: { id: string; icon: string; label: string; blurb?: string }, className?: string) => {
+    const badge = badgeFor(item.id);
+    const said = badge ? `${item.label} · ${formatCount(badge.value)} ${badge.noun}` : item.label;
+    return navRow(item.id, {
+      icon: item.icon,
+      label: item.label,
+      name: badge ? `${item.label}, ${badge.value} ${badge.noun}` : item.label,
+      // A section that was a Briefing tab keeps the line its tab said on hover — open as well as collapsed.
+      tip: item.blurb ? `${said} — ${item.blurb}` : said,
+      alwaysTip: !!item.blurb,
+      active: tab === item.id,
+      onClick: () => onNavigate(item.id as NavTab),
+      trailing: badgeTrail(badge),
+      className,
+    });
+  };
+
+  // Every destination open, its sections listed under its name as a small label, each with its own icon — nothing folded
+  // (the user, 2026-11-10: "I dont like the folded sections.. lets have an open one but under labelled sections"). The
+  // first destination, Home, is the rail's head and carries no label. Collapsed, the rail is every section's icon, the
+  // destinations ruled off from one another; a hover names each.
+  const renderDestination = (d: (typeof NAV_DESTINATIONS)[number]) => (
+    <div key={d.id} className="aug-nav-section" role="group" aria-label={d.label} data-destination={d.id}>
+      {d.id !== "home" && <div className="aug-nav-group" aria-hidden>{d.label}</div>}
+      {d.sections.map(s => renderItem({ id: s.id, icon: s.icon, label: s.label, blurb: s.blurb }))}
+    </div>
+  );
+
+  // Seven labelled groups, then Settings pinned to the bottom. The active section is the only coloured thing in the
+  // rail: a 2px accent bar on --bg-sel.
+  return (
+    <nav className="aug-sidebar">
+      <div className="aug-nav-dests" style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+        {NAV_DESTINATIONS.map(renderDestination)}
+      </div>
+      <div className="aug-nav-foot">
+        <div className="aug-nav-foot-row">
+          {renderItem({ id: "settings", icon: "settings", label: "Settings" })}
+          {/* Demo posture is stated, not implied. The hosted demo names a real company, so
+              a visitor must be able to see at a glance that the operational figures are
+              synthetic — and "Local" was simply wrong there: the backend is a recording. */}
+          <div className="aug-fs-xs aug-mono aug-nav-meta" style={{ color: "var(--t3)", padding: "0 14px 0 0", whiteSpace: "nowrap" }}>
+            {DEMO_PACK ? "v2 · Demo" : "v2 · Local"}
+          </div>
+        </div>
+        {DEMO_PACK && (
+          <div
+            title="These are completed analyses served from a frozen recording. The operational figures are synthetic and are not the financial results of any real company."
+            className="aug-fs-xs aug-nav-meta"
+            style={{ lineHeight: 1.45, color: "var(--t3)", padding: "4px 14px 0" }}
+          >
+            Synthetic data · illustrative only
+          </div>
+        )}
+      </div>
+    </nav>
+  );
+}
+
+
+// ── Home screen ────────────────────────────────────────────────────────────────
+
+type RecentInv = { id: string; question: string; started_at: string; status: string; headline: string | null; connection_id?: string; canvas_id?: string | null };
+
+function HomeScreen({
+  connections,
+  selectedConn,
+  workspaceId,
+  onGoToChat,
+  onNavigate,
+  onOpenInvestigation,
+  onAddConnection,
+  onTryDemo,
+  demoLoading,
+}: {
+  connections: Connection[];
+  selectedConn: string;
+  workspaceId: string;
+  onGoToChat: (q?: string, mode?: AskMode) => void;
+  onNavigate: (t: NavTab) => void;
+  onOpenInvestigation: (id: string, kind?: "investigation" | "chat", connectionId?: string, canvasId?: string | null) => void;
+  onAddConnection: () => void;
+  onTryDemo: () => void;
+  demoLoading: boolean;
+}) {
+  const [recentInvs, setRecentInvs] = useState<RecentInv[]>([]);
+  // WP-11 — ask-on-Home: the composer as Home's hero. Submitting routes into the chat with
+  // the question pre-filled + fired (goToChat), so Home is a launchpad, not a dead dashboard.
+  const [homeQ, setHomeQ] = useState("");
+  // Agent is the default everywhere (2026-08-26) — the home composer included, so the
+  // first question a person asks takes the same route as every later one.
+  const [homeMode, setHomeMode] = useState<AskMode>("investigate");
+  const submitHome = () => {
+    const q = homeQ.trim();
+    if (q) { onGoToChat(q, homeMode); setHomeQ(""); }
+  };
+
+  useEffect(() => {
+    // The whole recent list, not a five-row table: Home picks its lead, its question and its
+    // standing questions from it (`components/home/HomeDesk.tsx`). Workspace-scoped, so it
+    // runs without a connection too.
+    fetch(`${getApiBase()}/investigations${workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : ""}`)
+      .then(r => r.json())
+      .then(d => setRecentInvs(Array.isArray(d) ? d : []))
+      .catch(() => {});
+  }, [workspaceId]);
+  const openAnswer = (id: string, kind?: string) => onOpenInvestigation(id, kind === "chat" ? "chat" : undefined, selectedConn);
+
+  return (
+    <div className="aug-screen">
+      <div style={{ flex: 1, overflowY: "auto", padding: "16px 22px 28px", display: "flex", flexDirection: "column", gap: 14,
+        width: "100%" }}>
+
+        {/* WP-11 — ask-on-Home hero: the composer, front and centre. Shown once a connection
+            exists (before that, the first-run funnel guides connecting). Enter (or Ask) fires
+            the question into the chat with the chosen depth. */}
+        {connections.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--bg-3)", border: "1px solid var(--b2)",
+              borderRadius: "var(--r3)", padding: "6px 8px 6px 6px" }}>
+              <Textarea
+                bespoke
+                value={homeQ}
+                onChange={e => setHomeQ(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitHome(); } }}
+                placeholder="Ask anything about your data"
+                rows={1}
+                aria-label="Ask a question about your data"
+                style={{ flex: 1, resize: "none", border: 0, background: "transparent", boxShadow: "none", minHeight: 0 }}
+              />
+              <div role="group" aria-label="Answer depth" style={{ display: "flex", gap: 2, padding: 2, background: "var(--bg-0)", borderRadius: "var(--r2)" }}>
+                <Button size="xs" variant={homeMode === "ask" ? "secondary" : "plain"} aria-pressed={homeMode === "ask"}
+                  title="A fast, grounded answer" onClick={() => setHomeMode("ask")}>Quick</Button>
+                <Button size="xs" variant={homeMode === "investigate" ? "secondary" : "plain"} aria-pressed={homeMode === "investigate"}
+                  title="A multi-step Agent run" onClick={() => setHomeMode("investigate")}>Agent</Button>
+              </div>
+              <Button size="sm" disabled={!homeQ.trim()} onClick={submitHome}>Ask</Button>
+            </div>
+            <AskRecall connectionId={selectedConn} question={homeQ} onOpen={openAnswer} onRunAgain={submitHome} />
+          </div>
+        )}
+
+        {/* First-run funnel — shown until the user runs their first investigation */}
+        {recentInvs.length === 0 && (
+          <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "22px 24px" }}>
+            <div style={{ fontSize: 15, fontWeight: 650, color: "var(--t1)", marginBottom: 4 }}>Welcome to Aughor</div>
+            <div style={{ fontSize: 12, color: "var(--t3)", marginBottom: 18, lineHeight: 1.5 }}>
+              Autonomous analysis of your data — ask in plain English, get investigated answers. Get started in three steps:
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
+              {[
+                { n: 1, icon: "db",      title: "Connect your data", desc: "Add a database, or upload a CSV / Parquet / Excel file.",                 cta: "Add a connection", accent: "var(--cyn3)", action: onAddConnection },
+                { n: 2, icon: "brief",   title: "Explore the demo",  desc: "No data handy? Load a synthetic dataset — 90 days of SaaS revenue with a real outage to find.", cta: demoLoading ? "Loading…" : "Load the demo", accent: "var(--vio3)", action: onTryDemo, busy: demoLoading },
+                { n: 3, icon: "home",    title: "Ask a question",    desc: "Ask anything — Aughor writes the SQL and runs the Agent for you.", cta: "Ask now",          accent: "var(--grn3)", action: () => onGoToChat() },
+              ].map(s => (
+                <div key={s.n} style={{ border: "1px solid var(--b1)", borderRadius: "var(--r2)", padding: 14, background: "var(--bg-3)", display: "flex", flexDirection: "column" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <div style={{ width: 22, height: 22, borderRadius: "50%", background: s.accent + "22", border: `1px solid ${s.accent}55`, color: s.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>{s.n}</div>
+                    <NavIcon name={s.icon} size={13} color={s.accent} />
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)" }}>{s.title}</div>
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--t3)", lineHeight: 1.5, flex: 1, marginBottom: 12 }}>{s.desc}</div>
+                  <button onClick={s.action} disabled={!!s.busy} style={{ alignSelf: "flex-start", fontSize: 11, fontWeight: 600, color: s.accent, background: s.accent + "14", border: `1px solid ${s.accent}44`, borderRadius: "var(--r2)", padding: "6px 12px", cursor: s.busy ? "progress" : "pointer", opacity: s.busy ? 0.6 : 1 }}>{s.cta} →</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Home's desk (ROADMAP §3.55): prepared before the person arrives, and traded with them.
+            It replaced four blocks that each copied another page — the rail's shortcuts, the
+            Catalog's and Ontology's counts, the Health page and the Agent runs table. */}
+        {recentInvs.length > 0 && (
+          <HomeDesk connectionId={selectedConn} analyses={recentInvs}
+            onOpenAnalysis={openAnswer} onDraft={q => setHomeQ(q)} />
+        )}
+
+      </div>
+    </div>
+  );
+}
+
+// ── Recents screen ─────────────────────────────────────────────────────────────
+
+// Agent runs, redone to CLARITY, is its own file: one row per question, repeats folded into ×N.
+const RecentsScreen = dynamic(() => import("@/components/runs/AgentRuns").then(m => ({ default: m.AgentRuns })), { ssr: false, loading });
+
+// ── Fleet screen — the agents working your data (R2) ────────────────────────────
+
+// ── Settings screen ────────────────────────────────────────────────────────────
+
+function SettingsScreen({ theme, setTheme, workspaceId, workspaceName, sub, setSub }: {
+  theme: Theme; setTheme: (t: Theme) => void; workspaceId?: string; workspaceName?: string;
+  /** The open section — the shell's, so a link (`?tab=integrations`, `?layer=system`) can name one. */
+  sub: SettingsSection; setSub: (s: SettingsSection) => void;
+}) {
+  const SUBS: Array<{ id: SettingsSection; label: string }> = [
+    { id: "organization", label: "Organization" },
+    { id: "access",       label: "Access" },
+    { id: "appearance",   label: "Appearance" },
+    { id: "models",       label: "Models" },
+    { id: "system",       label: "System" },
+    // The accounts and apps the platform reaches out through — a setting of the install, not a place to work.
+    { id: "integrations", label: "Integrations" },
+  ];
+
+  return (
+    <div className="aug-screen">
+      {/* The sections — grouped settings instead of one long scroll — in the shell's toolbar row under the title
+          (2026-11-10, ROADMAP §6 item 64). */}
+      <ChromeToolbar>
+        <TabStrip label="Settings sections" value={sub} onChange={setSub} tabs={SUBS} className="aug-layer-tabs" />
+      </ChromeToolbar>
+
+      <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px", display: "flex", flexDirection: "column", gap: 20 }}>
+
+        {sub === "organization" && (
+          <>
+            <OrgSettingsPanel workspaceId={workspaceId} workspaceName={workspaceName} />
+            {/* CB-3 — owners the platform can reach: link a display name to a principal, once. */}
+            <OwnersPanel />
+          </>
+        )}
+
+        {sub === "appearance" && <AppearancePanel theme={theme} setTheme={setTheme} />}
+
+        {sub === "models" && <InferencePanel />}
+
+        {sub === "access" && <RolesPanel />}
+
+        {sub === "system" && <SystemPanel />}
+
+        {sub === "integrations" && <IntegrationsPanel />}
+
+      </div>
+    </div>
+  );
+}
+
+// ── Add connection form ────────────────────────────────────────────────────────
+
+// ── Connector type catalogue (static — mirrors backend registry) ──────────────
+
+// DE-3b: generated from each engine's one declaration (`lib/connectors.gen.ts`). This copy had
+// drifted — MotherDuck, Exasol, Google Sheets and SQLite were missing, and MySQL took a DSN where
+// the server wanted host/port/user/password/database — which a derived list cannot do.
+const CONNECTOR_TYPES: ReadonlyArray<{ type: string; label: string; category: string; icon: "db" | "catalog" | "canvas" }> =
+  Object.values(CONNECTORS).map(c => ({
+    type: c.type, label: c.label, category: c.category,
+    icon: c.category === "federation" ? "canvas" : (c.category === "file" || c.category === "knowledge") ? "catalog" : "db",
+  }));
+
+type ConnType = string;
+
+// Per-type field definitions — the declaration's, so the modal asks what the server reads.
+const CONN_FIELDS: Record<ConnType, Array<{ key: string; label: string; placeholder: string; secret?: boolean; optional?: boolean }>> =
+  Object.fromEntries(Object.values(CONNECTORS).map(c => [c.type, c.fields.map(f => ({ ...f }))]));
+
+function AddConnectionForm({
+  onSave,
+  onCancel,
+}: {
+  onSave: (name: string, type: string, dsn: string, schema?: string, meta?: Record<string, string>) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [type, setType] = useState<ConnType>("postgres");
+  const [fields, setFields] = useState<Record<string, string>>({});
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  // Reset field values when type changes
+  const handleTypeChange = (newType: ConnType) => {
+    setType(newType);
+    setFields({});
+  };
+
+  const setField = (key: string, val: string) =>
+    setFields(prev => ({ ...prev, [key]: val }));
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const dsn = fields["dsn"] || "";
+      const schemaName = fields["schema_name"] || undefined;
+      // All remaining fields (not dsn/schema_name) go into meta
+      const meta: Record<string, string> = {};
+      for (const [k, v] of Object.entries(fields)) {
+        if (k !== "dsn" && k !== "schema_name" && v) meta[k] = v;
+      }
+      await onSave(name, type, dsn, schemaName, meta);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to add connection");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const typeInfo = CONNECTOR_TYPES.find(t => t.type === type);
+  const fieldDefs = CONN_FIELDS[type] ?? [];
+  const grouped = [
+    { label: "Built-in",   items: CONNECTOR_TYPES.filter(t => t.category === "built-in") },
+    { label: "Warehouse",  items: CONNECTOR_TYPES.filter(t => t.category === "warehouse") },
+    { label: "File",       items: CONNECTOR_TYPES.filter(t => t.category === "file") },
+    { label: "API / CRM",  items: CONNECTOR_TYPES.filter(t => t.category === "api") },
+    { label: "Federation", items: CONNECTOR_TYPES.filter(t => t.category === "federation") },
+    { label: "Knowledge",  items: CONNECTOR_TYPES.filter(t => t.category === "knowledge") },
+  ];
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "var(--scrim)", backdropFilter: "blur(3px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ width: "100%", maxWidth: 460, background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: "var(--r3)", padding: 24, display: "flex", flexDirection: "column", gap: 16, maxHeight: "90vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Add Connection</span>
+          <Button variant="plain" size="xs" onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)" }}>
+            <NavIcon name="close" size={14} />
+          </Button>
+        </div>
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {/* Name */}
+          <div>
+            <div className="aug-label" style={{ marginBottom: 5 }}>Name</div>
+            <Input
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="My Data Source"
+              required
+            />
+          </div>
+
+          {/* Type selector */}
+          <div>
+            <div className="aug-label" style={{ marginBottom: 7 }}>Connector type</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 5 }}>
+              {grouped.map(group => (
+                group.items.map(ct => (
+                  <Button variant="plain" size="xs"
+                    key={ct.type}
+                    type="button"
+                    onClick={() => handleTypeChange(ct.type)}
+                    style={{
+                      textAlign: "left", padding: "7px 10px",
+                      borderRadius: "var(--r2)", cursor: "pointer",
+                      background: type === ct.type ? "var(--bg-sel)" : "var(--bg-2)",
+                      border: `1px solid ${type === ct.type ? "var(--blue2)" : "var(--b1)"}`,
+                      fontSize: 11, color: type === ct.type ? "var(--blue5)" : "var(--t2)",
+                      transition: "background-color .1s, border-color .1s, color .1s",
+                    }}
+                  >
+                    <div style={{ fontWeight: 500 }}>{ct.label}</div>
+                    <div style={{ fontSize: 11, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".04em", marginTop: 2 }}>{ct.category}</div>
+                  </Button>
+                ))
+              ))}
+            </div>
+          </div>
+
+          {/* Dynamic fields */}
+          {(type === "local_upload" || type === "federated") ? (
+            <div style={{ padding: "12px", background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r2)", fontSize: 12, color: "var(--t3)", lineHeight: 1.5 }}>
+              {type === "local_upload"
+                ? <>Local Files: create the connection, then upload CSV/Parquet/Excel files to it via the Files tab.</>
+                // PX-6 (the PX-1 language law, applied late): this used to print a curl
+                // command at the person. A federated connection has no form yet — say
+                // that, and stop pretending an API string is a UI.
+                : <>A federated connection joins two sources in one question. There is no
+                    form for it yet; when there is, it lands here.</>
+              }
+            </div>
+          ) : (
+            <>
+              {(type === "confluence" || type === "notion") && (
+                <div style={{ padding: "8px 10px", background: "var(--bg-2)", border: "1px solid var(--blue2)", borderRadius: "var(--r2)", fontSize: 11, color: "var(--blue4)", lineHeight: 1.5 }}>
+                  {type === "confluence" ? "Pages are indexed into the AI context. After saving, trigger sync via the Catalog screen." : "Pages/databases are indexed into the AI context. After saving, trigger sync via the Catalog screen."}
+                </div>
+              )}
+              {fieldDefs.map(f => (
+                <div key={f.key}>
+                  <div className="aug-label" style={{ marginBottom: 5 }}>
+                    {f.label}
+                    {f.optional && <span style={{ color: "var(--t3)", fontWeight: 400, marginLeft: 4 }}>(optional)</span>}
+                  </div>
+                  <Input
+                    value={fields[f.key] ?? ""}
+                    onChange={e => setField(f.key, e.target.value)}
+                    placeholder={f.placeholder}
+                    type={f.secret ? "password" : "text"}
+                    required={!f.optional}
+                  />
+                </div>
+              ))}
+            </>
+          )}
+
+          {error && <ErrorState kind="Connection failed" what={error} means="Nothing was saved. Check the details above and save again." />}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+            <Button type="button" onClick={onCancel} variant="ghost" size="sm">Cancel</Button>
+            <Button type="submit" disabled={loading || !name.trim()} variant="default" size="sm">
+              {loading ? "Connecting…" : "Save Connection"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── Delete confirm modal ───────────────────────────────────────────────────────
+
+function DeleteConnModal({
+  conn,
+  onConfirm,
+  onCancel,
+}: {
+  conn: Connection;
+  onConfirm: () => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleConfirm = async () => {
+    setLoading(true);
+    await onConfirm();
+    setLoading(false);
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "var(--scrim)", backdropFilter: "blur(4px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+      onClick={e => { if (e.target === e.currentTarget) onCancel(); }}>
+      <div style={{ width: "100%", maxWidth: 360, background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: "var(--r3)", padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+          <div style={{ width: 36, height: 36, borderRadius: "var(--r2)", background: "var(--red1)", border: "1px solid var(--red2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <NavIcon name="trash" size={14} color="var(--red4)" />
+          </div>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Remove connection</div>
+            <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 3, lineHeight: 1.5 }}>
+              This removes <span style={{ color: "var(--t2)" }}>{conn.name}</span> from Aughor. The database is not affected.
+            </div>
+          </div>
+        </div>
+        <div style={{ fontSize: 11, color: "var(--t3)" }}>
+          Type <span style={{ fontFamily: "var(--font-mono)", color: "var(--t2)" }}>{conn.name}</span> to confirm
+        </div>
+        <Input
+          autoFocus
+          value={text}
+          onChange={e => setText(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter" && text === conn.name) handleConfirm(); }}
+          placeholder={conn.name}
+        />
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <Button onClick={onCancel} variant="ghost" size="sm">Cancel</Button>
+          <Button variant="plain" size="xs"
+            onClick={handleConfirm}
+            disabled={text !== conn.name || loading}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "5px 12px", borderRadius: "var(--r2)", fontSize: 12, fontWeight: 500,
+              background: "var(--red1)", border: "1px solid var(--red2)", color: "var(--red4)",
+              cursor: text === conn.name && !loading ? "pointer" : "not-allowed",
+              opacity: text !== conn.name || loading ? 0.4 : 1, transition: "opacity .12s",
+            }}
+          >
+            {loading ? "Removing…" : "Remove"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main ───────────────────────────────────────────────────────────────────────
+
+const LAST_CONN_KEY = "aughor_last_conn";
+const LAST_WS_KEY = "aughor_last_workspace";
+
+/** S1 — the URL is the router. Every screen in the NavTab union is addressable
+ *  as `?tab=<id>` (+ `&conn=<id>` for the bound connection), so screens are
+ *  linkable, bookmarkable and back-button-navigable without rebuilding the
+ *  state-based shell into route files. Uses the History API directly rather
+ *  than next/navigation: the shell is one client page, and a query-param sync
+ *  has no server-render surface to disagree with. */
+const VALID_TABS = new Set<NavTab>([
+  "now", "record", "inquiries", "decisions", "missions", "claims", "corrections", "action-centre", "developer",
+  "home", "spend", "chat", "canvases", "canvas-workspace", "recents", "fleet", "agents",
+  "inbox", "briefing", "intelligence", "intel-hub", "intel", "org-intel",
+  "graph", "memory", "declared-actions", "evidence", "brain",
+  "ontology", "dashboards", "operations", "agentic-ops", "control-room", "evals", "data",
+  "health", "playbook", "documents", "spreadsheets", "catalog", "builder", "query", "connections", "metrics",
+  // AO-4 — `integrations` is an Operations layer alias like `monitors`; it was missing
+  // here, so `?tab=integrations` (the link every Slack door hands out) opened Home.
+  "monitors", "actions", "integrations", "activity", "security", "semantic", "settings",
+]);
+
+/** The Data rail ids that are really LAYERS of the Data workspace.
+ *
+ *  Module scope on purpose: both `navigate()` and the URL boundary need it. Before
+ *  SE-1 only navigate() resolved these, so `?tab=builder` (or catalog, or semantic)
+ *  on a COLD LOAD set a tab with no render branch and painted a blank workspace —
+ *  the sidebar highlighted correctly, which is what made it look like a render bug
+ *  rather than a routing one. `resolveDeepLinkTab` below closes that. */
+const DATA_LAYER_FOR_TAB: Partial<Record<NavTab, DataLayer>> = {
+  catalog:  "catalog",
+  builder:  "query",   // SE-1 — the visual builder is now a MODE of the Query workbench
+  query:    "query",
+  semantic: "semantic",
+  // PX-0 (§3.14) — "connections" was a tab with no render branch: the palette's two
+  // entries and any old link navigated to a blank pane. Connections live in the
+  // Catalog, so the id resolves there on every path (navigate, cold load, popstate).
+  connections: "catalog",
+};
+
+/** The inverse, for the rail's active mark. Two ids collapse onto `query` above, so
+ *  the map cannot be inverted mechanically: `builder` is the rail item that exists.
+ *  Without this the SQL Editor was the one destination the rail never lit up — you
+ *  could be looking at it and the nav still said you were nowhere. */
+const RAIL_TAB_FOR_DATA_LAYER: Record<DataLayer, NavTab> = {
+  catalog:  "catalog",
+  query:    "builder",
+  semantic: "semantic",
+};
+
+/** Resolve a URL tab id to what should actually render: a workspace tab, plus the
+ *  layer inside it. Returns the tab unchanged when it is not a layer alias. */
+/** The other rail ids that are LAYERS of a workspace — module scope for the same reason as
+ *  DATA_LAYER_FOR_TAB: on a COLD LOAD `?tab=spend` or `?tab=security` set a tab with no render
+ *  branch and painted a blank pane with no header (docs/UI_UX_STUDY_2026-09-25.md §2.1, fig. 6);
+ *  only navigate() knew the aliases. One table each, read by navigate() AND the URL boundary. */
+const OPS_LAYER_FOR_TAB: Partial<Record<NavTab, OpsLayer>> = {
+  monitors: "monitors",
+  actions:  "actions",
+  spend: "spend",
+  security: "security",
+};
+/** The Settings sections. Integrations joined them on 2026-11-10 (the seven destinations); `?tab=integrations`, the
+ *  link every Slack door hands out, opens it there. */
+type SettingsSection = "organization" | "access" | "appearance" | "models" | "system" | "integrations";
+const SETTINGS_SECTIONS = new Set<SettingsSection>(["organization", "access", "appearance", "models", "system", "integrations"]);
+const SETTINGS_WORD: Record<SettingsSection, string> = {
+  organization: "Organization", access: "Access", appearance: "Appearance", models: "Models", system: "System", integrations: "Integrations",
+};
+const INTEL_LAYER_FOR_TAB: Partial<Record<NavTab, IntelLayer>> = {
+  briefing:    "briefing",
+  ontology:    "ontology",
+  dashboards:  "dashboards",
+  "intel-hub": "hub",
+  intel:       "hub",   // the former Domains layer folded into the Hub (Data Profile)
+  "org-intel":  "org",
+  // Since the seven destinations (2026-11-10) every layer the Briefing held is a rail row of its own.
+  graph:       "graph",
+  memory:      "memory",
+  evidence:    "evidence",
+  brain:       "brain",
+  "declared-actions": "kinetic",   // the layer's frozen id; its one call site below routes through this row's id
+};
+/** The rail row for each Intelligence layer — the table above read backwards, over the ids a row names, so a
+ *  layer lights its own row and the legacy aliases (`briefing`, `intel`) never compete for it. */
+const RAIL_TAB_FOR_INTEL_LAYER: Partial<Record<IntelLayer, NavTab>> = {
+  briefing: "intelligence",   // the Briefing row's id is the workspace's own
+  ...Object.fromEntries(
+    (Object.entries(INTEL_LAYER_FOR_TAB) as [NavTab, IntelLayer][])
+      .filter(([t]) => NAV_SECTION_IDS.has(t))
+      .map(([t, l]) => [l, t]),
+  ),
+};
+/** The Record's views by the id a link names them with — `?tab=decisions&id=…` opens that view. */
+const RECORD_LAYER_FOR_TAB: Partial<Record<NavTab, RecordLayer>> = {
+  inquiries: "inquiries",
+  decisions: "decisions",
+  missions: "missions",
+  claims: "claims",
+  corrections: "corrections",
+};
+const AGENTIC_LAYER_FOR_TAB: Partial<Record<NavTab, AgentsLayer>> = {
+  fleet: "fleet",
+  agents: "agents",
+  "control-room": "fleet",
+  "action-centre": "action-centre",
+  developer: "developer",
+};
+
+type ResolvedTab = {
+  tab: NavTab;
+  dataLayer: DataLayer | null;
+  opsLayer: OpsLayer | null;
+  intelLayer: IntelLayer | null;
+  agentsLayer: AgentsLayer | null;
+  recordLayer: RecordLayer | null;
+  /** `?tab=activity` is the Security & Audit layer on its activity lens. */
+  secLens: "activity" | null;
+  /** `?tab=integrations` is a Settings section since 2026-11-10. */
+  settingsSection: SettingsSection | null;
+};
+
+function resolveDeepLinkTab(t: NavTab): ResolvedTab {
+  const none: ResolvedTab = { tab: t, dataLayer: null, opsLayer: null, intelLayer: null, agentsLayer: null, recordLayer: null, secLens: null, settingsSection: null };
+  const data = DATA_LAYER_FOR_TAB[t];
+  if (data) return { ...none, tab: "data", dataLayer: data };
+  if (t === "activity") return { ...none, tab: "operations", opsLayer: "security", secLens: "activity" };
+  if (t === "integrations") return { ...none, tab: "settings", settingsSection: "integrations" };
+  const ops = OPS_LAYER_FOR_TAB[t];
+  if (ops) return { ...none, tab: "operations", opsLayer: ops };
+  if (t === "intelligence") return { ...none, tab: "intelligence", intelLayer: "briefing" };
+  const intel = INTEL_LAYER_FOR_TAB[t];
+  if (intel) return { ...none, tab: "intelligence", intelLayer: intel };
+  const agentic = AGENTIC_LAYER_FOR_TAB[t];
+  if (agentic) return { ...none, tab: "agentic-ops", agentsLayer: agentic };
+  const record = RECORD_LAYER_FOR_TAB[t];
+  if (record) return { ...none, tab: "record", recordLayer: record };
+  return none;
+}
+
+/** Dashboards were called dashboards until 2026-10-23: an old `?tab=cockpit` / `?layer=cockpit` link still opens them. */
+const LINK_ALIASES: Record<string, string> = { cockpit: "dashboards" };
+
+function tabFromUrl(): NavTab | null {
+  if (typeof window === "undefined") return null;
+  const raw = new URLSearchParams(window.location.search).get("tab");
+  const t = (raw && (LINK_ALIASES[raw] ?? raw)) as NavTab | null;
+  return t && VALID_TABS.has(t) ? t : null;
+}
+
+const VALID_LAYERS = new Set<IntelLayer>([
+  "briefing", "dashboards", "hub", "ontology", "graph", "evidence", "memory", "kinetic", "org", "brain",
+]);
+
+/** PX-0 (§3.14) — every workspace's layer is addressable, not only Intelligence's
+ *  (before this, Evals▸Experiments or Agent Ops▸Attention could not survive a
+ *  reload). One vocabulary per workspace; a `?layer=` value is honoured only on the
+ *  workspace it belongs to, so a stale or foreign value is ignored, not routed to. */
+const OPS_LAYERS = new Set<OpsLayer>(["monitors", "actions", "spend", "security"]);
+const EVALS_LAYERS = new Set<EvalsLayer>(["suites", "runs", "experiments"]);
+
+const RECORD_LAYERS = new Set<RecordLayer>(["inquiries", "decisions", "missions", "claims", "corrections"]);
+
+function layerFromUrl(): string | null {
+  if (typeof window === "undefined") return null;
+  const raw = new URLSearchParams(window.location.search).get("layer");
+  return raw && (LINK_ALIASES[raw] ?? raw);
+}
+
+export default function Home() {
+  // PX-0 (§3.14): land on Home — unless the URL names a screen (S1: deep links win).
+  // The previous default was `intelligence`, which for a connection without a briefing
+  // rendered a void, and which meant the first-run funnel (rendered only on Home) was
+  // on a screen a new user was never shown.
+  //
+  // This starts at the default rather than reading the URL in the initializer. `/` is
+  // statically prerendered, so the server cannot see `?tab=` — a URL-seeded initial
+  // state therefore renders one screen on the server and a different one on the
+  // client, which is the hydration mismatch that regenerated this whole tree (the
+  // server said Briefing was the active nav item while the client said Data Canvas).
+  // The deep link is applied just below instead, after mount. Same for intelLayer and
+  // the `?table=` entity link.
+  const [tab, setTab] = useState<NavTab>("home");
+  // The record a Ledger row opened in the Record workspace — an inquiry, a decision, a mission, a
+  // claim — addressed as `?id=`, so a Reader is a link like any other screen.
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [theme, setThemeState] = useState<Theme>("dark");
+  const [rawSelectedConn, setSelectedConn] = useState("");
+
+  const [builderImport, setBuilderImport] = useState<{ connId: string; sql: string; nonce: number; mode?: "visual" | "sql"; name?: string } | undefined>(undefined);
+  const [activeCanvas, setActiveCanvas] = useState<Canvas | null>(null);
+  const [initialCanvasInvId, setInitialCanvasInvId] = useState<string | null>(null);
+  const [initialCanvasChatId, setInitialCanvasChatId] = useState<string | null>(null);
+  const [showCanvasCreator, setShowCanvasCreator] = useState(false);
+  const [selectedHistoryInvId, setSelectedHistoryInvId] = useState<string | null>(null);
+  const [selectedChatSessionId, setSelectedChatSessionId] = useState<string | null>(null);
+  const [chatKey, setChatKey] = useState(0);
+  const [chatInitialQuestion, setChatInitialQuestion] = useState<string | undefined>(undefined);
+  const [chatInitialAgentId, setChatInitialAgentId] = useState<string | undefined>(undefined);
+  const [chatInitialMode, setChatInitialMode] = useState<"ask" | "investigate">("investigate");
+  // SE-1: a legacy `?tab=builder` link opens the workbench in Visual; everything else
+  // takes the workbench's own default (SQL).
+  const [queryInitialMode, setQueryInitialMode] = useState<"visual" | "sql" | undefined>(undefined);
+  // Drill into a known finding: routes the first chat turn to the Tier-0 Finding Dossier.
+  const [chatInitialInsightId, setChatInitialInsightId] = useState<string | undefined>(undefined);
+  const [intelLayer, setIntelLayer] = useState<IntelLayer>("briefing");
+  // PX-0 — the other workspaces' layers, declared here (not further down) because the
+  // deep-link reader and URL sync below now read and write all of them.
+  const [opsLayer, setOpsLayer] = useState<OpsLayer>("monitors");
+  const [evalsLayer, setEvalsLayer] = useState<EvalsLayer>("suites");
+  // The Settings section, held here like a workspace's layer so a link (`?tab=integrations`) can open one and the
+  // URL says which is open.
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("organization");
+  const [agentsLayer, setAgentsLayer] = useState<AgentsLayer>("fleet");
+  const [recordLayer, setRecordLayer] = useState<RecordLayer>("inquiries");
+  const [dataLayer, setDataLayer] = useState<DataLayer>("catalog");
+  const [secLens, setSecLens] = useState<"security" | "activity" | "approvals" | "gates" | "policies">("security");
+  // S1 — the entity deep link (`?table=`), consumed once by the graph layer.
+  const [initialGraphTable, setInitialGraphTable] = useState<string | undefined>(undefined);
+
+  /** Apply a `?layer=` value to the workspace `target` names; the layer it landed on when it
+   *  was a real layer of that workspace (an Agent Ops layer that folded into another lands on
+   *  that one — `?layer=activity` is the Overview), null otherwise. Setters are stable, so
+   *  mount/popstate closures may hold the first instance safely. */
+  const applyLayerFor = (target: NavTab, l: string): string | null => {
+    if (target === "intelligence" && VALID_LAYERS.has(l as IntelLayer)) { setIntelLayer(l as IntelLayer); return l; }
+    if (target === "operations" && OPS_LAYERS.has(l as OpsLayer)) { setOpsLayer(l as OpsLayer); return l; }
+    if (target === "evals" && EVALS_LAYERS.has(l as EvalsLayer)) { setEvalsLayer(l as EvalsLayer); return l; }
+    const agentic = target === "agentic-ops" ? agentOpsLayerOf(l) : null;
+    if (agentic) { setAgentsLayer(agentic); return agentic; }
+    if (target === "record" && RECORD_LAYERS.has(l as RecordLayer)) { setRecordLayer(l as RecordLayer); return l; }
+    if (target === "settings" && SETTINGS_SECTIONS.has(l as SettingsSection)) { setSettingsSection(l as SettingsSection); return l; }
+    return null;
+  };
+
+  // S1 — deep links win, applied after mount so the first client render still matches
+  // the server's HTML. Whatever this sets is recorded as pending, because the URL-sync
+  // effect below runs in the SAME commit as this one — still closed over the default
+  // tab — and would otherwise rewrite `?tab=canvases` to `?tab=intelligence` before the
+  // link ever reached state, silently destroying the deep link it was meant to honour.
+  const pendingDeepLink = useRef<{ tab: NavTab | null; layer: string | null; canvas: string | null } | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const t = tabFromUrl();
+    const rawLayer = layerFromUrl();
+    const table = params.get("table");
+    const canvasId = params.get("canvas");
+    // A Data rail id in the URL is a LAYER alias, not a tab that renders — resolve it
+    // here or the workspace paints blank on a cold load (SE-1).
+    const resolved = t ? resolveDeepLinkTab(t) : null;
+    if (resolved) {
+      setTab(resolved.tab);
+      if (resolved.dataLayer) setDataLayer(resolved.dataLayer);
+      if (resolved.opsLayer) setOpsLayer(resolved.opsLayer);
+      if (resolved.intelLayer) setIntelLayer(resolved.intelLayer);
+      if (resolved.agentsLayer) setAgentsLayer(resolved.agentsLayer);
+      if (resolved.recordLayer) setRecordLayer(resolved.recordLayer);
+      if (resolved.secLens) setSecLens(resolved.secLens);
+      if (resolved.settingsSection) setSettingsSection(resolved.settingsSection);
+      // `?settings=` named a section before the section rode `?layer=` like any workspace's; an old link still opens it.
+      const legacySection = params.get("settings") as SettingsSection | null;
+      if (resolved.tab === "settings" && legacySection && SETTINGS_SECTIONS.has(legacySection)) setSettingsSection(legacySection);
+      // `?tab=builder` MEANT the visual builder. The workbench now defaults to SQL,
+      // so the intent has to be carried explicitly — the resolver rewrites the query
+      // string, so the workbench cannot read it back for itself.
+      if (t === "builder") setQueryInitialMode("visual");
+    }
+    // PX-0 — the layer lands on whichever workspace the tab resolved to.
+    // The layer the link landed on — what the URL sync below waits for, so a folded layer's
+    // id is rewritten to the one it landed on rather than waited for forever.
+    const layerApplied = rawLayer && resolved
+      ? applyLayerFor(resolved.tab, rawLayer) : null;
+    if (table) setInitialGraphTable(table);
+    const linkedId = params.get("id");
+    if (linkedId) setOpenId(linkedId);
+    if (t || rawLayer || canvasId) {
+      pendingDeepLink.current = {
+        tab: resolved?.tab ?? t,
+        layer: layerApplied,
+        canvas: canvasId,
+      };
+    }
+
+    // The canvas is the one deep link that cannot resolve in this tick. `?tab=` and
+    // `?layer=` are their own values; `?canvas=` is only an id, and the workspace renders
+    // on the Canvas OBJECT — `tab === "canvas-workspace" && activeCanvas` — so until the
+    // roster arrives the tab is restored and the screen it names is blank. That is what
+    // made every canvas-workspace link decorative: the URL round-tripped and the pane did
+    // not. The wait is held below rather than raced.
+    // `?canvas=` is resolved by the effect below, once the workspace is known: read here — before the shell has
+    // chosen one, so before the transport stamps it — the roster answered with every workspace's canvases and the
+    // link could open a canvas from another workspace.
+  }, []);
+
+  // SE-4 I — let a nested surface ask to change screens (the query workbench's
+  // "Schedule", which hands a statement to a monitor). The shell owns `tab`, and
+  // nothing below could previously reach it: the URL is written FROM this state and
+  // never read back after mount, so a pushState from a leaf moved the address bar and
+  // left the screen where it was.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onNavigate = (e: Event) => {
+      const detail = (e as CustomEvent<NavigateRequest>).detail;
+      // Validated against the same set the deep-link reader uses — an event is
+      // untrusted input like any other, and an unknown id must be ignored, not routed to.
+      if (!detail?.tab || !VALID_TABS.has(detail.tab as NavTab)) return;
+      const r = resolveDeepLinkTab(detail.tab as NavTab);
+      if (detail.params?.conn) setSelectedConn(detail.params.conn);
+      if (r.dataLayer) setDataLayer(r.dataLayer);
+      if (r.opsLayer) setOpsLayer(r.opsLayer);
+      if (r.intelLayer) setIntelLayer(r.intelLayer);
+      if (r.agentsLayer) setAgentsLayer(r.agentsLayer);
+      if (r.recordLayer) setRecordLayer(r.recordLayer);
+      if (r.secLens) setSecLens(r.secLens);
+      if (r.settingsSection) setSettingsSection(r.settingsSection);
+      setOpenId(detail.params?.id ?? null);
+      // a run named by the event opens in the Data Canvas, as `openRun` opens one (a dashboard's Question, PENDING 54)
+      if (detail.params?.run) {
+        setShowHistory(false);
+        setSelectedChatSessionId(null);
+        setSelectedHistoryInvId(detail.params.run);
+      }
+      setTab(r.tab);
+    };
+    window.addEventListener(NAVIGATE_EVENT, onNavigate);
+    return () => window.removeEventListener(NAVIGATE_EVENT, onNavigate);
+  }, []);
+
+  // S1 — keep the URL in step with the screen: a tab change PUSHES (back works
+  // across screens), a connection change REPLACES (no history spam), and
+  // popstate restores the screen the URL names.
+  const urlSyncReady = useRef(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    // Hold off until a deep link read at mount has actually reached state; writing now
+    // would replace the URL that is still being read from.
+    const pending = pendingDeepLink.current;
+    if (pending) {
+      // `pending.canvas` is still set while the roster is in flight. Writing now would
+      // delete the `?canvas=` that the fetch is on its way to resolve — the same
+      // self-erasing race the tab had before, one async hop longer.
+      const pendingLayerCurrent =
+        pending.tab === "intelligence" ? intelLayer
+        : pending.tab === "operations" ? opsLayer
+        : pending.tab === "evals" ? evalsLayer
+        : pending.tab === "agentic-ops" ? agentsLayer
+        : pending.tab === "record" ? recordLayer
+        : pending.tab === "settings" ? settingsSection
+        : null;
+      if ((pending.tab && tab !== pending.tab)
+          || (pending.layer && pendingLayerCurrent !== pending.layer)
+          || pending.canvas) return;
+      pendingDeepLink.current = null;
+    }
+    const params = new URLSearchParams(window.location.search);
+    const urlTab = params.get("tab");
+    const urlConn = params.get("conn");
+    const urlLayer = params.get("layer");
+    const urlCanvas = params.get("canvas");
+    const urlId = params.get("id");
+    // PX-0 — every workspace writes its layer, so what the screen shows survives a
+    // reload. The Data workspace writes its layer AS the tab (`catalog` / `query` /
+    // `semantic` are aliases the deep-link resolver already reads back) — `builder`
+    // is deliberately never written, so its forced visual mode stays a property of
+    // real legacy links only.
+    const writeTab: NavTab = tab === "data" ? (dataLayer as NavTab) : tab;
+    const wantLayer =
+      tab === "intelligence" ? intelLayer
+      : tab === "operations" ? opsLayer
+      : tab === "evals" ? evalsLayer
+      : tab === "agentic-ops" ? agentsLayer
+      : tab === "record" ? recordLayer
+      : tab === "settings" ? settingsSection
+      : null;
+    // Only the workspace is addressed by a canvas; elsewhere the id is noise that would
+    // survive into screens it means nothing on.
+    const wantCanvas = tab === "canvas-workspace" ? (activeCanvas?.id ?? null) : null;
+    // A Reader is addressed by the id its Ledger row opened; elsewhere the id means nothing.
+    const wantId = tab === "record" ? openId : null;
+    if (urlTab === writeTab && (urlConn ?? "") === rawSelectedConn
+        && (urlLayer ?? null) === wantLayer && (urlCanvas ?? null) === wantCanvas
+        && (urlId ?? null) === wantId) return;
+    params.set("tab", writeTab);
+    params.delete("settings");   // the old way to name a Settings section; `layer` says it now
+    if (wantId) params.set("id", wantId); else params.delete("id");
+    if (rawSelectedConn) params.set("conn", rawSelectedConn); else params.delete("conn");
+    if (wantLayer) params.set("layer", wantLayer); else params.delete("layer");
+    if (wantCanvas) params.set("canvas", wantCanvas); else params.delete("canvas");
+    const next = `${window.location.pathname}?${params.toString()}`;
+    // Opening or leaving a Reader is a step Back should undo, like a change of screen.
+    if (!urlSyncReady.current || (urlTab === writeTab && (urlId ?? null) === wantId && (tab !== "record" || (urlLayer ?? null) === wantLayer))) {
+      window.history.replaceState(null, "", next);
+      urlSyncReady.current = true;
+    } else {
+      window.history.pushState(null, "", next);
+    }
+  }, [tab, rawSelectedConn, intelLayer, opsLayer, evalsLayer, agentsLayer, recordLayer, settingsSection, dataLayer, activeCanvas, openId]);
+  useEffect(() => {
+    const onPop = () => {
+      const t = tabFromUrl();
+      if (t) {
+        // Same layer-alias resolution as the mount path — Back into a `?tab=builder`
+        // entry must land where the forward navigation did, not on a blank workspace.
+        const r = resolveDeepLinkTab(t);
+        setTab(r.tab);
+        if (r.dataLayer) setDataLayer(r.dataLayer);
+        if (r.opsLayer) setOpsLayer(r.opsLayer);
+        if (r.intelLayer) setIntelLayer(r.intelLayer);
+        if (r.agentsLayer) setAgentsLayer(r.agentsLayer);
+        if (r.recordLayer) setRecordLayer(r.recordLayer);
+        if (r.secLens) setSecLens(r.secLens);
+        if (r.settingsSection) setSettingsSection(r.settingsSection);
+        const l = layerFromUrl();
+        if (l) applyLayerFor(r.tab, l);
+        setOpenId(new URLSearchParams(window.location.search).get("id"));
+      }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const [showHistory, setShowHistory] = useState(false);
+  // The conversations rail is OPT-IN. It used to be pinned open beside the chat, which
+  // was the one thing that made this screen not read as the Canvas workspace — Canvas
+  // reaches its past work through a header control, not a permanent rail, and having
+  // two different chat chromes for the same ChatPanel is the split this closes. The
+  // capability (resume · rename · delete a thread) is unchanged, one click away.
+  const [showThreads, setShowThreads] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [showAddConn, setShowAddConn] = useState(false);
+  // ⌘K ▸ "Add a data source" opens the CATALOG'S Add data page — the full-page
+  // connector catalogue with brand logos, categories and file upload — not the
+  // single-connector modal. Two doors to the same job, one of them a strictly smaller
+  // version of the other, is the split this closes. A nonce, because the catalog screen
+  // stays mounted behind the other tabs (see CatalogScreen's prop comment).
+  const [addDataNonce, setAddDataNonce] = useState(0);
+  const [pendingDeleteConn, setPendingDeleteConn] = useState<Connection | null>(null);
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [selectedWorkspace, setSelectedWorkspace] = useState("");
+  const navCounts = useNavCounts(selectedWorkspace || undefined);
+
+  // ── Workspace-scoped connections (the tenancy boundary) ───────────────────
+  // Everything below the topbar sees only the connections belonging to the
+  // active workspace. The Default workspace tracks every
+  // connection, so for users who never create a custom workspace this is a no-op.
+  const activeWs = workspaces.find(w => w.id === selectedWorkspace) ?? null;
+  // Filter on the backend's EFFECTIVE set (membership ∪ explicit catalog grants),
+  // not raw membership: the routers already served a granted catalog's rows while
+  // this picker hid the connection, so a grant changed nothing on screen.
+  const wsConnections = activeWs
+    ? connections.filter(c =>
+        (activeWs.accessible_connection_ids ?? activeWs.connection_ids).includes(c.id))
+    : connections;
+  // The ACTIVE connection, clamped to the workspace and *derived* (not stored) so
+  // it can never lag the tenancy boundary. It reads "" until the workspace resolves,
+  // or when the restored connection isn't a member — so an empty/foreign workspace
+  // shows no data instead of briefly flashing the localStorage-restored default
+  // connection's tables/queries/insights on first load (a fail-closed read).
+  const selectedConn =
+    activeWs && wsConnections.some(c => c.id === rawSelectedConn) ? rawSelectedConn : "";
+
+  // Converge out of the clamp: when the restored connection is NOT a member of the
+  // active workspace (e.g. localStorage still points at a demo connection that lives
+  // only in the demo workspace), the derived value above reads "" — correct as a
+  // fail-closed *transient*, but left alone it bricks the whole app: every panel keys
+  // off an empty connection and the user sees "everything wiped" until they manually
+  // reselect. Once both lists have actually loaded, fall back to the workspace's first
+  // connection. The effect also repairs the persisted LAST_CONN_KEY via the existing
+  // persistence effect, so the recovery sticks across reloads.
+  // Membership length is a dep on purpose: the switcher's editor can now add the
+  // first connection to an empty workspace, and without it this effect never
+  // re-fires — the workspace stays selected with no active connection until the
+  // user picks one by hand.
+  useEffect(() => {
+    if (!activeWs || connections.length === 0) return;   // still loading — keep fail-closed
+    if (wsConnections.length === 0) return;              // genuinely empty workspace
+    if (wsConnections.some(c => c.id === rawSelectedConn)) return;
+    setSelectedConn(wsConnections[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWs?.id, wsConnections.length, connections, rawSelectedConn]);
+
+  // Theme effect — apply data-theme to <html>. localStorage paints first (no flash of
+  // the wrong theme while a request is in flight); then the per-user settings store is
+  // the truth (SP-3/SP-4): a preference set anywhere — this Settings screen, another
+  // browser, or Spotlight's set_preference in chat — wins here on load, and again at
+  // the end of any chat turn (the "aughor:turn-complete" event from useAughorChat),
+  // so a theme switched in conversation is visible without a reload.
+  useEffect(() => {
+    const saved = typeof window !== "undefined" ? localStorage.getItem(THEME_KEY) as Theme | null : null;
+    const initial: Theme = saved || "dark";
+    setThemeState(initial);
+    applyTheme(initial);
+    const syncStoredTheme = () => {
+      getMyPreferences()
+        .then(({ preferences }) => {
+          const stored = preferences.theme;
+          if ((stored === "dark" || stored === "light")
+              && stored !== document.documentElement.getAttribute("data-theme")) {
+            setThemeState(stored);
+            applyTheme(stored);
+            if (typeof window !== "undefined") localStorage.setItem(THEME_KEY, stored);
+          }
+          // The look — accent, grey, corners, scaling — rides the same two homes: whatever the
+          // person's store holds wins over this browser's copy; a knob it does not hold stays.
+          // Scaling is the one knob for size since 2026-10-06: a person who chose the old
+          // compact density, and no scaling since, reads at 90%.
+          const chosen: Record<string, unknown> = { ...preferences };
+          if (chosen.scaling === undefined && chosen.density === "compact") chosen.scaling = "90%";
+          setLook(cleanLook(chosen, getLook()));
+        })
+        // An unreachable store leaves the cached theme standing — cosmetic, never blocking.
+        .catch(() => {});
+    };
+    syncStoredTheme();
+    window.addEventListener("aughor:turn-complete", syncStoredTheme);
+    return () => window.removeEventListener("aughor:turn-complete", syncStoredTheme);
+  }, []);
+
+  // SP-2 — in-context handles (an empty Agents screen, a failed run row) summon
+  // Spotlight with a seeded question via commandRegistry.askSpotlight. The shell
+  // only opens the overlay; the palette consumes the parked question on open.
+  useEffect(() => {
+    const summon = () => setShowSearch(true);
+    window.addEventListener("aughor:ask-spotlight", summon);
+    return () => window.removeEventListener("aughor:ask-spotlight", summon);
+  }, []);
+
+  const setTheme = (t: Theme) => {
+    setThemeState(t);
+    applyTheme(t);
+    if (typeof window !== "undefined") localStorage.setItem(THEME_KEY, t);
+    // Write through to the settings store so the choice follows the user, not this
+    // browser. Fire-and-forget: the visible change already happened above.
+    putMyPreference("theme", t).catch(() => {});
+  };
+
+  // S1 — the `?conn=` a deep link arrived with, read at the first client render. The URL-sync
+  // effect rewrites `conn` from state in the first commit and the connection list lands a beat
+  // later, so reading the URL when the list arrived found the param already erased: the
+  // remembered connection won, and a shared link opened on the reader's last data, not its own.
+  const deepLinkConn = useRef<string | null>(
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("conn") : null);
+  // The context state the study asked for (§2.1): a screen never paints its EMPTY state while
+  // the workspace and its connections are still resolving. `contextReady` is false until both
+  // lists have answered — either way — and every empty state that depends on a connection
+  // reads it, so a cold load says "finding your connections", never "no connection selected".
+  const [connsLoaded, setConnsLoaded] = useState(false);
+  const [wsLoaded, setWsLoaded] = useState(false);
+  const contextReady = connsLoaded && wsLoaded;
+  useEffect(() => {
+    getConnections()
+      .then(conns => {
+        setConnections(conns);
+        // S1 — a `?conn=` deep link outranks the remembered connection: a shared
+        // URL must open on the data it was looking at, not the reader's last tab.
+        const fromUrl = deepLinkConn.current;
+        const saved = typeof window !== "undefined" ? localStorage.getItem(LAST_CONN_KEY) : null;
+        const pick = [fromUrl, saved].find(id => id && conns.find(c => c.id === id));
+        setSelectedConn(pick || (conns[0]?.id ?? ""));
+      })
+      .catch(err => console.error("[Aughor] failed to load connections:", err))
+      .finally(() => setConnsLoaded(true));
+  }, []);
+
+  useEffect(() => {
+    if (selectedConn && typeof window !== "undefined") {
+      localStorage.setItem(LAST_CONN_KEY, selectedConn);
+    }
+  }, [selectedConn]);
+
+  // Load workspaces (top-level scope). The backend always guarantees a "Default"
+  // workspace containing every connection, so this never comes back empty.
+  useEffect(() => {
+    getWorkspaces()
+      .then(ws => {
+        setWorkspaces(ws);
+        const saved = typeof window !== "undefined" ? localStorage.getItem(LAST_WS_KEY) : null;
+        const valid = saved && ws.find(w => w.id === saved);
+        setSelectedWorkspace(valid ? saved : (ws[0]?.id ?? ""));
+      })
+      .catch(err => console.error("[Aughor] failed to load workspaces:", err))
+      .finally(() => setWsLoaded(true));
+  }, []);
+
+  // A LAYOUT effect: React runs every layout effect before any passive one, and a child's effects
+  // before its parent's. Set in a passive effect, the workspace reached the transport AFTER the panels
+  // that load on mount had already asked — Now's Briefing list in the Olist workspace listed five
+  // connections' Briefings (seen 2026-10-23).
+  useLayoutEffect(() => {
+    if (selectedWorkspace && typeof window !== "undefined") {
+      localStorage.setItem(LAST_WS_KEY, selectedWorkspace);
+    }
+    // Tell the transport which workspace every subsequent request belongs to. This is
+    // what makes the boundary hold: the server scopes on the header, so a call site that
+    // never learned to pass `?workspace_id=` is still answered for THIS workspace.
+    setActiveWorkspace(selectedWorkspace);
+  }, [selectedWorkspace]);
+
+  // The `?canvas=` deep link, resolved INSIDE the workspace the screen is in. The roster is read for that workspace by
+  // name, never unscoped: a canvas from another workspace — or one since deleted — is said not to be here, and the link
+  // settles so the URL sync it holds can go on. With no workspace at all (none, or the list failed) it settles too.
+  useEffect(() => {
+    const canvasId = pendingDeepLink.current?.canvas;
+    if (!canvasId) return;
+    const settle = () => { if (pendingDeepLink.current) pendingDeepLink.current.canvas = null; };
+    if (!selectedWorkspace) {
+      if (wsLoaded) settle();
+      return;
+    }
+    let dropped = false;
+    getCanvases(selectedWorkspace)
+      .then(all => {
+        if (dropped) return;
+        const found = all.find(c => c.id === canvasId) ?? null;
+        // Only the canvas. The connection is NOT set from it: `?conn=` is restored by the connections effect, which
+        // lets a URL connection outrank the remembered one ("a shared URL must open on the data it was looking at").
+        if (found) setActiveCanvas(found);
+        else toast.info("The linked canvas isn't in this workspace", {
+          description: "It may have been deleted, or it belongs to another workspace." });
+        settle();
+      })
+      .catch(settle);
+    return () => { dropped = true; };
+  }, [selectedWorkspace, wsLoaded]);
+
+  // Populate the org-settings cache that the display formatters read (currency symbol,
+  // date format) with the active workspace's effective settings; refresh on switch.
+  //
+  // CA-5 / CI-6b — the same fetch decides where an org LANDS. An org that has chosen
+  // the conversation as its front door is sent to /chat, but only from a bare "/":
+  // a deep link (?chat=…, a canvas, a shared view) names its destination, and a
+  // redirect that overrode it would break every link this app has ever handed out.
+  // The hop happens once per load, and /chat carries "Open in workbench" back.
+  // The currency a money figure carries is its DATASET's, as a person confirmed it (2026-10-23): the
+  // connection in view and the schema last chosen for it. Read once per dataset; a confirmation on the
+  // Profile page writes the cache directly.
+  useEffect(() => {
+    registerCurrencyLoader((conn, schema) => {
+      getDataCurrency(conn, schema || undefined).then(setDataCurrency).catch(() => { /* unread: plain amounts */ });
+    });
+    return () => registerCurrencyLoader(null);
+  }, []);
+  useEffect(() => {
+    setCurrentDataset(selectedConn, selectedConn ? rememberedSchema(selectedConn) : null);
+  }, [selectedConn]);
+
+  const redirectedHome = useRef(false);
+  useEffect(() => {
+    getEffectiveSettings(selectedWorkspace || undefined)
+      .then((settings) => {
+        setOrgSettingsCache(settings);
+        if (
+          settings?.chat_first_home &&
+          !redirectedHome.current &&
+          typeof window !== "undefined" &&
+          window.location.pathname === "/" &&
+          window.location.search === ""
+        ) {
+          redirectedHome.current = true;
+          window.location.replace("/chat");
+        }
+      })
+      .catch(() => {});
+  }, [selectedWorkspace]);
+
+  const reloadWorkspaces = () => getWorkspaces().then(setWorkspaces).catch(() => {});
+
+  // ⌘K global shortcut
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); setShowSearch(v => !v); }
+      if (e.key === "Escape") setShowSearch(false);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  const reloadConnections = () => getConnections().then(setConnections).catch(() => {});
+
+  // First-run funnel: open the demo dataset, provisioning it first if it isn't there.
+  // Nothing is seeded on boot, so on a fresh install this used to land on an empty
+  // Workspace — the step promised a sample to browse and delivered nothing. The seed
+  // endpoint is idempotent, so a second click just reopens what exists.
+  const [demoLoading, setDemoLoading] = useState(false);
+  const tryDemo = async () => {
+    const existing = connections.find(c => c.id === "fixture")
+      || connections.find(c => c.name === "BeautyCommerce");
+    if (existing) {
+      setSelectedConn(existing.id);
+      handleNavigate("catalog");
+      return;
+    }
+    setDemoLoading(true);
+    try {
+      const { id } = await seedDemoConnection();
+      // Both lists, not just connections: the Catalog renders `wsConnections`, which
+      // filters by the active workspace's membership, so refreshing connections alone
+      // left the new connection filtered out by a stale workspace and the demo looked
+      // like it had not loaded at all.
+      await Promise.all([reloadConnections(), reloadWorkspaces()]);
+      setSelectedConn(id);
+      handleNavigate("catalog");
+    } catch {
+      // Seeding is the only thing that can fail here, and it is recoverable — leave the
+      // user on the funnel with the step still actionable rather than navigating to an
+      // empty Catalog that looks broken.
+    } finally {
+      setDemoLoading(false);
+    }
+  };
+
+  const goToChat = (q?: string, mode?: "ask" | "investigate", insightId?: string,
+                    agentId?: string) => {
+    setSelectedChatSessionId(null);
+    setSelectedHistoryInvId(null);
+    setChatInitialQuestion(q);
+    setChatInitialInsightId(insightId);
+    // PX-5 — the agent surface's Chat door arrives already talking to that agent.
+    // Cleared on every other entry, so a stale selection never haunts a fresh chat.
+    setChatInitialAgentId(agentId);
+    if (mode) setChatInitialMode(mode);
+    setChatKey(k => k + 1);
+    setTab("chat");
+  };
+
+  /** Agent Ops ▸ an agent ▸ Chat.
+   *
+   *  Same screen as `goToChat`, minus the canvas. `activeCanvas` is app-level state
+   *  that SURVIVES navigation, so opening a Data Canvas and then talking to an agent
+   *  from Agent Ops filed that conversation under the canvas: `ChatPanel` gets
+   *  `canvasId={activeCanvas?.id}`, and `GET /canvases/{id}/history` keeps every
+   *  investigation whose `canvas_id` matches — `kind == "chat"` included. So a
+   *  question about an AGENT turned up in the history of an unrelated CANVAS.
+   *  Talking to an agent is not canvas work; this door says so by clearing it. */
+  const goToAgentChat = (agentId: string) => {
+    setActiveCanvas(null);
+    setInitialCanvasInvId(null);
+    setInitialCanvasChatId(null);
+    goToChat(undefined, undefined, undefined, agentId);
+  };
+
+  /** Open an existing investigation (or chat session) by ID — goes straight to the report.
+   *  Always clears chatInitialQuestion so no stale question fires if the user
+   *  subsequently presses "New" while viewing history. */
+  const openInvestigation = async (id: string, kind: "investigation" | "chat" = "investigation", connectionId?: string, canvasId?: string | null) => {
+    setChatInitialQuestion(undefined);
+    setChatInitialMode("investigate");
+    setInitialCanvasInvId(null);
+    setInitialCanvasChatId(null);
+
+    // Try to resolve a canvas for this investigation
+    let targetCanvas: Canvas | null = null;
+    try {
+      // Only this workspace's canvases: the run opens in one of them, or in the chat below — never in another
+      // workspace's canvas because an unscoped roster happened to hold it.
+      const allCanvases = selectedWorkspace ? await getCanvases(selectedWorkspace) : [];
+      if (canvasId) {
+        targetCanvas = allCanvases.find(c => c.id === canvasId) ?? null;
+      }
+      if (!targetCanvas && connectionId) {
+        targetCanvas = allCanvases.find(c => c.scopes[0]?.connection_id === connectionId) ?? null;
+      }
+    } catch {
+      // ignore canvas fetch errors
+    }
+
+    if (targetCanvas) {
+      setActiveCanvas(targetCanvas);
+      setTab("canvas-workspace");
+      if (kind === "investigation") setInitialCanvasInvId(id);
+      else setInitialCanvasChatId(id);
+      return;
+    }
+
+    // Fallback: open the old chat module
+    if (kind === "chat") {
+      setSelectedHistoryInvId(null);
+      setSelectedChatSessionId(id);
+      setChatKey(k => k + 1);
+    } else {
+      setSelectedChatSessionId(null);
+      setSelectedHistoryInvId(id);
+    }
+    setTab("chat");
+  };
+
+  // The four former Intelligence tabs are now layers of one unified workspace.
+  // Translate any legacy navigation (StatCards, command palette, search) into
+  // the `intelligence` tab opened at the matching layer.
+  // Module-level (see OPS_LAYER_FOR_TAB and friends) because the URL boundary reads the
+  // same aliases on a cold load — two copies would be the drift these tables prevent.
+  const LEGACY_INTEL_LAYER = INTEL_LAYER_FOR_TAB;
+
+  // The three Operations rail items are now layers of one Operations workspace (REC-U5).
+  const LEGACY_OPS_LAYER = OPS_LAYER_FOR_TAB;
+
+  // The three Data rail items are now layers of one Data workspace (REC-U5).
+  // Module-level (see DATA_LAYER_FOR_TAB) because the URL boundary needs it too — it
+  // is a constant, and two copies would be the drift this map exists to prevent.
+  const LEGACY_DATA_LAYER = DATA_LAYER_FOR_TAB;
+
+  // The legacy rail ids and deep links land on the matching Agent Ops layer — the one
+  // table the cold-load resolver above also reads.
+  const LEGACY_AGENTIC_LAYER = AGENTIC_LAYER_FOR_TAB;
+
+  const handleNavigate = (t: NavTab) => {
+    // Always dismiss any floating overlays when the user navigates.
+    // The History backdrop is fixed inset-0 and will intercept sidebar clicks
+    // if left open while switching tabs — this is the most common cause of
+    // "can't open other tabs while a query is running".
+    setShowHistory(false);
+    setOpenId(null);
+
+    // The "Briefing" rail item opens the unified Intelligence workspace at its
+    // default Briefing lens.
+    if (t === "intelligence") {
+      setIntelLayer("briefing");
+      setTab("intelligence");
+      return;
+    }
+
+    // "Audit Log" was merged into the Security & Audit workspace (directive #6).
+    // Legacy navigations to `activity` now open the Operations workspace at its Security
+    // layer on the Activity lens.
+    if (t === "activity") {
+      setSecLens("activity");
+      setOpsLayer("security");
+      setTab("operations");
+      return;
+    }
+
+    // Legacy Intelligence tabs are now layers of that workspace.
+    const layer = LEGACY_INTEL_LAYER[t];
+    if (layer) {
+      setIntelLayer(layer);
+      setTab("intelligence");
+      return;
+    }
+
+    // The Monitors / Action Hub / Security rail items open the Operations workspace layer.
+    const ops = LEGACY_OPS_LAYER[t];
+    if (ops) {
+      setOpsLayer(ops);
+      setTab("operations");
+      return;
+    }
+
+    // The Catalog / Query Builder / Semantic rail items open the Data workspace layer.
+    const data = LEGACY_DATA_LAYER[t];
+    if (data) {
+      setDataLayer(data);
+      setTab("data");
+      return;
+    }
+    // A Record view named by its own id (⌘K's "Decisions", a link) opens the workspace on it.
+    const record = RECORD_LAYER_FOR_TAB[t];
+    if (record) {
+      setRecordLayer(record);
+      setTab("record");
+      return;
+    }
+    // Fleet / Agents / Control Room deep-links open Agentic Ops at the matching layer.
+    const agentic = LEGACY_AGENTIC_LAYER[t];
+    if (agentic) {
+      setAgentsLayer(agentic);
+      setTab("agentic-ops");
+      return;
+    }
+    // Integrations is a Settings section since the seven destinations (2026-11-10).
+    if (t === "integrations") {
+      setSettingsSection("integrations");
+      setTab("settings");
+      return;
+    }
+    setTab(t);
+  };
+
+  /** Open one run's report — the door the Inbox already uses for the analysis behind a recommendation. */
+  const openRun = (runId: string) => {
+    setShowHistory(false);
+    setSelectedChatSessionId(null);
+    setSelectedHistoryInvId(runId);
+    setTab("chat");
+  };
+  /** Open one record's Reader on its view of the Record — a Ledger row, or a citation anywhere. */
+  const openRecord = (view: RecordLayer, id: string | null) => {
+    setShowHistory(false);
+    setRecordLayer(view);
+    setTab("record");
+    setOpenId(id);
+  };
+  /** Departures names one row by `?departure=`, read when its panel mounts. */
+  const openDepartures = (departureId?: string) => {
+    if (departureId && typeof window !== "undefined") {
+      const u = new URL(window.location.href);
+      u.searchParams.set("departure", departureId);
+      window.history.replaceState(null, "", u);
+    }
+    setAgentsLayer("departures");
+    setTab("agentic-ops");
+  };
+
+  const handleCanvasSelect = (canvas: Canvas) => {
+    setActiveCanvas(canvas);
+    setInitialCanvasInvId(null);
+    setInitialCanvasChatId(null);
+    const primaryConn = canvas.scopes[0]?.connection_id;
+    if (primaryConn) setSelectedConn(primaryConn);
+    setSelectedHistoryInvId(null);
+    setSelectedChatSessionId(null);
+    setChatKey(k => k + 1);
+    setChatInitialQuestion(undefined);
+    setTab("canvas-workspace");
+  };
+
+  // Open in the Query workbench — a query handed off from Insights / Deep Analysis.
+  // Defaults the connection to the currently selected one (what the finding ran against).
+  // A `mode: "sql"` request opens as a new SQL tab; any other lands in Visual mode, which
+  // is where QueryBuilder handles importRequest (SE-1).
+  const handleOpenInQuery = ({ sql, connId, mode, name }: OpenInQueryRequest) => {
+    const c = connId || selectedConn;
+    if (c && c !== selectedConn) setSelectedConn(c);
+    setBuilderImport({ connId: c, sql, nonce: Date.now(), mode, name });
+    // A caller that names a mode gets it; one that does not leaves the workbench on
+    // its own default rather than being silently forced into the visual composer.
+    if (mode) setQueryInitialMode(mode);
+    setDataLayer("query");
+    setTab("data");
+  };
+
+  const handleAddConn = async (name: string, type: string, dsn: string, schema?: string, meta?: Record<string, string>) => {
+    await apiAddConnection(name, type, dsn, schema, meta);
+    setShowAddConn(false);
+    reloadConnections();
+  };
+
+  const handleDeleteConn = async () => {
+    if (!pendingDeleteConn) return;
+    await apiDeleteConnection(pendingDeleteConn.id);
+    if (selectedConn === pendingDeleteConn.id) {
+      const remaining = connections.filter(c => c.id !== pendingDeleteConn.id);
+      setSelectedConn(remaining[0]?.id ?? "");
+    }
+    setPendingDeleteConn(null);
+    reloadConnections();
+  };
+
+  // (Workspace-scoped connections + the clamped active connection are derived
+  // near the top of the component, just after the useState block.)
+
+  // Switching workspace must not leak the previous one's views — drop the active
+  // canvas and any open chat/history session so only workspace-scoped data shows.
+  const handleWorkspaceChange = (id: string) => {
+    if (id === selectedWorkspace) return;
+    setSelectedWorkspace(id);
+    setActiveCanvas(null);
+    setSelectedChatSessionId(null);
+    setSelectedHistoryInvId(null);
+  };
+
+  // Keep the selected connection inside the active workspace. When the user
+  // switches workspaces and the current connection isn't a member, jump to the
+  // workspace's first connection — or clear it when the workspace is empty, so an
+  // empty workspace shows no data instead of leaking the previously-selected one.
+  useEffect(() => {
+    if (!activeWs || connections.length === 0) return;
+    if (wsConnections.length === 0) {
+      if (selectedConn) setSelectedConn("");
+      return;
+    }
+    if (!wsConnections.find(c => c.id === selectedConn)) {
+      setSelectedConn(wsConnections[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedWorkspace, connections]);
+
+  // Where the rail says the reader is — one value for the rail, the breadcrumb and the title (2026-11-10, ROADMAP §6 item 64).
+  const railTab = (tab === "operations" ? opsLayer : tab === "data" ? RAIL_TAB_FOR_DATA_LAYER[dataLayer]
+    : tab === "intelligence" ? (RAIL_TAB_FOR_INTEL_LAYER[intelLayer] ?? tab) : tab) as NavTab;
+  const chrome = ((): { place: { label: string; id?: string }[]; title: string } => {
+    if (tab === "settings") {
+      const word = SETTINGS_WORD[settingsSection];
+      return { place: [{ label: "Settings", id: "settings" }, { label: word }], title: word };
+    }
+    const dest = destinationOf(railTab);
+    const section = dest?.sections.find(sec => sec.id === railTab);
+    if (dest && section) return { place: [{ label: dest.label, id: dest.sections[0].id }, { label: section.label, id: section.id }], title: section.label };
+    // Screens no rail row names: they sit under the section they open from.
+    if (tab === "chat") return { place: [{ label: "Ask", id: "canvases" }, { label: "Data Canvas", id: "canvases" }, { label: "Conversation" }], title: "Conversation" };
+    if (tab === "canvas-workspace") {
+      const name = activeCanvas?.name || "Data Canvas";
+      return { place: [{ label: "Ask", id: "canvases" }, { label: "Data Canvas", id: "canvases" }, { label: name }], title: name };
+    }
+    if (tab === "playbook") return { place: [{ label: "Settings", id: "settings" }, { label: "Playbook" }], title: "Playbook" };
+    return { place: [{ label: "Home", id: "home" }], title: "Aughor" };
+  })();
+  const chosenConn = wsConnections.find(c => c.id === selectedConn);
+  const statusConn = chosenConn
+    ? { name: chosenConn.name, engine: CONNECTOR_TYPES.find(t => t.type === chosenConn.conn_type)?.label ?? chosenConn.conn_type }
+    : null;
+
+  return (
+    <OpenInQueryProvider value={handleOpenInQuery}>
+    <PageChromeProvider pageKey={`${tab}:${railTab}:${tab === "settings" ? settingsSection : ""}`}>
+    <InspectorProvider pageKey={`${tab}:${railTab}`}>
+    <div className="aug-app">
+
+      {/* Topbar */}
+      <Topbar
+        theme={theme}
+        onThemeChange={setTheme}
+        onSearchOpen={() => setShowSearch(true)}
+        onNavigate={handleNavigate}
+        connections={wsConnections}
+        selectedConn={selectedConn}
+        workspaces={workspaces}
+        selectedWorkspace={selectedWorkspace}
+        allConnections={connections}
+        onWorkspaceChange={handleWorkspaceChange}
+        onCreateWorkspace={async (name) => {
+          const ws = await apiCreateWorkspace(name, []);
+          await reloadWorkspaces();
+          setSelectedWorkspace(ws.id);
+          return ws;
+        }}
+        onUpdateWorkspace={async (id, connectionIds) => {
+          await apiUpdateWorkspace(id, { connection_ids: connectionIds });
+          await reloadWorkspaces();
+        }}
+        onDeleteWorkspace={async (id) => {
+          await apiDeleteWorkspace(id);
+          const ws = await getWorkspaces();
+          setWorkspaces(ws);
+          if (selectedWorkspace === id) {
+            const fallback = ws.find(w => w.is_default) ?? ws[0];
+            setSelectedWorkspace(fallback?.id ?? "");
+          }
+        }}
+      />
+
+      {/* Body */}
+      <div className="aug-body">
+
+        {/* Sidebar */}
+        <Sidebar tab={railTab} onNavigate={handleNavigate} selectedConn={selectedConn} counts={navCounts} />
+
+        {/* Content */}
+        <SchemaProvider connId={selectedConn}>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
+            <PageHeader place={chrome.place} fallbackTitle={chrome.title} />
+
+            {/* ── ASK (hero screen) ── */}
+            {tab === "home" && (
+              <HomeScreen
+                connections={wsConnections}
+                selectedConn={selectedConn}
+                workspaceId={selectedWorkspace}
+                onGoToChat={goToChat}
+                onNavigate={handleNavigate}
+                onOpenInvestigation={openInvestigation}
+                onAddConnection={() => setShowAddConn(true)}
+                onTryDemo={tryDemo}
+                demoLoading={demoLoading}
+              />
+            )}
+
+            {/* ── NOW ── what needs me, this week */}
+            {tab === "now" && (
+              <ErrorBoundary label="The Now page hit an error.">
+                <NowPanel
+                  // Its reads load once, on mount: a new workspace is a new page of them.
+                  key={selectedWorkspace || "none"}
+                  connections={wsConnections}
+                  contextReady={contextReady}
+                  doors={{
+                    onOpenDecision: id => openRecord("decisions", id),
+                    onOpenInquiry: id => openRecord("inquiries", id),
+                    onOpenDepartures: openDepartures,
+                    onOpenAttention: () => { setAgentsLayer("attention"); setTab("agentic-ops"); },
+                    onOpenAgentOps: () => setTab("agentic-ops"),
+                    onOpenBriefing: connId => {
+                      if (connId) setSelectedConn(connId);
+                      handleNavigate("intelligence");
+                    },
+                    onOpenCorrections: () => handleNavigate("corrections"),
+                    onOpenMissions: () => handleNavigate("missions"),
+                    onOpenRecord: openRecord,
+                    onOpenHome: () => handleNavigate("home"),
+                  }}
+                />
+              </ErrorBoundary>
+            )}
+
+            {/* ── RECORD ── Inquiries · Decisions · Missions · Claims · Corrections */}
+            {tab === "record" && (
+              <ErrorBoundary label="The Record hit an error.">
+                <RecordWorkspace
+                  // Remounted on a workspace switch: its ledgers load once on mount, under the workspace the transport
+                  // stamps on the request, and kept the old workspace's decisions until a reload (the decision-framework
+                  // run, defect 4). The layout effect above has set the new workspace before the panels' loads run.
+                  key={selectedWorkspace || "none"}
+                  layer={recordLayer}
+                  onLayerChange={l => { setOpenId(null); setRecordLayer(l); }}
+                  openId={openId}
+                  onOpenRecord={openRecord}
+                  // Every connection, not the workspace's: the Record uses the list only to NAME a connection, and
+                  // its ledgers span every connection — a claim about one outside this workspace read "connection dcc63d83".
+                  connections={connections}
+                  selectedConn={selectedConn}
+                  onOpenRun={openRun}
+                  onAsk={() => goToChat()}
+                  onOpenReceipt={ref => { window.open(`/receipt/${encodeURIComponent(ref)}`, "_blank", "noopener"); }}
+                  onOpenDefinitions={() => handleNavigate("semantic")}
+                  onOpenMap={() => handleNavigate("ontology")}
+                  onOpenMonitors={() => handleNavigate("monitors")}
+                />
+              </ErrorBoundary>
+            )}
+
+            {/* ── CANVASES ── */}
+            {tab === "canvases" && (
+              <CanvasBrowser
+                connections={wsConnections}
+                workspaceId={selectedWorkspace}
+                onSelect={handleCanvasSelect}
+                onNew={() => setShowCanvasCreator(true)}
+              />
+            )}
+
+            {/* ── CANVAS WORKSPACE ── */}
+            {tab === "canvas-workspace" && activeCanvas && (
+              <ErrorBoundary label="The Canvas workspace hit an error.">
+                <CanvasWorkspace
+                  canvas={activeCanvas}
+                  connections={wsConnections}
+                  allConnections={connections}
+                  onOpenDocuments={() => handleNavigate("documents")}
+                  onClose={() => { setActiveCanvas(null); setTab("canvases"); setInitialCanvasInvId(null); setInitialCanvasChatId(null); }}
+                  onCanvasUpdate={updated => setActiveCanvas(updated)}
+                  initialOpenInvId={initialCanvasInvId}
+                  initialRestoreSessionId={initialCanvasChatId}
+                  workspaceId={selectedWorkspace}
+                />
+              </ErrorBoundary>
+            )}
+
+            {/* ── CHAT (Investigate) ── always mounted so SSE streams survive tab switches */}
+            <div style={{ flex: 1, flexDirection: "column", overflow: "hidden", background: "var(--bg-0)", display: tab === "chat" ? "flex" : "none" }}>
+                {/* What the conversation is scoped to, beside the title, and its actions in the title row (2026-11-10, ROADMAP
+                    §6 item 64) — said only while the conversation is the page: it stays mounted behind every other one. */}
+                {tab === "chat" && (
+                  <>
+                    <ChromeFacts>
+                  {activeCanvas ? (
+                    <>
+                      <span style={{
+                        display: "inline-flex", alignItems: "center", gap: 5,
+                        padding: "2px 8px", borderRadius: "var(--r2)",
+                        background: "color-mix(in srgb, var(--blue4) 12%, transparent)",
+                        border: "1px solid color-mix(in srgb, var(--blue4) 30%, transparent)",
+                        fontSize: 11, color: "var(--blue4)", fontWeight: 500,
+                      }}>
+                        <NavIcon name="canvas" size={11} color="var(--blue4)" />
+                        {activeCanvas.name}
+                      </span>
+                      {activeCanvas.scopes[0]?.tables.length > 0 && (
+                        <span className="aug-tag aug-tag-gray" style={{ fontSize: 11 }}>
+                          {activeCanvas.scopes[0].tables.length} tables
+                        </span>
+                      )}
+                      <Button variant="plain" size="xs"
+                        onClick={() => setActiveCanvas(null)}
+                        title="Clear canvas"
+                        style={{
+                          background: "none", border: "none", cursor: "pointer",
+                          color: "var(--t3)", padding: "2px 4px",
+                          display: "flex", alignItems: "center",
+                        }}
+                      >
+                        <NavIcon name="close" size={11} />
+                      </Button>
+                    </>
+                  ) : selectedConn ? (
+                    <span className="aug-tag aug-tag-gray">
+                      {connections.find(c => c.id === selectedConn)?.name ?? selectedConn}
+                    </span>
+                  ) : null}
+                    </ChromeFacts>
+                    <ChromeActions>
+                    {!activeCanvas && (
+                      <Button
+                        onClick={() => setTab("canvases")}
+                        variant="ghost"
+                        size="xs"
+                        title="Pick a Data Canvas"
+                      >
+                        <NavIcon name="canvas" size={11} /> Canvas
+                      </Button>
+                    )}
+                    <Button onClick={() => { setSelectedChatSessionId(null); setSelectedHistoryInvId(null); setChatInitialQuestion(undefined); setChatInitialInsightId(undefined); setChatInitialMode("investigate"); setChatKey(k => k + 1); }} variant="ghost" size="xs">
+                      <NavIcon name="plus" size={11} /> New
+                    </Button>
+                    <Button onClick={() => setShowThreads(v => !v)} variant={showThreads ? "default" : "ghost"} size="xs"
+                      title="This connection's recent conversations — resume, rename or delete one"
+                      data-testid="chat-threads-toggle">
+                      <NavIcon name="chat" size={11} /> Conversations
+                    </Button>
+                    <Button onClick={() => setShowHistory(v => !v)} variant={showHistory ? "default" : "ghost"} size="xs">
+                      <NavIcon name="clock" size={11} /> History
+                    </Button>
+                    </ChromeActions>
+                  </>
+                )}
+
+                {selectedHistoryInvId
+                  ? <HistoryDetailPanel
+                      invId={selectedHistoryInvId}
+                      onContinue={(q, m) => {
+                        setSelectedHistoryInvId(null);
+                        setSelectedChatSessionId(null);
+                        setChatInitialQuestion(q);
+                        setChatInitialInsightId(undefined);
+                        setChatInitialMode(m);
+                        setChatKey(k => k + 1);
+                      }}
+                    />
+                  : (
+                    /* CI-6a — the threads rail beside the panel: the visible half of the
+                       session memory CI-1 built. Selection rides the SAME remount
+                       mechanism the history restore uses. */
+                    <div style={{ flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}>
+                      {selectedConn && showThreads && (
+                        <ThreadsRail
+                          connectionId={selectedConn}
+                          activeSessionId={selectedChatSessionId}
+                          onSelect={(sid) => {
+                            setSelectedHistoryInvId(null);
+                            setSelectedChatSessionId(sid);
+                            setChatKey(k => k + 1);
+                          }}
+                          onNew={() => {
+                            setSelectedChatSessionId(null);
+                            setSelectedHistoryInvId(null);
+                            setChatInitialQuestion(undefined);
+                            setChatInitialInsightId(undefined);
+                            setChatInitialMode("investigate");
+                            setChatKey(k => k + 1);
+                          }}
+                        />
+                      )}
+                      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
+                        <ChatPanel
+                          key={chatKey}
+                          connectionId={selectedConn}
+                          canvasId={activeCanvas?.id}
+                          restoreSessionId={selectedChatSessionId}
+                          initialQuestion={chatInitialQuestion}
+                          initialMode={chatInitialMode}
+                          initialInsightId={chatInitialInsightId}
+                          initialAgentId={chatInitialAgentId}
+                        />
+                      </div>
+                    </div>
+                  )
+                }
+            </div>
+
+            {/* ── RECENTS ── */}
+            {tab === "recents" && (
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
+                <RecentsScreen onGoToChat={goToChat} onOpenRun={openInvestigation}
+                  onOpenMachineView={() => { setAgentsLayer(OVERVIEW_LAYER); setTab("agentic-ops"); }}
+                  workspaceId={selectedWorkspace} />
+              </div>
+            )}
+
+            {/* Fleet renders as the operations layer of the Agent workspace below. */}
+
+            {/* ── INTELLIGENCE (unified, multi-layered) ── */}
+            {tab === "intelligence" && (
+              <ErrorBoundary label="The Intelligence workspace hit an error.">
+                <IntelligenceWorkspace
+                  connectionId={selectedConn}
+                  onInvestigate={goToChat}
+                  layer={intelLayer}
+                  onLayerChange={setIntelLayer}
+                  hideTabs
+                  initialGraphTable={initialGraphTable}
+                  connections={wsConnections.filter(c => c.briefings_enabled !== false).map(c => ({ id: c.id, name: c.name, schema_name: c.schema_name ?? null }))}
+                  onConnectionChange={setSelectedConn}
+                  workspaceId={selectedWorkspace}
+                  contextReady={contextReady}
+                />
+              </ErrorBoundary>
+            )}
+
+            {/* Briefing now lives inside the unified Intelligence workspace as its
+                default lens (see tab === "intelligence" above). */}
+
+            {/* ── SECURITY & AUDIT (merged Security + Audit Log — directive #6) ── */}
+            {/* ── OPERATIONS (Monitors / Action Hub / Security & Audit) ── */}
+            {tab === "operations" && (
+              <ErrorBoundary label="The Operations workspace hit an error.">
+                <OperationsWorkspace
+                  connId={selectedConn ?? undefined}
+                  workspaceId={selectedWorkspace}
+                  layer={opsLayer}
+                  onLayerChange={setOpsLayer}
+                  secLens={secLens}
+                  onSecLensChange={setSecLens}
+                />
+              </ErrorBoundary>
+            )}
+
+            {/* ── EVALS ── unified Suites / Runs workspace (Wave E) */}
+            {tab === "evals" && (
+              <ErrorBoundary label="The Evals workspace hit an error.">
+                <EvalsWorkspace
+                  connId={selectedConn ?? undefined}
+                  workspaceId={selectedWorkspace}
+                  layer={evalsLayer}
+                  onLayerChange={setEvalsLayer}
+                />
+              </ErrorBoundary>
+            )}
+
+            {/* ── AGENTIC OPS (Control Room + Agents + Fleet, merged) ── */}
+            {tab === "agentic-ops" && (
+              <ErrorBoundary label="The Agents workspace hit an error.">
+                <AgenticOpsWorkspace
+                  connId={selectedConn ?? undefined}
+                  // AO-4 — a connection picker INSIDE Agent Ops: the layers that scope
+                  // by connection (Automations) no longer need a trip to the rail.
+                  onSelectConnection={id => setSelectedConn(id)}
+                  layer={agentsLayer}
+                  onLayerChange={setAgentsLayer}
+                  workspaceId={activeWs && !activeWs.is_default ? activeWs.id : undefined}
+                  workspaceName={activeWs && !activeWs.is_default ? activeWs.name : undefined}
+                  onOpenInvestigation={invId => {
+                    setSelectedHistoryInvId(invId);
+                    handleNavigate("recents");
+                  }}
+                  onOpenAutomations={() => setAgentsLayer("automations")}
+                  // DS-5 — an agent's Map sends the reader to the surface that owns the
+                  // thing they clicked: the provider catalog for a Slack door, the data
+                  // catalog (scoped to that connection) for the connection it answers on.
+                  onOpenIntegrations={() => handleNavigate("integrations")}
+                  onOpenConnection={connectionId => {
+                    setSelectedConn(connectionId);
+                    handleNavigate("catalog");
+                  }}
+                  // PX-5 — the agent surface's Chat door: arrive already talking to it.
+                  onChatWithAgent={goToAgentChat}
+                  onOpenRuns={() => handleNavigate("recents")}
+                  onOpenDeclaredActions={() => handleNavigate("declared-actions")}
+                  onOpenApprovals={() => { setSecLens("approvals"); setOpsLayer("security"); setTab("operations"); }}
+                  onOpenSettings={() => handleNavigate("settings")}
+                />
+              </ErrorBoundary>
+            )}
+
+            {/* ── PLAYBOOK ── */}
+            {tab === "playbook" && (
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
+                <div style={{ flex: 1, overflowY: "auto", padding: "0 0 16px" }}>
+                  <PlaybookPanel />
+                </div>
+              </div>
+            )}
+
+            {tab === "documents" && (
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
+                <DocumentsPage connectionId={selectedConn} connections={connections} />
+              </div>
+            )}
+
+            {tab === "spreadsheets" && (
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
+                <SpreadsheetsPage onAsk={q => goToChat(q)} />
+              </div>
+            )}
+
+            {/* ── RECOMMENDATION INBOX ── */}
+            {tab === "inbox" && (
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
+                <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
+                  <RecommendationInbox onOpenInvestigation={invId => { setSelectedHistoryInvId(invId); setTab("chat"); }} workspaceId={selectedWorkspace} />
+                </div>
+              </div>
+            )}
+
+            {/* ── HEALTH SCORECARD ── */}
+            {tab === "health" && (
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
+                <ProcessHealthPanel connectionId={selectedConn} onAsk={goToChat}
+                  onOpenMetrics={() => {
+                    // A target is set on a metric's Edit tab, in the Semantic Layer's Metrics — its landing tab. A
+                    // `?semtab=` left from an earlier visit would open another tab, so it is cleared first.
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete("semtab");
+                    window.history.replaceState(window.history.state, "", url);
+                    handleNavigate("semantic");
+                  }} />
+              </div>
+            )}
+
+            {/* ── DATA (Catalog / Query Builder / Semantic Layer) ── */}
+            {/* Monitors + Action Hub render as layers of the Operations workspace above. */}
+            {tab === "data" && (
+              <ErrorBoundary label="The Data workspace hit an error.">
+              <WorkspaceShell
+                layers={DATA_LAYERS}
+                layer={dataLayer}
+                onLayerChange={setDataLayer}
+                ariaLabel="Data views"
+                // Catalog / SQL Editor / Semantic Layer are each their own rail item,
+                // so the switcher row repeated the rail. The rail is the switcher.
+                hideTabs
+                renderIcon={(name, size, color) => <NavIcon name={name} size={size} color={color} />}
+                renderLayer={id => {
+                  if (id === "query") return (
+                    <QueryWorkbench initialConnId={selectedConn} onOpenCanvas={handleCanvasSelect} importRequest={builderImport} connections={wsConnections} initialMode={queryInitialMode} workspaceId={selectedWorkspace} />
+                  );
+                  if (id === "semantic") return (
+                    <SemanticLayerPanel
+                      connectionId={selectedConn ?? ""}
+                      connName={wsConnections.find(c => c.id === selectedConn)?.name}
+                      connections={wsConnections.map(c => ({ id: c.id, name: c.name }))}
+                    />
+                  );
+                  return ( // "catalog"
+                    <CatalogScreen
+                      connections={wsConnections}
+                      workspaceId={selectedWorkspace}
+                      openAddDataNonce={addDataNonce}
+                      onOpenDocuments={() => handleNavigate("documents")}
+                      selectedConn={selectedConn}
+                      onSelect={setSelectedConn}
+                      onDeleteConn={conn => setPendingDeleteConn(conn)}
+                      onChatWithTable={(table, connId) => {
+                        if (connId !== selectedConn) setSelectedConn(connId);
+                        goToChat(`Tell me about the ${table} table`);
+                      }}
+                      onAsk={(question, connId) => {
+                        if (connId !== selectedConn) setSelectedConn(connId);
+                        goToChat(question);
+                      }}
+                    />
+                  );
+                }}
+              />
+              </ErrorBoundary>
+            )}
+
+            {/* ── METRICS ── */}
+            {tab === "metrics" && (
+              <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", background: "var(--bg-0)" }}>
+                <MetricsPanel connId={selectedConn ?? undefined} />
+              </div>
+            )}
+
+            {/* ── SETTINGS ── */}
+            {tab === "settings" && (
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
+                <SettingsScreen theme={theme} setTheme={setTheme} workspaceId={selectedWorkspace} workspaceName={activeWs?.name}
+                  sub={settingsSection} setSub={setSettingsSection} />
+              </div>
+            )}
+
+          </div>
+        </SchemaProvider>
+        <InspectorHost />
+      </div>
+      <StatusStrip connection={statusConn} running={navCounts?.runningRuns ?? 0} />
+
+      {/* ── History popup ── */}
+      {showHistory && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setShowHistory(false)} />
+          <div style={{
+            position: "fixed", top: 104, right: 16, zIndex: 50,
+            height: "72vh", width: "min(420px, 90vw)",
+            background: "var(--bg-2)", border: "1px solid var(--b2)",
+            borderRadius: "var(--r3)", display: "flex", flexDirection: "column",
+            overflow: "hidden", boxShadow: "var(--shadow-md)",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", borderBottom: "1px solid var(--b1)", height: 44, flexShrink: 0 }}>
+              <span style={{ fontSize: 13, fontWeight: 500, color: "var(--t1)" }}>History</span>
+              <Button variant="plain" size="xs" onClick={() => setShowHistory(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)" }}>
+                <NavIcon name="close" size={13} />
+              </Button>
+            </div>
+            <HistoryPanel
+              selectedId={selectedHistoryInvId ?? selectedChatSessionId}
+              onSelect={(id, kind) => {
+                setShowHistory(false);
+                if (kind === "chat") { setSelectedHistoryInvId(null); setSelectedChatSessionId(id); }
+                else { setSelectedChatSessionId(null); setSelectedHistoryInvId(id); }
+                setTab("chat");
+              }}
+            />
+          </div>
+        </>
+      )}
+
+      {/* ── Command palette (⌘K) ── */}
+      <GlobalCommands
+        onNavigate={t => handleNavigate(t as NavTab)}
+        onGoToChat={q => goToChat(q)}
+        onAddSource={() => { handleNavigate("catalog"); setAddDataNonce(n => n + 1); }}
+      />
+      <CommandPalette
+        open={showSearch}
+        onClose={() => setShowSearch(false)}
+        selectedConn={selectedConn}
+        onNavigate={t => { handleNavigate(t as NavTab); setShowSearch(false); }}
+        onGoToChat={q => { goToChat(q); setShowSearch(false); }}
+        surface={tab}
+      />
+
+      {/* ── Upgrade / upsell modal — fired by any HTTP-402 capability_locked response ── */}
+      <UpgradeModal />
+
+      {/* ── Approval modal — fired by any HTTP-428 approval_required response (P4) ── */}
+      <ApprovalModal />
+
+      {/* ── Add connection modal ── */}
+      {showAddConn && (
+        <AddConnectionForm
+          onSave={handleAddConn}
+          onCancel={() => setShowAddConn(false)}
+        />
+      )}
+
+      {/* ── Delete confirm modal ── */}
+      {pendingDeleteConn && (
+        <DeleteConnModal
+          conn={pendingDeleteConn}
+          onConfirm={handleDeleteConn}
+          onCancel={() => setPendingDeleteConn(null)}
+        />
+      )}
+
+      {/* ── Canvas creator modal ── */}
+      {showCanvasCreator && (
+        <CanvasCreator
+          connections={wsConnections}
+          onCreated={canvas => {
+            setShowCanvasCreator(false);
+            handleCanvasSelect(canvas);
+          }}
+          onCancel={() => setShowCanvasCreator(false)}
+        />
+      )}
+
+    </div>
+    </InspectorProvider>
+    </PageChromeProvider>
+    </OpenInQueryProvider>
+  );
+}

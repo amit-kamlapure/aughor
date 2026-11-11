@@ -1,0 +1,403 @@
+"""BigQuery connector for Aughor.
+
+DSN format:  bigquery://project-id
+Meta fields: {"dataset": "analytics", "credentials": "/path/to/sa.json"}
+
+Auth priority:
+  1. meta["credentials"] — path to service account JSON
+  2. Application Default Credentials (gcloud auth, Workload Identity, etc.)
+
+Optional dep:
+  uv pip install 'google-cloud-bigquery>=3.0.0'
+"""
+from __future__ import annotations
+
+import datetime as _dt
+import re
+from contextlib import contextmanager
+
+from aughor.connectors.base import Connector
+from aughor.db.signing import sign
+from aughor.db.doors import passed, through_door
+from aughor.db.errors import classify_error
+from aughor.control_plane.contracts.execution import QueryResult
+
+MAX_ROWS = 2000
+
+#: The exact class of error the date-literal retry may answer. BigQuery does not
+#: coerce between TIMESTAMP and DATE in comparisons (DuckDB and Postgres do), and a
+#: bare '2026-08-01' literal types as DATE — so generated SQL comparing a TIMESTAMP
+#: column against it fails with this signature error. Measured live 2026-09-06: an
+#: agent golden suite lost 4 of 5 questions to exactly this, across every generation
+#: path, because the clash is a property of the ENGINE, not of one prompt.
+_TS_DATE_CLASH = re.compile(
+    r"No matching signature for operator .*TIMESTAMP, DATE", re.DOTALL)
+
+_BARE_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _is_timestamp_date_clash(error: str) -> bool:
+    return bool(_TS_DATE_CLASH.search(error or ""))
+
+
+def _say_what_it_cost(job) -> None:
+    """DE-5d — the job's own account of what it read and what was billed, as door words on the
+    statement's trail (`bytes-processed:N`, `bytes-billed:N`, `cache-hit`). BigQuery bills by bytes
+    scanned, not rows returned, so a page of a result costs what the whole statement costs; these
+    words are how that is measured on a live connection rather than asserted. Absent fields say
+    nothing — a fake job in a test, or a job the client did not finish describing."""
+    for word, attr in (("bytes-processed", "total_bytes_processed"), ("bytes-billed", "total_bytes_billed")):
+        n = getattr(job, attr, None)
+        if isinstance(n, int) and not isinstance(n, bool):
+            passed(f"{word}:{n}")
+    if getattr(job, "cache_hit", None) is True:
+        passed("cache-hit")
+
+
+def _retype_date_literals(sql: str) -> str:
+    """The failed SQL with bare date literals in comparisons cast to TIMESTAMP —
+    or "" when there is nothing to rewrite (parse failure included: a query we
+    cannot parse is a query we must not touch).
+
+    Deliberately ERROR-DRIVEN, never speculative: this runs only after BigQuery
+    itself reported the TIMESTAMP/DATE clash, so a date literal legitimately
+    compared against a DATE column is never rewritten pre-emptively — and if a
+    mixed query is rewritten too broadly, the retry simply fails the way the
+    original did, which is the state we were already in. Two literal forms are
+    touched, both only when they sit DIRECTLY inside a comparison or BETWEEN:
+    bare 'YYYY-MM-DD' strings, and DATE-typed date literals (DATE '…') — the
+    live re-drive showed the model writes BOTH habits, and once the engine has
+    named the clash a DATE-typed literal is exactly as much the culprit as a
+    bare one. Datetime strings, casts of COLUMNS (DATE(ts_col) is a legitimate
+    fix direction), and literals inside function calls stay exactly as written.
+    """
+    try:
+        import sqlglot
+        from sqlglot import exp
+    except Exception:
+        return ""
+    try:
+        tree = sqlglot.parse_one(sql, read="bigquery")
+    except Exception:
+        return ""
+
+    def _date_literal(node) -> "exp.Literal | None":
+        """The date-shaped string literal this node IS — bare, or DATE-typed."""
+        if (isinstance(node, exp.Literal) and node.is_string
+                and _BARE_DATE.fullmatch(node.this or "")):
+            return node
+        if (isinstance(node, exp.Cast)
+                and node.to is not None and node.to.this == exp.DataType.Type.DATE
+                and isinstance(node.this, exp.Literal) and node.this.is_string
+                and _BARE_DATE.fullmatch(node.this.this or "")):
+            return node.this
+        return None
+
+    comparisons = (exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE, exp.Between)
+    changed = False
+    for node in tree.find_all(*comparisons):
+        for child in list(node.args.values()):
+            lit = _date_literal(child)
+            if lit is not None:
+                # Built in the BigQuery dialect deliberately: the GENERIC sqlglot
+                # TIMESTAMP renders as BigQuery DATETIME (timezone-naive), which
+                # would reproduce the very clash being repaired.
+                child.replace(exp.Cast(this=lit.copy(),
+                                       to=exp.DataType.build("TIMESTAMP",
+                                                             dialect="bigquery")))
+                changed = True
+    if not changed:
+        return ""
+    try:
+        return tree.sql(dialect="bigquery")
+    except Exception:
+        return ""
+
+
+class BigQueryConnection(Connector):
+    connector_category = "warehouse"
+    dialect = "bigquery"
+    writes_native_sql = True  # execute() runs the LLM's SQL natively (no duckdb transpile)
+    # DE-1 — BigQuery has no session-level read-only (IAM is the operator's grant, not this session's); the door's
+    # checks are the read-only boundary, and every result's doors say so (`engine-read-write`).
+    engine_read_only = False
+
+    def __init__(
+        self,
+        dsn: str,
+        schema_name: str | None = None,
+        connection_id: str = "",
+        meta: dict | None = None,
+    ) -> None:
+        self.dep_check("google.cloud.bigquery", "google-cloud-bigquery>=3.0.0")
+        from google.cloud import bigquery
+        from google.oauth2 import service_account
+
+        meta = meta or {}
+        # dsn is the project ID (possibly "bigquery://project" or just "project");
+        # the connect form sends it as meta["project_id"] with an empty dsn
+        self._project = dsn.removeprefix("bigquery://").strip("/") or meta.get("project_id", "") or dsn
+        self._dataset = schema_name or meta.get("dataset") or ""
+        # Arc NV-3 — the region whose INFORMATION_SCHEMA holds this project's job history (`region-us` by default).
+        self._location = str(meta.get("location") or "us").strip().lower() or "us"
+        # The profiler, explorer and column routes all resolve a connection's schema
+        # through `_schema_name` (the convention Snowflake follows); without it they
+        # fell back to 'public' and every INFORMATION_SCHEMA filter matched nothing.
+        self._schema_name = self._dataset
+        self._connection_id = connection_id
+
+        cred_path = meta.get("credentials")
+        if cred_path:
+            creds = service_account.Credentials.from_service_account_file(
+                cred_path,
+                # Every BigQuery query executes as a jobs.insert; the readonly scope
+                # cannot create jobs, so it would allow listing but never a query.
+                # Read-only-ness is enforced by IAM roles, not the OAuth scope.
+                scopes=["https://www.googleapis.com/auth/bigquery"],
+            )
+            self._client = bigquery.Client(project=self._project, credentials=creds)
+        else:
+            # Relies on ADC — gcloud auth, env GOOGLE_APPLICATION_CREDENTIALS, Workload Identity
+            self._client = bigquery.Client(project=self._project)
+
+    # ── DatabaseConnection ABC ─────────────────────────────────────────────────
+
+    #: The QueryJob currently in flight, or None. There is no connection-level abort to
+    #: reach on BigQuery — `self._client` is a REST client with nothing to interrupt — so
+    #: cancelling means cancelling the JOB, and that needs the job object. Holding it only
+    #: for the duration of a run is the point: a job kept after it finishes would make
+    #: `interrupt()` return True while cancelling something already over, which is worse
+    #: than returning False.
+    _job = None
+
+    @contextmanager
+    def _running(self, job):
+        """Publish `job` as the cancellable one for as long as it runs."""
+        self._job = job
+        try:
+            yield job
+        finally:
+            self._job = None
+
+    def interrupt(self) -> bool:
+        """Cancel the running query job, from ANOTHER thread.
+
+        The base implementation reaches a driver handle's own `interrupt()`, and a
+        BigQuery client has none — so this connector returned False and Cancel did
+        nothing. `job.cancel()` is a REST call on a separate connection, which is why it
+        works while the thread that started the job is blocked in `result()`.
+
+        Interrupt, never close: the thread that OWNS the run observes the resulting
+        exception and cleans up in its own `finally`. Same rule as every other connector
+        here — `close()` on a live cursor is what segfaulted CI twice (#323).
+        """
+        job = self._job
+        if job is None:
+            return False               # nothing in flight; the honest answer is False
+        try:
+            job.cancel()
+            return True
+        except Exception:
+            # Already finished, already cancelled, or the REST call failed — a caller who
+            # only wants the query to stop gains nothing from an exception here.
+            return False
+
+    #: BigQuery names parameters `@name`, and unlike every DBAPI driver here it wants each
+    #: one DECLARED with a type rather than inferred from the value on the wire.
+    param_style = "at"
+
+    #: Python type → BigQuery scalar type. `bool` is checked before `int` because it is a
+    #: SUBCLASS of int in Python: ordered the other way, every True binds as INT64 1 and a
+    #: `WHERE is_active = @flag` silently compares a boolean column to a number. A day binds as
+    #: a DATE (Arc AP-8, a dashboard's day value) — and `datetime` before `date`, its subclass, so
+    #: a moment stays a TIMESTAMP.
+    _PARAM_TYPES = ((bool, "BOOL"), (int, "INT64"), (float, "FLOAT64"), (str, "STRING"),
+                    (_dt.datetime, "TIMESTAMP"), (_dt.date, "DATE"))
+
+    def _bind_execute(self, sql: str, params: dict):
+        from google.cloud import bigquery
+
+        declared = []
+        for name, value in (params or {}).items():
+            bq_type = next((t for py, t in self._PARAM_TYPES if isinstance(value, py)), None)
+            if bq_type is None:
+                # A NULL has no type to read off the value, and BigQuery will not take an
+                # untyped parameter. Guessing STRING would make `WHERE n = @p` compare a
+                # number to text and return zero rows with no error — a wrong answer that
+                # looks like a real one. Refusing names the fix instead.
+                what = "NULL" if value is None else type(value).__name__
+                raise ValueError(
+                    f"parameter '{name}' is {what}; BigQuery needs a declared type for it. "
+                    f"Use a string, number or boolean, or inline that value in the SQL.")
+            declared.append(bigquery.ScalarQueryParameter(name, bq_type, value))
+
+        from aughor.connectors.base import stage_type
+        job_config = self._job_config(query_parameters=declared)
+        with self._running(self._client.query(sign(sql), job_config=job_config)) as job:
+            rows_it = job.result(max_results=self.max_rows + 1)   # one past the cap, so a cut read shows
+            schema = list(rows_it.schema)
+            # each column's type, as the unbound read gives it: a bound read is typed too (Arc AP-8)
+            return ([f.name for f in schema], [list(row.values()) for row in rows_it],
+                    [stage_type(getattr(f, "field_type", ""), getattr(f, "precision", None), getattr(f, "scale", None))
+                     for f in schema])
+
+    def is_healthy(self) -> bool:
+        """For the pool (DE-3d): BigQuery is an HTTP API with no session to lose, so a connection is healthy while
+        its client exists. A failed job is that statement's error, typed by the connector, never a dead connection."""
+        return getattr(self, "_client", None) is not None
+
+    def execute(self, hypothesis_id: str, sql: str, *, sql_dialect: str | None = None, internal: bool = False) -> QueryResult:
+        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, MAX_ROWS), internal=internal)
+
+    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int, *,
+                        sql_dialect: str | None = None, internal: bool = False) -> QueryResult:
+        """Up to ``max_rows`` rows — the cross-source reads and key measurements read past MAX_ROWS."""
+        return through_door(self, sql, sql_dialect, lambda statement: self._execute(hypothesis_id, statement, max(1, max_rows)), internal=internal)
+
+    def _execute(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
+        import time as _time
+        from aughor.db.connection import enforce_row_policy, security_pre, security_post
+
+        sql = sql.strip().rstrip(";")
+        if (blocked := security_pre(self._connection_id, hypothesis_id, sql)):
+            return blocked
+        sql, _rp = enforce_row_policy(self, hypothesis_id, sql)   # RBAC row-policy (Rec 7); no-op off
+        if _rp is not None:
+            return _rp
+
+        _t0 = _time.monotonic()
+        result = self._run_job(hypothesis_id, sql, max_rows)
+        if result.error and _is_timestamp_date_clash(result.error):
+            # The engine named the exact clash; the deterministic rewrite answers it
+            # (cast the bare date literals, retry ONCE). Fixing here rather than in
+            # any one prompt covers every path that reaches this connector — chat,
+            # deep analysis, run_sql, agent evaluation. A retry that fails leaves
+            # the original honest error standing; the result's `sql` always carries
+            # what actually ran, so receipts stay truthful.
+            rewritten = _retype_date_literals(sql)
+            if rewritten and rewritten != sql:
+                retried = self._run_job(hypothesis_id, rewritten, max_rows)
+                if not retried.error:
+                    result = retried
+                    passed("repaired:date-literals")
+
+        elapsed_ms = (_time.monotonic() - _t0) * 1000
+        return security_post(self._connection_id, hypothesis_id, result.sql, result, elapsed_ms)
+
+    def _run_job(self, hypothesis_id: str, sql: str, max_rows: int = MAX_ROWS) -> QueryResult:
+        """One BigQuery job → a QueryResult; an error is a value, never a raise. Its raw values are offered to a typed
+        capture, so a BigQuery table can be one side of a cross-source object query."""
+        try:
+            from aughor.connectors.base import stage_type
+            from aughor.db.connection import offer_typed_rows
+            job_config = self._job_config()
+            with self._running(self._client.query(sign(sql), job_config=job_config)) as job:
+                # one row past the cap: a read the cap cut counts more rows than it keeps
+                rows_it = job.result(max_results=max_rows + 1)
+                schema = list(rows_it.schema)
+                raw = [list(row.values()) for row in rows_it]
+                _say_what_it_cost(job)
+            offer_typed_rows(raw[:max_rows], truncated=len(raw) > max_rows,
+                             types=[stage_type(getattr(field, "field_type", ""), getattr(field, "precision", None),
+                                               getattr(field, "scale", None)) for field in schema])
+            return QueryResult(
+                hypothesis_id=hypothesis_id,
+                sql=sql,
+                columns=[field.name for field in schema],
+                rows=[[str(v) if v is not None else "NULL" for v in row] for row in raw[:max_rows]],
+                row_count=len(raw),
+            )
+        except Exception as e:
+            return QueryResult(
+                hypothesis_id=hypothesis_id, sql=sql,
+                columns=[], rows=[], row_count=0, error=str(e), error_kind=classify_error(e),
+            )
+
+    def _job_config(self, **overrides):
+        """The job configuration EVERY query on this connection runs under.
+
+        It exists because the dry run did not have it. `execute()` and the typed read
+        both set `default_dataset`, so `FROM order_items` resolves; `dry_run()` built its
+        own config without it, so the same SQL came back
+        "Table must be qualified with a dataset" — and `audit_value_sql` opens with
+        `conn.dry_run(sql)` and blanks the metric on a bind failure.
+
+        The result: on this connection every unqualified metric formula was rejected by a
+        validator configured differently from the executor that would have run it happily.
+        A dry run that is not the real run's configuration is not a dry run of that query.
+        """
+        from google.cloud import bigquery
+        return bigquery.QueryJobConfig(
+            default_dataset=f"{self._project}.{self._dataset}" if self._dataset else None,
+            **overrides,
+        )
+
+    def query_history(self, *, hours: int = 24 * 14, limit: int = 2000):
+        """Arc NV-3 — finished SELECT jobs from the project's `INFORMATION_SCHEMA.JOBS_BY_PROJECT` (180 days kept),
+        newest first; when the project-wide view is refused (it needs the jobs-list-all grant) the caller's own jobs
+        from `JOBS_BY_USER`, and the result says which. The region is the connection's `location` (default `us`)."""
+        from aughor.db.query_history import rows_from_result
+        hours, limit = max(1, int(hours)), max(1, min(int(limit), 10000))
+        region = getattr(self, "_location", "us")
+        last = None
+        for view in ("JOBS_BY_PROJECT", "JOBS_BY_USER"):
+            source = f"`region-{region}`.INFORMATION_SCHEMA.{view}"
+            sql = (
+                f"SELECT end_time, query, user_email FROM {source} "
+                "WHERE job_type = 'QUERY' AND statement_type = 'SELECT' AND state = 'DONE' AND error_result IS NULL "
+                f"AND creation_time > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {hours} HOUR) "
+                f"ORDER BY end_time DESC LIMIT {limit}"
+            )
+            result = self.execute_bounded("__query_history__", sql, limit, sql_dialect=None, internal=True)
+            last = rows_from_result(result, self.dialect, source=source, hours=hours, limit=limit)
+            if not last.error or "permission" not in last.error.lower():
+                return last
+        return last
+
+    def dry_run(self, sql: str) -> tuple[bool, str]:
+        """Use BigQuery's native dry-run — validates SQL + estimates bytes, zero cost."""
+        try:
+            job_config = self._job_config(dry_run=True, use_query_cache=False)
+            self._client.query(sql.rstrip(";"), job_config=job_config)
+            return True, ""
+        except Exception as e:
+            return False, str(e)
+
+    def get_schema(self) -> str:
+        lines: list[str] = []
+        try:
+            if self._dataset:
+                tables = list(self._client.list_tables(f"{self._project}.{self._dataset}"))
+            else:
+                ds_list = list(self._client.list_datasets(self._project))
+                tables = []
+                for ds in ds_list[:10]:  # cap to avoid massive schemas
+                    tables.extend(list(self._client.list_tables(ds.reference)))
+
+            for tbl_ref in tables[:100]:
+                tbl = self._client.get_table(tbl_ref)
+                cols = ", ".join(
+                    f"{f.name} {f.field_type}" for f in tbl.schema
+                )
+                lines.append(f"TABLE: {tbl_ref.table_id} ({tbl.num_rows} rows) [{cols}]")
+        except Exception as e:
+            lines.append(f"# Schema introspection failed: {e}")
+        return "\n".join(lines)
+
+    def datasets(self, limit: int = 50) -> list[str]:
+        """The datasets of the project, by id, at most ``limit`` — what a project-wide connection's catalog lists, one
+        dataset at a time. Raises when the project cannot be listed: that is "could not look", never "nothing there"."""
+        return [d.dataset_id for d in self._client.list_datasets(self._project, max_results=limit)]
+
+    def test(self) -> tuple[bool, str]:
+        try:
+            list(self._client.list_datasets(self._project, max_results=1))
+            return True, f"Connected to BigQuery project '{self._project}'"
+        except Exception as e:
+            return False, str(e)
+
+    def close(self) -> None:
+        try:
+            self._client.close()
+        except Exception:
+            pass

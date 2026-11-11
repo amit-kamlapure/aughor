@@ -1,0 +1,102 @@
+"use client";
+import { SkeletonRows } from "@/components/ui/motion";
+
+import dynamic from "next/dynamic";
+import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
+import { Icon as Glyph, type IconName } from "@/components/ui/icon";
+
+// ── Lazy panels ──────────────────────────────────────────────────────────────
+// Each operational surface is a heavy data view — load on first open, then keep
+// mounted (the Workspace's keep-alive), mirroring IntelligenceWorkspace.
+const loading = () => (
+  <div style={{ flex: 1, background: "var(--bg-0)", padding: 16 }}>
+    <SkeletonRows rows={6} />
+  </div>
+);
+
+const MonitorsPanel      = dynamic(() => import("@/components/MonitorsPanel").then(m => ({ default: m.MonitorsPanel })),           { ssr: false, loading });
+const ActionHubPanel     = dynamic(() => import("@/components/ActionHubPanel").then(m => ({ default: m.ActionHubPanel })),         { ssr: false, loading });
+const SecurityAuditPanel = dynamic(() => import("@/components/SecurityAuditPanel").then(m => ({ default: m.SecurityAuditPanel })), { ssr: false, loading });
+const SpendPanel         = dynamic(() => import("@/components/SpendPanel").then(m => ({ default: m.SpendPanel })),                 { ssr: false, loading });
+
+// Icon paths mirror the sidebar's NavIcon set (activity / gear / spark / shield).
+/**
+ * This screen's glyphs, by role. The drawings come from the platform icon set
+ * (`components/ui/icon.tsx`); this map only says which role each local name means,
+ * so the existing call sites and `LAYERS` entries keep working unchanged.
+ */
+const ROLE: Record<string, IconName> = {
+  activity: "activity",
+  gear: "settings",
+  spark: "spark",
+  shield: "shield",
+};
+
+function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?: number; color?: string }) {
+  return (
+    <span style={{ color, display: "inline-flex", flexShrink: 0 }}>
+      <Glyph name={ROLE[name] ?? "info"} size={size} />
+    </span>
+  );
+}
+
+// `automations` MOVED to Agent Ops 2026-08-29 (user-decided): an automation is an agent
+// operating on a schedule, not a metric watch with side effects. Removed from the union
+// rather than left as a dead member — checked first that nothing could still reach it:
+// `LEGACY_OPS_LAYER` never mapped a nav route to it, no URL parameter persists this layer,
+// and the command palette has no entry for it. It was reachable only by clicking the tab
+// that no longer exists, so keeping the id would be defensive code against nothing.
+// `integrations` MOVED to Settings 2026-11-10 (the seven destinations): the accounts and apps the platform reaches out
+// through are a setting of the install. `?tab=integrations` resolves there in the shell, so nothing reaches this layer.
+export type OpsLayer = "monitors" | "actions" | "spend" | "security";
+
+const LAYERS: WorkspaceLayer<OpsLayer>[] = [
+  { id: "monitors",    icon: "activity", label: "Monitors",         blurb: "Metric watches & alerts" },
+  { id: "actions",     icon: "spark",    label: "Notifications",    blurb: "Webhook, Slack & Jira triggers" },
+  // PX-2 — the governed-spend dashboard. The caps store shipped 2026-09-06 with a write
+  // door and no form; usage, model health and the audit feed were folds with no route
+  // to an eye. This layer is those endpoints given a screen.
+  { id: "spend",       icon: "scales",   label: "Spend",            blurb: "Usage, caps & the governance feed" },
+  { id: "security",    icon: "shield",   label: "Security & Audit", blurb: "Access, PII & the audit trail" },
+];
+
+type SecLens = "security" | "activity" | "approvals" | "gates" | "policies";
+
+type Props = {
+  connId?: string;
+  workspaceId?: string;
+  /** Active layer — controlled by the shell so external nav can deep-link. */
+  layer: OpsLayer;
+  onLayerChange: (l: OpsLayer) => void;
+  /** Security & Audit's own lens (security ↔ activity), owned by the shell so a legacy
+   *  `activity` deep-link can open the security layer already on the activity lens. */
+  secLens: SecLens;
+  onSecLensChange: (l: SecLens) => void;
+};
+
+/**
+ * The Operations workspace — folds the three formerly-separate Operations tabs
+ * (Monitors / Action Hub / Security & Audit) into one perspective-switched surface,
+ * an *instance* of the generic `<Workspace>` shell (Part 2 REC-U5). The panels bring
+ * their own bodies; the shell owns the switcher + keep-alive.
+ */
+export function OperationsWorkspace({ connId, workspaceId, layer, onLayerChange, secLens, onSecLensChange }: Props) {
+  return (
+    <Workspace
+      layers={LAYERS}
+      layer={layer}
+      onLayerChange={onLayerChange}
+      ariaLabel="Operations views"
+      // Monitors, Notifications, Spend and Security & Audit are each their own rail item: the switcher
+      // row repeated the rail. The rail is the switcher, as on Data.
+      hideTabs
+      renderIcon={(name, size, color) => <Icon name={name} size={size} color={color} />}
+      renderLayer={id => {
+        if (id === "monitors")    return <MonitorsPanel connId={connId} workspaceId={workspaceId} />;
+        if (id === "actions")     return <ActionHubPanel />;
+        if (id === "spend")       return <SpendPanel />;
+        return <SecurityAuditPanel connId={connId} lens={secLens} onLensChange={onSecLensChange} />; // "security"
+      }}
+    />
+  );
+}

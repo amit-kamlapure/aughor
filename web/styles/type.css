@@ -1,0 +1,110 @@
+/* ── Aughor Type Scale · Instrument ─────────────────────────────────────────
+   Seven steps and no others — 11 · 12 · 13 · 14 · 15 · 18 · 22 — on a 14px root since
+   2026-09-25 (the user: body 13 → 14). 14 is the READING size: body, prose, table cells,
+   the claim in a state row. 13 is CHROME: the rail, tabs, buttons, inputs, segments.
+   11px is the absolute floor. 28px exists in exactly one place: an icon rendered in an
+   empty state (.aug-fs-glyph / .aug-empty-glyph). Two families, one job each: Inter for
+   every word AND every figure (with tabular numerals, so decimal points still stack);
+   JetBrains Mono only for what is an identifier or code — an id, a table or column name,
+   SQL, a log. Neither Du Bois nor a spreadsheet sets a number in mono, and neither shouts a
+   label in tracked caps: section labels are 12px semibold sentence case.
+
+   Line heights are the spec's: 1.45 at 11 and 18, 1.55 at 12, 1.7 at 13 and 14 (1.8 in
+   prose), 1.5 at 15, 1.0 at 22.
+
+   Usage:
+     <h2 className="aug-text-h2">What moved</h2>
+     <p  className="aug-text-sm">Supporting detail</p>
+     <span className="aug-label">Section header</span>
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* ── Headings ── */
+
+.aug-text-h2 {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--t1);
+}
+
+.aug-text-h3 {
+  font-size: calc(14px * var(--scaling));
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--t1);
+}
+
+/* ── Body ── */
+.aug-text-ui {
+  font-size: calc(14px * var(--scaling));   /* the reading size, at the Theme's scaling */
+  line-height: 1.7;
+  color: var(--t1);
+}
+
+/* Prose — the Briefing and a finished deep analysis only: a real measure and 1.8 leading. */
+.aug-text-prose {
+  font-size: calc(14px * var(--scaling));
+  line-height: 1.8;
+  max-width: var(--shell-measure);
+  color: var(--t1);
+  text-wrap: pretty;
+}
+
+.aug-text-sm {
+  font-size: 12px;   /* secondary text, buttons, inputs */
+  line-height: 1.55;
+  color: var(--t1);
+}
+
+.aug-text-xs {
+  font-size: 11px;   /* the floor — labels, captions, meta */
+  line-height: 1.45;
+  color: var(--t2);
+}
+
+/* ── Data / code ── */
+
+/* Every figure: the UI face with tabular numerals, so decimal points stack down a column. */
+.aug-num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* ── Size-only scale (font-size, nothing else) ───────────────────────────────
+   Unlike aug-text-* (which also set colour, weight and line-height), these set ONLY
+   font-size, so they can replace a raw `text-[Npx]` or `fontSize: N` without silently
+   changing an element's colour or weight. */
+.aug-fs-xs      { font-size: 11px; }  /* labels, captions, meta (the floor) */
+.aug-fs-sm      { font-size: 12px; }  /* secondary text, buttons, inputs */
+.aug-fs-chrome  { font-size: 13px; }  /* chrome: the rail, tabs, buttons, inputs */
+.aug-fs-ui      { font-size: calc(14px * var(--scaling)); }  /* the reading size, at the Theme's scaling */
+.aug-fs-h2      { font-size: 15px; }  /* subheadings */
+.aug-fs-h1      { font-size: 18px; }  /* headings, the verdict sentence */
+.aug-fs-display { font-size: 22px; }  /* hero stat numbers — tabular figures, never words */
+.aug-fs-lead    { font-size: 40px; line-height: 1.1; letter-spacing: -.02em; }  /* the one figure a screen leads with (Home) */
+.aug-fs-glyph   { font-size: 28px; }  /* an ICON rendered as text in an empty state —
+                                         the only step above --display. */
+
+/* ── The scale as custom properties ──────────────────────────────────────────
+   Same steps, reachable from CSS-in-JS (the SQL editor's CodeMirror theme is a style
+   OBJECT and cannot wear a class). Classes stay the right answer wherever a class is
+   possible. */
+:root {
+  --aug-fs-xs:      11px;
+  --aug-fs-sm:      12px;
+  --aug-fs-chrome:  13px;
+  --aug-fs-ui:      14px;
+  --aug-fs-h2:      15px;
+  --aug-fs-h1:      18px;
+  --aug-fs-display: 22px;
+  --aug-fs-glyph:   28px;
+}
+
+/* ── Section label ── 12px semibold, sentence case, no tracking (2026-09-25: neither
+   reference shouts). --t2: a label is read, so it clears AA. */
+.aug-label {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--t2);
+}

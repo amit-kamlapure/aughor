@@ -1,0 +1,965 @@
+<!doctype html>
+<html lang="en" data-theme="light" data-accent="indigo">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Late dispatch · Evidence → Action mockup</title>
+<!--
+  Mockup, 2026-11-09. The Late dispatch dashboard on theLook (connection 8233e4fd), redrawn exactly as
+  EVIDENCE_TO_ACTION_DESIGN_SYSTEM.md v2.0 says: its tokens (§5, §18.4), its shell (§4), its state vocabulary (§6),
+  its verbs (§7), its grid (§9), its dashboard rules (§14.1) and its inspector (§4.5).
+  Every figure, row, SQL statement, property, link, metric and action below was read from the live API at
+  2026-11-09 23:10 UTC (GET /dashboards/late-dispatch, /ontology/processes, POST /objects/list, GET /objects/order/1,
+  GET /ontology/v1/actions/flag_for_review/schema). Nothing is invented; what the API does not return says so.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ── §18.4 starter tokens, verbatim ─────────────────────────────────────────────────────────── */
+:root, [data-theme="light"] {
+  --font-ui: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-code: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+  --surface-canvas: #f5f7f9; --surface-primary: #ffffff; --surface-secondary: #f0f3f6;
+  --surface-hover: #ebf2f5; --surface-selected: #e2eff4; --surface-editor: #ffffff; --surface-overlay: #ffffff;
+  --text-primary: #1d2a33; --text-secondary: #4a5b6a; --text-muted: #556675;
+  --text-disabled: #8d9ca8; --text-on-accent: #ffffff;
+  --border-subtle: #e4eaf0; --border-default: #d5dfe7; --border-control: #788a98; --border-strong: #abbdc9;
+  --accent: #1f6b8a; --accent-hover: #185670; --accent-subtle: #e2eff4; --focus-ring: #1f6b8a;
+  --status-success: #1c6e44; --status-warning: #8a5710; --status-danger: #b3363f; --status-info: #1f6b8a;
+  --status-success-subtle: #e5f3eb; --status-warning-subtle: #fbf0e1;
+  --status-danger-subtle: #fbe8ea; --status-info-subtle: #e2eff4;
+  --viz-1: #2f6db5; --viz-2: #c0612b; --viz-3: #7656b5; --viz-4: #1b807c; --viz-5: #b0447a; --viz-6: #6b7a22;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 20px; --space-6: 24px; --space-8: 32px;
+  --radius-badge: 3px; --radius-control: 4px; --radius-panel: 6px; --radius-overlay: 8px;
+  --shadow-popover: 0 6px 22px rgba(20, 33, 48, 0.13);
+  --shadow-overlay: 0 12px 32px rgba(20, 33, 48, 0.18);
+  --motion-fast: 120ms; --motion-base: 160ms;
+  --h-topbar: 52px; --h-toolbar: 44px; --h-tab: 38px; --h-status: 28px; --h-control: 34px;
+  --h-grid-header: 34px; --h-grid-row: 36px; --h-grid-row-compact: 32px; --h-grid-row-comfortable: 44px;
+  --w-nav: 224px; --w-nav-collapsed: 56px; --w-browser: 260px; --w-inspector: 360px;
+  --w-center-min: 680px;
+}
+[data-theme="dark"] {
+  --surface-canvas: #131e26; --surface-primary: #1b2832; --surface-secondary: #22323d;
+  --surface-hover: #293e4b; --surface-selected: #21465a; --surface-editor: #17232d; --surface-overlay: #273642;
+  --text-primary: #f1f6f8; --text-secondary: #becdd6; --text-muted: #a4b6c2;
+  --text-disabled: #6b7f8c; --text-on-accent: #12202a;
+  --border-subtle: #2c3f4b; --border-default: #3b4f5c; --border-control: #7f95a3; --border-strong: #5c7280;
+  --accent: #8bd2ee; --accent-hover: #b3e6f8; --accent-subtle: #1c3f50; --focus-ring: #a2e2fa;
+  --status-success: #72d1a0; --status-warning: #f1c47d; --status-danger: #fa9299; --status-info: #8bd2ee;
+  --status-success-subtle: #173a2a; --status-warning-subtle: #3d2f16;
+  --status-danger-subtle: #45232a; --status-info-subtle: #1c3f50;
+  --viz-1: #6fa8ea; --viz-2: #ee9a63; --viz-3: #ad93e6; --viz-4: #4fc2bc; --viz-5: #e583b3; --viz-6: #b4c562;
+  --shadow-popover: 0 6px 22px rgba(0, 0, 0, 0.35);
+  --shadow-overlay: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+/* ── The doc's teal, replaced (the user, 2026-11-10: "the eye hurting teal"). Contrast-checked the same day: as text, each
+      accent clears 4.95:1 on every surface and its own tints; a label on its fill clears 6:1. ───────────────────────── */
+:root[data-accent="indigo"] { --accent: #3451c6; --accent-hover: #2a429f; --accent-subtle: #edf1fd; --surface-selected: #e2e8fb; --surface-hover: #eef2f6; --focus-ring: #3451c6; --status-info: #3451c6; --status-info-subtle: #edf1fd; --text-on-accent: #ffffff; }
+:root[data-accent="blue"]   { --accent: #0b63b5; --accent-hover: #09528f; --accent-subtle: #e8f2fc; --surface-selected: #dbeafb; --surface-hover: #eef2f6; --focus-ring: #0b63b5; --status-info: #0b63b5; --status-info-subtle: #e8f2fc; --text-on-accent: #ffffff; }
+:root[data-accent="slate"]  { --accent: #3b4859; --accent-hover: #2a3441; --accent-subtle: #eef1f5; --surface-selected: #e3e8ef; --surface-hover: #eef2f6; --focus-ring: #3b4859; --status-info: #3b4859; --status-info-subtle: #eef1f5; --text-on-accent: #ffffff; }
+:root[data-theme="dark"][data-accent="indigo"] { --accent: #a5b4fc; --accent-hover: #c7d2fe; --accent-subtle: #1f2a52; --surface-selected: #27335f; --surface-hover: #293e4b; --focus-ring: #a5b4fc; --status-info: #a5b4fc; --status-info-subtle: #1f2a52; --text-on-accent: #12202a; }
+:root[data-theme="dark"][data-accent="blue"]   { --accent: #7cc0ff; --accent-hover: #b4dbff; --accent-subtle: #11304d; --surface-selected: #173b5c; --surface-hover: #293e4b; --focus-ring: #7cc0ff; --status-info: #7cc0ff; --status-info-subtle: #11304d; --text-on-accent: #12202a; }
+:root[data-theme="dark"][data-accent="slate"]  { --accent: #c9d4e0; --accent-hover: #e6ecf2; --accent-subtle: #2a3744; --surface-selected: #33424f; --surface-hover: #293e4b; --focus-ring: #c9d4e0; --status-info: #c9d4e0; --status-info-subtle: #2a3744; --text-on-accent: #12202a; }
+[data-density="compact"]     { --h-grid-row: var(--h-grid-row-compact); }
+[data-density="comfortable"] { --h-grid-row: var(--h-grid-row-comfortable); }
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; }
+body { font: 14px/1.45 var(--font-ui); color: var(--text-primary); background: var(--surface-canvas); }
+button, input, select, textarea { font: inherit; color: inherit; }
+code, pre, .code { font-family: var(--font-code); }
+:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.tabular, .num { font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--font-code); font-size: 12px; }
+.muted { color: var(--text-muted); }
+.sec { color: var(--text-secondary); }
+svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+svg.i.sm { width: 14px; height: 14px; }
+[hidden] { display: none !important; }
+
+/* ── Shell (§4.1, §18.4) ───────────────────────────────────────────────────────────────────── */
+.shell { height: 100vh; min-height: 720px; display: grid; grid-template-rows: var(--h-topbar) minmax(0, 1fr) var(--h-status); }
+.topbar { display: flex; align-items: center; gap: var(--space-3); padding: 0 var(--space-3);
+  background: var(--surface-primary); border-bottom: 1px solid var(--border-default); }
+.brand { display: flex; align-items: center; gap: 8px; width: calc(var(--w-nav) - 12px); font-weight: 600; font-size: 14px; letter-spacing: .01em; }
+.brand-mark { width: 22px; height: 22px; border-radius: var(--radius-control); background: var(--accent); color: var(--text-on-accent);
+  display: grid; place-items: center; font-size: 12px; font-weight: 600; }
+.search { flex: 1 1 auto; max-width: 560px; height: var(--h-control); display: flex; align-items: center; gap: 8px; padding: 0 10px;
+  border: 1px solid var(--border-control); border-radius: var(--radius-control); background: var(--surface-primary); color: var(--text-muted); font-size: 13px; }
+.search kbd, kbd { font: 500 11px/1.3 var(--font-ui); color: var(--text-muted); border: 1px solid var(--border-default); border-radius: var(--radius-badge); padding: 2px 5px; margin-left: auto; }
+.topbar .spacer { flex: 1; }
+.select { height: var(--h-control); display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid var(--border-control);
+  border-radius: var(--radius-control); background: var(--surface-primary); font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+.select .lbl { color: var(--text-muted); font-weight: 400; }
+.jobs { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); height: var(--h-control); padding: 0 10px;
+  border: 1px solid var(--border-control); border-radius: var(--radius-control); background: var(--surface-primary); cursor: pointer; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--status-success); display: inline-block; }
+.dot.idle { background: var(--text-disabled); }
+.iconbtn { width: var(--h-control); height: var(--h-control); display: inline-grid; place-items: center; border: 1px solid var(--border-control);
+  border-radius: var(--radius-control); background: var(--surface-primary); color: var(--text-secondary); cursor: pointer; }
+.iconbtn.sm { width: 28px; height: 28px; }
+.iconbtn:hover { background: var(--surface-hover); }
+.avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--surface-secondary); border: 1px solid var(--border-default);
+  display: grid; place-items: center; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+
+.middle { display: flex; min-height: 0; min-width: 0; }
+.nav { flex: 0 0 var(--w-nav); overflow: auto; background: var(--surface-secondary); border-right: 1px solid var(--border-subtle);
+  display: flex; flex-direction: column; padding: var(--space-2) 0; }
+.nav-item { display: flex; align-items: center; gap: 10px; height: 36px; margin: 1px 8px; padding: 0 10px; border-radius: var(--radius-control);
+  color: var(--text-secondary); font-size: 13px; font-weight: 500; cursor: pointer; text-decoration: none; border: 0; background: none; text-align: left; }
+.nav-item:hover { background: var(--surface-hover); color: var(--text-primary); }
+.nav-item[aria-current="page"] { background: var(--surface-selected); color: var(--text-primary); box-shadow: inset 2px 0 0 var(--accent); font-weight: 600; }
+.nav-item .count { margin-left: auto; font-size: 12px; font-weight: 500; color: var(--status-warning); }
+.nav-foot { margin-top: auto; border-top: 1px solid var(--border-subtle); padding-top: var(--space-2); }
+
+.browser { flex: 0 0 var(--w-browser); overflow: auto; background: var(--surface-secondary); border-right: 1px solid var(--border-subtle); }
+.main { flex: 1 1 auto; min-width: var(--w-center-min); min-height: 0; display: flex; flex-direction: column; background: var(--surface-primary); }
+.inspector { flex: 0 0 var(--w-inspector); width: var(--w-inspector); min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--surface-primary);
+  border-left: 1px solid var(--border-subtle); position: relative; }
+.inspector .splitter { position: absolute; left: -3px; top: 0; bottom: 0; width: 6px; cursor: col-resize; }
+.inspector .splitter::after { content: ""; position: absolute; left: 2px; top: 50%; height: 28px; width: 2px; margin-top: -14px; border-radius: 1px; background: var(--border-strong); }
+.status { display: flex; align-items: center; gap: var(--space-4); padding: 0 var(--space-3); font-size: 12px; color: var(--text-secondary);
+  background: var(--surface-secondary); border-top: 1px solid var(--border-subtle); white-space: nowrap; overflow: hidden; }
+.status .sep { color: var(--border-strong); }
+
+/* ── Page heading, tabs, toolbar (§4.2: 44 · 44 · 38 · 44) ─────────────────────────────────── */
+.crumbs { height: var(--h-toolbar); flex: none; display: flex; align-items: center; gap: 8px; padding: 0 var(--space-4); border-bottom: 1px solid var(--border-subtle);
+  font-size: 13px; color: var(--text-secondary); }
+.crumbs a { color: var(--text-secondary); text-decoration: none; }
+.crumbs a:hover { color: var(--accent); text-decoration: underline; }
+.crumbs .chev { color: var(--text-muted); }
+.crumbs .here { color: var(--text-primary); font-weight: 500; }
+.crumbs .meta { margin-left: auto; display: flex; gap: 12px; align-items: center; color: var(--text-muted); font-size: 12px; }
+.titlebar { height: var(--h-toolbar); flex: none; display: flex; align-items: center; gap: var(--space-3); padding: 0 var(--space-4); border-bottom: 1px solid var(--border-subtle); }
+.titlebar h1 { margin: 0; font-size: 20px; line-height: 1.25; font-weight: 600; white-space: nowrap; }
+.titlebar .facts { display: flex; gap: 12px; align-items: center; font-size: 12px; color: var(--text-muted); min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.titlebar .badge { flex: none; }
+.titlebar .acts { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.btn { height: var(--h-control); display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border: 1px solid var(--border-control);
+  border-radius: var(--radius-control); background: var(--surface-primary); color: var(--text-primary); font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+.btn:hover { background: var(--surface-hover); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--text-on-accent); }
+.btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn.sm { height: 28px; padding: 0 10px; font-size: 12px; }
+.btn[disabled] { color: var(--text-disabled); border-color: var(--border-default); cursor: not-allowed; background: var(--surface-primary); }
+.seg { display: inline-flex; border: 1px solid var(--border-control); border-radius: var(--radius-control); overflow: hidden; height: var(--h-control); }
+.seg button { border: 0; background: var(--surface-primary); padding: 0 12px; font-size: 13px; font-weight: 500; color: var(--text-secondary); cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--border-control); }
+.seg button[aria-pressed="true"] { background: var(--surface-selected); color: var(--text-primary); font-weight: 600; }
+.seg.sm { height: 28px; } .seg.sm button { font-size: 12px; padding: 0 9px; }
+
+.wtabs { height: var(--h-tab); flex: none; display: flex; align-items: stretch; gap: 0; padding: 0 var(--space-3); border-bottom: 1px solid var(--border-default);
+  background: var(--surface-secondary); }
+.wtab { display: flex; align-items: center; gap: 8px; padding: 0 14px; font-size: 13px; color: var(--text-secondary); border: 0; background: none; cursor: pointer;
+  border-right: 1px solid var(--border-subtle); position: relative; }
+.wtab[aria-selected="true"] { background: var(--surface-primary); color: var(--text-primary); font-weight: 600; }
+.wtab[aria-selected="true"]::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--accent); }
+.wtab .x { color: var(--text-muted); display: inline-grid; }
+.wtab.add { border-right: 0; color: var(--text-muted); }
+
+.toolbar { height: var(--h-toolbar); flex: none; display: flex; align-items: center; gap: 8px; padding: 0 var(--space-4); border-bottom: 1px solid var(--border-subtle);
+  font-size: 13px; }
+.toolbar .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.pill { height: 28px; display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid var(--border-control); border-radius: var(--radius-control);
+  background: var(--surface-primary); font-size: 12px; color: var(--text-primary); cursor: pointer; white-space: nowrap; }
+.pill .k { color: var(--text-muted); }
+.scope { font-size: 11px; font-weight: 500; color: var(--text-muted); border: 1px solid var(--border-default); border-radius: var(--radius-badge); padding: 0 4px; line-height: 16px; }
+
+.content { flex: 1 1 auto; min-height: 0; overflow: auto; padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-4); }
+
+/* ── Status vocabulary (§6) ────────────────────────────────────────────────────────────────── */
+.badge { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 6px; border-radius: var(--radius-badge); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.badge.neutral { background: var(--surface-secondary); color: var(--text-secondary); border: 1px solid var(--border-default); }
+.badge.success { background: var(--status-success-subtle); color: var(--status-success); }
+.badge.warning { background: var(--status-warning-subtle); color: var(--status-warning); }
+.badge.danger { background: var(--status-danger-subtle); color: var(--status-danger); }
+.badge.info { background: var(--status-info-subtle); color: var(--status-info); }
+.q { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.q b { font-weight: 500; color: var(--text-secondary); }
+
+.alert { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border-default); border-left: 3px solid var(--status-warning);
+  border-radius: var(--radius-panel); background: var(--status-warning-subtle); font-size: 13px; }
+.alert .t { font-weight: 600; color: var(--text-primary); }
+.alert .body { flex: 1; color: var(--text-secondary); }
+.alert .acts { display: flex; gap: 8px; }
+.alert svg { color: var(--status-warning); margin-top: 2px; }
+
+/* ── Widgets (§14.1): bordered, header with grain · freshness · caveat · View data / View query ─ */
+.section-title { display: flex; align-items: baseline; gap: 12px; margin: 4px 0 -4px; }
+.section-title h2 { margin: 0; font-size: 15px; line-height: 1.3; font-weight: 600; }
+.wgrid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: var(--space-4); }
+.w { grid-column: span 12; border: 1px solid var(--border-default); border-radius: var(--radius-panel); background: var(--surface-primary); min-width: 0; position: relative; }
+.w-h { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 8px 6px 14px; border-bottom: 1px solid var(--border-subtle); }
+.w-h h3 { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.3; }
+.w-h .kind { font-size: 12px; color: var(--text-muted); }
+.w-h .qs { display: flex; gap: 10px; align-items: center; margin-left: auto; }
+.w-b { padding: 12px 14px; }
+.w-f { padding: 8px 14px; border-top: 1px solid var(--border-subtle); font-size: 12px; color: var(--text-muted); display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.note-text { font-size: 14px; margin: 0 0 6px; }
+.origin { font-size: 11px; font-weight: 500; border-radius: var(--radius-badge); padding: 0 5px; line-height: 18px; border: 1px solid var(--border-default); color: var(--text-secondary); }
+
+/* ── Tables (§9: one engine; QueryResult / Object / Decision-queue variants) ────────────────── */
+table.grid { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+.grid th { height: var(--h-grid-header); background: var(--surface-secondary); font-size: 12px; font-weight: 600; text-align: left; padding: 0 12px;
+  border-bottom: 1px solid var(--border-default); color: var(--text-secondary); white-space: nowrap; position: sticky; top: 0; }
+.grid th.r, .grid td.r { text-align: right; }
+.grid th .sort { color: var(--accent); }
+.grid td { height: var(--h-grid-row); padding: 0 12px; border-bottom: 1px solid var(--border-subtle); white-space: nowrap; }
+.grid tbody tr { cursor: default; }
+.grid.clickable tbody tr { cursor: pointer; }
+.grid tbody tr:hover td { background: var(--surface-hover); }
+.grid tbody tr[aria-selected="true"] td { background: var(--surface-selected); }
+.grid tbody tr[aria-selected="true"] td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
+.grid td.num, .grid td.r { font-variant-numeric: tabular-nums; }
+.null { color: var(--text-muted); font-style: italic; }
+.grid td.wrap { white-space: normal; padding-top: 6px; padding-bottom: 6px; line-height: 1.3; }
+.grid td .rule { font-size: 12px; }
+.notloaded { color: var(--text-muted); font-style: italic; }
+.bar { height: 6px; background: var(--surface-secondary); border-radius: 1px; width: 96px; display: inline-block; vertical-align: middle; margin-right: 8px; overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--viz-1); }
+.gstrip { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 14px; padding: 4px 12px; min-height: 34px; border-top: 1px solid var(--border-subtle); background: var(--surface-secondary);
+  font-size: 12px; color: var(--text-secondary); border-radius: 0 0 var(--radius-panel) var(--radius-panel); white-space: nowrap; }
+.gstrip .pager { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.gtool { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border-subtle); }
+.gtool input { height: 28px; border: 1px solid var(--border-control); border-radius: var(--radius-control); padding: 0 8px; font-size: 12px; width: 170px; background: var(--surface-primary); }
+.two { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }
+.two > div + div { border-top: 1px solid var(--border-subtle); }
+@media (min-width: 1700px) {
+  .two { grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); }
+  .two > div + div { border-top: 0; border-left: 1px solid var(--border-subtle); }
+}
+.subhead { font-size: 12px; font-weight: 600; color: var(--text-secondary); padding: 10px 14px 6px; }
+.broken { color: var(--status-danger); font-weight: 600; display: inline-flex; gap: 4px; align-items: center; }
+
+/* ── Inspector (§4.5) ──────────────────────────────────────────────────────────────────────── */
+.ins-h { padding: 12px 14px 10px; border-bottom: 1px solid var(--border-subtle); }
+.ins-h .row1 { display: flex; align-items: center; gap: 8px; }
+.ins-h .glyph { width: 24px; height: 24px; border-radius: var(--radius-control); background: var(--accent-subtle); color: var(--accent); display: grid; place-items: center; flex: none; }
+.ins-h .name { font-size: 15px; font-weight: 600; }
+.ins-h .row2 { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; color: var(--text-muted); }
+.ins-h .row1 .close { margin-left: auto; }
+.ins-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border-default); padding: 0 4px; overflow-x: auto; flex: none; }
+.ins-tabs button { border: 0; background: none; padding: 0 4px; height: 36px; font-size: 12px; font-weight: 500; color: var(--text-secondary); cursor: pointer; position: relative; white-space: nowrap; }
+.ins-tabs button[aria-selected="true"] { color: var(--text-primary); font-weight: 600; }
+.ins-tabs button[aria-selected="true"]::after { content: ""; position: absolute; left: 6px; right: 6px; bottom: -1px; height: 2px; background: var(--accent); }
+.ins-b { flex: 1 1 auto; overflow: auto; padding: 12px 14px 20px; display: flex; flex-direction: column; gap: 14px; font-size: 13px; }
+.pg { display: grid; grid-template-columns: 128px 1fr; border-top: 1px solid var(--border-subtle); }
+.pg > div { padding: 7px 0; border-bottom: 1px solid var(--border-subtle); min-width: 0; }
+.pg > .k { color: var(--text-muted); font-size: 12px; padding-right: 8px; }
+.pg > .v { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ins-sec h4 { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--text-secondary); display: flex; align-items: center; gap: 8px; }
+.ins-sec h4 .r { margin-left: auto; font-weight: 400; color: var(--text-muted); }
+pre.sql { margin: 0; padding: 10px; background: var(--surface-editor); border: 1px solid var(--border-default); border-radius: var(--radius-control);
+  font: 12px/1.5 var(--font-code); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-primary); }
+ol.plan { margin: 0; padding-left: 18px; color: var(--text-secondary); font-size: 12px; display: grid; gap: 3px; }
+.empty { border: 1px dashed var(--border-default); border-radius: var(--radius-panel); padding: 12px; color: var(--text-secondary); font-size: 13px; }
+.empty b { color: var(--text-primary); }
+.action-card { border: 1px solid var(--border-default); border-radius: var(--radius-panel); padding: 10px 12px; display: grid; gap: 8px; }
+.action-card .top { display: flex; align-items: center; gap: 8px; }
+.action-card .top b { font-size: 13px; }
+.field { display: grid; gap: 4px; font-size: 12px; color: var(--text-secondary); }
+.field input { height: var(--h-control); border: 1px solid var(--border-control); border-radius: var(--radius-control); padding: 0 8px; background: var(--surface-primary); font-size: 13px; }
+.field input[readonly] { background: var(--surface-secondary); color: var(--text-secondary); }
+.life { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 11.5px; color: var(--text-muted); }
+.life span.on { color: var(--text-primary); font-weight: 600; }
+.assist-box { border: 1px solid var(--border-control); border-radius: var(--radius-control); min-height: 72px; padding: 8px 10px; color: var(--text-muted); font-size: 13px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: 12px; border: 1px solid var(--border-control); border-radius: var(--radius-control); padding: 4px 8px; background: var(--surface-primary); cursor: pointer; text-align: left; }
+.chip:hover { background: var(--surface-hover); }
+.ins-foot { border-top: 1px solid var(--border-subtle); padding: 8px 14px; font-size: 12px; color: var(--text-muted); display: flex; gap: 8px; align-items: center; flex: none; }
+
+/* ── Edit mode (§14.1: Data view separate from Canvas view; snap grid; clear widget bounds) ─── */
+[data-mode="edit"] .content.canvas { background-color: var(--surface-canvas);
+  background-image: linear-gradient(to right, var(--border-subtle) 1px, transparent 1px);
+  background-size: calc((100% - 32px) / 12) 100%; background-position: 16px 0; }
+[data-mode="edit"] .w { outline: 1px dashed var(--border-strong); outline-offset: 3px; cursor: pointer; }
+[data-mode="edit"] .w[data-picked="true"] { outline: 2px solid var(--accent); outline-offset: 3px; }
+[data-mode="edit"] .w[data-picked="true"]::after { content: ""; position: absolute; right: -7px; bottom: -7px; width: 8px; height: 8px; background: var(--accent); border-radius: 1px; }
+.wlabel { display: none; position: absolute; top: -11px; left: 10px; font-size: 11px; font-weight: 500; padding: 0 6px; line-height: 18px; background: var(--surface-primary);
+  border: 1px solid var(--border-default); border-radius: var(--radius-badge); color: var(--text-secondary); z-index: 1; }
+[data-mode="edit"] .wlabel { display: inline-block; }
+.tree { list-style: none; margin: 0; padding: 0 8px; font-size: 13px; }
+.tree li { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border-radius: var(--radius-control); cursor: pointer; color: var(--text-secondary); }
+.tree li:hover { background: var(--surface-hover); }
+.tree li[aria-selected="true"] { background: var(--surface-selected); color: var(--text-primary); font-weight: 600; box-shadow: inset 2px 0 0 var(--accent); }
+.tree li .t { font-size: 11px; color: var(--text-muted); margin-left: auto; font-weight: 400; }
+.browser h5 { margin: 0; padding: 12px 16px 6px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+
+/* ── Mockup-only (not part of the design) ─────────────────────────────────────────────────── */
+.mock-ctl { position: fixed; right: 12px; bottom: 40px; z-index: 50; display: flex; gap: 6px; align-items: center; font: 500 11px/1.3 var(--font-ui);
+  background: #111; color: #eee; padding: 6px 8px; border-radius: 6px; opacity: .88; }
+.mock-ctl button { font: 500 11px/1.3 var(--font-ui); background: #333; color: #eee; border: 1px solid #555; border-radius: 4px; padding: 3px 7px; cursor: pointer; }
+.mock-ctl button[aria-pressed="true"] { background: #eee; color: #111; }
+.notes { background: #fbfbfa; color: #1d2a33; padding: 32px 32px 48px; border-top: 4px solid #1d2a33; font: 14px/1.55 Inter, system-ui, sans-serif; }
+.notes h2 { font-size: 18px; margin: 0 0 4px; }
+.notes .lede { color: #4a5b6a; margin: 0 0 20px; }
+.notes .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+.notes ol { padding-left: 20px; margin: 0; display: grid; gap: 8px; }
+.notes .shots { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 24px; }
+.notes figure { margin: 0; } .notes figure img { width: 100%; border: 1px solid #d5dfe7; border-radius: 6px; display: block; }
+.notes figcaption { font-size: 12px; color: #556675; margin-top: 6px; }
+.notes table { border-collapse: collapse; font-size: 13px; width: 100%; }
+.notes td, .notes th { border-bottom: 1px solid #e4eaf0; padding: 6px 8px; text-align: left; vertical-align: top; }
+.notes th { font-size: 12px; color: #4a5b6a; }
+
+@media (max-width: 1279px) {
+  .inspector { position: fixed; right: 0; top: var(--h-topbar); bottom: var(--h-status); z-index: 20; box-shadow: var(--shadow-overlay); }
+  .nav { flex-basis: var(--w-nav-collapsed); } .nav-item span.l, .nav .count { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></symbol>
+    <symbol id="i-ask" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+    <symbol id="i-data" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+    <symbol id="i-analyze" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M8 17v-5"/><path d="M13 17V8"/><path d="M18 17v-3"/></symbol>
+    <symbol id="i-model" viewBox="0 0 24 24"><path d="m12 2 9 5-9 5-9-5 9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></symbol>
+    <symbol id="i-decide" viewBox="0 0 24 24"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></symbol>
+    <symbol id="i-monitor" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-chevr" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-chevl" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></symbol>
+    <symbol id="i-ext" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/></symbol>
+    <symbol id="i-cube" viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/></symbol>
+    <symbol id="i-flow" viewBox="0 0 24 24"><rect x="3" y="4" width="6" height="5" rx="1"/><rect x="15" y="15" width="6" height="5" rx="1"/><path d="M6 9v3a2 2 0 0 0 2 2h8a2 2 0 0 1 2 2v-1"/></symbol>
+    <symbol id="i-table" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 10h18"/><path d="M9 4v16"/></symbol>
+    <symbol id="i-note" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4"/><path d="m15.4 6.5-6.8 4"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></symbol>
+    <symbol id="i-filter" viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4 2v-8z"/></symbol>
+    <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M15 4v16"/></symbol>
+    <symbol id="i-panel-l" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M9 4v16"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  </defs>
+</svg>
+
+<div class="shell" id="shell" data-mode="view">
+
+  <!-- Top bar 52px: Workspace ▾ │ Search assets & commands ⌘K │ Environment ▾ │ Jobs ● │ ? │ Account -->
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">A</span>Aughor</div>
+    <button class="select" title="Organisation"><span class="lbl">Workspace</span> Default <svg class="i sm"><use href="#i-chev"/></svg></button>
+    <div class="search" role="search"><svg class="i sm"><use href="#i-search"/></svg>Search assets &amp; commands<kbd>⌘K</kbd></div>
+    <div class="spacer"></div>
+    <button class="select" title="Connection"><span class="lbl">Environment</span> theLook · BigQuery <svg class="i sm"><use href="#i-chev"/></svg></button>
+    <button class="jobs" title="Running jobs"><span class="dot idle"></span>Jobs · 0 running</button>
+    <button class="iconbtn" aria-label="Notifications"><svg class="i"><use href="#i-bell"/></svg></button>
+    <button class="iconbtn" aria-label="Help"><svg class="i"><use href="#i-help"/></svg></button>
+    <span class="avatar" title="amitkamlapure">AU</span>
+  </header>
+
+  <div class="middle">
+    <!-- Primary nav 224px: seven destinations (§3) -->
+    <nav class="nav" aria-label="Primary">
+      <a class="nav-item" href="#"><svg class="i"><use href="#i-home"/></svg><span class="l">Home</span></a>
+      <a class="nav-item" href="#"><svg class="i"><use href="#i-ask"/></svg><span class="l">Ask</span></a>
+      <a class="nav-item" href="#"><svg class="i"><use href="#i-data"/></svg><span class="l">Data</span></a>
+      <a class="nav-item" href="#" aria-current="page"><svg class="i"><use href="#i-analyze"/></svg><span class="l">Analyze</span></a>
+      <a class="nav-item" href="#"><svg class="i"><use href="#i-model"/></svg><span class="l">Define</span></a>
+      <a class="nav-item" href="#"><svg class="i"><use href="#i-decide"/></svg><span class="l">Decide</span></a>
+      <a class="nav-item" href="#"><svg class="i"><use href="#i-monitor"/></svg><span class="l">Operations</span><span class="count">19</span></a>
+      <div class="nav-foot">
+        <a class="nav-item" href="#"><svg class="i"><use href="#i-settings"/></svg><span class="l">Settings</span></a>
+      </div>
+    </nav>
+
+    <!-- Asset browser 260px (optional; edit mode's outline) -->
+    <aside class="browser" id="outline" hidden aria-label="Outline">
+      <h5>Outline · 6 widgets</h5>
+      <ul class="tree" id="tree">
+        <li data-w="dash"><svg class="i sm"><use href="#i-analyze"/></svg>Late dispatch<span class="t">dashboard</span></li>
+        <li data-w="sec" style="padding-left:20px"><svg class="i sm"><use href="#i-panel-l"/></svg>Dispatch<span class="t">section</span></li>
+        <li data-w="note" style="padding-left:32px"><svg class="i sm"><use href="#i-note"/></svg>Note<span class="t">note</span></li>
+        <li data-w="process" style="padding-left:32px"><svg class="i sm"><use href="#i-flow"/></svg>Order Fulfilment<span class="t">process</span></li>
+        <li data-w="grid" style="padding-left:32px"><svg class="i sm"><use href="#i-table"/></svg>Order · overdue dispatch<span class="t">objects</span></li>
+        <li data-w="action" style="padding-left:32px"><svg class="i sm"><use href="#i-bolt"/></svg>Flag for review<span class="t">action</span></li>
+      </ul>
+      <h5>Sets &amp; values</h5>
+      <ul class="tree">
+        <li><svg class="i sm"><use href="#i-filter"/></svg>overdue dispatch<span class="t">set of Order</span></li>
+        <li class="muted" style="cursor:default">No values</li>
+      </ul>
+    </aside>
+
+    <main class="main" aria-label="Late dispatch">
+      <!-- Page heading row 1: breadcrumb › artifact · scope · save state -->
+      <div class="crumbs">
+        <a href="#">Analyze</a><span class="chev">›</span><a href="#">Dashboards</a><span class="chev">›</span><span class="here">Late dispatch</span>
+        <span class="meta">
+          <span>Scope: theLook · all data (standing range)</span>
+          <span id="savestate"><svg class="i sm" style="vertical-align:-2px;color:var(--status-success)"><use href="#i-check"/></svg> Saved · version 4</span>
+        </span>
+      </div>
+
+      <!-- Page heading row 2: title · status · owner [Primary] [Share] [⋯] -->
+      <div class="titlebar" id="titlebar-view">
+        <h1>Late dispatch</h1>
+        <span class="badge neutral">Draft · not published</span>
+        <span class="facts"><span>Owner amitkamlapure · last read 9 Nov 23:10 UTC</span></span>
+        <div class="acts">
+          <div class="seg" role="group" aria-label="Mode"><button aria-pressed="true" data-mode-btn="view">View</button><button aria-pressed="false" data-mode-btn="edit">Edit</button></div>
+          <button class="btn"><svg class="i sm"><use href="#i-share"/></svg>Share</button>
+          <button class="btn primary">Publish…</button>
+          <button class="iconbtn" aria-label="More: History, Retire, Copy stable link"><svg class="i"><use href="#i-more"/></svg></button>
+        </div>
+      </div>
+      <div class="titlebar" id="titlebar-edit" hidden>
+        <h1>Late dispatch</h1>
+        <span class="badge info">Editing draft</span>
+        <span class="facts"><span>Saved 9 Oct 2026 15:50 UTC · version 4</span><span>Every change is kept as a new version</span></span>
+        <div class="acts">
+          <button class="btn" disabled><svg class="i sm"><use href="#i-undo"/></svg>Undo</button>
+          <button class="btn" disabled><svg class="i sm"><use href="#i-redo"/></svg>Redo</button>
+          <div class="seg" role="group" aria-label="Mode"><button aria-pressed="false" data-mode-btn="view">View</button><button aria-pressed="true" data-mode-btn="edit">Edit</button></div>
+          <button class="btn primary" data-mode-btn="view">Done</button>
+        </div>
+      </div>
+
+      <!-- Workspace tabs 38px (view) / Canvas · Data (edit) -->
+      <div class="wtabs" role="tablist" id="wtabs-view">
+        <button class="wtab" role="tab" aria-selected="true">Late dispatch <span class="x"><svg class="i sm"><use href="#i-x"/></svg></span></button>
+        <button class="wtab" role="tab" aria-selected="false">Executive Cockpit <span class="x"><svg class="i sm"><use href="#i-x"/></svg></span></button>
+        <button class="wtab" role="tab" aria-selected="false">Customer Analytics <span class="x"><svg class="i sm"><use href="#i-x"/></svg></span></button>
+        <button class="wtab add" aria-label="Open another dashboard"><svg class="i sm"><use href="#i-plus"/></svg></button>
+      </div>
+      <div class="wtabs" role="tablist" id="wtabs-edit" hidden>
+        <button class="wtab" role="tab" aria-selected="true" data-edit-view="canvas">Canvas</button>
+        <button class="wtab" role="tab" aria-selected="false" data-edit-view="data">Data</button>
+      </div>
+
+      <!-- Local toolbar 44px: filters with visible scope; one primary per toolbar -->
+      <div class="toolbar" id="toolbar-view">
+        <span class="pill"><span class="k">Range</span> All data <span class="scope">global</span></span>
+        <span class="pill"><span class="k">Ontology</span> release 6 <span class="scope">global</span></span>
+        <span class="pill"><span class="k">Chosen order</span> <span id="tb-chosen">1</span> <span class="scope">view-only</span></span>
+        <div class="right">
+          <button class="pill" id="density" title="Grid rows: 32 · 36 · 44px"><span class="k">Density</span> <span id="density-v">Default</span> <svg class="i sm"><use href="#i-chev"/></svg></button>
+          <button class="btn sm"><svg class="i sm"><use href="#i-refresh"/></svg>Read again</button>
+          <button class="iconbtn sm" aria-label="Toggle inspector" id="ins-toggle"><svg class="i sm"><use href="#i-panel"/></svg></button>
+        </div>
+      </div>
+      <div class="toolbar" id="toolbar-edit" hidden>
+        <button class="btn sm" id="outline-toggle" aria-pressed="false"><svg class="i sm"><use href="#i-panel-l"/></svg>Outline</button>
+        <button class="btn sm"><svg class="i sm"><use href="#i-plus"/></svg>Add <svg class="i sm"><use href="#i-chev"/></svg></button>
+        <span class="q" id="one-pane" hidden><svg class="i sm"><use href="#i-panel"/></svg>Inspector closed: one side pane below 1600px</span>
+        <div class="right">
+          <span class="q"><span class="dot"></span><b>3 of 3</b> widgets read · 1 reads on selection</span>
+          <button class="pill">Fit · 100% <svg class="i sm"><use href="#i-chev"/></svg></button>
+          <button class="iconbtn sm" aria-label="Toggle inspector" id="ins-toggle-edit"><svg class="i sm"><use href="#i-panel"/></svg></button>
+        </div>
+      </div>
+
+      <!-- ── PRIMARY TASK WORKSPACE ─────────────────────────────────────────────────────────── -->
+      <div class="content canvas" id="canvas">
+
+        <div class="alert" role="status">
+          <svg class="i"><use href="#i-warn"/></svg>
+          <div class="body">
+            <div class="t">Pinned to ontology release 4 · widgets read release 6</div>
+            One change since then touches what they read: <b>process Order Fulfilment</b> changed in release 5 — read by <b>Order Fulfilment</b> and <b>Order · overdue dispatch</b>.
+          </div>
+          <div class="acts"><button class="btn sm">Compare releases</button><button class="btn sm">Re-pin to release 6</button></div>
+        </div>
+
+        <div class="section-title"><h2>Dispatch</h2><span class="q">Section · 3 widgets</span></div>
+
+        <div class="wgrid">
+          <!-- Note — authored text, labelled as a person's words -->
+          <section class="w" data-w="note" style="grid-column: span 12">
+            <span class="wlabel">Note · full width</span>
+            <div class="w-b">
+              <p class="note-text">Orders waiting longer than the 2-day dispatch promise. Cancelled orders have left the process and are not listed.</p>
+              <div class="q"><span class="origin">Authored</span> amitkamlapure · 9 Oct 2026 14:19 UTC · not measured · cited by nothing</div>
+            </div>
+          </section>
+
+          <!-- Process — ranked tables, not figure cards (§13.3, §20) -->
+          <section class="w" data-w="process" style="grid-column: span 12">
+            <span class="wlabel">Process · full width</span>
+            <div class="w-h">
+              <svg class="i" style="color:var(--text-muted)"><use href="#i-flow"/></svg>
+              <h3>Order Fulfilment</h3>
+              <span class="kind">Process · grain: order · 125,266 orders · 4 stages · 2 promises</span>
+              <div class="qs">
+                <span class="badge neutral"><svg class="i sm"><use href="#i-clock"/></svg>Cached · measured 8 Nov 22:28 UTC</span>
+                <span class="badge success"><svg class="i sm"><use href="#i-check"/></svg>Verified</span>
+                <button class="btn sm" data-prov="process">View query</button>
+                <button class="iconbtn sm" aria-label="More: View underlying data, Inspect provenance, Copy stable link"><svg class="i sm"><use href="#i-more"/></svg></button>
+              </div>
+            </div>
+            <div class="two">
+              <div>
+                <div class="subhead">Stages · how far orders got</div>
+                <table class="grid">
+                  <thead><tr><th>Stage</th><th class="r">Reached</th><th>Share of placed</th><th class="r">Median from previous</th><th class="r">p90</th></tr></thead>
+                  <tbody>
+                    <tr><td>Placed</td><td class="r">125,266</td><td><span class="bar"><i style="width:100%"></i></span>100.0%</td><td class="r null">—</td><td class="r null">—</td></tr>
+                    <tr><td>Shipped</td><td class="r">81,195</td><td><span class="bar"><i style="width:64.8%"></i></span>64.8%</td><td class="r">1.0 d</td><td class="r">3.0 d</td></tr>
+                    <tr><td>Delivered</td><td class="r">43,908</td><td><span class="bar"><i style="width:35.1%"></i></span>35.1%</td><td class="r">2.0 d</td><td class="r">5.0 d</td></tr>
+                    <tr><td>Returned</td><td class="r">12,530</td><td><span class="bar"><i style="width:10.0%"></i></span>10.0%</td><td class="r">1.0 d</td><td class="r">3.0 d</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div>
+                <div class="subhead">Promises · ranked by open and overdue</div>
+                <table class="grid clickable">
+                  <thead><tr><th>Promise</th><th class="r">Broken</th><th class="r">Broken rate</th><th class="r">Open</th><th class="r">Open &amp; overdue <span class="sort">↓</span></th><th>As of</th></tr></thead>
+                  <tbody>
+                    <tr><td class="wrap"><b>Delivery</b><div class="muted rule">delivered ≤ 4 d after shipped</div></td><td class="r">4,479</td><td class="r"><span class="broken"><svg class="i sm"><use href="#i-warn"/></svg>10.2%</span></td><td class="r">37,287</td><td class="r"><b>37,287</b></td><td><span class="badge warning" title="Measured as of a date after today: theLook's timestamps run ahead of the calendar">14 Nov · after today</span></td></tr>
+                    <tr aria-selected="true"><td class="wrap"><b>Dispatch</b><div class="muted rule">shipped ≤ 2 d after placed</div></td><td class="r">13,716</td><td class="r"><span class="broken"><svg class="i sm"><use href="#i-warn"/></svg>16.9%</span></td><td class="r">25,192</td><td class="r"><b>25,186</b></td><td>9 Nov 23:10 UTC</td></tr>
+                  </tbody>
+                </table>
+                <div class="w-f" style="border-top:0;padding-top:4px">Broken = reached the next stage late. 18,879 orders left the process as Cancelled — not open, never overdue.</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Objects — ObjectGrid variant: stable ID authoritative, row click inspects (§9.2) -->
+          <section class="w" data-w="grid" style="grid-column: span 12">
+            <span class="wlabel">Objects · full width · drives the inspector</span>
+            <div class="w-h">
+              <svg class="i" style="color:var(--text-muted)"><use href="#i-table"/></svg>
+              <h3>Order · overdue dispatch</h3>
+              <span class="kind">Orders not yet shipped and past the 2-day promise</span>
+              <div class="qs">
+                <span class="badge success"><svg class="i sm"><use href="#i-check"/></svg>Live · read 9 Nov 23:10 UTC · 11.5 s</span>
+                <button class="btn sm" data-prov="grid">View query</button>
+                <button class="iconbtn sm" aria-label="More: View underlying data, Export, Copy stable link"><svg class="i sm"><use href="#i-more"/></svg></button>
+              </div>
+            </div>
+            <div class="gtool">
+              <span class="pill"><svg class="i sm"><use href="#i-filter"/></svg><span class="k">Filter in query</span> set: overdue dispatch <span class="scope">widget</span></span>
+              <input type="search" placeholder="Filter loaded rows (6)" aria-label="Filter loaded rows">
+              <div style="margin-left:auto;display:flex;gap:8px">
+                <button class="btn sm"><svg class="i sm"><use href="#i-ask"/></svg>Ask about these</button>
+                <button class="btn sm primary" id="propose-flag">Propose: Flag for review · order <span id="flag-id">1</span></button>
+              </div>
+            </div>
+            <div style="overflow:auto">
+              <table class="grid clickable" role="grid" aria-rowcount="24655" aria-label="Orders past the dispatch promise">
+                <thead><tr><th>Order <span class="sort">↑</span></th><th>Status</th><th>Created at (UTC)</th><th class="r">Items</th><th>Flagged for review</th></tr></thead>
+                <tbody id="rows"></tbody>
+              </table>
+            </div>
+            <div class="gstrip">
+              <span><b>1–6</b> of <b>24,654</b></span>
+              <span>Sorted by order, ascending</span>
+              <span>Complete · nothing withheld or masked</span>
+              <span class="muted" title="Both figures are as they were read; the process table is cached, this list is read live">Order Fulfilment's 25,186 is cached 8 Nov 22:28 UTC; this count is live</span>
+              <span class="pager"><span class="muted">6 per page</span><button class="iconbtn sm" disabled aria-label="Previous page"><svg class="i sm"><use href="#i-chevl"/></svg></button><button class="iconbtn sm" aria-label="Next page"><svg class="i sm"><use href="#i-chevr"/></svg></button></span>
+            </div>
+          </section>
+        </div>
+
+        <div class="q" style="padding:0 2px 8px">The Order detail and Flag for review widgets of this dashboard open in the inspector: one inspector host per view (§4.5).</div>
+      </div>
+
+      <!-- Edit · Data view: datasets, fields, query preview, execution state (§14.1) -->
+      <div class="content" id="dataview" hidden>
+        <div class="section-title"><h2>What each widget reads</h2><span class="q">4 widgets · 1 set · no values</span></div>
+        <section class="w" style="overflow:auto">
+          <table class="grid clickable" id="data-table">
+            <thead><tr><th>Widget</th><th>Reads</th><th>Release</th><th class="r">Rows</th><th>Execution</th><th>Last read</th></tr></thead>
+            <tbody>
+              <tr data-ds="note"><td><svg class="i sm" style="vertical-align:-2px"><use href="#i-note"/></svg> Note</td><td class="muted wrap">A person's words</td><td class="null">—</td><td class="r null">—</td><td><span class="badge neutral">Not measured</span></td><td>9 Oct 14:19 UTC</td></tr>
+              <tr data-ds="process"><td><svg class="i sm" style="vertical-align:-2px"><use href="#i-flow"/></svg> Order Fulfilment</td><td class="wrap">process <span class="mono">order_fulfilment</span> on Order</td><td><span class="badge warning">6 · changed in 5</span></td><td class="r">125,266</td><td><span class="badge neutral">Cached</span></td><td>8 Nov 22:28 UTC</td></tr>
+              <tr data-ds="grid" aria-selected="true"><td><svg class="i sm" style="vertical-align:-2px"><use href="#i-table"/></svg> Order · overdue dispatch</td><td class="wrap">Order · set <span class="mono">overdue_dispatch</span> · 4 of 8 columns</td><td><span class="badge warning">6 · changed in 5</span></td><td class="r">24,654</td><td><span class="badge success">Succeeded · 11.5 s</span></td><td>9 Nov 23:10 UTC</td></tr>
+              <tr data-ds="action"><td><svg class="i sm" style="vertical-align:-2px"><use href="#i-bolt"/></svg> Flag for review</td><td class="wrap">action <span class="mono">flag_for_review</span> · annotate · low risk · proposes only</td><td>6</td><td class="r null">—</td><td><span class="badge neutral">Runs on request</span></td><td class="null">—</td></tr>
+            </tbody>
+          </table>
+        </section>
+        <div class="wgrid">
+          <section class="w" style="grid-column: span 7">
+            <div class="w-h"><h3>Query preview · Order · overdue dispatch</h3><div class="qs"><span class="q">BigQuery · <span class="mono">thelook</span></span><button class="iconbtn sm" aria-label="Copy SQL"><svg class="i sm"><use href="#i-copy"/></svg></button></div></div>
+            <div class="w-b"><pre class="sql" id="sql-list"></pre></div>
+            <div class="w-f"><span>Count query runs beside it</span><span>Query ID: not recorded</span><span>Execution ID: not recorded — object reads keep no run id</span></div>
+          </section>
+          <section class="w" style="grid-column: span 5">
+            <div class="w-h"><h3>Plan</h3><span class="kind">as the object read reports it</span></div>
+            <div class="w-b"><ol class="plan" id="plan"></ol></div>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <!-- Context inspector 360px: one host, tabs per selection (§4.5) -->
+    <aside class="inspector" id="inspector" aria-label="Inspector">
+      <div class="splitter" role="separator" aria-orientation="vertical" aria-label="Resize inspector" tabindex="0"></div>
+      <div class="ins-h" id="ins-h"></div>
+      <div class="ins-tabs" role="tablist" id="ins-tabs"></div>
+      <div class="ins-b" id="ins-b"></div>
+      <div class="ins-foot" id="ins-foot"></div>
+    </aside>
+  </div>
+
+  <!-- Status strip 28px -->
+  <footer class="status" aria-live="polite">
+    <span><span class="dot"></span> Connected · theLook · BigQuery</span><span class="sep">│</span>
+    <span>Dashboard draft · version 4 · saved</span><span class="sep">│</span>
+    <span>Objects: Succeeded 11.5 s · 1–6 of 24,654 · live</span><span class="sep">│</span>
+    <span>Process: cached 8 Nov 22:28 UTC</span><span class="sep">│</span>
+    <span>Ontology release 6 (pinned 4)</span><span class="sep">│</span>
+    <span>Run as: you (default)</span>
+  </footer>
+</div>
+
+<div class="mock-ctl" aria-label="Mockup controls (not part of the design)">
+  Accent <button data-acc="indigo" aria-pressed="true">Indigo</button><button data-acc="blue" aria-pressed="false">Blue</button><button data-acc="slate" aria-pressed="false">Slate</button> ·
+  <button data-theme-btn="light" aria-pressed="true">Light</button>
+  <button data-theme-btn="dark" aria-pressed="false">Dark</button>
+  · scroll down for notes
+</div>
+
+<!-- ── Notes for the decision (not part of the design) ─────────────────────────────────────── -->
+<section class="notes">
+  <h2>Late dispatch, as EVIDENCE → ACTION v2.0 draws it</h2>
+  <p class="lede">The most complicated page by code (Dashboards: 12.1k lines, 35 files), on theLook's ontology dashboard. Every figure was read live from the API on 9 Nov 2026 23:10 UTC; nothing on the page is invented. Today's page is at the bottom for comparison.</p>
+  <div class="cols">
+    <div>
+      <h3 style="font-size:15px;margin:0 0 8px">What following the doc changed on this page</h3>
+      <ol>
+        <li><b>Light first</b> (§5), with the doc's dark tokens on the corner toggle. The doc's blue-teal accent is replaced by one you pick in the corner (indigo by default, or blue or slate). All are contrast-checked in both skins.</li>
+        <li><b>Seven destinations</b>, with the Aughor-safe names now built (Define, Operations). This page sits under <i>Analyze › Dashboards</i>.</li>
+        <li><b>Chrome:</b> a 52px top bar plus breadcrumb, title, tabs and toolbar rows (222px), and a 28px status strip. Today's page uses 214px before the first widget, so the totals are about the same, just split into named rows.</li>
+        <li><b>The process board's four figure boxes became two tables</b>: stages, and promises ranked by open and overdue. No figure is above 15px (§5.5, §13.3, §20).</li>
+        <li><b>The Order detail and Flag for review widgets left the canvas.</b> Selecting a row opens the one inspector. The action is a <i>Propose</i> on the grid toolbar and in the inspector's Actions tab, following the doc's lifecycle.</li>
+        <li><b>Every widget says cached or live, with a UTC time.</b> That puts on screen something today's page hides. The process table's 25,186 is cached from 8 Nov 22:28 UTC; the list's 24,654 is read live. The delivery promise is measured "as of 14 Nov", after today.</li>
+        <li><b>Values say what they are:</b> <i>null</i> rather than "—", and timestamps written in full with their zone (§6.2, §9.1).</li>
+        <li><b>The Provenance tab shows what the API already returns:</b> SQL, count SQL, plan, timing, completeness, run-as. It says <i>not recorded</i> for the query and execution IDs the doc requires, because object reads keep none.</li>
+        <li><b>Edit mode has separate Canvas and Data views</b> (§14.1). The "In words" composer moved into the inspector's Assist tab (AI lives only there). Below 1600px, Outline and the inspector can't both be open (§4.3–4.4).</li>
+        <li><b>The inspector's Relations tab shows two links with the same rule</b> (Order placed by User, <i>order_to_user</i> and <i>placed_by</i>). The doc's honesty brings that duplicate to the surface.</li>
+      </ol>
+    </div>
+    <div>
+      <h3 style="font-size:15px;margin:0 0 8px">Decisions this puts in front of you</h3>
+      <table>
+        <tr><th>Question</th><th>The doc</th><th>Today (CLARITY / INSTRUMENT)</th></tr>
+        <tr><td>Theme</td><td>Light first; one blue-teal accent</td><td>Dark first (charcoal); each person picks the look</td></tr>
+        <tr><td>Figures</td><td>Ranked tables, 13–15px numbers</td><td>Figure boxes; one lead figure at 40px</td></tr>
+        <tr><td>Detail</td><td>One inspector per view; the detail and action widgets fold into it</td><td>The author places detail and action pieces on the canvas</td></tr>
+        <tr><td>Freshness</td><td>Cached / live + UTC on every widget</td><td>"Measured …" on some widgets, local time</td></tr>
+        <tr><td>Chrome</td><td>5 named rows + status strip</td><td>Top bar, connection row, layer tabs, dashboard strip</td></tr>
+        <tr><td>Navigation</td><td>7 destinations</td><td>22 rows in four groups</td></tr>
+        <tr><td>Status vs series colour</td><td>Separate palettes</td><td>Series colours are the state colours</td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="shots">
+    <figure><img src="today-view.jpg" alt="Today's Late dispatch page, order 1 chosen"><figcaption>Today, at 1440×900: view mode, order 1 chosen.</figcaption></figure>
+    <figure><img src="today-edit.jpg" alt="Today's Late dispatch builder"><figcaption>Today, at 1440×900: the builder (Edit).</figcaption></figure>
+  </div>
+</section>
+
+<script>
+/* ── Live data, as read 2026-11-09 23:10 UTC ───────────────────────────────────────────────── */
+const ROWS = [
+  { id: "1",  status: "Processing", created: "2025-05-24 10:21:30", items: 1 },
+  { id: "3",  status: "Processing", created: "2021-06-11 00:53:18", items: 1 },
+  { id: "5",  status: "Processing", created: "2026-07-30 03:39:42", items: 1 },
+  { id: "8",  status: "Processing", created: "2022-11-11 11:44:21", items: 1 },
+  { id: "12", status: "Processing", created: "2026-08-20 13:10:48", items: 1 },
+  { id: "15", status: "Processing", created: "2025-11-07 09:27:44", items: 1 },
+];
+const ORDER1 = { // GET /objects/order/1 — 12.0 s, complete
+  props: [
+    ["Order ID", "1", "key"], ["User ID", "1", "key"], ["Status", "Processing"], ["Gender", "F"],
+    ["Created at", "2025-05-24 10:21:30 UTC"], ["Shipped at", null], ["Delivered at", null], ["Returned at", null],
+    ["Items", "1"], ["Line count", "1", "from order_items, rolled up per order"], ["Revenue", "$25.00", "sum of sale_price over its lines"],
+    ["Is returned", "0", "computed: returned_at is not null"],
+  ],
+  metrics: [
+    ["Average order value", "$25.00"], ["Order line revenue", "$25.00"], ["Revenue", "$25.00"],
+    ["Item return rate", "0.0"], ["Repeat purchase rate", "0.0"], ["Average delivery time", null],
+  ],
+};
+const SQL_LIST = "SELECT t0.order_id AS order_id, t0.status AS status, t0.created_at AS created_at,\n       t0.num_of_item AS num_of_item, CAST(ov1.v AS BOOL) AS flagged_for_review\nFROM orders AS t0\nLEFT JOIN (SELECT '25' AS k, 'true' AS v) AS ov1 ON CAST(t0.order_id AS STRING) = ov1.k\nWHERE ((NOT t0.created_at IS NULL) AND (t0.shipped_at IS NULL)\n  AND (NOT t0.status IN ('Cancelled')) AND (t0.created_at < '2026-11-07'))\nORDER BY order_id ASC NULLS LAST\nLIMIT 6 OFFSET 0";
+const PLAN = [
+  "list(order): Order read from orders, one row per object, key order_id (unique, measured)",
+  "set overdue_dispatch (derived from the dispatch promise of process order_fulfilment, measured): Order objects not yet shipped and past the dispatch promise as of 9 Nov 2026 23:10 UTC",
+  "columns status, created_at, num_of_item",
+  "flagged_for_review on Order: 1 accepted edit merged at read time, keyed on the object; the source is never written",
+  "sorted by order_id ascending; 6 from 0",
+];
+const SQL_AOV = "SELECT CASE WHEN COUNT(DISTINCT t0.order_id) <> 0\n  THEN SUM(t0.sale_price) / NULLIF(COUNT(DISTINCT t0.order_id), 0)\n  ELSE NULL END AS value\nFROM order_items AS t0 WHERE (t0.order_id = 1)";
+
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const ico = (id, cls = "i sm") => `<svg class="${cls}"><use href="#i-${id}"/></svg>`;
+const val = v => v === null ? '<span class="null">null</span>' : v;
+const esc = s => String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+const state = { mode: "view", subject: { kind: "order", id: "1" }, tab: "overview", editView: "canvas", picked: "grid", inspectorOpen: true, outline: false };
+
+function renderRows() {
+  $("#rows").innerHTML = ROWS.map((r, i) => `
+    <tr role="row" aria-rowindex="${i + 2}" data-id="${r.id}" aria-selected="${state.subject.kind === "order" && state.subject.id === r.id}" tabindex="0">
+      <td class="mono" style="font-size:13px">${r.id}</td><td>${r.status}</td><td class="tabular">${r.created}</td>
+      <td class="r">${r.items}</td><td><span class="null">null</span></td></tr>`).join("");
+  $$("#rows tr").forEach(tr => {
+    const pick = () => { state.subject = { kind: "order", id: tr.dataset.id }; state.tab = "overview"; state.inspectorOpen = true; render(); };
+    tr.addEventListener("click", pick);
+    tr.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+  });
+}
+
+/* ── Inspector content ─────────────────────────────────────────────────────────────────────── */
+function orderTabs(id) {
+  const row = ROWS.find(r => r.id === id);
+  const full = id === "1";
+  const props = full ? ORDER1.props : [
+    ["Order ID", id, "key"], ["User ID", undefined], ["Status", row.status], ["Gender", undefined],
+    ["Created at", row.created + " UTC"], ["Shipped at", undefined], ["Delivered at", undefined], ["Returned at", undefined],
+    ["Items", String(row.items)], ["Line count", undefined], ["Revenue", undefined],
+  ];
+  const pv = v => v === undefined ? '<span class="notloaded">not loaded</span>' : val(v);
+  return {
+    overview: `
+      ${full ? "" : `<div class="empty"><b>Read on selection.</b> The grid loaded 4 of these properties; the rest arrive when the object is read (about 12 s on theLook).</div>`}
+      <div class="ins-sec"><h4>Properties <span class="r">${full ? "12 · read live 23:10 UTC" : "4 of 12 loaded"}</span></h4>
+        <div class="pg">${props.map(([k, v, n]) => `<div class="k">${k}</div><div class="v">${pv(v)}${n ? `<div class="muted" style="font-size:11.5px">${n}</div>` : ""}</div>`).join("")}</div>
+      </div>
+      ${full ? `<div class="ins-sec"><h4>Metrics on this order <span class="r"><span class="origin">Computed</span> 6 queries</span></h4>
+        <div class="pg">${ORDER1.metrics.map(([k, v]) => `<div class="k">${k}</div><div class="v">${val(v)}</div>`).join("")}</div></div>
+      <div class="ins-sec"><h4>Findings that mention it <span class="r">2</span></h4>
+        <div style="display:grid;gap:6px;font-size:12.5px;color:var(--text-secondary)">
+          <div>Order status distribution: Shipped 37,483 · Complete 31,085 · Processing 25,041 · Cancelled 18,964 · Returned 12,379. <span class="muted">Matched: status Processing</span></div>
+          <div>Monthly orders rose from 5 (Jan 2019) to 309 (Aug 2020). <span class="muted">Matched: reads orders</span></div>
+        </div></div>` : ""}`,
+    relations: `
+      <div class="ins-sec"><h4>Linked objects <span class="r">business relationships, not lineage</span></h4>
+        <table class="grid clickable"><thead><tr><th>Link</th><th>To</th><th>Card.</th><th>Rule</th></tr></thead><tbody>
+          <tr><td>placed by</td><td>${full ? "User 1" : '<span class="notloaded">not loaded</span>'}</td><td>N:1</td><td class="mono">user_id = id</td></tr>
+          <tr><td>placed by <span class="badge warning" title="order_to_user and placed_by share this rule">same rule</span></td><td>${full ? "User 1" : '<span class="notloaded">not loaded</span>'}</td><td>N:1</td><td class="mono">user_id = id</td></tr>
+          <tr><td>has lines</td><td>${full ? "Order items · 1" : '<span class="notloaded">not loaded</span>'}</td><td>1:N</td><td class="mono">order_id = order_id</td></tr>
+        </tbody></table>
+        <div class="muted" style="font-size:12px;margin-top:6px">Two declared links (<span class="mono">order_to_user</span>, <span class="mono">placed_by</span>) join Order to User on the same rule.</div>
+      </div>`,
+    provenance: `
+      <div class="ins-sec"><h4>How this object was read</h4>
+        <div class="pg">
+          <div class="k">Read</div><div class="v">${full ? "Live · 9 Nov 2026 23:10 UTC · 12.0 s" : "From the grid's page · 23:10 UTC"}</div>
+          <div class="k">Completeness</div><div class="v">Complete · nothing withheld or masked</div>
+          <div class="k">Engine</div><div class="v">BigQuery · <span class="mono">thelook</span></div>
+          <div class="k">Sources</div><div class="v"><span class="mono">orders</span>, <span class="mono">order_items</span> (rolled up per order)</div>
+          <div class="k">Ontology</div><div class="v">release 6 (dashboard pinned to 4)</div>
+          <div class="k">Run as</div><div class="v">you · person <span class="mono">default</span></div>
+          <div class="k">Query ID</div><div class="v"><span class="null">not recorded</span></div>
+          <div class="k">Execution ID</div><div class="v"><span class="null">not recorded</span><div class="muted" style="font-size:11.5px">Object reads keep no run id</div></div>
+          <div class="k">Display name</div><div class="v">Proposed: no property names an order, so its key does</div>
+        </div></div>
+      <div class="ins-sec"><h4>Executed SQL <span class="r">Average order value · 1 of 6</span></h4><pre class="sql">${esc(SQL_AOV)}</pre>
+        <div class="muted" style="font-size:12px;margin-top:6px">The property read itself returns no SQL; each related metric returns its own.</div></div>`,
+    activity: `
+      <div class="empty"><b>No activity on order ${id}.</b> No edits, proposals or comments yet. Propose an action from the Actions tab to start its history.</div>
+      <div class="ins-sec"><h4>On other orders in this set <span class="r">1</span></h4>
+        <div class="pg"><div class="k">Order 25</div><div class="v">Flagged for review by amitkamlapure · 9 Oct 2026 16:32 UTC · “Test”<div class="muted" style="font-size:11.5px">via Flag for review · merged at read time; the source is never written</div></div></div></div>`,
+    actions: `
+      ${["Flag for review|Mark an order for an operations review|order:" + id + "|Why (optional)|", "Open a case|Open a case on a late order, with who has it.|order:" + id + "|Who has it (required)|"].map(s => {
+        const [n, d, o, p] = s.split("|");
+        return `<div class="action-card">
+          <div class="top">${ico("bolt")}<b>${n}</b><span class="badge neutral" style="margin-left:auto">Annotate · low risk</span></div>
+          <div class="muted" style="font-size:12.5px">${d}</div>
+          <label class="field">Order<input readonly value="${o}"></label>
+          <label class="field">${p}<input placeholder=""></label>
+          <div style="display:flex;gap:8px;align-items:center"><button class="btn sm primary">Propose</button><span class="muted" style="font-size:12px">Needs approval before it applies</span></div>
+          <div class="life"><span class="on">Draft</span>→<span>Proposed</span>→<span>Awaiting approval</span>→<span>Approved</span>→<span>Applied</span>→<span>Audited</span></div>
+        </div>`;
+      }).join("")}
+      <div class="muted" style="font-size:12px">Only declared actions on Order appear. An applied flag is kept beside the source as an overlay; the source table is never written.</div>`,
+    assist: `
+      <div class="q"><span class="origin">Scope</span> Order ${id} · Order · theLook <button class="btn sm" style="margin-left:auto">Edit scope</button></div>
+      <div class="assist-box">Ask about this order…</div>
+      <div class="chips">
+        <button class="chip">Why is order ${id} still Processing${full ? " 534 days after it was placed" : ""}?</button>
+        <button class="chip">Other orders from this customer</button>
+        <button class="chip">How do overdue orders like this one usually end?</button>
+      </div>
+      <div class="muted" style="font-size:12px">Answers show their scope, SQL, sources and run, and label each number Computed or Narrative. Nothing runs until you send.</div>`,
+  };
+}
+
+const WIDGET = {
+  process: { name: "Order Fulfilment", type: "Process widget", icon: "flow" },
+  grid: { name: "Order · overdue dispatch", type: "Objects widget", icon: "table" },
+  note: { name: "Note", type: "Note widget", icon: "note" },
+  action: { name: "Flag for review", type: "Action widget", icon: "bolt" },
+  dash: { name: "Late dispatch", type: "Dashboard", icon: "analyze" },
+  sec: { name: "Dispatch", type: "Section", icon: "panel-l" },
+};
+
+function widgetTabs(w, editing) {
+  const prov = w === "process" ? `
+      <div class="ins-sec"><h4>How it was measured</h4><div class="pg">
+        <div class="k">Measured</div><div class="v">Cached · 8 Nov 2026 22:28 UTC</div>
+        <div class="k">Promises as of</div><div class="v">dispatch 9 Nov 23:10 UTC · delivery 14 Nov 08:32 UTC <span class="badge warning">after today</span></div>
+        <div class="k">Objects</div><div class="v">125,266 Order · 4 of 4 stages reached · 2 promises measured</div>
+        <div class="k">Origin</div><div class="v">Declared by a person · verified</div>
+        <div class="k">Release</div><div class="v">process changed in 5; read at 6</div>
+        <div class="k">Execution ID</div><div class="v"><span class="null">not recorded</span></div>
+      </div></div>
+      <div class="ins-sec"><h4>Stages anchor on</h4><div class="pg">
+        <div class="k">Placed</div><div class="v mono">created_at</div><div class="k">Shipped</div><div class="v mono">shipped_at</div>
+        <div class="k">Delivered</div><div class="v mono">delivered_at</div><div class="k">Returned</div><div class="v mono">returned_at</div></div></div>`
+    : w === "grid" ? `
+      <div class="ins-sec"><h4>Executed SQL <span class="r">BigQuery</span></h4><pre class="sql">${esc(SQL_LIST)}</pre></div>
+      <div class="ins-sec"><h4>Plan</h4><ol class="plan">${PLAN.map(p => `<li>${esc(p)}</li>`).join("")}</ol></div>
+      <div class="ins-sec"><h4>Run</h4><div class="pg">
+        <div class="k">State</div><div class="v"><span class="badge success">${ico("check")}Succeeded</span> · 11.5 s</div>
+        <div class="k">Rows</div><div class="v">6 of 24,654 · page 1</div><div class="k">Completeness</div><div class="v">Complete · nothing withheld or masked</div>
+        <div class="k">Run as</div><div class="v">you · person <span class="mono">default</span></div>
+        <div class="k">Execution ID</div><div class="v"><span class="null">not recorded</span></div></div></div>`
+    : `<div class="empty"><b>Not measured.</b> A note is a person's words; nothing was read to make it.</div>`;
+  const definition = editing ? (w === "grid" ? `
+      <div class="ins-sec"><h4>Reads</h4><div class="pg">
+        <div class="k">Object type</div><div class="v">Order</div><div class="k">Set</div><div class="v">overdue dispatch <span class="muted">(derived from the dispatch promise)</span></div>
+        <div class="k">A click</div><div class="v">Chooses the order the inspector shows</div><div class="k">Ticks</div><div class="v">A tick beside each row</div></div></div>
+      <div class="ins-sec"><h4>Columns <span class="r">4 of 8 · +21 via Customer</span></h4>
+        <table class="grid"><tbody>
+          ${["Status", "Created at", "Items (num_of_item)", "Flagged for review"].map((c, i) => `<tr><td style="width:24px" class="muted">${i + 1}</td><td>${c}</td><td class="r"><button class="iconbtn sm" aria-label="Remove ${c}">${ico("x")}</button></td></tr>`).join("")}
+          ${["User ID", "Gender", "Returned at", "Shipped at", "Delivered at", "Line count", "Revenue"].map(c => `<tr><td></td><td class="muted">${c}</td><td class="r"><button class="iconbtn sm" aria-label="Add ${c}">${ico("plus")}</button></td></tr>`).join("")}
+        </tbody></table></div>
+      <div class="ins-sec"><h4>Format</h4><div class="pg">
+        <div class="k">Sorted by</div><div class="v">The key, ascending</div><div class="k">Mark rows in</div><div class="v">Nothing</div>
+        <div class="k">Width</div><div class="v">Full · 12 of 12 columns</div><div class="k">Section</div><div class="v">Dispatch</div></div></div>
+      <div class="ins-sec"><h4>Filter applies to</h4><div class="pg"><div class="k">Range</div><div class="v">Not used: a set has no date window</div><div class="k">Ontology release</div><div class="v">Yes</div></div></div>
+      <div class="ins-sec"><h4>Accessibility</h4><label class="field">Table label<input value="Orders past the dispatch promise"></label><div class="muted" style="font-size:12px">Row header: Order. Announced: 24,654 rows.</div></div>`
+    : w === "process" ? `
+      <div class="ins-sec"><h4>Reads</h4><div class="pg"><div class="k">Process</div><div class="v">Order Fulfilment <span class="mono">order_fulfilment</span></div>
+        <div class="k">Shows</div><div class="v">Stages table · promises table, ranked by open and overdue</div><div class="k">Width</div><div class="v">Full</div></div></div>
+      <div class="ins-sec"><h4>Accessibility</h4><label class="field">Label<input value="Order fulfilment stages and promises"></label></div>`
+    : `<div class="ins-sec"><h4>Text</h4><label class="field">Words<input value="Orders waiting longer than the 2-day dispatch promise. Cancelled orders have left the process and are not listed."></label><div class="muted" style="font-size:12px">Authored by amitkamlapure · not measured</div></div>`)
+    : (w === "grid" ? `<div class="pg"><div class="k">Object type</div><div class="v">Order</div><div class="k">Set</div><div class="v">overdue dispatch: Order objects not yet shipped and already past the dispatch promise</div><div class="k">Columns</div><div class="v">Status · Created at · Items · Flagged for review</div></div>`
+      : w === "process" ? `<div class="pg"><div class="k">Process</div><div class="v">Order Fulfilment: placed → shipped → delivered → returned</div><div class="k">Promises</div><div class="v">dispatch: shipped ≤ 2 d after placed<br>delivery: delivered ≤ 4 d after shipped</div><div class="k">Leaves the process</div><div class="v">status Cancelled (18,879)</div></div>`
+      : `<div class="empty">A note has no definition.</div>`);
+  const activity = `<div class="ins-sec"><h4>Versions of this dashboard <span class="r">4</span></h4><div class="pg">
+      <div class="k">v4 · 9 Oct 15:50</div><div class="v">resized to full by hand</div>
+      <div class="k">v3 · 9 Oct 14:22</div><div class="v">an objects table placed by hand</div>
+      <div class="k">v2 · 9 Oct 14:20</div><div class="v">a process board placed by hand</div>
+      <div class="k">v1 · 9 Oct 14:19</div><div class="v">started by hand</div></div></div>`;
+  const assist = editing ? `
+      <div class="q"><span class="origin">Scope</span> Late dispatch · ${WIDGET[w].name}</div>
+      <div class="assist-box">In words: “add the finding about returns by category”, “make this table wider”…</div>
+      <div class="muted" style="font-size:12px">One model call per request. It may arrange, add a finding or share; it never writes a note or picks an image. Every change comes back as a diff to accept or reject (§12.4).</div>`
+    : `<div class="q"><span class="origin">Scope</span> ${WIDGET[w].name} · theLook</div><div class="assist-box">Ask about this widget…</div>
+       <div class="chips"><button class="chip">Why is delivery broken on 10.2%?</button><button class="chip">Which orders broke dispatch last week?</button></div>`;
+  const tabs = editing
+    ? { definition, provenance: prov, activity, assist }
+    : { overview: definition, provenance: prov, activity, assist };
+  return tabs;
+}
+
+const TAB_LABEL = { overview: "Overview", definition: "Definition", relations: "Relations", provenance: "Provenance", activity: "Activity", actions: "Actions", assist: "Assist" };
+
+function renderInspector() {
+  const ins = $("#inspector");
+  const editing = state.mode === "edit";
+  const s = editing ? { kind: "widget", id: state.picked } : state.subject;
+  let head, tabs;
+  if (s.kind === "order") {
+    tabs = orderTabs(s.id);
+    head = `<div class="row1"><span class="glyph">${ico("cube")}</span><span class="name">Order ${s.id}</span><span class="badge neutral">Order</span>
+        <button class="iconbtn sm close" aria-label="Close inspector" data-close>${ico("x")}</button></div>
+      <div class="row2"><span class="mono">order:${s.id}</span><button class="iconbtn sm" aria-label="Copy stable link">${ico("copy")}</button>
+        <span class="badge neutral">Processing</span><a href="#" style="margin-left:auto;color:var(--accent);font-size:12px;display:inline-flex;gap:4px;align-items:center">Open ${ico("ext")}</a></div>`;
+  } else {
+    const w = WIDGET[s.id] || WIDGET.grid;
+    tabs = widgetTabs(s.id in WIDGET && ["grid", "process", "note"].includes(s.id) ? s.id : "note", editing);
+    head = `<div class="row1"><span class="glyph">${ico(w.icon)}</span><span class="name">${w.name}</span><span class="badge neutral">${w.type}</span>
+        <button class="iconbtn sm close" aria-label="Close inspector" data-close>${ico("x")}</button></div>
+      <div class="row2"><span>${editing ? "Selected on the canvas" : "Opened from View query"}</span>
+        ${!editing && s.kind === "widget" ? `<button class="btn sm" style="margin-left:auto" data-back>Back to order ${state.lastOrder || "1"}</button>` : ""}</div>`;
+  }
+  if (!tabs[state.tab]) state.tab = Object.keys(tabs)[0];
+  $("#ins-h").innerHTML = head;
+  $("#ins-tabs").innerHTML = Object.keys(tabs).map(t => `<button role="tab" aria-selected="${t === state.tab}" data-tab="${t}">${TAB_LABEL[t]}</button>`).join("");
+  $("#ins-b").innerHTML = tabs[state.tab];
+  $("#ins-foot").innerHTML = `${ico("clock")} ${s.kind === "order" ? "Read live 9 Nov 23:10 UTC" : "Draft version 4"} <span style="margin-left:auto">Esc closes · keeps your place</span>`;
+  $$("#ins-tabs button").forEach(b => b.addEventListener("click", () => { state.tab = b.dataset.tab; renderInspector(); }));
+  $$("[data-close]").forEach(b => b.addEventListener("click", () => { state.inspectorOpen = false; render(); }));
+  $$("[data-back]").forEach(b => b.addEventListener("click", () => { state.subject = { kind: "order", id: state.lastOrder || "1" }; state.tab = "overview"; render(); }));
+}
+
+function render() {
+  const editing = state.mode === "edit";
+  $("#shell").dataset.mode = state.mode;
+  $("#titlebar-view").hidden = editing; $("#titlebar-edit").hidden = !editing;
+  $("#wtabs-view").hidden = editing; $("#wtabs-edit").hidden = !editing;
+  $("#toolbar-view").hidden = editing; $("#toolbar-edit").hidden = !editing;
+  $("#canvas").hidden = editing && state.editView === "data";
+  $("#dataview").hidden = !(editing && state.editView === "data");
+  $$("#wtabs-edit .wtab").forEach(t => t.setAttribute("aria-selected", t.dataset.editView === state.editView));
+  const narrow = window.innerWidth < 1600;
+  const outlineOpen = editing && state.outline;
+  $("#outline").hidden = !outlineOpen;
+  $("#outline-toggle").setAttribute("aria-pressed", outlineOpen);
+  const inspectorShown = state.inspectorOpen && !(outlineOpen && narrow);
+  $("#inspector").hidden = !inspectorShown;
+  $("#one-pane").hidden = !(outlineOpen && narrow);
+  $$(".w[data-w]").forEach(w => w.dataset.picked = editing && w.dataset.w === state.picked);
+  $$("#tree li[data-w]").forEach(li => li.setAttribute("aria-selected", li.dataset.w === state.picked));
+  if (state.subject.kind === "order") { state.lastOrder = state.subject.id; $("#tb-chosen").textContent = state.subject.id; $("#flag-id").textContent = state.subject.id; }
+  renderRows();
+  if (inspectorShown) renderInspector();
+}
+
+/* ── Wiring ────────────────────────────────────────────────────────────────────────────────── */
+$$("[data-mode-btn]").forEach(b => b.addEventListener("click", () => { state.mode = b.dataset.modeBtn; state.tab = state.mode === "edit" ? "definition" : "overview"; state.inspectorOpen = true; render(); }));
+$$("#wtabs-edit .wtab").forEach(t => t.addEventListener("click", () => { state.editView = t.dataset.editView; render(); }));
+$$(".w[data-w]").forEach(w => w.addEventListener("click", e => {
+  if (state.mode !== "edit") return;
+  if (e.target.closest("#rows")) e.stopPropagation();
+  state.picked = w.dataset.w; state.tab = "definition"; state.inspectorOpen = true; render();
+}));
+$$("#tree li[data-w]").forEach(li => li.addEventListener("click", () => { state.picked = li.dataset.w; state.tab = "definition"; render(); }));
+$$("[data-prov]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); if (state.mode === "edit") return; state.subject = { kind: "widget", id: b.dataset.prov }; state.tab = "provenance"; state.inspectorOpen = true; render(); }));
+$$("#data-table tbody tr").forEach(tr => tr.addEventListener("click", () => {
+  $$("#data-table tbody tr").forEach(x => x.setAttribute("aria-selected", x === tr));
+  if (["process", "grid", "note"].includes(tr.dataset.ds)) { state.picked = tr.dataset.ds; state.tab = "provenance"; render(); }
+}));
+$("#outline-toggle").addEventListener("click", () => { state.outline = !state.outline; render(); });
+["#ins-toggle", "#ins-toggle-edit"].forEach(sel => $(sel).addEventListener("click", () => { state.inspectorOpen = !state.inspectorOpen; render(); }));
+const DENSITIES = [["", "Default"], ["compact", "Compact"], ["comfortable", "Comfortable"]];
+let densityAt = 0;
+$("#density").addEventListener("click", () => {
+  densityAt = (densityAt + 1) % DENSITIES.length;
+  const [d, label] = DENSITIES[densityAt];
+  if (d) document.documentElement.dataset.density = d; else delete document.documentElement.dataset.density;
+  $("#density-v").textContent = label;
+});
+$$("[data-acc]").forEach(b => b.addEventListener("click", () => {
+  document.documentElement.dataset.accent = b.dataset.acc;
+  $$("[data-acc]").forEach(x => x.setAttribute("aria-pressed", x === b));
+}));
+$$("[data-theme-btn]").forEach(b => b.addEventListener("click", () => {
+  document.documentElement.dataset.theme = b.dataset.themeBtn;
+  $$("[data-theme-btn]").forEach(x => x.setAttribute("aria-pressed", x === b));
+}));
+document.addEventListener("keydown", e => { if (e.key === "Escape" && state.inspectorOpen) { state.inspectorOpen = false; render(); } });
+window.addEventListener("resize", render);
+$("#sql-list").textContent = SQL_LIST;
+$("#plan").innerHTML = PLAN.map(p => `<li>${esc(p)}</li>`).join("");
+render();
+</script>
+</body>
+</html>

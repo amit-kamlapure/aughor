@@ -1,0 +1,513 @@
+"use client";
+
+/**
+ * ResultChartCard — the answer-result chart surface for Insight (chat), Deep Analysis
+ * (report), and the briefing dashboard. Wraps the canonical <Chart> (ECharts) engine and
+ * renders CLEAN: no controls sit on the chart. A single hover pencil ("Edit
+ * visualization") opens the right-docked side panel (VizEditorPanel),
+ * where every control lives, grouped into layered sections — Visualization, X axis,
+ * Y axis, Transform, Labels. Edits apply live to the chart behind the drawer.
+ *
+ * The controls themselves are unchanged and GRAIN-AWARE:
+ *   • Display  — chart type (line/bar/pie/…), from availableChartTypes; + chart⇄table⇄pivot.
+ *   • Metric   — which numeric measure to plot.
+ *   • Dimension— which category/date column for the x-axis.
+ *   • Aggregation — SUM/AVG/COUNT/MIN/MAX, offered ONLY when the dimension repeats;
+ *                   defaults to AVG for rate/share metrics (never SUM-of-an-average).
+ *   • Transform— period-over-period / share / rolling / cumulative (appends a column).
+ *   • Table / Pivot — the raw result, or a cross-tab.
+ *
+ * Untouched defaults reproduce today's chart exactly (original rows → <Chart>'s own
+ * inference), so this is additive — no regression for existing results.
+ */
+
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Icon } from "@/components/ui/icon";
+import { Button } from "@/components/ui/button";
+import { Chart, type ChartCustom } from "@/components/Chart";
+import { SqlResultTable } from "@/components/AugTable";
+import { PivotTable } from "@/components/PivotTable";
+import { classifyColumns, availableChartTypes, inferChartType, ALL_CHART_TYPES, CHART_TYPE_LABEL, TYPE_TO_HINT, HINT_TO_TYPE, type ChartType } from "@/components/charts/chartTypeInference";
+import { isUngraphableGrid, offeredMeasures } from "@/components/charts/columnRoles";
+import type { ExhibitSpec, ExhibitRefLine, ExhibitColor } from "@/components/charts/exhibit";
+import { cleanLabel } from "@/lib/format";
+import { downloadChartPng, type ChartInstance } from "@/lib/chartExport";
+import { applyPostproc, type PostprocOp } from "@/lib/api";
+import { VizEditorPanel, type VizEditorModel } from "@/components/charts/VizEditorPanel";
+import { sameVizConfig, type VizConfig } from "@/components/charts/vizConfig";
+import { useVizEditorOpen, openVizEditor, closeVizEditor } from "@/components/charts/vizEditorStore";
+
+const TRANSFORM_OPTS: { v: PostprocOp | "none"; t: string }[] = [
+  { v: "none", t: "None" },
+  { v: "pop", t: "Period-over-period" },
+  { v: "contribution", t: "Share of total" },
+  { v: "rolling", t: "Rolling avg (3)" },
+  { v: "cumulative", t: "Cumulative" },
+];
+
+type Agg = "sum" | "avg" | "count" | "min" | "max";
+
+// TYPE_TO_HINT (ChartType → engine hint) and CHART_TYPE_LABEL (display text) are the
+// SINGLE-source maps in chartTypeInference — imported, not re-declared here (the old local
+// copies were the exact drift that module exists to prevent).
+
+// The Customize vocabularies — kept in sync with the Query Builder Customize tab so a
+// card and a query offer the same knobs. Chart.applyCustom honors each. (Colour palette "Scheme"
+// was removed from the editor — the org-default palette applies; Color-by binding drives hue now.)
+const NUMBER_FORMATS: { v: string; t: string }[] = [
+  { v: "", t: "Auto" }, { v: ",.0f", t: "1,234" }, { v: ",.2f", t: "1,234.56" }, { v: "$,.0f", t: "$1,234" },
+  { v: "$,.2f", t: "$1,234.56" }, { v: "~s", t: "1.2K (compact)" }, { v: ".0%", t: "12%" }, { v: ".1%", t: "12.3%" },
+];
+const LEGEND_POS: { v: string; t: string }[] = [
+  { v: "", t: "Default" }, { v: "right", t: "Right" }, { v: "bottom", t: "Bottom" }, { v: "top", t: "Top" }, { v: "none", t: "Hidden" },
+];
+
+const RATE_RE = /avg|average|mean|rate|ratio|share|pct|percent|proportion|margin|per_/i;
+/** Grain-aware default aggregation: rate/share metrics average, additive metrics sum. */
+function defaultAgg(metric: string): Agg {
+  return RATE_RE.test(metric) ? "avg" : "sum";
+}
+
+function aggregate(xs: number[], agg: Agg): number | null {
+  if (agg === "count") return xs.length;
+  if (!xs.length) return null;
+  switch (agg) {
+    case "sum": return xs.reduce((a, b) => a + b, 0);
+    case "avg": return xs.reduce((a, b) => a + b, 0) / xs.length;
+    case "min": return Math.min(...xs);
+    case "max": return Math.max(...xs);
+  }
+}
+
+/** Project (and optionally re-aggregate) to a [dimension, metric] table. When a `colorField`
+ *  is bound (and distinct from dim/metric), it is CARRIED THROUGH — the table becomes
+ *  [dim, colorField, metric] aggregated by (dim, colorField), so a colour binding still has
+ *  its column to split/shade by after the projection. */
+function derive(
+  columns: string[], rows: unknown[][], dim: string, metric: string, agg: Agg, colorField?: string,
+): { columns: string[]; rows: unknown[][] } {
+  const di = columns.indexOf(dim);
+  const mi = columns.indexOf(metric);
+  if (di < 0 || mi < 0) return { columns, rows };
+  const ci = colorField && colorField !== dim && colorField !== metric ? columns.indexOf(colorField) : -1;
+  const outCol = agg === "count" ? "count" : metric;
+
+  // With a colour binding: group by (dim, colorField) so the breakdown survives.
+  if (ci >= 0) {
+    const groups = new Map<string, { d: unknown; c: unknown; vals: number[] }>();
+    const order: string[] = [];
+    for (const r of rows) {
+      const dv = (r as unknown[])[di], cv = (r as unknown[])[ci];
+      const k = `${String(dv)}\u0000${String(cv)}`;
+      if (!groups.has(k)) { groups.set(k, { d: dv, c: cv, vals: [] }); order.push(k); }
+      const v = Number((r as unknown[])[mi]);
+      if (!isNaN(v)) groups.get(k)!.vals.push(v);
+    }
+    // METRIC before the carried colour column: the resolver plots the FIRST numeric
+    // column, so [dim, colorField, metric] made a colour binding silently hijack the
+    // value axis (bind Color to total_volume and the chart stopped plotting the chosen
+    // measure). The colour consumer finds its column by NAME, so order is free here.
+    return { columns: [dim, outCol, colorField!], rows: order.map((k) => { const g = groups.get(k)!; return [g.d, aggregate(g.vals, agg), g.c]; }) };
+  }
+
+  const distinct = new Set(rows.map((r) => String((r as unknown[])[di])));
+  const hasDups = distinct.size < rows.length;
+  if (!hasDups && agg !== "count") {
+    // Already one row per dimension value → just project the two chosen columns.
+    return { columns: [dim, metric], rows: rows.map((r) => [(r as unknown[])[di], (r as unknown[])[mi]]) };
+  }
+  const groups = new Map<string, number[]>();
+  const order: string[] = [];
+  for (const r of rows) {
+    const k = String((r as unknown[])[di]);
+    if (!groups.has(k)) { groups.set(k, []); order.push(k); }
+    const v = Number((r as unknown[])[mi]);
+    if (!isNaN(v)) groups.get(k)!.push(v);
+  }
+  return { columns: [dim, outCol], rows: order.map((k) => [k, aggregate(groups.get(k)!, agg)]) };
+}
+
+interface Props {
+  columns: string[];
+  rows: unknown[][];
+  title?: string;
+  /** Backend-suggested chart hint, respected until the user changes Display. */
+  chartType?: string | null;
+  chartConfig?: Record<string, unknown> | null;
+  custom?: ChartCustom | null;
+  /** Backend exhibit spec (semantic colour / ref-lines) — takes precedence over the
+   *  one riding inside chartConfig; lets the deep-report path pass it explicitly. */
+  exhibit?: ExhibitSpec | null;
+  /** Authoritative per-column display unit from the backend finding (e.g. percent). */
+  columnUnits?: Record<string, string> | null;
+  /** Initial data-label visibility (the deep report ships labels on). */
+  defaultShowLabels?: boolean;
+  heightScale?: number;
+  /** Fill an exact pixel height — for a resizeable card/canvas node (chart + table grow to fill). */
+  fillHeight?: number | null;
+  onSelect?: (datum: Record<string, unknown>) => void;
+  /** The user's saved display choices, applied as the INITIAL state of every control. Read once
+   *  per mount (the component owns the controls after that), so restoring a card and editing it
+   *  can't fight each other. */
+  config?: VizConfig | null;
+  /** Fired whenever a display control changes, with the full config. The caller decides where it
+   *  goes (a pinned card's `render`, or `viz_configs` for a card-less chart) and is expected to
+   *  debounce — this fires per interaction. Absent → the chart is ephemeral, exactly as before. */
+  onConfigChange?: (config: VizConfig) => void;
+  /** Fired with what the card is showing — on mount and on every switch — so a caller that offers its
+   *  own "Table" disclosure can withhold it while the card already IS a table (2026-11-06). */
+  onViewChange?: (view: "chart" | "table" | "pivot") => void;
+}
+
+export function ResultChartCard({
+  columns, rows, title, chartType, chartConfig, custom, exhibit: exhibitProp,
+  columnUnits, defaultShowLabels, heightScale, fillHeight, onSelect,
+  config, onConfigChange, onViewChange,
+}: Props) {
+  // Saved display choices seed the controls ONCE. A lazy useState (not a ref) because this is
+  // read during render: it captures the first value and never changes, so a parent re-render —
+  // a refetch, or a debounced save echoing back — can't yank a control out from under the user
+  // mid-edit. The component owns the controls from mount.
+  const [seed] = useState<VizConfig>(() => config ?? {});
+  const { numericIdxs, catIdxs, dateIdxs } = useMemo(() => classifyColumns(columns, rows), [columns, rows]);
+  const chartTypes = useMemo(() => availableChartTypes(columns, rows), [columns, rows]);
+  // The editor offers EVERY chart type, with the shape-compatible ones
+  // leading; an incompatible pick degrades. Only when the result is chartable at all
+  // (compatible set non-empty) — a stats/profile grid stays table-only.
+  const offeredTypes = useMemo(
+    () => (chartTypes.length ? [...chartTypes, ...ALL_CHART_TYPES.filter((t) => !chartTypes.includes(t))] : []),
+    [chartTypes],
+  );
+  // The exhibit spec (semantic colour / reference lines) rides inside chart_config on the quick
+  // path, but it is NOT field-role config: it must survive the user choosing a chart type, which
+  // nulls chartConfig below. Lift it out so a Display switch can't silently drop the grammar.
+  // An explicit `exhibit` prop (deep report) wins over the one embedded in chartConfig.
+  const exhibit = useMemo(
+    () => exhibitProp ?? (chartConfig?.exhibit as ExhibitSpec | undefined) ?? null,
+    [exhibitProp, chartConfig],
+  );
+
+  // Every measure but the period before's own value (`offeredMeasures`): a column that is the
+  // series shifted one row is not a thing to plot, and Q3's growth chart plotted it (2026-10-02).
+  const metricCols = useMemo(() => offeredMeasures(columns, numericIdxs).map((i) => columns[i]), [numericIdxs, columns]);
+  const dimCols = useMemo(
+    () => [...dateIdxs, ...catIdxs].map((i) => columns[i]),
+    [dateIdxs, catIdxs, columns],
+  );
+  // Any column can drive the Color binding (a dimension → discrete legend, a measure → gradient).
+  const colorFieldOptions = useMemo(
+    () => [{ v: "", t: "None" }, ...columns.map((c) => ({ v: c, t: cleanLabel(c) }))],
+    [columns],
+  );
+
+  // Chart-grammar gate: a stats/entity-profile grid opens on the TABLE (its honest
+  // form — the chart toggle stays available); everything else opens on the chart.
+  const [view, setView] = useState<"chart" | "table" | "pivot">(
+    seed.view ?? (chartTypes.length && !isUngraphableGrid(columns, rows) ? "chart" : "table"));
+  const viewChanged = useRef(onViewChange);
+  viewChanged.current = onViewChange;
+  useEffect(() => { viewChanged.current?.(view); }, [view]);
+  const [typeSel, setTypeSel] = useState<ChartType | "auto">(seed.type ?? "auto");
+  const [metricSel, setMetricSel] = useState<string | null>(seed.metric ?? null);
+  const [dimSel, setDimSel] = useState<string | null>(seed.dim ?? null);
+  const [aggSel, setAggSel] = useState<Agg | null>(seed.agg ?? null);
+  const [showLabels, setShowLabels] = useState<boolean>(seed.showLabels ?? defaultShowLabels ?? false);
+  // Customize overrides (Color / Format / Legend / Tooltip / Annotation) layered OVER the passed
+  // `custom`/`exhibit`, so an untouched card renders byte-identically to before.
+  // Color binding (the editor's "Color" field): colour marks by a CHOSEN column instead
+  // of the plotted measure. "" field = off (default coloring). Scale "" = auto by role
+  // (a measure → continuous gradient; a dimension → categorical legend); name = legend title.
+  const [colorField, setColorField] = useState(seed.colorField ?? "");
+  const [colorScaleSel, setColorScaleSel] = useState<"" | "continuous" | "categorical">(seed.colorScale ?? "");
+  const [colorName, setColorName] = useState(seed.colorName ?? "");
+  const [numberFormat, setNumberFormat] = useState(seed.numberFormat ?? "");
+  const [legendPos, setLegendPos] = useState(seed.legend ?? "");
+  const [xTitle, setXTitle] = useState(seed.xTitle ?? "");
+  const [yTitle, setYTitle] = useState(seed.yTitle ?? "");
+  const [tooltipOff, setTooltipOff] = useState(seed.tooltipOff ?? false);
+  const [userRefLines, setUserRefLines] = useState<ExhibitRefLine[]>(seed.refLines ?? []);
+
+  // Default metric MUST match what <Chart> resolves when untouched, or the strip
+  // label contradicts the plot. <Chart> prefers a rate/share column as its primary
+  // measure (PREFER_COL), so mirror that here.
+  const defaultMetric = useMemo(
+    () => metricCols.find((c) => /pct|percent|share|rate|ratio|proportion/i.test(c)) ?? metricCols[0] ?? "",
+    [metricCols],
+  );
+  const metric = metricSel ?? defaultMetric;
+  const dim = dimSel ?? dimCols[0] ?? "";
+  const touched = metricSel !== null || dimSel !== null || aggSel !== null;
+
+  // Aggregation is only meaningful when the chosen dimension repeats in the raw rows.
+  const dimHasDups = useMemo(() => {
+    const di = columns.indexOf(dim);
+    if (di < 0) return false;
+    return new Set(rows.map((r) => String((r as unknown[])[di]))).size < rows.length;
+  }, [columns, rows, dim]);
+
+  const agg: Agg = aggSel ?? defaultAgg(metric);
+  const rateSummed = dimHasDups && agg === "sum" && RATE_RE.test(metric);
+
+  // Pivot (cross-tab) earns its place when there's a dimension to group on and a
+  // measure to aggregate; PivotTable picks sensible Rows/Columns/Values defaults.
+  const canPivot = metricCols.length >= 1 && dimCols.length >= 1;
+
+  // Derived data: untouched → original (today's behaviour); a control change → re-pivot.
+  // A bound colour field is carried through the projection so the breakdown survives it
+  // (else "Color by <dim>" would have nothing to split after an aggregate-by-dim).
+  const data = useMemo(() => {
+    if (!touched || !metric || !dim) return { columns, rows };
+    return derive(columns, rows, dim, metric, agg, colorField || undefined);
+  }, [touched, columns, rows, dim, metric, agg, colorField]);
+
+  // On-demand post-processing transform (PoP / share / rolling / cumulative) — appends a
+  // derived column on the chosen measure via /query/postproc. Off by default (today's view).
+  const [transformOp, setTransformOp] = useState<PostprocOp | "none">(seed.transform ?? "none");
+  // "" means the chart decides: a ranking reads horizontally, a trend over time vertically.
+  const [orient, setOrient] = useState<"" | "vertical" | "horizontal">(seed.orient ?? "");
+  const [transformed, setTransformed] = useState<{ columns: string[]; rows: unknown[][] } | null>(null);
+  const [tErr, setTErr] = useState("");
+  // On the Vega path the transform is DECLARED in the spec and computed in the chart's own
+  // dataflow, so there is nothing to fetch: choosing "cumulative" on a 10k-row result used
+  // to POST all 10k rows to /query/postproc and wait for them to come back. The ECharts
+  // builders take already-transformed rows, so that path still round-trips.
+  // Always declarative now: the transform is computed in the chart's own dataflow, so
+  // there is nothing to fetch. The engine switch this used to consult is gone with the
+  // second engine.
+  const declarative = true;
+  useEffect(() => {
+    if (declarative || transformOp === "none" || !metric) { setTransformed(null); setTErr(""); return; }
+    let alive = true;
+    applyPostproc(data.columns, data.rows, transformOp, metric)
+      .then(r => { if (alive) { setTransformed(r); setTErr(""); } })
+      .catch(e => { if (alive) { setTransformed(null); setTErr(String((e as Error).message)); } });
+    return () => { alive = false; };
+  }, [declarative, transformOp, data, metric]);
+  // A transform APPENDS a derived column (*_cumulative, *_pct_change, *_pct_of_total,
+  // *_rolling_*) and keeps the original. Chart that derived column against the dimension —
+  // seeing the transform is the whole point; re-plotting the original shows no change.
+  const effData = useMemo(() => {
+    if (!transformed) return data;
+    const derivedCol = transformed.columns.find((c) => !data.columns.includes(c));
+    const di = transformed.columns.indexOf(dim);
+    if (!derivedCol || di < 0) return transformed;
+    const ci = transformed.columns.indexOf(derivedCol);
+    return {
+      columns: [dim, derivedCol],
+      rows: transformed.rows.map((r) => [(r as unknown[])[di], (r as unknown[])[ci]]),
+    };
+  }, [transformed, data, dim]);
+
+  // Respect the backend hint until the user picks a type from Display.
+  const hint = typeSel === "auto" ? (chartType ?? "auto") : (TYPE_TO_HINT[typeSel] ?? "auto");
+  // The backend chart config re-plots its OWN field + type, so it must yield the moment the
+  // user picks a chart type, applies a transform, or reshapes the data (metric/dim/agg) —
+  // otherwise those controls silently do nothing on any answer that shipped a config.
+  const userChoseChart = touched || typeSel !== "auto" || transformOp !== "none";
+
+  // Live chart instance (for the panel's Download PNG on a chromeless chart), engine-neutral.
+  const instRef = useRef<ChartInstance | null>(null);
+  const handleDownload = () => { void downloadChartPng(instRef.current, title || "chart"); };
+
+  // Customize overrides merged over the passed props (empty string = "unset" → keep the prop).
+  const effCustom: ChartCustom = useMemo(() => ({
+    ...(custom || {}),
+    ...(numberFormat ? { format: numberFormat } : {}),
+    // A bound colour owns the legend (handled in the builder); otherwise the generic legend
+    // position applies to the series legend.
+    ...(legendPos && !colorField ? { legend: legendPos as ChartCustom["legend"] } : {}),
+    ...(xTitle ? { xTitle } : {}),
+    ...(yTitle ? { yTitle } : {}),
+    ...(tooltipOff ? { tooltip: "off" as const } : {}),
+    ...(orient ? { orient } : {}),
+    ...(declarative && transformOp !== "none" && metric
+      ? { transform: { op: transformOp, valueCol: metric } as ChartCustom["transform"] } : {}),
+  }), [custom, numberFormat, legendPos, colorField, xTitle, yTitle, tooltipOff, orient,
+       declarative, transformOp, metric]);
+
+  // The color binding the user built (or null): a chosen field, its scale (explicit, else
+  // auto by role — a measure ramps continuous, a dimension is categorical), and legend title.
+  const colorBinding: ExhibitColor | null = useMemo(() => {
+    if (!colorField) return null;
+    const scale = colorScaleSel || (metricCols.includes(colorField) ? "continuous" : "categorical");
+    // The "Legend" position drives the COLOUR legend (which reflects colorField), not the
+    // plotted-measure series legend — so it rides on the binding, not effCustom (below).
+    return { mode: scale, field: colorField, name: colorName || null, legend: legendPos || null };
+  }, [colorField, colorScaleSel, colorName, legendPos, metricCols]);
+
+  // User annotation lines ride on top of any backend exhibit ref-lines; a color binding, when
+  // set, overrides the backend's own color mode (the user asked to colour by that column).
+  const effExhibit: ExhibitSpec | null = useMemo(() => {
+    if (!userRefLines.length && !colorBinding) return exhibit;
+    const spec: ExhibitSpec = { ...(exhibit || {}) };
+    if (userRefLines.length) spec.ref_lines = [...(exhibit?.ref_lines || []), ...userRefLines];
+    if (colorBinding) spec.color = colorBinding;
+    return spec;
+  }, [exhibit, userRefLines, colorBinding]);
+
+  const addRefLine = (value: number, label: string) => {
+    if (!isFinite(value)) return;
+    setUserRefLines(ls => [...ls, { value, label: label || `y = ${value}`, kind: "target" }]);
+  };
+  const removeRefLine = (idx: number) => setUserRefLines(ls => ls.filter((_, i) => i !== idx));
+  const addAverageLine = () => {
+    const mi = effData.columns.indexOf(metric);
+    const col = mi >= 0 ? mi : effData.columns.length - 1;
+    const nums = effData.rows.map(r => Number((r as unknown[])[col])).filter(v => !isNaN(v));
+    if (!nums.length) return;
+    const mean = nums.reduce((a, b) => a + b, 0) / nums.length;
+    setUserRefLines(ls => [...ls, { value: Number(mean.toFixed(4)), label: "Average", kind: "global_avg" }]);
+  };
+
+  // ── Persist the user's display choices ──
+  // Assemble the full config from the live controls and hand it up whenever it really changes.
+  // Fields are omitted at their default so an untouched chart emits {} — `isEmptyVizConfig` then
+  // treats that as "nothing to store", which is what makes it safe to wire this everywhere.
+  const liveConfig = useMemo<VizConfig>(() => {
+    const c: VizConfig = {};
+    if (view !== (chartTypes.length && !isUngraphableGrid(columns, rows) ? "chart" : "table")) c.view = view;
+    if (typeSel !== "auto") c.type = typeSel;
+    if (metricSel) c.metric = metricSel;
+    if (dimSel) c.dim = dimSel;
+    if (aggSel) c.agg = aggSel;
+    if (showLabels !== (defaultShowLabels ?? false)) c.showLabels = showLabels;
+    if (colorField) c.colorField = colorField;
+    if (colorScaleSel) c.colorScale = colorScaleSel;
+    if (colorName) c.colorName = colorName;
+    if (numberFormat) c.numberFormat = numberFormat;
+    if (legendPos) c.legend = legendPos;
+    if (xTitle) c.xTitle = xTitle;
+    if (yTitle) c.yTitle = yTitle;
+    if (tooltipOff) c.tooltipOff = true;
+    if (userRefLines.length) c.refLines = userRefLines;
+    if (transformOp !== "none") c.transform = transformOp;
+    if (orient) c.orient = orient;
+    return c;
+  }, [view, typeSel, metricSel, dimSel, aggSel, showLabels, colorField, colorScaleSel, colorName,
+      numberFormat, legendPos, xTitle, yTitle, tooltipOff, userRefLines, transformOp, orient,
+      chartTypes.length, columns, rows, defaultShowLabels]);
+
+  // Seeded with what we were GIVEN, so restoring a saved chart doesn't immediately save it back.
+  const lastEmitted = useRef<VizConfig>(config ?? {});
+  useEffect(() => {
+    if (!onConfigChange || sameVizConfig(lastEmitted.current, liveConfig)) return;
+    lastEmitted.current = liveConfig;
+    onConfigChange(liveConfig);
+  }, [liveConfig, onConfigChange]);
+
+  // Single-instance viz editor (one drawer open app-wide).
+  const cardId = useId();
+  const editorOpen = useVizEditorOpen(cardId);
+
+  // The type the chart ACTUALLY renders, so the Visualization dropdown shows "Bar"/"Scatter"
+  // (never "Auto"): the user's explicit pick, else the backend hint, else data-shape inference.
+  const resolvedType = typeSel !== "auto"
+    ? typeSel
+    : (HINT_TO_TYPE[(chartType ?? "").toLowerCase()] ?? inferChartType(columns, rows)?.type ?? "");
+  const shownType = resolvedType && offeredTypes.includes(resolvedType as ChartType) ? (resolvedType as ChartType) : (offeredTypes[0] ?? "");
+
+  // The control model handed to the side panel. Dropdowns show the RESOLVED field/type/agg the
+  // chart uses (not the "Auto" sentinel); the *Sel state stays null until the user actually picks,
+  // so an untouched chart keeps the engine's own inference.
+  const model: VizEditorModel = {
+    title,
+    view, setView,
+    chartAvailable: chartTypes.length > 0,
+    canPivot,
+    chartTypeValue: shownType,
+    chartTypeOptions: offeredTypes.map((t) => ({ v: t, t: CHART_TYPE_LABEL[t] })),
+    setChartType: (v) => setTypeSel(v as ChartType | "auto"),
+    dimValue: dimSel ?? (dimCols[0] ?? ""),
+    dimOptions: dimCols.map((c) => ({ v: c, t: cleanLabel(c) })),
+    setDim: (v) => setDimSel(v),
+    metricValue: metricSel ?? defaultMetric,
+    metricOptions: metricCols.map((c) => ({ v: c, t: cleanLabel(c) })),
+    // A number format is chosen FOR a measure's semantics — .1% on a margin is right
+    // and on a unit count prints 885900.0%. Switching the measure resets it to Auto.
+    setMetric: (v) => { setMetricSel(v); setNumberFormat(""); },
+    aggValue: dimHasDups ? agg : null,
+    aggOptions: (["sum", "avg", "count", "min", "max"] as Agg[]).map((a) => ({ v: a, t: a.toUpperCase() })),
+    setAgg: (v) => setAggSel(v as Agg),
+    rateSummed,
+    // Orientation applies to the bar forms; a line, pie or counter has no axis to swap.
+    orientValue: orient,
+    // `resolvedType` is the type the chart actually renders once "auto" has resolved, so the
+    // control appears on an auto-inferred bar too — which is most of them.
+    orientAvailable: /bar/.test(String(resolvedType)),
+    setOrient,
+    transformValue: transformOp,
+    transformOptions: metricCols.length >= 1 ? TRANSFORM_OPTS : [],
+    setTransform: (v) => setTransformOp(v as PostprocOp | "none"),
+    transformErr: tErr || undefined,
+    showLabels, setShowLabels,
+    legendValue: legendPos, legendOptions: LEGEND_POS, setLegend: setLegendPos,
+    // Color binding (the editor's "Color" field) — colour by a chosen column.
+    colorFieldValue: colorField,
+    colorFieldOptions,
+    // A scale type is chosen FOR a field — switching the colour field resets it so the
+    // type-based default re-derives (a measure ramps continuous, a dimension is
+    // categorical). A sticky explicit choice is how sales_volume ended up categorical
+    // with thirty numeric legend entries.
+    setColorField: (v: string) => { setColorField(v); setColorScaleSel(""); if (!v) setColorName(""); },
+    colorScaleValue: colorBinding ? (colorBinding.mode as "continuous" | "categorical") : "",
+    setColorScale: (v: "continuous" | "categorical") => setColorScaleSel(v),
+    colorNameValue: colorName, setColorName,
+    // Format & axis titles
+    numberFormatValue: numberFormat, numberFormatOptions: NUMBER_FORMATS, setNumberFormat,
+    xTitleValue: xTitle, setXTitle,
+    yTitleValue: yTitle, setYTitle,
+    // Tooltip
+    tooltipOn: !tooltipOff, setTooltipOn: (b: boolean) => setTooltipOff(!b),
+    // Annotation (reference lines)
+    refLines: userRefLines.map(l => ({ label: l.label, value: l.value })),
+    addRefLine, addAverageLine, removeRefLine, measureLabel: cleanLabel(metric),
+    onDownload: view === "chart" ? handleDownload : null,
+  };
+
+  return (
+    <div className="group/viz relative">
+      {/* Edit visualization — the single hover affordance; every control lives in the panel. */}
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        onClick={() => openVizEditor(cardId)}
+        title="Edit visualization"
+        className="absolute -top-1 right-0 z-10 opacity-0 group-hover/viz:opacity-100 transition-opacity"
+        style={editorOpen ? { color: "var(--accent)", opacity: 1 } : { color: "var(--t3)" }}
+      >
+        <Icon name="edit" size={13} />
+      </Button>
+
+      {/* Body — clean chart / table / pivot */}
+      {view === "pivot" ? (
+        <PivotTable columns={columns} rows={rows} />
+      ) : view === "table" ? (
+        <SqlResultTable columns={effData.columns} rows={effData.rows} maxHeight={fillHeight && fillHeight > 0 ? fillHeight : 340} />
+      ) : (
+        <Chart
+          columns={effData.columns}
+          rows={effData.rows}
+          measure={(metricSel ?? seed.metric) ?? null}
+          chartType={hint}
+          // The names (`vega/names.ts`) are not field-role config either: what a column reads as
+          // does not change with the picture, so they survive a chosen chart type as the exhibit does.
+          chartConfig={userChoseChart ? (chartConfig?.names ? { names: chartConfig.names } : null) : chartConfig}
+          exhibit={effExhibit}
+          columnUnits={columnUnits}
+          custom={effCustom}
+          title={title}
+          chrome={false}
+          showLabels={showLabels}
+          heightScale={heightScale}
+          fitHeight={fillHeight}
+          onSelect={onSelect}
+          onInstanceReady={(inst) => { instRef.current = inst; }}
+        />
+      )}
+
+      {editorOpen && typeof document !== "undefined" &&
+        createPortal(<VizEditorPanel model={model} onClose={() => closeVizEditor(cardId)} />, document.body)}
+    </div>
+  );
+}

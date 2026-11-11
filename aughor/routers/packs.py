@@ -1,0 +1,727 @@
+"""Specialist pack endpoints (P0/P1) — list, inspect, validate, propose bindings, activate.
+
+The list/detail/validate endpoints are connection-free. propose-bindings takes a `table_cols`
+map (the caller fetches it from the catalog) so the grounding proposal is usable + testable
+without coupling this router to live introspection. Gated by the `specialist_packs` flag.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, ConfigDict, Field
+
+from aughor.packs import (
+    load_pack, validate_pack, PacksError,
+    schema_facts_from_table_cols, save_binding, load_binding,
+)
+from aughor.packs import roots as _roots
+from aughor.packs import scope as _scope
+from aughor.packs.resolver import binding_report
+from aughor.security.authz import connection_owner_guard, get_principal
+
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["packs"], dependencies=[Depends(connection_owner_guard)])
+
+#: The AUTHORED root. Kept as a module constant because it is API surface for this
+#: router's own writes; every READ below goes through `roots.pack_dir`, which also finds
+#: imported packs. See aughor/packs/roots.py for why there are two.
+PACKS_DIR = _roots.authored_root()
+
+
+def _dir_for(pack_id: str) -> Path:
+    """The directory this pack id resolves to, or a 404. One place, so a route cannot
+    accidentally look in only one of the two roots."""
+    found = _roots.pack_dir(pack_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail=f"no pack {pack_id!r}")
+    return found
+
+
+def _summary(pack_dir: Path) -> dict:
+    try:
+        pack = load_pack(pack_dir)
+    except PacksError as e:
+        return {"id": pack_dir.name, "ok": False, "error": str(e)}
+    r = validate_pack(pack_dir)
+    m = pack.manifest
+    return {
+        "id": pack.id, "name": m.name, "status": m.status, "version": m.version,
+        "domains": m.domains, "metrics": len(pack.metrics), "roles": len(pack.entities),
+        # Which connections this pack is FOR. Reported because it now gates reading and
+        # steering: a roster that shows status without scope shows half the reason a pack
+        # is or is not in play.
+        "scope": _scope.entries(m.scope),
+        "evals": len(pack.evals), "ok": r.ok,
+        # HB-6 — whether this pack ships a function layer (a group to install).
+        "function": pack.function is not None,
+        # IP-1 — the knowledge this pack is a package of: its layer, the industry an
+        # industry package carries, and the sentence that says what it holds.
+        "layer": m.layer, "industry": m.industry, "description": m.description,
+        "errors": r.errors, "warnings": r.warnings,
+    }
+
+
+@router.get("/packs")
+def get_packs():
+    """All packs under packs/ with a validation summary.
+
+    `enabled` is a permanent True since flag endgame Wave 2 (2026-08-06, receipt
+    452a6fcebba4) — kept in the payload because it is API surface; steering is
+    still data-gated three gates deep (active pack · question match · pinned
+    deploy binding)."""
+    enabled = True
+    packs = []
+    for pid in _roots.all_pack_ids():
+        root = _roots.pack_dir(pid)
+        if root is not None:
+            packs.append(_summary(root))
+    return {"enabled": enabled, "packs": packs}
+
+
+# ── the pack kit (phase 7 of the 2027 study) — declared before `/packs/{pack_id}` so the static paths win ──
+
+class PackFilesIn(BaseModel):
+    files: dict[str, str] = Field(description="path inside the pack → file text; pack.yaml is required")
+    source_url: str = ""
+    overwrite: bool = False
+
+
+@router.get("/packs/kit")
+def get_pack_kit():
+    """The authoring guide: the anatomy from the models that define it, the gates, the steps."""
+    from aughor.packs.kit import guide
+    return guide()
+
+
+@router.post("/packs/check")
+def post_pack_check(body: PackFilesIn):
+    """The static gate over a set of files — nothing is written."""
+    from aughor.packs.kit import check
+    return check(body.files)
+
+
+@router.post("/packs/upload", status_code=201)
+def post_pack_upload(body: PackFilesIn, request: Request):
+    """Check, then write the pack as a draft under the imported root with its provenance. A pack with
+    errors is refused with them; a draft steers nothing until a person activates it."""
+    from aughor.packs.kit import KitRefused, upload
+    who = _who(get_principal(request))
+    try:
+        return upload(body.files, by=who or "unidentified", source_url=body.source_url, overwrite=body.overwrite)
+    except KitRefused as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.get("/packs/listing")
+def get_pack_listing():
+    """Every pack with its measured record — the listing is the record, not a star rating."""
+    from aughor.packs.record import listing
+    return {"packs": listing(), "rule": "a pack whose claims keep failing on real installs is demoted by the same record that promoted it"}
+
+
+# ── Arc FA, FA-6 — a pack's dashboard templates ───────────────────
+
+@router.get("/packs/templates")
+def get_pack_templates(connection_id: str, schema: Optional[str] = None):
+    """The dashboard templates of the active packs bound on this connection, each card saying whether this connection
+    can make it — and every bound pack whose templates wait, with why. No model call, nothing written. Declared before
+    `/packs/{pack_id}`, which would otherwise take the word for a pack id."""
+    from aughor.packs.templates import listing
+    return listing(connection_id, schema or "")
+
+
+class TemplateDraftIn(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    connection_id: str
+    schema_name: Optional[str] = Field(default=None, alias="schema")
+
+
+@router.post("/packs/{pack_id}/templates/{template_id}/draft")
+def post_template_draft(pack_id: str, template_id: str, body: TemplateDraftIn, request: Request):
+    """Turn a pack's dashboard template into ONE dashboard draft for the asker on this connection, with no model call:
+    a card whose metric the connection has not registered and approved is skipped and said, and the rest is staged
+    through the dashboards' one proposal path. Kept, the dashboard's source is `pack:<id>@<version> template`."""
+    from aughor.dashboards.home import person_of
+    from aughor.packs.bindings import packs_bound_on
+    from aughor.packs.templates import draft, find
+    try:
+        pack = load_pack(_dir_for(pack_id))
+    except PacksError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    template = find(pack, template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail=f"the pack {pack_id!r} carries no dashboard template {template_id!r}")
+    if pack_id not in packs_bound_on(body.connection_id, body.schema_name or ""):
+        raise HTTPException(status_code=409, detail=f"the pack {pack_id!r} is not bound on this connection — bind it first")
+    if pack.manifest.status != "active":
+        raise HTTPException(status_code=409, detail=(f"the pack {pack_id!r} is {pack.manifest.status or 'a draft'}: its "
+                                                     "templates are offered once a person activates it"))
+    # As the model's draft door answers: staged with the proposal, or not, with the reasons as sentences.
+    return draft(pack, template, connection_id=body.connection_id, owner=person_of(request), schema=body.schema_name)
+
+
+@router.get("/packs/{pack_id}/record")
+def get_pack_record(pack_id: str):
+    from aughor.packs.record import measured_record
+    _dir_for(pack_id)
+    return measured_record(pack_id)
+
+
+class DemoteIn(BaseModel):
+    why: str = ""
+    force: bool = False
+
+
+@router.post("/packs/{pack_id}/demote")
+def post_pack_demote(pack_id: str, body: DemoteIn, request: Request):
+    """Demote a pack on its measured record; refused when the record does not call for it unless a
+    person forces it with a reason."""
+    from aughor.packs.record import demote
+    _dir_for(pack_id)
+    who = _who(get_principal(request)) or "unidentified"
+    try:
+        return demote(pack_id, by=who, why=body.why, force=body.force)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except PacksError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/packs/{pack_id}")
+def get_pack(pack_id: str):
+    """Full pack detail + validation report."""
+    pack_dir = _dir_for(pack_id)
+    try:
+        pack = load_pack(pack_dir)
+    except PacksError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    r = validate_pack(pack_dir)
+    return {
+        "manifest": pack.manifest.model_dump(),
+        "expertise": pack.expertise,
+        "metrics": [m.model_dump() for m in pack.metrics],
+        "entities": {k: v.model_dump() for k, v in pack.entities.items()},
+        "questions": pack.questions.model_dump(),
+        "playbooks": [p.model_dump() for p in pack.playbooks],
+        "evals": [e.model_dump() for e in pack.evals],
+        "function": pack.function.model_dump() if pack.function else None,
+        "validation": {"ok": r.ok, "errors": r.errors, "warnings": r.warnings},
+    }
+
+
+class ProposeIn(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    connection_id: str = ""
+    schema_name: Optional[str] = Field(default=None, alias="schema")
+    table_cols: Optional[dict[str, list[str]]] = None    # omit to introspect the connection
+    business_model: str = ""
+
+
+def _facts_for_connection(connection_id: str, schema: Optional[str], business_model: str):
+    """Build dtype-aware SchemaFacts from a live connection's schema context (the introspection
+    glue). Best-effort: returns None on any failure so the caller can ask for a posted map.
+
+    The schema context reads a DuckDB handle; any other engine raised here and answered None, so
+    a package could be proposed only on DuckDB — LuxExperience's Postgres answered "provide
+    table_cols or a reachable connection_id" (2026-10-13). Then the engine's own schema text is
+    read instead: every connector writes it, with each column's type."""
+    try:
+        from aughor.routers.connections import open_connection_for
+        from aughor.tools.schema import build_schema_context
+        from aughor.packs.adapter import schema_facts_from_schema_context
+        conn = open_connection_for(connection_id)
+        raw = getattr(conn, "raw", None) or getattr(conn, "_conn", None) or conn
+        ctx = build_schema_context(raw, schema_name=schema, connection_id=connection_id)
+        return schema_facts_from_schema_context(ctx, business_model=business_model)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the DuckDB schema context could not be read; the engine's schema text is read instead",
+                 counter="packs.facts_context")
+    return _facts_from_schema_text(connection_id, schema, business_model)
+
+
+def _facts_from_schema_text(connection_id: str, schema: Optional[str], business_model: str):
+    """SchemaFacts from the engine-neutral schema text (`get_schema`) — tables, columns and their
+    types — kept to `schema` when one is named. None when it cannot be read."""
+    try:
+        from aughor.db.connection import open_connection_for, open_connection_for_with_schema
+        from aughor.db.schema_render import parse_schema_column_types, parse_schema_tables
+        from aughor.packs.adapter import schema_facts_from_table_cols
+        db = (open_connection_for_with_schema(connection_id, schema_name=schema) if schema
+              else open_connection_for(connection_id))
+        try:
+            text = db.get_schema()
+        finally:
+            db.close()
+        cols = parse_schema_tables(text)
+        if schema:
+            mine = {t: c for t, c in cols.items() if "." not in t or t.split(".")[-2] == schema}
+            cols = mine or cols
+        if not cols:
+            return None
+        types = parse_schema_column_types(text)
+        return schema_facts_from_table_cols(cols, business_model=business_model,
+                                            col_types={t: types.get(t, {}) for t in cols})
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the connection's schema could not be read for a package proposal",
+                 counter="packs.facts_text")
+        return None
+
+
+@router.post("/packs/{pack_id}/propose-bindings")
+def post_propose_bindings(pack_id: str, body: ProposeIn):
+    """Propose role→table/column bindings for this pack. Pass `table_cols` explicitly, or omit
+    it and we introspect `connection_id` (+ optional `schema`) live. Returns each role's
+    candidate (table/column/value, confidence, evidence) + a bound summary for deploy review."""
+    pack_dir = _dir_for(pack_id)
+    try:
+        pack = load_pack(pack_dir)
+    except PacksError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    if body.table_cols:
+        facts = schema_facts_from_table_cols(body.table_cols, business_model=body.business_model)
+    else:
+        facts = _facts_for_connection(body.connection_id, body.schema_name, body.business_model)
+        if facts is None:
+            raise HTTPException(status_code=422,
+                                detail="provide table_cols or a reachable connection_id")
+    rep = binding_report(pack.entities, facts)
+    return {
+        # "groundable" = the resolver found a candidate for every role (a PROPOSAL).
+        # Distinct from a pinned/deployed binding — see Bind + verify.
+        "fully_groundable": rep["fully_groundable"],
+        "groundable_roles": rep["groundable_roles"], "total": rep["total"],
+        "proposals": {role: vars(cand) for role, cand in rep["proposals"].items()},
+    }
+
+
+class BindIn(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    connection_id: str
+    bindings: dict
+    verified: bool = False
+    version: int = 1        # ignored: the binding records the pack's manifest version (Arc FA, FA-6)
+    schema_name: Optional[str] = Field(default=None, alias="schema")  # dataset on a multi-schema connection
+    table_cols: Optional[dict[str, list[str]]] = None   # if given, verify columns exist
+
+
+@router.post("/packs/{pack_id}/bind")
+def post_bind(pack_id: str, body: BindIn, request: Request):
+    """Pin a confirmed binding for (org, pack, connection). When `table_cols` is supplied the
+    bound columns are checked to actually exist and `verified` reflects that (column-existence
+    half of verification; recipe dry-run is the live step).
+
+    Arc FA, FA-6: the binding records the MANIFEST's version — never the `version` a caller sends — who
+    bound it, and a snapshot of what the pack offered, which an upgrade is diffed against."""
+    # G1: declared LOW — auto-allowed and AUDITED. A binding decides which columns a
+    # pack's recipes read, so who pinned it and when belongs in the governance trail.
+    from aughor import govern
+    govern.guard("pack.bind", pack_id)
+    from aughor.packs import upgrade as _upgrade
+    try:
+        pack = load_pack(_dir_for(pack_id))
+    except PacksError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    version = int(pack.manifest.version or 0)
+    installed = _upgrade.install_record(pack, by=_who(get_principal(request)),
+                                        graph=_graph_for(body.connection_id, body.schema_name))
+    from aughor.packs import verify_binding_columns
+    from aughor.packs.dryrun import dry_run_binding
+    verified = body.verified
+    missing: list[str] = []
+    if body.table_cols is not None:
+        verified, missing = verify_binding_columns(body.bindings, body.table_cols)
+    # Stronger verify: dry-run each bound column against the live connection when reachable.
+    dry_errors: list[str] = []
+    try:
+        from aughor.routers.connections import open_connection_for
+        conn = open_connection_for(body.connection_id)
+        ok_dry, dry_errors = dry_run_binding(conn, body.bindings)
+        verified = verified and ok_dry if body.table_cols is not None else ok_dry
+    except Exception as e:
+        from aughor.kernel.errors import tolerate
+        tolerate(e, "bind dry-run skipped; connection unreachable", counter="packs.bind_dryrun")
+    rec = save_binding(pack_id, body.connection_id, body.bindings,
+                       version=version, verified=verified, schema=body.schema_name or "", installed=installed)
+    rec["bound_by"] = installed["bound_by"]
+    rec["offered"] = {"version": installed["offered"]["version"], "items": len(installed["offered"]["items"])}
+    rec["missing"] = missing
+    rec["dry_run_errors"] = dry_errors
+    # C7 — the day a pack is bound, its terms are proposed for confirmation and its alerts, each with
+    # its backtest on this connection, for arming. Best-effort: the binding stands, and what could
+    # not be proposed is said.
+    try:
+        from aughor.packs.connect import on_connect
+        rec["arrival"] = on_connect(pack_id, body.connection_id, schema_name=body.schema_name or "")
+    except Exception as e:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(e, "a bound pack's terms and alerts could not be proposed; the binding stands", counter="packs.on_connect")
+        rec["arrival"] = {"note": f"terms and alerts could not be proposed: {str(e)[:160]}"}
+    return rec
+
+
+@router.get("/packs/{pack_id}/binding")
+def get_binding(pack_id: str, connection_id: str, schema: Optional[str] = None):
+    """The pinned binding for (org, pack, connection, schema), or null."""
+    return load_binding(pack_id, connection_id, schema or "")
+
+
+# ── Arc FA, FA-6 — the installed version and the upgrade ─────────────────────────────────────
+
+def _loaded(pack_id: str):
+    try:
+        return load_pack(_dir_for(pack_id))
+    except PacksError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.get("/packs/{pack_id}/installs")
+def get_pack_installs(pack_id: str):
+    """Every connection and schema this pack is bound on: the version installed there, whether what it offered then
+    was recorded, who bound it, and the version the pack is at now."""
+    from aughor.packs.bindings import installs_of
+    pack = _loaded(pack_id)
+    available = int(pack.manifest.version or 0)
+    rows = []
+    for i in installs_of(pack_id):
+        snap = i["offered"] or {}
+        recorded = "version" in snap and snap.get("items") is not None
+        installed = int(snap["version"]) if recorded else int(i["version"] or 0)
+        rows.append({"connection_id": i["connection_id"], "schema": i["schema"], "installed": installed,
+                     "recorded": recorded, "bound_by": i["bound_by"], "bound_at": i["updated_at"],
+                     "behind": available > installed or not recorded})
+    return {"pack": pack_id, "available": available, "installs": rows}
+
+
+@router.get("/packs/{pack_id}/upgrade")
+def get_pack_upgrade(pack_id: str, connection_id: str, schema: Optional[str] = None):
+    """What upgrading this connection's binding would bring: the version installed and the one available, the items
+    added, changed and removed since, each one a person declined marked with the version it was declined in, and the
+    unchanged items they declined, which stay declined. Read-only, no model call."""
+    from aughor.packs.bindings import load_install
+    from aughor.packs.upgrade import diff
+    pack = _loaded(pack_id)
+    install = load_install(pack_id, connection_id, schema or "")
+    if install is None:
+        raise HTTPException(status_code=404, detail=f"the pack {pack_id!r} is not bound on this connection")
+    return diff(pack, install, connection_id=connection_id, schema=schema or "",
+                graph=_graph_for(connection_id, schema))
+
+
+class UpgradeIn(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    connection_id: str
+    schema_name: Optional[str] = Field(default=None, alias="schema")
+
+
+@router.post("/packs/{pack_id}/upgrade")
+def post_pack_upgrade(pack_id: str, body: UpgradeIn, request: Request):
+    """Upgrade this connection's binding to the pack's version: the role map is kept, only the new and changed terms
+    and alerts are proposed — never an unchanged one a person declined — and what the pack now offers is recorded.
+    Refused (409) when there is nothing to upgrade to."""
+    from aughor import govern
+    govern.guard("pack.bind", pack_id)           # an upgrade re-binds, so it is the bind's own act on the trail
+    from aughor.packs.bindings import load_install
+    from aughor.packs.upgrade import apply, diff
+    pack = _loaded(pack_id)
+    schema = body.schema_name or ""
+    install = load_install(pack_id, body.connection_id, schema)
+    binding = load_binding(pack_id, body.connection_id, schema)
+    if install is None or binding is None:
+        raise HTTPException(status_code=404, detail=f"the pack {pack_id!r} is not bound on this connection")
+    graph = _graph_for(body.connection_id, body.schema_name)
+    if not diff(pack, install, connection_id=body.connection_id, schema=schema, graph=graph)["upgrade_available"]:
+        raise HTTPException(status_code=409, detail=(f"this connection already has v{pack.manifest.version} of "
+                                                     f"{pack_id!r}, and nothing in it has changed since"))
+    return apply(pack, install, binding, by=_who(get_principal(request)), connection_id=body.connection_id,
+                 schema=schema, graph=graph)
+
+
+# ── what a pack proposes on connect (the close-out, C7) ──────────────────────────────────────
+
+def _who(principal) -> str:
+    """Who a pack write is recorded under: the signed-in person, else the one the request acts for."""
+    from aughor.security.authz import acting_person
+    return acting_person(principal)
+
+
+def _graph_for(connection_id: str, schema_name: Optional[str]):
+    try:
+        from aughor.ontology.store import load_latest_ontology
+        return load_latest_ontology(connection_id, schema_name or None)
+    except Exception:  # noqa: BLE001 — no graph: the objects' terms are said to wait for the build
+        return None
+
+
+class ProposeOnConnectIn(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    connection_id: str
+    schema_name: Optional[str] = Field(default=None, alias="schema")
+
+
+@router.post("/packs/{pack_id}/propose")
+def post_propose_on_connect(pack_id: str, body: ProposeOnConnectIn):
+    """Propose again what the pack proposes on connect: its terms for confirmation (source `pack` in
+    the connection's vocabulary; no prompt until confirmed) and its alerts from measured priors, each
+    with a backtest on this connection, staged in the inbox and armed only by a person's accept.
+    Idempotent: nothing is proposed twice, and a declined term or a resolved proposal stays so."""
+    _dir_for(pack_id)
+    from aughor.packs.connect import on_connect
+    return on_connect(pack_id, body.connection_id, schema_name=body.schema_name or "")
+
+
+@router.get("/packs/{pack_id}/terms")
+def get_pack_terms(pack_id: str, connection_id: str, schema: Optional[str] = None):
+    """The pack's terms on this connection and what became of each — confirmed, pending, declined,
+    not yet proposed — the phase's "definitions confirmed against proposed", counted."""
+    from aughor.packs.connect import terms_status
+    try:
+        pack = load_pack(_dir_for(pack_id))
+    except PacksError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return terms_status(pack, connection_id, graph=_graph_for(connection_id, schema))
+
+
+class TermsVerdictIn(BaseModel):
+    connection_id: str
+    #: [{subject_kind, subject_id, synonym}] — the rows `GET /packs/{id}/terms` lists.
+    terms: list[dict]
+    decline: bool = False
+    note: str = ""
+
+
+@router.post("/packs/{pack_id}/terms/confirm")
+def post_confirm_terms(pack_id: str, body: TermsVerdictIn, principal=Depends(get_principal)):
+    """A person confirms proposed terms — each becomes theirs and reaches the prompt — or, with
+    `decline`, refuses them: the row goes and a tombstone keeps the next bind from bringing it back."""
+    from aughor.ontology.vocabulary import SUBJECT_KINDS
+    from aughor.packs.connect import confirm_term, decline_term, terms_status
+    try:
+        pack = load_pack(_dir_for(pack_id))
+    except PacksError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    by = _who(principal) or "unidentified"
+    done = []
+    for row in body.terms:
+        kind, subject, term = str(row.get("subject_kind") or ""), str(row.get("subject_id") or ""), str(row.get("synonym") or "")
+        if kind not in SUBJECT_KINDS or not subject or not term.strip():
+            raise HTTPException(status_code=422, detail=f"a term names its subject_kind ({', '.join(SUBJECT_KINDS)}), subject_id and synonym: {row}")
+        try:
+            done.append(decline_term(body.connection_id, kind, subject, term, by=by, note=body.note) if body.decline
+                        else confirm_term(body.connection_id, kind, subject, term, by=by))
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+    return {"by": by, "declined" if body.decline else "confirmed": done,
+            "status": terms_status(pack, body.connection_id, graph=_graph_for(body.connection_id, None))}
+
+
+class InstallIn(BaseModel):
+    actor: str = ""       # ignored: the person signed in installs (`_who`)
+    #: Where the pack's automations run. Omit it and the group, tags and subscriptions
+    #: still install; the automations are reported as waiting for a connection.
+    connection_id: str = ""
+
+
+@router.post("/packs/{pack_id}/install")
+def post_install(pack_id: str, body: InstallIn, principal=Depends(get_principal)):
+    """Install this pack's function layer (HB-6, §6 24 c): the group it ships — tagged
+    via subscribe grants on its domains, subscribed to its securables, waiting for
+    members — and its automations, which land declared, on probation and disarmed.
+
+    Idempotent; a deprecated pack, a pack with no function.yaml, or any invalid entry
+    refuses the install whole with nothing written."""
+    # G1: declared LOW like pack.bind — auto-allowed and AUDITED. Install creates only
+    # inert structure, but who granted a group its reach belongs on the trail.
+    from aughor import govern
+    govern.guard("pack.install", pack_id)
+    from aughor.packs.install import InstallRefused, install_pack
+    try:
+        return install_pack(pack_id, actor=_who(principal), connection_id=body.connection_id)
+    except InstallRefused as e:
+        # 409 for the same reason promotion uses it: the request is well-formed and the
+        # pack is real — the pack's own state or layer says no.
+        raise HTTPException(status_code=409, detail=str(e))
+    except PacksError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/packs/{pack_id}/deltas")
+def get_pack_deltas(pack_id: str, status: str = "proposed"):
+    """The flywheel's proposed learnings for this pack (the 'expert changelog')."""
+    from aughor.packs.deltastore import list_deltas
+    return list_deltas(pack_id, status=status)
+
+
+class DeltaStatusIn(BaseModel):
+    status: str   # accepted | dismissed | proposed
+
+
+@router.post("/packs/deltas/{delta_id}/status")
+def post_delta_status(delta_id: int, body: DeltaStatusIn):
+    """Accept or dismiss a proposed pack delta."""
+    from aughor.packs.deltastore import set_delta_status
+    try:
+        changed = set_delta_status(delta_id, body.status)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"changed": changed}
+
+
+class StatusIn(BaseModel):
+    status: str = Field(description="draft | active | deprecated")
+    actor: str = ""       # ignored: the person signed in moves it (`_who`)
+    connection_id: str = ""
+    schema_name: Optional[str] = Field(default=None, alias="schema")
+    model_config = ConfigDict(populate_by_name=True)
+
+
+@router.post("/packs/{pack_id}/status")
+def post_pack_status(pack_id: str, body: StatusIn, principal=Depends(get_principal)):
+    """Move a pack between draft / active / deprecated — the write `status` never had.
+
+    Four endpoints and two modules READ this field; none wrote it, so the only way to
+    activate anything was to hand-edit `pack.yaml`. Worse, `POST /packs/{id}/evaluate`
+    already computed the activation verdict and returned it to a caller with nothing to do
+    with it — a decision that is computed but never delivered is not a gate.
+
+    A grounded pack is activated by ITS EVALS: this runs the same evaluation that endpoint
+    runs (one planner pass per golden question — deliberate and on demand) and writes only
+    on `can_activate`. A `partial` pack has no evals to run and never steers a plan, so its
+    gate is the import lint, and it needs no connection at all.
+    """
+    from aughor.packs.promote import PromotionRefused, set_status
+
+    pack_dir = _dir_for(pack_id)
+
+    decision = None
+    if body.status == "active":
+        try:
+            pack = load_pack(pack_dir)
+        except PacksError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        if not pack.manifest.partial:
+            if not body.connection_id:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(f"'{pack_id}' steers plans, so activation is decided by its "
+                            f"evals on a connection — send connection_id."))
+            decision = _activation_decision(pack, pack_id, body)
+
+    try:
+        # No `packs_dir`: promote resolves through the same roots this route read from,
+        # so an imported pack is promotable and a route cannot write to a root it did not
+        # look in.
+        pack = set_status(pack_id, body.status, actor=_who(principal), gate_decision=decision)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except PromotionRefused as e:
+        # 409, not 422: the request is well-formed and the pack is real — the pack's own
+        # gate says no, and that is a state conflict a caller resolves by fixing the pack.
+        raise HTTPException(status_code=409, detail=str(e))
+    except PacksError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {"id": pack_id, "status": pack.manifest.status, "partial": pack.manifest.partial}
+
+
+def _activation_decision(pack, pack_id: str, body: "StatusIn"):
+    """Bet 2's verdict for a grounded pack, computed exactly as /evaluate computes it."""
+    from aughor.packs.engine_eval import make_ask_fn
+    from aughor.packs.evalgate import evaluate_activation, is_map_only
+    from aughor.packs.evalrunner import run_pack_evals
+
+    if is_map_only(pack):
+        return _map_decision(pack, pack_id, body.connection_id, body.schema_name)[0]
+    try:
+        ask = make_ask_fn(body.connection_id, body.schema_name, pack)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"could not open connection: {e}")
+    results = run_pack_evals(pack, ask)
+    binding = load_binding(pack_id, body.connection_id, body.schema_name or "")
+    bmap = (binding or {}).get("bindings") or {}
+    return evaluate_activation(
+        pack, results, binding_pinned=bool(binding),
+        binding_verified=bool(binding and binding.get("verified")),
+        missing_roles=[r for r in pack.entities if r not in bmap])
+
+
+def _map_decision(pack, pack_id: str, connection_id: str, schema_name: Optional[str]):
+    """A map-only package's verdict: its claims measured on this connection's built ontology — and on the data, where
+    the connection answers. Measured on a COPY of the graph: deciding whether a package may be activated writes nothing
+    to the ontology it is measured against."""
+    from aughor.packs.evalgate import evaluate_map_activation
+    from aughor.packs.ontology_map import apply_core_claims, resolve_ontology
+    graph = _graph_for(connection_id, schema_name)
+    po = resolve_ontology(pack_id)
+    report = None
+    if graph is not None and po is not None:
+        db = None
+        try:
+            from aughor.routers.connections import open_connection_for
+            db = open_connection_for(connection_id)
+        except Exception as e:  # noqa: BLE001 — unreachable: lifecycles stay unmeasured and are said so on each claim
+            from aughor.kernel.errors import tolerate
+            tolerate(e, "a map-only package was measured without the data; lifecycle claims stay expected",
+                     counter="packs.map_gate_no_data")
+        report = apply_core_claims(graph.model_copy(deep=True), po, pack_id, db)
+    decision = evaluate_map_activation(
+        pack, report, binding_pinned=bool(load_binding(pack_id, connection_id, schema_name or "")),
+        graph_built=graph is not None)
+    return decision, report
+
+
+class EvalIn(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    connection_id: str
+    schema_name: Optional[str] = Field(default=None, alias="schema")
+
+
+@router.post("/packs/{pack_id}/evaluate")
+def post_evaluate(pack_id: str, body: EvalIn):
+    """Run the pack's golden questions through the engine on this connection and return the
+    activation decision (Bet 2). Promotion to active requires every eval to pass AND the pack to
+    be fully bound. NOTE: runs one planner pass per eval — a deliberate, on-demand gate."""
+    pack_dir = _dir_for(pack_id)
+    try:
+        pack = load_pack(pack_dir)
+    except PacksError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    from aughor.packs.engine_eval import make_ask_fn
+    from aughor.packs.evalrunner import run_pack_evals
+    from aughor.packs.evalgate import evaluate_activation, is_map_only
+    if is_map_only(pack):
+        decision, report = _map_decision(pack, pack_id, body.connection_id, body.schema_name)
+        pinned = bool(load_binding(pack_id, body.connection_id, body.schema_name or ""))
+        return {
+            "can_activate": decision.can_activate, "pass_rate": decision.pass_rate, "reasons": decision.reasons,
+            # one row per claim the data MEASURED; what it could not measure is counted, never listed as a failure
+            "results": [{"question": f"{c.kind} · {c.subject}", "passed": c.tier == "measured-true", "detail": c.note}
+                        for c in (report.claims if report else []) if c.tier in ("measured-true", "measured-false")],
+            "deployed": pinned, "verified": pinned,
+            "measured": "claims", "by_tier": report.by_tier() if report else {},
+        }
+    try:
+        ask = make_ask_fn(body.connection_id, body.schema_name, pack)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"could not open connection: {e}")
+
+    results = run_pack_evals(pack, ask)
+    binding = load_binding(pack_id, body.connection_id, body.schema_name or "")
+    pinned = bool(binding)
+    bmap = (binding or {}).get("bindings") or {}
+    missing = [r for r in pack.entities if r not in bmap]
+    verified = bool(binding and binding.get("verified"))
+    decision = evaluate_activation(pack, results, binding_pinned=pinned,
+                                   binding_verified=verified, missing_roles=missing)
+    return {
+        "can_activate": decision.can_activate,
+        "pass_rate": decision.pass_rate,
+        "reasons": decision.reasons,
+        "results": [{"question": r.question, "passed": r.passed, "detail": r.detail} for r in results],
+        # deployment state, surfaced separately from the eval pass rate
+        "deployed": pinned, "verified": verified,
+    }

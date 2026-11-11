@@ -1,0 +1,1298 @@
+"""FastAPI backend — application entrypoint, middleware, startup events, router registration."""
+from __future__ import annotations
+
+import asyncio
+import hmac
+import logging
+import os
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+#: Set by the test conftest before any app import. A developer's `.env` is the one
+#: thing that makes a local suite run a DIFFERENT experiment from CI's, and the
+#: divergence is invisible: it presents as one test that fails on a laptop and passes in
+#: CI, which reads as flakiness and gets re-run rather than diagnosed. Measured
+#: 2026-08-24 — `test_route_wide::test_ask_causal_question_pins_investigate_with_flag_on`
+#: had been exactly that for weeks, and the mechanism was this line: importing the app
+#: (any test with a TestClient) loaded `.env`, whose `AUGHOR_DEFAULT_POSTGRES_DSN`
+#: changed how a connection id resolves, and the ask then failed with
+#: "Connection 'c1' not found" instead of reaching the faked deep body.
+#:
+#: ANY non-empty value skips the load — including "0". It is set by the test conftest and
+#: by nothing else, so there is no reader to surprise; six copies of a truthiness parser
+#: would cost more than the ambiguity does.
+SKIP_DOTENV_ENV = "AUGHOR_SKIP_DOTENV"
+
+# Load .env from the project root (no-op if python-dotenv not installed, or when the
+# caller has declared it wants a clean environment).
+if not os.environ.get(SKIP_DOTENV_ENV):
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(Path(__file__).parent.parent / ".env")
+    except ImportError:
+        pass
+
+# ── Serverless shape (Vercel) ─────────────────────────────────────────────────
+# On Vercel the filesystem is read-only except /tmp, and relational state lives in
+# Postgres behind AUGHOR_DB_URL — but a handful of best-effort FILE surfaces remain
+# (episode logs, dismissal logs, upload staging). Default those under /tmp HERE,
+# before any aughor import: many stores capture their directory at IMPORT time
+# (the `_DATA_DIR = state_dir()` convention), so a later default would be ignored.
+# Explicit env always wins — setdefault only. Detection via Vercel's own VERCEL=1.
+if os.environ.get("VERCEL"):
+    os.environ.setdefault("AUGHOR_STATE_DIR", "/tmp/aughor-state")
+    os.environ.setdefault("AUGHOR_UPLOAD_DIR", "/tmp/aughor-uploads")
+    Path(os.environ["AUGHOR_STATE_DIR"]).mkdir(parents=True, exist_ok=True)
+    # Four more stores still resolved to the BUNDLE's `data/`, which is read-only —
+    # so every write failed, loudly, on every boot. Measured over one 30-minute
+    # window in production: 43 boots, each logging a failed playbook seed, and 14
+    # `doctree: persist failed` plus 12 `column-config save is best-effort` on top.
+    #
+    # Redirecting loses nothing: `.vercelignore` excludes `/data/*` apart from five
+    # named files, so these paths ship EMPTY. There is no bundled content to read
+    # through to — the writes were failing against a directory that isn't there.
+    #
+    # `/tmp` is per-instance, so this makes them work WITHIN an instance and stops
+    # the noise; it is not durability. Anything that must survive a cold start needs
+    # a real store — for the LLM binding that means env (`AUGHOR_CODER_MODEL` and
+    # friends), which every instance reads identically, rather than the runtime
+    # config file whose edit reaches only the instance that served the request.
+    # setdefault, never assignment: an operator who has pointed a store at durable
+    # storage must keep their value.
+    from aughor.control_plane.writable_paths import writable_store_paths
+    for _var, _path in writable_store_paths(os.environ["AUGHOR_STATE_DIR"]).items():
+        os.environ.setdefault(_var, _path)
+    # The Vercel-Supabase integration injects POSTGRES_URL_NON_POOLING; honour it
+    # when AUGHOR_DB_URL isn't set explicitly. NON_POOLING deliberately: the stores
+    # SET search_path per connection — session state that transaction-mode pooling
+    # (the pooled POSTGRES_URL) does not preserve.
+    if not os.environ.get("AUGHOR_DB_URL"):
+        _dsn = os.environ.get("POSTGRES_URL_NON_POOLING", "")
+        if _dsn:
+            os.environ["AUGHOR_DB_URL"] = _dsn
+    if not os.environ.get("AUGHOR_DB_URL", "").startswith(("postgres://", "postgresql://")):
+        raise RuntimeError(
+            "serverless deployment requires a Postgres AUGHOR_DB_URL (or the Vercel "
+            "Supabase integration connected to this project, which injects "
+            "POSTGRES_URL_NON_POOLING) — sqlite files cannot live on a read-only "
+            "filesystem, and /tmp state would vanish with the instance")
+    # The registry's at-rest encryption key MUST come from the environment on a
+    # read-only deployment — a generated key file would land in /tmp and silently
+    # vanish with the instance, orphaning every encrypted DSN. Fail loud and early,
+    # not at the first connection registration.
+    if not os.environ.get("AUGHOR_SECRET_KEY"):
+        raise RuntimeError(
+            "serverless deployment requires AUGHOR_SECRET_KEY in the environment "
+            "(a generated key file cannot persist on a read-only filesystem)")
+
+from fastapi import Depends, FastAPI, HTTPException, Request, Security
+
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import APIKeyHeader
+
+from aughor.db.registry import list_connections, get_connection_settings
+from aughor.db.errors import ConnectionUnreachable
+from aughor.db.registry import ConnectionKeyMismatch
+from aughor.llm.provider import NoModelConfigured
+from aughor.ontology.overrides import OverrideWriteFailed
+
+# Shared mutable state — imported here so startup events can populate the dicts
+
+# Without an explicit config, app loggers fall back to logging's lastResort
+# handler which drops everything below WARNING — every INFO-level
+# instrumentation line in the codebase was invisible. Configure once at the
+# entrypoint; respect a host process that already installed handlers.
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=os.environ.get("AUGHOR_LOG_LEVEL", "INFO"),
+        format="%(asctime)s %(levelname)-7s %(name)s — %(message)s",
+    )
+
+logger = logging.getLogger(__name__)
+
+# The context-propagating default executor (installed at startup, torn down at
+# shutdown) — see _install_context_executor.
+_CTX_EXECUTOR = None
+
+
+@asynccontextmanager
+async def _lifespan(app: "FastAPI"):
+    """Application lifespan — replaces the deprecated @app.on_event('startup')
+    handlers. The startup steps run in the SAME order they were previously
+    registered (FastAPI ran on_event handlers sequentially in registration
+    order); each step is individually fault-isolated inside its own helper, so
+    one failing step never aborts boot. Forward-references the step helpers
+    defined below — they are resolved at call time (startup), not import time.
+    """
+    # ── Startup ────────────────────────────────────────────────────────────────
+    # Before anything, and before the state directory is claimed: a migrated install that still owes a tree's move
+    # into its data home (`db.migrate.top_up`) does not serve — served, that tree would go on taking people's writes
+    # outside every backup. The move happens in `aughor migrate-state`, with this process stopped.
+    from aughor.db.migrate import MoveOwed, ensure_moved
+    try:
+        ensure_moved()
+    except MoveOwed as exc:
+        logger.error("refusing to start: %s", exc)
+        raise
+    # First of all: plug the Agent into the Platform's registries (purge hooks,
+    # schema annotators, …) so the platform's seams carry the agent's intelligence
+    # on the live path. Must precede any request handling. Idempotent + fault-isolated.
+    # Before any of it: claim the state directory, so a script, a CLI command or a test
+    # run that opens these stores while we serve can say so at the moment it happens.
+    # Two processes mapped into one WAL index is the SIGBUS precondition (db/serving.py).
+    if not os.environ.get("VERCEL"):
+        from aughor.db.serving import claim
+        claim()
+    # Said at boot as well as per request: an API that is up and refuses everything looks
+    # healthy from a process list, and the first 503 should not be where an operator learns why.
+    from aughor.security.authz import identity_unverifiable
+    unverifiable = identity_unverifiable()
+    if unverifiable:
+        logger.error("refusing every request: %s", unverifiable)
+    await _register_agent_plugins()
+    # Then: make contextvars (current job id + per-run metering) cross the
+    # run_in_executor boundary, before any startup step dispatches into a thread.
+    _install_context_executor()
+    await _kernel_journal_boot()
+    await _report_demo_data()
+    # Orphaned investigations are recovered (salvaged, not blanket-failed) inside
+    # _kernel_boot_recovery — AFTER kernel boot_recovery sweeps the job table, so
+    # the salvage jobs we submit aren't themselves caught by that sweep.
+    await _purge_legacy_canvases()
+    await _ensure_default_org()
+    await _migrate_upload_storage()
+    await _ensure_default_workspace()
+    await _sync_metastore()
+    await _validate_connections()
+    await _start_explorers()
+    await _seed_playbook()
+    await _refresh_kb_index()
+    # On Vercel the clock belongs to Cron (routers/cron.py — /cron/tick runs one
+    # engine tick; monitors and briefs ride it as virtual automations). Starting
+    # APScheduler here too would DOUBLE-tick on warm instances, so the in-process
+    # schedulers are the always-on-process path only — and so is the continuous-
+    # exploration loop: a warm serverless instance is not a clock, and an
+    # exploration it spawned would die with the instance (durable slicing is the
+    # serverless path for exploration, when it lands).
+    if os.environ.get("VERCEL"):
+        logger.info("serverless: in-process schedulers OFF — Vercel Cron drives /cron/tick")
+    elif _schedulers_disabled():
+        # Announced at WARNING, not INFO. This variable turns off monitors, automations
+        # and continuous exploration in a process that otherwise looks completely
+        # healthy — every route answers, and nothing happens on a clock. If it is ever
+        # set somewhere real, the log has to be the thing that says so.
+        logger.warning("AUGHOR_DISABLE_SCHEDULERS is set — in-process clocks are OFF: "
+                       "no monitor evaluation, no automation heartbeat, no continuous "
+                       "exploration, no ontology auto-refresh. Intended for TEST processes only.")
+    else:
+        # The ontology auto-refresh is a clock too, and it now really rebuilds (profiles, extraction, a model
+        # call to enrich), so it runs only where the other clocks do.
+        await _start_ontology_refresh_loop()
+        await _start_outbox_worker()
+        await _start_continuous_exploration_loop()
+        await _start_monitor_scheduler()
+        await _start_automation_heartbeat()
+        # AO-2b — the Slack supervisor as a child of the API, behind its flag. Off, this
+        # issues nothing and spawns nothing; a failure to start is on its status route.
+        try:
+            from aughor.slackbots.managed import start_managed_supervisor
+            _port = os.environ.get("AUGHOR_PORT") or os.environ.get("PORT") or "8000"
+            start_managed_supervisor(api_url=f"http://127.0.0.1:{_port}")
+        except Exception as exc:                        # noqa: BLE001 — never aborts boot
+            logger.warning("managed Slack supervisor not started: %s", exc)
+    yield
+    try:
+        from aughor.slackbots.managed import stop_managed_supervisor
+        stop_managed_supervisor()
+    except Exception:                                   # noqa: BLE001
+        logger.debug("managed Slack supervisor stop failed", exc_info=True)
+    # ── Shutdown ───────────────────────────────────────────────────────────────
+    # Background loops (supervisor, ontology refresh) are cancelled by event-loop
+    # teardown, and the kernel's boot_recovery fails any job orphaned by the stop
+    # on the next start. The one explicit teardown is the context executor.
+    if not os.environ.get("VERCEL"):
+        from aughor.db.serving import release
+        release()
+    # The schedulers run APScheduler DAEMON THREADS, not asyncio tasks, so the
+    # event-loop teardown named above does not reach them: both modules have carried a
+    # `stop()` since they were written and nothing has ever called it. In production
+    # the process exits and the threads die with it, which is why this was invisible.
+    # In any process that outlives one app instance — a test session above all — they
+    # keep ticking, opening stores and sleeping on a background thread long after the
+    # app that started them is gone. Measured: ~5 store opens per 60-second tick,
+    # landing inside whatever a later test had patched onto a process-global seam.
+    _stop_schedulers()
+
+    global _CTX_EXECUTOR
+    if _CTX_EXECUTOR is not None:
+        try:
+            _CTX_EXECUTOR.shutdown(wait=False)
+        except Exception as exc:
+            logger.warning("context executor shutdown failed (non-fatal): %s", exc)
+        _CTX_EXECUTOR = None
+
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+# Optional shared-secret gate. OFF by default (AUGHOR_API_KEY unset) so the local
+# single-user tool needs no token. When the env var is set, every request must
+# carry it as `X-Api-Key` (the MCP client already sends it that way) — the in-app
+# authorization model is capability-gating (aughor.licensing.gate); this is the
+# coarse front-door lock for when the server is exposed beyond localhost.
+_API_KEY = os.environ.get("AUGHOR_API_KEY", "")
+_api_key_header = APIKeyHeader(name="X-Api-Key", auto_error=False)
+# Liveness + API docs stay open so health probes and the schema browser work
+# even when the key is set.
+#
+# DS-17 — `/hooks/` joins them, and it is the only entry here that is exempt while doing
+# something rather than reporting something. It carries its OWN credential: a per-chain
+# webhook token, constant-time compared, that runs exactly one automation through the same
+# lifecycle gates as Run now. That is a strictly NARROWER grant than the shared key, which
+# opens the whole API — so the alternative (make a third party hold `AUGHOR_API_KEY` in
+# order to call one chain) is the less safe one. The prefix is its own for this reason:
+# this list matches by `startswith`, and hanging the public door under `/automations/`
+# would have exempted every read, write and delete on that surface with it.
+#: VA-10: `/auth/config` is the how-to-authenticate payload — public by construction
+#: (a client with no token yet must be able to learn how to get one). Exact literal,
+#: not a bare `/auth/` prefix: this list matches by `startswith`, and a prefix would
+#: silently exempt anything that later mounts under it.
+_AUTH_EXEMPT = ("/health", "/docs", "/redoc", "/openapi.json", "/hooks/", "/auth/config",
+                # AO-2d — Slack's browser redirect after an install carries no key; the
+                # route verifies a sealed state instead. Its own prefix, deliberately.
+                "/slack-bots/oauth/",
+                # C9 — the browser's return from an MCP server's authorization server carries no
+                # key; the route verifies the unguessable state the SDK minted instead.
+                "/mcp-servers/oauth/",
+                # AO-5 — the headless doors to a custom agent carry their OWN credential
+                # (the agent's key as a bearer, or the Bot Framework's signature) and the
+                # A2A card is public by definition. Each by its own prefix.
+                "/doors/", "/.well-known/")
+
+
+def api_key_configured() -> bool:
+    """Whether this deployment gates requests on a shared key at all.
+
+    Public because callers outside this module need the answer and `_API_KEY` is not
+    theirs to read — the private-import ratchet is right about that. It is a question
+    about POSTURE, not a way to reach the secret: `/slack-bots/runtime` asks it to decide
+    whether handing out raw Slack tokens could possibly be safe here. Reading the value
+    `_require_auth` captured at import (rather than the environment now) is deliberate:
+    a gate that consults a different source than its enforcer is a second opinion.
+    """
+    return bool(_API_KEY)
+
+
+def _require_auth(request: Request, key: str | None = Security(_api_key_header)) -> None:
+    """App-wide request gate: the shared-key front door PLUS (flag-gated) identity.
+
+    Resolves the principal onto ``request.state`` (which reliably reaches handlers)
+    and 401s when identity is required but absent. The org *contextvar* binding is
+    done by ``_OrgContextMiddleware`` below — a dependency's ``set_org_id`` runs in a
+    throwaway worker context and does NOT reach the handler, so ``current_org_id()``
+    would stay DEFAULT (verified). With ``AUGHOR_REQUIRE_IDENTITY`` unset (default)
+    this is behaviourally identical to the old key-only check.
+    """
+    exempt = any(request.url.path.startswith(p) for p in _AUTH_EXEMPT)
+    # 1. Shared-secret front door (unchanged): coarse lock when exposed beyond localhost. Compared in constant
+    #    time (DE-2a): `!=` returns at the first differing byte, which is a timing oracle on a secret an outside
+    #    agent presents on every call.
+    if _API_KEY and not exempt and not hmac.compare_digest(str(key or ""), _API_KEY):
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+    # 2. Identity (SEC-01). Off by default; exempt paths (health/docs) never require it.
+    from aughor.security.authz import identity_unverifiable, require_identity_enabled, resolve_principal
+    if exempt or not require_identity_enabled():
+        return
+    # Required but unverifiable (no issuer, no declared proxy) is refused outright, with the
+    # reason: the alternative was trusting whatever organisation a client named (Track A2).
+    unverifiable = identity_unverifiable()
+    if unverifiable:
+        raise HTTPException(status_code=503, detail=unverifiable)
+    principal = resolve_principal(request)
+    if principal is None:
+        from aughor.security import oidc
+        detail = ("identity required (present a valid OIDC bearer token; the "
+                  "X-Aughor-* header seam is disabled while an issuer is configured)"
+                  if oidc.configured()
+                  else "identity required (missing X-Aughor-Org)")
+        raise HTTPException(status_code=401, detail=detail)
+    request.state.principal = principal
+
+
+class _OrgContextMiddleware:
+    """Bind ``current_org_id()`` for the whole request (SEC-01 / DATA-06).
+
+    A pure-ASGI middleware sets the contextvar in the REQUEST's context, which
+    ``run_in_threadpool`` copies into sync-handler workers — so ``current_org_id()``
+    is correct in every handler (sync or async). A generator *dependency* can't do
+    this (its context is discarded before the handler runs). No-op when identity is
+    off or no principal is presented (``_require_auth`` still 401s a missing one)."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        from starlette.requests import Request as _Req
+
+        from aughor.org.context import reset_actor, set_actor
+        from aughor.security.authz import require_identity_enabled, resolve_actor, resolve_principal
+        # Who this request acts for — bound on EVERY request, identity enforced or not, so every
+        # write records the person making it without a form asking them for their name.
+        actor_token = set_actor(resolve_actor(_Req(scope)))
+        try:
+            if not require_identity_enabled():
+                return await self.app(scope, receive, send)
+            principal = resolve_principal(_Req(scope))
+            if principal is None:
+                return await self.app(scope, receive, send)
+            from aughor.org.context import reset_org_id, reset_user_id, set_org_id, set_user_id
+            token = set_org_id(principal.org_id)
+            user_token = set_user_id(principal.user_id)   # for the RBAC row-policy injector (Rec 7)
+            try:
+                await self.app(scope, receive, send)
+            finally:
+                try:
+                    reset_user_id(user_token)
+                    reset_org_id(token)
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "org contextvar reset (best-effort)", counter="org.reset")
+        finally:
+            reset_actor(actor_token)
+
+
+class _WorkspaceContextMiddleware:
+    """Bind ``current_workspace_id()`` for the whole request — the sub-tenant gate.
+
+    Pure ASGI for the same reason the org one is: the contextvar has to be set in the
+    REQUEST's context so ``run_in_threadpool`` copies it into sync handlers. A
+    generator dependency's context is discarded before the handler runs.
+
+    Two sources, header first:
+      • ``X-Aughor-Workspace`` — the client's ACTIVE workspace, sent on every request
+        from one place, so a route is scoped without each handler remembering to ask;
+      • ``?workspace_id=`` — the legacy per-call parameter, still honoured so the
+        handlers that already take it keep agreeing with the ambient value.
+
+    Unlike the org middleware this does NOT require identity: a workspace is a
+    visibility scope within an org, and scoping a single-tenant install by workspace
+    has to work before sign-in is switched on. Absent both sources the workspace is
+    ``None`` — unscoped, exactly today's behaviour."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        ws = ""
+        for raw_k, raw_v in scope.get("headers") or []:
+            if raw_k == b"x-aughor-workspace":
+                ws = raw_v.decode("latin-1").strip()
+                break
+        if not ws:
+            # Parsed by hand rather than via starlette's Request so this stays a cheap
+            # byte scan on every request — no QueryParams object built for the majority
+            # of calls that carry no workspace at all.
+            qs = scope.get("query_string") or b""
+            if b"workspace_id=" in qs:
+                from urllib.parse import parse_qs
+                vals = parse_qs(qs.decode("latin-1")).get("workspace_id") or []
+                ws = (vals[0] if vals else "").strip()
+        if not ws:
+            return await self.app(scope, receive, send)
+        from aughor.workspace.context import reset_workspace_id, set_workspace_id
+        token = set_workspace_id(ws)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            try:
+                reset_workspace_id(token)
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "workspace contextvar reset (best-effort)",
+                         counter="workspace.reset")
+
+
+class _OntologyViewMiddleware:
+    """Arc OC-2 — which declarations a request reads (`ontology.overrides.viewing`): the DRAFT laid over the published
+    ontology when the client asks (`X-Aughor-Ontology-View: draft`, or `?ontology_view=draft` — the ontology's own
+    editing screens) and for every write to an `/ontology` door, which resolves against and reads back what it drafts;
+    the PUBLISHED ontology for everything else — the agent, the Briefing, metrics, object pages. Pure ASGI for the
+    workspace middleware's reason."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        draft = scope.get("method") != "GET" and str(scope.get("path") or "").startswith("/ontology")
+        if not draft:
+            for raw_k, raw_v in scope.get("headers") or []:
+                if raw_k == b"x-aughor-ontology-view":
+                    draft = raw_v.decode("latin-1").strip() == "draft"
+                    break
+        if not draft and b"ontology_view=draft" in (scope.get("query_string") or b""):
+            draft = True
+        if not draft:
+            return await self.app(scope, receive, send)
+        from aughor.ontology.overrides import reset_view, set_view
+        token = set_view("draft")
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            reset_view(token)
+
+
+class _TraceFlushMiddleware:
+    """Force-export buffered spans before a serverless invocation freezes (OA·LF-1).
+
+    The OTel BatchSpanProcessor exports on a timer. That is right for a long-lived
+    process and wrong for this one: Vercel freezes the invocation the moment the
+    response is sent, so the timer routinely never fires and the batch dies with the
+    process — spans produced outside an investigation (which flushes in ``end_trace``)
+    would simply never arrive.
+
+    Serverless only, and a no-op when tracing is unconfigured: on a long-lived server
+    the timer is the correct mechanism and flushing per request would put an export
+    round-trip in every response's critical path."""
+
+    def __init__(self, app):
+        self.app = app
+        self.enabled = bool(os.environ.get("VERCEL"))
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or not self.enabled:
+            return await self.app(scope, receive, send)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            from aughor import telemetry
+            telemetry.flush_traces()
+
+
+from aughor.rbac.agent_gate import enforce_agent_policy  # noqa: E402
+from aughor.rbac.deps import enforce_rbac  # noqa: E402
+
+# DE-2b: the organisation's agent policy, enforced on every request the MCP client marks as
+# its own and inert for every other caller — after identity (the principal) and RBAC.
+app = FastAPI(title="Aughor API", lifespan=_lifespan,
+              dependencies=[Depends(_require_auth), Depends(enforce_rbac), Depends(enforce_agent_policy)])
+app.add_middleware(_OrgContextMiddleware)
+app.add_middleware(_WorkspaceContextMiddleware)
+app.add_middleware(_OntologyViewMiddleware)
+app.add_middleware(_TraceFlushMiddleware)
+
+
+class _RenamedPathMiddleware:
+    """Dashboards were called cockpits until 2026-10-23 (PENDING 54): a request to ``/cockpits…`` is served as
+    ``/dashboards…`` — before routing, so the route it lands on, its RBAC policy and its guards are the new one's.
+    A bookmark, a script or a cached page keeps working; nothing new is written under the old name."""
+
+    _OLD, _NEW = "/cockpits", "/dashboards"
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        path = scope.get("path") or ""
+        if scope.get("type") == "http" and (path == self._OLD or path.startswith(self._OLD + "/")):
+            scope = dict(scope, path=self._NEW + path[len(self._OLD):],
+                         raw_path=(self._NEW + path[len(self._OLD):]).encode())
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(_RenamedPathMiddleware)
+
+# ── CORS ──────────────────────────────────────────────────────────────────────
+# Defaults cover the dev web UI (:3000/:3001) and the prod-preview server (:3210);
+# AUGHOR_CORS_ORIGINS overrides the whole list.
+_cors_raw = os.environ.get(
+    "AUGHOR_CORS_ORIGINS",
+    "http://localhost:3000,http://localhost:3001,http://localhost:3210",
+)
+
+
+def cors_policy(raw: str) -> tuple[list[str], bool]:
+    """The origins served, and whether they may send credentials (Track A9: the session cookie).
+
+    Credentials ride only when every origin is named. With ``*`` Starlette would ECHO any requesting
+    origin beside ``Access-Control-Allow-Credentials: true`` — the one combination the CORS spec
+    forbids a browser to honour, and the one that would let any site use a signed-in person's cookie.
+    So a wildcard keeps today's cookie-less behaviour, and the browser's sign-in (which needs the
+    cookie) requires the operator to name the origins they serve."""
+    origins = [o.strip() for o in raw.split(",") if o.strip()]
+    return origins, "*" not in origins
+
+
+_cors_origins, _cors_credentials = cors_policy(_cors_raw)
+if not _cors_credentials:
+    logger.warning("AUGHOR_CORS_ORIGINS is a wildcard: the browser's session cookie will not be accepted — "
+                   "name the origins you serve to sign in from a browser")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    allow_credentials=_cors_credentials,
+)
+
+
+# ── "no model configured" is the operator's error, not an internal one ─────────
+# Since 2026-08-15 nothing ships a default model, so an unconfigured deployment raises
+# NoModelConfigured at the moment a call needs one. The catch-all below deliberately
+# hides exception text, which is right for internal faults and exactly wrong here: it
+# would turn the one error the operator can actually fix into "internal_error", and an
+# app that does nothing and will not say why is the failure mode removing the defaults
+# was meant to end. 400, with the message, which names the role and where to set it.
+# It carries no secrets — a role, a backend name, and a settings path.
+@app.exception_handler(NoModelConfigured)
+async def _no_model_configured_handler(request: "Request", exc: NoModelConfigured):
+    from fastapi.responses import JSONResponse
+    logger.warning("No model configured for role %r on %r (%s %s)",
+                   exc.role, exc.backend, request.method, request.url.path)
+    return JSONResponse(status_code=400, content={
+        "error": "no_model_configured", "role": exc.role,
+        "backend": exc.backend, "detail": str(exc),
+    })
+
+
+# ── a connection that cannot be decrypted is the operator's error too ─────────────
+# Same reasoning as the handler above: the catch-all would report a key mismatch as
+# "internal_error", hiding the one cause the operator can fix. 503, not 400 — the request is
+# fine; the server cannot reach the connection's credentials. The message names the connection
+# and the fix, and carries no secret.
+@app.exception_handler(ConnectionKeyMismatch)
+async def _connection_key_mismatch_handler(request: "Request", exc: ConnectionKeyMismatch):
+    from fastapi.responses import JSONResponse
+    logger.error("Connection %s cannot be decrypted (%s %s)", exc.conn_id,
+                 request.method, request.url.path)
+    return JSONResponse(status_code=503, content={
+        "error": "connection_key_mismatch", "connection_id": exc.conn_id,
+        "detail": str(exc),
+    })
+
+
+# ── a database that is not running is the operator's error too ──────────────────
+# 503 for the same reason: the request is fine and the thing it needs is not up. The message says where it was looked
+# for and what to do, which is all a person needs and all the catch-all would have hidden.
+@app.exception_handler(ConnectionUnreachable)
+async def _connection_unreachable_handler(request: "Request", exc: ConnectionUnreachable):
+    from fastapi.responses import JSONResponse
+    logger.warning("Connection %s is not answering at %s (%s %s)", exc.conn_id, exc.where or "its address",
+                   request.method, request.url.path)
+    return JSONResponse(status_code=503, content={
+        "error": "connection_unreachable", "connection_id": exc.conn_id, "detail": str(exc),
+    })
+
+
+# ── a declaration that did not land is said, never reported as saved ──────────────
+# PENDING item 21: the override store swallowed every write failure, so each declare and confirm door answered 200
+# for a declaration that was never written. It raises now; the catch-all would call that "internal_error", hiding the
+# one fact the person needs — it was NOT saved — and the cause they can fix (a full disk, a read-only volume). The
+# message names the declaration and the operating system's reason, and no path.
+@app.exception_handler(OverrideWriteFailed)
+async def _override_write_failed_handler(request: "Request", exc: OverrideWriteFailed):
+    from fastapi.responses import JSONResponse
+    logger.error("Ontology declaration not written (%s %s): %s", request.method, request.url.path, exc)
+    return JSONResponse(status_code=500, content={"error": "declaration_not_saved", "kind": exc.kind,
+                                                  "target": exc.target_id, "detail": str(exc)})
+
+
+# ── Global exception handler (SEC-06) ───────────────────────────────────────────
+# ~50 endpoints did `raise HTTPException(500, detail=str(e))`, leaking internal
+# exception text (and there was no catch-all). This handler catches only genuinely
+# UNHANDLED exceptions — Starlette routes HTTPException/validation errors to their
+# own handlers first, so intended 4xx/5xx responses are untouched. Clients get a
+# stable `{error, request_id}`; the traceback stays server-side, correlatable by id.
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: "Request", exc: Exception):
+    import uuid as _uuid
+
+    from fastapi.responses import JSONResponse
+    request_id = str(_uuid.uuid4())
+    logger.exception("Unhandled error [%s] on %s %s", request_id, request.method, request.url.path)
+    # Starlette runs this catch-all in ServerErrorMiddleware, OUTSIDE CORSMiddleware, so its 500
+    # carried no CORS header and a browser could not read it: every unexpected error reached the
+    # page as "Failed to fetch", never as this body and its request id (2026-10-07). An origin the
+    # CORS list already allows is told the same here.
+    origin = request.headers.get("origin", "")
+    headers = {"Access-Control-Allow-Origin": origin, "Vary": "Origin"} if origin in _cors_origins else {}
+    return JSONResponse(status_code=500, content={"error": "internal_error", "request_id": request_id},
+                        headers=headers)
+
+
+
+# ── Startup steps (run by _lifespan above, in this order) ──────────────────────
+
+async def _register_agent_plugins() -> None:
+    """Register the Agent's contributions into the Platform's extension registries
+    (purge hooks, schema annotators, …). The platform never imports the agent; this
+    is the one explicit wiring call that plugs the agent in. Non-fatal: if it fails,
+    the platform degrades to its raw, agent-free behaviour rather than failing boot."""
+    try:
+        from aughor.agent.bootstrap import register_agent_plugins
+        register_agent_plugins()
+    except Exception as exc:
+        logger.warning("Agent plugin registration failed (non-fatal): %s", exc)
+
+
+def _install_context_executor() -> None:
+    """Make ``loop.run_in_executor(None, …)`` propagate contextvars into worker
+    threads, by installing a :class:`ContextThreadPoolExecutor` as the loop's
+    default executor. The stdlib default does not copy context, so the current
+    job id and the per-run metering accumulator would otherwise be invisible to
+    the LLM/SQL calls (which all run in the executor). Strict more-correct; the
+    only observable change is that executor-run work now sees the right context."""
+    global _CTX_EXECUTOR
+    try:
+        from aughor.kernel.concurrency import ContextThreadPoolExecutor
+        _CTX_EXECUTOR = ContextThreadPoolExecutor(thread_name_prefix="aughor-exec")
+        loop = asyncio.get_running_loop()
+        loop.set_default_executor(_CTX_EXECUTOR)
+        # WP-7: record the loop so scheduler threads (monitor/brief cron) can bridge a
+        # supervised kernel job onto it via run_coroutine_threadsafe.
+        from aughor.kernel.jobs import set_main_loop
+        set_main_loop(loop)
+    except Exception as exc:
+        logger.warning("context executor install failed (non-fatal): %s", exc)
+
+
+async def _kernel_journal_boot() -> None:
+    # The boot event anchors the journal's timeline: restarts become visible,
+    # and "jobs running before this seq with no later transition" is exactly
+    # the orphan set K1's supervisor will resume.
+    try:
+        from aughor.kernel.ledger import Ledger
+        Ledger.default().emit("api.started")
+    except Exception as exc:
+        logger.warning("Kernel ledger unavailable at boot: %s", exc)
+
+
+async def _report_demo_data() -> None:
+    """Log whether demo data is present. Reports; never creates.
+
+    Booting used to seed the demo scenario, which wrote 72,000 rows of synthetic
+    revenue into a fresh install nobody asked for, and did it *inside* the lifespan —
+    so `Application startup complete` waited ~98s and `aughor up`'s health probe timed
+    out on the one boot where a new user most needs its summary.
+
+    A data platform should not fabricate data on startup: the demo is now opt-in
+    (`aughor seed`), and everything that reads these files already tolerates their
+    absence — the registry only advertises the demo connection once it exists, and the
+    Workspace folds in sample tables only when they do.
+    """
+    try:
+        from aughor.demo.setup import fixture_db_path
+        path = fixture_db_path()
+        if path.exists():
+            logger.info("Demo dataset present at %s", path)
+        else:
+            logger.info("No demo dataset — connect a warehouse, or run `aughor seed`")
+    except Exception as exc:
+        logger.warning("Demo data check failed (non-fatal): %s", exc)
+
+
+async def _purge_legacy_canvases() -> None:
+    # Auto-generated per-connection Canvases are no longer created. Purge any
+    # left over from older installs so only user-created Canvases remain.
+    try:
+        from aughor.canvas.store import delete_legacy_canvases
+        removed = delete_legacy_canvases()
+        if removed:
+            logger.info("Canvas cleanup: removed %d auto-generated Canvas(es)", removed)
+    except Exception as exc:
+        logger.warning("Canvas cleanup failed (non-fatal): %s", exc)
+
+
+async def _ensure_default_org() -> None:
+    try:
+        from aughor.org import ensure_default_org
+        ensure_default_org()
+    except Exception as exc:
+        logger.warning("Org bootstrap failed (non-fatal): %s", exc)
+
+
+async def _migrate_upload_storage() -> None:
+    # Tenant-path the on-disk uploads ({conn}/ → {org}/{conn}/) before any connector
+    # is constructed. One-time, idempotent, crash-safe. Must run AFTER the default
+    # org exists and BEFORE connections are validated / explorers start.
+    try:
+        from aughor.control_plane import migrate_uploads_to_org_layout
+        migrate_uploads_to_org_layout()
+    except Exception as exc:
+        logger.warning("Upload storage migration failed (non-fatal): %s", exc)
+
+
+async def _ensure_default_workspace() -> None:
+    try:
+        from aughor.workspace.store import ensure_default_workspace, prune_dangling_members
+        ensure_default_workspace()
+        # Repair memberships that already reference deleted connections. Before the
+        # delete path cleaned up after itself, every removed connection stayed a
+        # member forever; a workspace whose members are all ghosts renders as having
+        # no connections at all. Idempotent, so it stays correct if a connection ever
+        # disappears by a path that does not call `delete_connection`.
+        pruned = prune_dangling_members()
+        if pruned:
+            logger.info("Workspace membership repair: dropped %d dangling id(s) across %d "
+                        "workspace(s)", sum(len(v) for v in pruned.values()), len(pruned))
+    except Exception as exc:
+        logger.warning("Workspace migration failed (non-fatal): %s", exc)
+
+
+async def _sync_metastore() -> None:
+    # Derive catalogs (← connections) + grants (← workspace membership). Must run
+    # AFTER the default workspace exists so memberships are present. Non-fatal; the
+    # metastore isn't on the live data path yet (the gate still uses connection_ids).
+    try:
+        from aughor.metastore import sync_metastore_from_registry
+        sync_metastore_from_registry()
+    except Exception as exc:
+        logger.warning("Metastore sync failed (non-fatal): %s", exc)
+
+
+async def _validate_connections() -> None:
+    from aughor.db.registry import _db, _decrypt
+    try:
+        with _db() as conn:
+            rows = conn.execute("SELECT id, name, dsn_enc FROM connections").fetchall()
+        bad = []
+        for row in rows:
+            try:
+                _decrypt(row["dsn_enc"])
+            except Exception:
+                bad.append(f"{row['name']} (id={row['id']})")
+        if bad:
+            logger.error(
+                "⚠️  CONNECTION KEY MISMATCH — %d connection(s) cannot be decrypted: %s",
+                len(bad), ", ".join(bad),
+            )
+        else:
+            logger.info("Connection key check passed — %d connection(s) OK", len(rows))
+    except Exception as exc:
+        logger.warning("Could not run connection key check: %s", exc)
+
+
+async def _boot_canvas_explorers() -> None:
+    """Background task: resume canvas explorers from saved state (via the ONE
+    kernel-supervised spawn path)."""
+    from aughor.canvas.store import get_canvas
+    from aughor.explorer.store import canvas_ids_with_state, canvas_needs_resume
+    from aughor.routers._shared import spawn_explorer
+
+    canvas_states = canvas_ids_with_state()
+    for canvas_id in canvas_states:
+        # Having state is not the same as having unfinished work. `spawn_explorer`'s own
+        # guard only refuses an exploration that is CURRENTLY RUNNING, so on a fresh boot
+        # it waves every saved canvas through — and a `complete` one re-explores from
+        # scratch, spending model tokens on every restart. The connection branch below
+        # has skipped terminal phases for exactly this reason since it was fixed once
+        # already; this is the same check, from the same place.
+        if not canvas_needs_resume(canvas_id):
+            logger.info("Canvas explorer not resumed for %s — its exploration already "
+                        "finished; start a new one explicitly to re-explore", canvas_id)
+            continue
+        try:
+            canvas = get_canvas(canvas_id)
+            if not canvas or not canvas.scopes:
+                continue
+            res = await spawn_explorer(
+                canvas.scopes[0].connection_id,
+                canvas_id=canvas_id,
+                tables_filter=canvas.scopes[0].tables or None,
+            )
+            if res["ok"]:
+                logger.info("Canvas explorer resumed for canvas %s (job %s)", canvas_id, res["job_id"])
+            else:
+                logger.info("Canvas explorer skipped for %s — %s", canvas_id, res["reason"])
+        except Exception as exc:
+            logger.warning("Could not resume canvas explorer for %s: %s", canvas_id, exc)
+
+
+async def _kernel_boot_recovery() -> None:
+    """K1: fail every job orphaned by the previous process, then resume the
+    explorations whose checkpoints show unfinished work — the restart-amnesia
+    fix (an exploration at phase 5 no longer dies silently with the server)."""
+    from aughor.kernel.jobs import kernel
+    from aughor.routers._shared import spawn_explorer
+
+    try:
+        resumable = kernel().boot_recovery()
+    except Exception as exc:
+        logger.warning("Kernel boot recovery failed: %s", exc)
+        return
+    for job in resumable:
+        conn_id, canvas_id = job.get("conn_id"), job.get("canvas_id")
+        if not conn_id:
+            continue
+        try:
+            if canvas_id:
+                # Canvas explorers are also resumed by _boot_canvas_explorers;
+                # the spawn guard + idempotency key make double-resume a no-op.
+                from aughor.explorer.store import canvas_needs_resume
+                if not canvas_needs_resume(canvas_id):
+                    continue
+                tables = (job.get("payload") or {}).get("tables_filter")
+                res = await spawn_explorer(conn_id, canvas_id=canvas_id, tables_filter=tables)
+            else:
+                from aughor.explorer import store as _expl_store
+                # Aggregate phase — the bare state reads 'pending' forever on a
+                # multi-schema connection, so recovery kept re-spawning explorers
+                # for explorations that had already completed per schema.
+                payload = job.get("payload") or {}
+                schema = payload.get("schema_name") or None
+                # A dataset's own run is judged by its own state; a connection-level run by the
+                # aggregate.
+                state = (_expl_store.load(f"{conn_id}__{schema}") if schema
+                         else _expl_store.load_aggregate(conn_id))
+                if not _expl_store.is_unfinished(state):
+                    continue
+                res = await spawn_explorer(
+                    conn_id,
+                    domain_intel_only=bool(payload.get("domain_intel_only")),
+                    schema_name=schema,
+                    structure_only=bool(payload.get("structure_only")),
+                    gaps_only=bool(payload.get("gaps_only")),
+                    reason=str(payload.get("reason") or ""),
+                    token_cap=payload.get("token_cap") if isinstance(payload.get("token_cap"), int) else None,
+                )
+            logger.info(
+                "Boot recovery: exploration %s for %s — %s",
+                "resumed" if res["ok"] else "NOT resumed",
+                canvas_id or conn_id,
+                res["job_id"] or res["reason"],
+            )
+        except Exception as exc:
+            logger.warning("Boot recovery: could not resume %s: %s", canvas_id or conn_id, exc)
+
+    # Investigations: recover orphaned 'running' rows AFTER the job sweep above, so
+    # the salvage jobs we submit here aren't swept as orphans themselves.
+    await _recover_orphaned_investigations()
+
+
+async def _recover_orphaned_investigations() -> None:
+    """Crash recovery for investigations. A 'running' row at boot was orphaned by
+    the previous process; instead of blanket-failing it, submit a supervised salvage
+    job that reads its LangGraph checkpoint and recovers a partial report from the
+    evidence gathered before the crash — completing it where possible, failing it
+    only when there is nothing to salvage. The 60-min supervisor sweep backstops any
+    that don't get a job."""
+    try:
+        from aughor.db.history import list_orphaned_running_investigations
+        from aughor.routers.investigations import salvage_orphaned_investigation
+        from aughor.kernel.jobs import kernel
+        orphans = list_orphaned_running_investigations()
+        for inv in orphans:
+            await kernel().submit(
+                "investigation_salvage",
+                (lambda inv=inv: salvage_orphaned_investigation(
+                    inv["id"], inv["connection_id"], inv.get("canvas_id"), inv["question"])),
+                conn_id=inv["connection_id"], canvas_id=inv.get("canvas_id"),
+            )
+        if orphans:
+            logger.info("Boot recovery: submitted salvage jobs for %d orphaned investigation(s)", len(orphans))
+    except Exception as exc:
+        logger.warning("Orphaned-investigation recovery failed (non-fatal): %s", exc)
+
+
+async def _start_explorers() -> None:
+    """Kernel-supervised background work boot:
+    1. fail jobs orphaned by the previous process + resume unfinished explorations,
+    2. resume canvas explorers from saved state,
+    3. start the supervisor (stale-job sweep, paused-explorer backstop,
+       periodic stale-investigation sweep — replaces the old boot-only sweep).
+    Fresh connection explorations still start manually (POST /exploration/{id}/start).
+    """
+    from aughor.kernel.jobs import kernel
+
+    async def _boot() -> None:
+        await _kernel_boot_recovery()
+        await _boot_canvas_explorers()
+
+    asyncio.create_task(_boot(), name="kernel-boot")
+    asyncio.create_task(kernel().supervise_forever(), name="kernel-supervisor")
+
+
+def _ontology_refreshes_due(now=None) -> list[tuple[str, str]]:
+    """Every {connection, schema} whose cached ontology is older than its connection's auto-refresh interval.
+
+    Only schemas that HAVE an ontology: the interval renews a built one; it does not start building, and paying a
+    model call for, one nobody asked for.
+    """
+    from datetime import datetime, timezone
+
+    from aughor.ontology.store import list_schemas, load_latest_ontology
+
+    now = now or datetime.now(timezone.utc)
+    due: list[tuple[str, str]] = []
+    for conn_info in list_connections():
+        conn_id = conn_info["id"]
+        refresh_hours = get_connection_settings(conn_id).get("ontology_refresh_hours")
+        if not refresh_hours:
+            continue
+        for schema in list_schemas(conn_id):
+            graph = load_latest_ontology(conn_id, schema)
+            if graph is None:
+                continue
+            try:
+                generated_at = datetime.fromisoformat(graph.generated_at)
+            except (TypeError, ValueError):
+                due.append((conn_id, schema))     # a stamp that cannot be read cannot prove the graph is fresh
+                continue
+            if generated_at.tzinfo is None:
+                generated_at = generated_at.replace(tzinfo=timezone.utc)
+            if (now - generated_at).total_seconds() / 3600 >= refresh_hours:
+                due.append((conn_id, schema))
+    return due
+
+
+async def _refresh_ontologies_once() -> None:
+    """One pass of the auto-refresh: rebuild every due ontology, each the way `POST /ontology/rebuild` does."""
+    from aughor.routers.ontology import rebuild_ontology_graph
+
+    loop = asyncio.get_running_loop()
+    due = await loop.run_in_executor(None, _ontology_refreshes_due)
+    for conn_id, schema in due:
+        try:
+            await loop.run_in_executor(None, rebuild_ontology_graph, conn_id, schema)
+            logger.info("Ontology refreshed for connection %s, schema %s", conn_id, schema)
+        except Exception as exc:
+            logger.warning("Ontology refresh failed for %s/%s; the previous ontology is kept: %s",
+                           conn_id, schema, exc)
+
+
+async def _ontology_refresh_loop() -> None:
+    """Hourly: renew each ontology whose auto-refresh interval has elapsed.
+
+    🔴 This used to invalidate EVERY cached ontology on the connection and then call `db.get_schema()`, which has
+    built nothing since the heavy build moved off the read path. So an interval set in Ontology settings deleted
+    that connection's ontologies each time it elapsed. Each due schema is now rebuilt by `rebuild_ontology_graph`:
+    nothing is deleted first, and a failed rebuild keeps the ontology it meant to replace.
+    """
+    while True:
+        await asyncio.sleep(3600)
+        try:
+            await _refresh_ontologies_once()
+        except Exception as exc:
+            logger.warning("Ontology refresh loop error: %s", exc)
+        try:
+            # Arc OC-0: one census reading a day into the journal.
+            from aughor.ontology.census import record_if_due
+            await asyncio.get_running_loop().run_in_executor(None, record_if_due)
+        except Exception as exc:
+            logger.warning("Ontology census not recorded: %s", exc)
+
+
+async def _start_ontology_refresh_loop() -> None:
+    asyncio.create_task(_ontology_refresh_loop(), name="ontology-refresh")
+
+
+#: Arc OC-6 — how often the outbox's worker looks for a call that is due.
+_OUTBOX_EVERY_S = 15
+
+
+async def _outbox_worker_loop() -> None:
+    """Arc OC-6 — the outbox's worker: each pass claims the calls that are due under a lease and delivers them (a call
+    whose fate is unknown is checked first)."""
+    import uuid as _uuid
+    worker = f"api:{os.getpid()}:{_uuid.uuid4().hex[:6]}"
+    while True:
+        await asyncio.sleep(_OUTBOX_EVERY_S)
+        try:
+            from aughor.actions import outbox
+            await asyncio.get_running_loop().run_in_executor(None, lambda: outbox.work_once(worker))
+        except Exception as exc:
+            logger.warning("Outbox pass failed: %s", exc)
+
+
+async def _start_outbox_worker() -> None:
+    asyncio.create_task(_outbox_worker_loop(), name="outbox-worker")
+
+
+async def _continuous_exploration_loop() -> None:
+    """WP-6 — periodically re-arm the Scout so exploration doesn't die after the first
+    pass. Always on for an always-on process (flag endgame Wave 4, 2026-08-06 — the
+    `explorer.continuous` flag turned ON and was deleted): spend is governed where it
+    can be reasoned about, by the per-connection decision + governance/licensing gates
+    + staleness window in `explorer.continuous.run_continuous_tick`; this is just the
+    heartbeat. Not started under VERCEL (see the lifespan).
+    """
+    from aughor.explorer.continuous import _TICK_SECONDS, run_continuous_tick
+
+    while True:
+        await asyncio.sleep(_TICK_SECONDS)
+        try:
+            # run_continuous_tick does its blocking decision off the loop internally, then
+            # schedules spawns on it — so it's awaited here, not executor-wrapped.
+            n = await run_continuous_tick()
+            if n:
+                logger.info("Continuous exploration re-armed %d connection(s)", n)
+        except Exception as exc:
+            logger.warning("Continuous exploration tick error: %s", exc)
+
+
+def _schedulers_disabled() -> bool:
+    """Whether in-process clocks are switched off for this process.
+
+    Read PER CALL rather than captured at import, so a test process that sets it in
+    `conftest` before the app is constructed is honoured.
+    """
+    return (os.environ.get("AUGHOR_DISABLE_SCHEDULERS") or "").strip().lower() not in (
+        "", "0", "false", "no")
+
+
+def _stop_schedulers() -> None:
+    """Stop both APScheduler clocks. Idempotent, and safe when neither was started.
+
+    Best-effort by construction: each module's `stop()` already tolerates its own
+    failure, and a scheduler that will not stop must not keep an app from shutting
+    down.
+    """
+    for module in ("aughor.monitors.scheduler", "aughor.automations.scheduler"):
+        try:
+            __import__(module, fromlist=["stop"]).stop()
+        except Exception as exc:                      # noqa: BLE001
+            logger.warning("%s.stop() failed (non-fatal): %s", module, exc)
+
+
+async def _start_continuous_exploration_loop() -> None:
+    asyncio.create_task(_continuous_exploration_loop(), name="continuous-exploration")
+
+
+async def _seed_playbook() -> None:
+    try:
+        from aughor.playbook.builder import (activate_seeded, refresh_from_kb, seed_from_kb,
+                                              seed_from_packs, top_up_data_quality)
+        n = seed_from_kb()
+        if n:
+            logger.info("Playbook seeded with %d entries from KB.", n)
+        # IP-1 — an existing playbook receives the data-quality checks it was seeded without, once;
+        # a play a person deleted stays deleted (see top_up_data_quality).
+        topped = top_up_data_quality()
+        if topped["added"] or topped["filled"]:
+            logger.info("Playbook topped up: %d data-quality plays added, %d given their cause and fix "
+                        "(%d deleted by a person, kept deleted).",
+                        topped["added"], topped["filled"], topped["kept_deleted"])
+        # IP — the plays an active industry package DECLARES reach the store here. Before this
+        # they reached nothing: `playbooks/*.yaml` had only gates and surfaces for readers, and the
+        # steering pool excludes a knowledge package by construction (`PackManifest.steers`).
+        # Same manners as the top-up: additive, and a play a person deleted stays deleted.
+        # A corrected KB entry reaches the plays built from it — unless a person made a play theirs.
+        refreshed = refresh_from_kb()
+        if refreshed["updated"] or refreshed["kept_changed"]:
+            logger.info("Playbook refreshed from the KB: %d plays given their entry's corrected words "
+                        "(%d changed by a person, kept as they are).",
+                        refreshed["updated"], refreshed["kept_changed"])
+        seeded_packs = seed_from_packs()
+        if seeded_packs["added"]:
+            logger.info("Playbook seeded with %d plays from active industry packages "
+                        "(%d deleted by a person, kept deleted; %d incomplete, skipped).",
+                        seeded_packs["added"], seeded_packs["kept_deleted"], seeded_packs["skipped"])
+        # Activate the seed by default — promote KB-seeded drafts to 'active' so
+        # they're live playbook items the user can keep / modify / remove, not
+        # dormant drafts. Idempotent; never touches user-deprecated entries.
+        promoted = activate_seeded()
+        if promoted:
+            logger.info("Activated %d seeded playbook entries.", promoted)
+    except Exception as exc:
+        # Non-fatal: a missing/empty KB just means no seeded playbook. Surface it
+        # at warning level like every other startup step rather than swallowing.
+        logger.warning("Playbook seeding failed (non-fatal): %s", exc)
+
+
+async def _refresh_kb_index() -> None:
+    """Re-embed the KB entries corrected since the index was built — in the background, off the
+    event loop, since embedding is a network call; never failing startup and never waited on.
+    See `kb_retriever.refresh_changed`."""
+    def run() -> None:
+        try:
+            from aughor.semantic.kb_retriever import refresh_changed
+            got = refresh_changed()
+            if got["refreshed"] or got["why"]:
+                logger.info("KB index: %d of %d entries re-embedded%s", got["refreshed"], got["checked"],
+                            f" — {got['why']}" if got["why"] else "")
+        except Exception as exc:
+            logger.warning("KB index refresh failed (non-fatal): %s", exc)
+    asyncio.create_task(asyncio.to_thread(run), name="kb-index-refresh")
+
+
+async def _start_monitor_scheduler() -> None:
+    """Start the housekeeping scheduler (matcache eviction; monitors run through the
+    automation heartbeat since flag endgame Wave 4)."""
+    try:
+        from aughor.monitors.scheduler import start as _start_monitors
+        _start_monitors()
+    except Exception as exc:
+        logger.warning("Housekeeping scheduler startup failed (non-fatal): %s", exc)
+
+
+async def _start_automation_heartbeat() -> None:
+    """Start the Wave-A condition→effect heartbeat — the ONE loop; monitors and brief
+    subscriptions ride each tick as virtual automations."""
+    try:
+        from aughor.automations.scheduler import start as _start_automations
+        _start_automations()
+    except Exception as exc:
+        logger.warning("Automation heartbeat startup failed (non-fatal): %s", exc)
+
+
+# ── Router registration ───────────────────────────────────────────────────────
+
+from aughor.routers import (
+    admin,
+    authcfg,
+    components,
+    cron,
+    settling,
+    alerts,
+    factcheck,
+    preferences,
+    spotlight,
+    system,
+    agents,
+    lifecycle,
+    investigations,
+    canvas,
+    workspace,
+    connections,
+    exploration,
+    catalog,
+    ontology,
+    objects,
+    knowledge,
+    metrics,
+    actions,
+    security,
+    query,
+    monitors,
+    semantic,
+    briefs,
+    events,
+    jobs,
+    llm,
+    profile,
+    orgsettings,
+    metastore,
+    volumes,
+    verify,
+    approvals,
+    learning,
+    intake as intake_router,
+    roles as roles_router,
+    groups as groups_router,
+    owners as owners_router,
+    visibility as visibility_router,
+    datasets as datasets_router,
+    departures as departures_router,
+    links as links_router,
+    arrivals as arrivals_router,
+    hub as hub_router,
+    brain as brain_router,
+    packs as packs_router,
+    receipt as receipt_router,
+    agui,
+    dashboards as dashboards_router,
+    cards,
+    evals,
+    consistency,
+    kinetic,
+    automations,
+    governance,
+    obs as obs_router,
+    control_room,
+    charts,
+    integrations,
+    slackbots,
+    mcpservers as mcpservers_router,
+    hooks,
+)
+
+app.include_router(consistency.router)
+app.include_router(cron.router)
+app.include_router(settling.router)
+app.include_router(alerts.router)
+app.include_router(factcheck.router)
+app.include_router(system.router)
+app.include_router(components.router)
+app.include_router(investigations.router)
+app.include_router(canvas.router)
+app.include_router(workspace.router)
+app.include_router(connections.router)
+app.include_router(slackbots.router)
+app.include_router(integrations.router)
+app.include_router(exploration.router)
+app.include_router(catalog.router)
+app.include_router(ontology.router)
+app.include_router(objects.router)
+app.include_router(kinetic.router)
+app.include_router(knowledge.router)
+app.include_router(metrics.router)
+app.include_router(actions.router)
+app.include_router(security.router)
+app.include_router(governance.router)
+app.include_router(admin.router)  # VA-10 — the cross-user view (metadata only, §6.4)
+app.include_router(authcfg.router)  # VA-10 — how to authenticate (public; see _AUTH_EXEMPT)
+app.include_router(query.router)
+app.include_router(monitors.router)
+app.include_router(semantic.router)
+app.include_router(briefs.router)
+app.include_router(events.router)
+app.include_router(jobs.router)
+app.include_router(agents.router)
+app.include_router(lifecycle.router)
+app.include_router(llm.router)
+app.include_router(metastore.router)
+app.include_router(approvals.router)
+app.include_router(metastore.grants_router)
+app.include_router(volumes.router)
+app.include_router(profile.router)
+app.include_router(orgsettings.router)
+app.include_router(verify.router)
+app.include_router(learning.router)
+app.include_router(intake_router.router)
+app.include_router(packs_router.router)
+app.include_router(roles_router.router)
+app.include_router(groups_router.router)  # HB-1 — groups, level grants, explain + route (the routing half)
+app.include_router(owners_router.router)  # CB-3 — owners the platform can reach: inventory + links
+app.include_router(visibility_router.router)  # CB-5 — how much the platform can see + the definition holding sends
+app.include_router(datasets_router.router)  # exploration principles — each dataset's layer, off switch, maturity, budget
+app.include_router(departures_router.router)  # HB-2 — the departures ledger, verdicts, graduation
+app.include_router(links_router.router)  # HB-3 — the manifest: tickets/threads filed on objects, outcomes
+app.include_router(arrivals_router.router)  # HB-5 — arrivals: a Slack sentence becomes a staged note with provenance
+app.include_router(hub_router.router)  # HB-6 — the hub-wide map: every automation on one screen
+app.include_router(brain_router.router)  # PENDING item 9 — the company-brain map
+app.include_router(receipt_router.router)
+from aughor.routers import record as record_router  # noqa: E402 — phase 1 of the 2027 study, beside the receipt
+app.include_router(record_router.router)  # the Record: claims as recorded, decisions declared and listed, outcomes booked
+from aughor.routers import attention as attention_router  # noqa: E402 — phase 2 of the 2027 study
+app.include_router(attention_router.router)  # the attention budget: terms published, slots, the held list
+from aughor.routers import authority as authority_router  # noqa: E402 — phase 4 of the 2027 study
+from aughor.routers import onboarding as onboarding_router  # noqa: E402 — phase 6 of the 2027 study
+app.include_router(onboarding_router.router)  # the day-one screen: onboarding hours, the shopping list, coverage
+from aughor.routers import ledger as ledger_router  # noqa: E402 — phase 7 of the 2027 study
+app.include_router(ledger_router.router)  # the published ledger API: contract, claims, restatements, subscriptions, export
+app.include_router(authority_router.router)  # earned authority: the L0–L5 table, graduation and demotion receipts
+from aughor.routers import builder_v1 as builder_v1_router  # noqa: E402 — Arc OC-8, doors for builders
+app.include_router(builder_v1_router.router)  # /ontology/v1 + /objects/v1: the contract, listing, proposing
+app.include_router(agui.router)  # AG-UI protocol seam (CK-1); endpoint self-gates on flag `agui.endpoint`
+app.include_router(cards.router)  # briefing-cockpit — user-authored dashboard cards (Slice 0)
+app.include_router(dashboards_router.router)  # Arc CT-4 — dashboards; /cockpits answers too
+from aughor.routers import sheets as sheets_router  # noqa: E402 — Arc SH, the sheets people make
+app.include_router(sheets_router.router)  # Arc SH — Spreadsheets
+app.include_router(evals.router)  # Wave E3 — eval suites/runs (gated on eval.suite)
+app.include_router(charts.router)  # RC-2 — the chart door for surfaces that cannot draw (Slack)
+app.include_router(automations.router)  # Wave A — condition→effect (self-gates on automations.engine)
+app.include_router(mcpservers_router.router)  # VA-9d — the MCP allowlist (an empty one reaches nothing)
+app.include_router(hooks.router)        # DS-17 — the inbound webhook door (own token; see _AUTH_EXEMPT)
+from aughor.routers import email_door as email_door_router  # noqa: E402 — under /doors/, its own secret
+app.include_router(email_door_router.router)  # decisions by email, inbound only (the user's call, 2026-10-27)
+from aughor.routers import doors as doors_router  # noqa: E402 — AO-5, beside the other door
+app.include_router(doors_router.router)  # AO-5 — HTTP, webhook, A2A and Teams doors to a custom agent (own keys; see _AUTH_EXEMPT)
+app.include_router(obs_router.router)  # Wave CR1/CR2 — traces + activity over the session log
+app.include_router(control_room.router)  # Wave CR3/CR4 — fleet overview + needs-a-human (views only)
+app.include_router(preferences.router)  # SP-3 — per-user cosmetic preferences (theme/density; the arc's one new store)
+app.include_router(spotlight.router)    # SP-5 — the declared Spotlight roster for out-of-process transports (MCP)

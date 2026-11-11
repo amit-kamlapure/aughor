@@ -1,0 +1,49 @@
+"use client";
+
+import { useSchema } from "@/lib/schema-context";
+import { ERDiagram } from "./ERDiagram";
+import { Loading } from "@/components/ui/states";
+
+interface Props {
+  connId: string | null;
+  connName?: string;
+}
+
+export function SchemaPanel({ connId, connName }: Props) {
+  const { schema: richSchema, loading, error } = useSchema();
+
+  if (!connId) {
+    return (
+      <div className="flex-1 flex items-center justify-center border-l border-zinc-600">
+        <p className="text-xs text-zinc-500">Select a connection to view its schema</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 flex flex-col min-w-0 min-h-0 border-l border-zinc-600">
+      {/* Header */}
+      <div className="px-4 h-10 flex items-center border-b border-zinc-600 shrink-0">
+        <span className="text-xs font-medium text-zinc-400">Schema</span>
+        {loading && <Loading what="the schema" inline className="ml-auto" />}
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 min-h-0 overflow-hidden">
+        {error ? (
+          <div className="p-4">
+            <p className="text-xs text-red-400">{error}</p>
+          </div>
+        ) : loading ? (
+          <div className="p-4 space-y-3" aria-hidden>
+            {[70, 50, 85, 60, 75].map((w, i) => (
+              <div key={i} className="h-3 aug-skeleton" style={{ width: `${w}%`, borderRadius: "var(--r1)" }} />
+            ))}
+          </div>
+        ) : richSchema ? (
+          <ERDiagram schema={richSchema} />
+        ) : null}
+      </div>
+    </div>
+  );
+}

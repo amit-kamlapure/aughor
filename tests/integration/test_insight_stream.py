@@ -1,0 +1,170 @@
+"""CK-0.2 quick-answer token-streaming on the REAL /chat runtime (flag ask.stream_text).
+
+Hermetic: coder AND narrator providers are stubbed (no LLM). Drives the actual
+`_stream_chat` SSE endpoint via the TestClient and asserts the dual-emit contract:
+  flag ON  → `headline_delta` frames (the coder's raw headline typing in during SQL
+             generation) AND `insight_delta` frames (growing partial narrative, replace
+             semantics), each strictly BEFORE its authoritative terminal event; `followups`
+             after — the pre-existing order untouched.
+  flag OFF → zero delta frames; the core event-type sequence is otherwise identical
+             (byte-identical blocking path).
+"""
+from __future__ import annotations
+
+import json
+import time
+
+import pytest
+from fastapi.testclient import TestClient
+
+# Three growing partials, each ≥12 chars longer than the last so the call-site
+# throttle (grew ≥12 chars OR >150ms) deterministically emits every one.
+_PARTIALS = [
+    "Category **A** leads overall",
+    "Category **A** leads overall with **57%** of the total",
+    "Category **A** leads overall with **57%** of the total; **B** trails far behind.",
+]
+_FINAL = _PARTIALS[-1]
+_QUESTIONS = ["How does B compare monthly?", "Which SKU drives A?", "What changed last week?"]
+
+# CK-0.2 also token-streams the coder's `headline` under the same flag. These grow ≥6
+# chars each (the headline call-site throttle threshold) so every partial deterministically
+# emits as its own `headline_delta` frame regardless of timing.
+_HL_PARTIALS = [
+    "Group **A** leads",
+    "Group **A** leads with **57%**",
+    "Group **A** leads with **57%** of the total value",
+]
+_HL_FINAL = _HL_PARTIALS[-1]
+# PENDING item 22 (ROADMAP §3.41): the coder's headline is written BEFORE its query runs, so the stream carries its
+# words only up to the word holding its first number — the number arrives with the measured headline, never before.
+_HL_SHOWN = ["Group **A** leads", "Group **A** leads with"]
+
+
+def _stream_events(client, conn_id, question, *, timeout=60):
+    """POST /chat and collect every parsed SSE event (in order) until done/error."""
+    events = []
+    with client.stream("POST", "/chat", json={
+        "connection_id": conn_id, "question": question, "mode": "ask",
+    }) as r:
+        assert r.status_code == 200, r.text
+        t0 = time.monotonic()
+        for line in r.iter_lines():
+            if line and line.startswith("data:"):
+                try:
+                    events.append(json.loads(line[5:].strip()))
+                except Exception:
+                    continue
+            if time.monotonic() - t0 > timeout:
+                pytest.fail("/chat did not finish in time")
+    return events
+
+
+def _stub_providers(monkeypatch):
+    """Stub get_provider for every role. The coder returns 2 rows (so the insight is
+    worth narrating); the narrator streams _PARTIALS then returns the final object."""
+    import aughor.llm.provider as prov
+    from aughor.routers.investigations import _ChatAnswer, _PostAnswer
+
+    class FakeCoder:
+        def complete(self, system=None, user=None, response_model=None, temperature=0.1, **kw):
+            if response_model is _ChatAnswer:
+                return _ChatAnswer(sql="SELECT * FROM (VALUES (1, 2), (3, 4)) AS t(x, y)",
+                                   headline=_HL_FINAL)
+            return response_model()   # any auxiliary call: benign defaults
+
+        def complete_streaming(self, *, system, user, response_model, temperature=0.0,
+                               text_field, on_text):
+            # CK-0.2: the coder's `headline` streams under ask.stream_text too. Emit the
+            # growing (raw, pre-grounding) partials through on_text, then return exactly
+            # what complete() would — SQL/rows/insight downstream stay byte-identical to
+            # the blocking path. Mirrors the real provider's contract (see provider.py).
+            assert text_field == "headline"
+            for p in _HL_PARTIALS:
+                on_text(p)
+            return self.complete(system=system, user=user, response_model=response_model)
+
+    class FakeNarrator:
+        def complete(self, system=None, user=None, response_model=None, temperature=0.1, **kw):
+            if response_model is _PostAnswer:
+                return _PostAnswer(narrative=_FINAL, anomalies=[], trend="stable",
+                                   confidence="high", questions=list(_QUESTIONS))
+            return response_model()
+
+        def complete_streaming(self, *, system, user, response_model, temperature=0.0,
+                               text_field, on_text):
+            assert text_field == "narrative"
+            for p in _PARTIALS:
+                on_text(p)
+            return _PostAnswer(narrative=_FINAL, anomalies=[], trend="stable",
+                               confidence="high", questions=list(_QUESTIONS))
+
+    fakes = {"coder": FakeCoder()}
+    monkeypatch.setattr(prov, "get_provider",
+                        lambda role="coder", **kw: fakes.get(role, FakeNarrator()))
+
+
+# The deterministic pipeline events this feature touches — receipts (learning /
+# activations) can legitimately differ between runs as resolutions crystallize,
+# so the cross-run sequence comparison filters to this core set.
+_CORE = ("sql", "columns", "rows", "headline", "done",
+         "narrative_delta", "narrative", "insight_delta", "insight", "followups", "error")
+
+
+def _core_types(events):
+    return [e["type"] for e in events if e.get("type") in _CORE]
+
+
+def test_flag_on_dual_emits_deltas_before_terminal_insight(client: TestClient, builtin_conn_id: str, monkeypatch):
+    _stub_providers(monkeypatch)
+
+    events = _stream_events(client, builtin_conn_id, "total value split by group")
+    types = [e["type"] for e in events]
+    assert "error" not in types, events
+
+    # The coder's headline typed in as growing `headline_delta` frames, in order, and
+    # all BEFORE the answer is done (they fill the otherwise-dead SQL-generation wait) —
+    # up to its first number, which no frame carries before the rows are in.
+    hdeltas = [e for e in events if e["type"] == "headline_delta"]
+    assert [d["headline"] for d in hdeltas] == _HL_SHOWN
+    assert not any(ch.isdigit() for d in hdeltas for ch in d["headline"])
+    assert all(i < types.index("done") for i, t in enumerate(types) if t == "headline_delta"), types
+
+    # Every partial made it out as a parseable delta frame, in order, growing.
+    deltas = [e for e in events if e["type"] == "insight_delta"]
+    assert [d["narrative"] for d in deltas] == _PARTIALS
+    # Order contract: done → all deltas → terminal insight → followups.
+    i_done = types.index("done")
+    i_insight = types.index("insight")
+    delta_idx = [i for i, t in enumerate(types) if t == "insight_delta"]
+    assert delta_idx and all(i_done < i < i_insight for i in delta_idx), types
+    assert i_insight < types.index("followups"), types
+
+    # The terminal event stays authoritative — full final narrative + followups.
+    insight = next(e for e in events if e["type"] == "insight")
+    assert insight["narrative"] == _FINAL
+    followups = next(e for e in events if e["type"] == "followups")
+    assert followups["questions"] == _QUESTIONS
+
+
+def test_the_narrative_events_dual_emit_under_both_names(client: TestClient, builtin_conn_id: str, monkeypatch):
+    """Wave W — the prose enrichment is a NARRATIVE. The retired `insight` pair is kept
+    for one release so a client deployed before the rename keeps working, and both names
+    must carry the IDENTICAL payload — a divergence would make the two clients disagree
+    about the same answer. This is the whole contract of the additive rename."""
+    _stub_providers(monkeypatch)
+
+    events = _stream_events(client, builtin_conn_id, "total value split by group")
+    by_type = lambda t: [e for e in events if e["type"] == t]  # noqa: E731
+
+    # Terminal event: both names, same payload.
+    new, old = by_type("narrative"), by_type("insight")
+    assert len(new) == 1 and len(old) == 1, [e["type"] for e in events]
+    assert new[0]["narrative"] == _FINAL
+    assert {k: v for k, v in new[0].items() if k != "type"} == {k: v for k, v in old[0].items() if k != "type"}
+
+    # Delta frames: both names, same partials, in the same order.
+    assert [d["narrative"] for d in by_type("narrative_delta")] == _PARTIALS
+    assert [d["narrative"] for d in by_type("insight_delta")] == _PARTIALS
+
+

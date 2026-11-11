@@ -1,0 +1,226 @@
+# The travel, airline and hospitality industry vocabulary (AUGHOR_ATLAS_INDUSTRY_VOCABULARY_v1, 2026-11-11: 59
+# reference types) as an industry map: expectations matched to tables by name or alias, never facts. Sixty objects.
+#
+# Three of them — Airport, Aircraft and Airline — are THIS PACKAGE'S ADDITIONS, not the vocabulary's: its travel list
+# names a Flight, a Route and a Seat but no airport, aircraft or carrier, which any airline holds. This package stands
+# alone; it neither extends nor changes the `airline` pack.
+#
+# Two reference types are folded into a near-identical one and kept as its aliases:
+#   * Passenger       → Traveler
+#   * Reaccommodation → Rebooking
+#
+# Two readings were made, and both are this package's, not the vocabulary's:
+#   * its ten classes are read onto the eight roles this map has — by meaning, not by its class column (it calls a Room
+#     Assignment a place, a Loyalty Member a generic business object and a Service Provider a digital service);
+#   * a record of activity is a PART of the thing it happened to (a booking's items and amendments, a stay's room
+#     assignments, a member's point transactions), never a thing beside it — the vocabulary lists each as a type of
+#     its own.
+# The vocabulary names no table spellings; every alias below is a guess the data confirms or leaves unmatched. Nothing
+# here creates an object: one the data has no table for is never proposed and never mentioned.
+objects:
+  # Who.
+  - name: Traveler
+    roles: [party]
+    aliases: [travelers, travellers, traveler, traveller, passengers, passenger, customers]
+    description: the person who travels — the vocabulary's Traveler and Passenger
+  - name: GuestProfile
+    roles: [party]
+    aliases: [guest_profiles, guest_profile, guests, guest]
+  - name: LoyaltyMember
+    roles: [party]
+    aliases: [loyalty_members, loyalty_member, loyalty_accounts, frequent_flyers, members]
+    parts: [LoyaltyPointTransaction]
+  - name: LoyaltyPointTransaction
+    roles: [event]
+    aliases: [loyalty_point_transactions, loyalty_transactions, points_transactions, miles_transactions, points_ledger]
+  - name: ServiceProvider
+    roles: [party]
+    aliases: [service_providers, service_provider, suppliers, supplier, vendors, partners]
+  - name: Airline
+    roles: [party]
+    aliases: [airlines, airline, carriers, carrier, operating_carriers]
+    description: this package's addition, not the vocabulary's
+  # Where, and the things that are sold and operated.
+  - name: Airport
+    roles: [place]
+    drawn_as: airfield
+    aliases: [airports, airport, stations, airport_codes]
+    description: this package's addition, not the vocabulary's
+  - name: Property
+    roles: [place]
+    aliases: [properties, property, hotels, hotel, resorts]
+  - name: Aircraft
+    roles: [asset]
+    aliases: [aircraft, aircrafts, planes, tails, fleet]
+    description: this package's addition, not the vocabulary's
+  - name: Seat
+    roles: [asset]
+    aliases: [seats, seat, seat_map, seat_maps]
+  - name: BaggageItem
+    roles: [asset]
+    aliases: [baggage_items, baggage, bags, checked_bags, luggage]
+  - name: Voucher
+    roles: [asset]
+    aliases: [vouchers, voucher, travel_credits, travel_vouchers, gift_certificates]
+  - name: SupplierContract
+    roles: [asset]
+    drawn_as: contract
+    aliases: [supplier_contracts, supplier_contract, partner_contracts, vendor_contracts]
+  # Reference data: what can be sold, and how.
+  - name: Route
+    roles: [catalog]
+    aliases: [routes, route, city_pairs, origin_destinations, markets]
+  - name: RoomType
+    roles: [catalog]
+    aliases: [room_types, room_type, room_categories, room_classes]
+  - name: PropertyListing
+    roles: [catalog]
+    aliases: [property_listings, property_listing, listings, hotel_listings]
+  - name: DistributionChannel
+    roles: [catalog]
+    aliases: [distribution_channels, distribution_channel, sales_channels, channels, booking_channels]
+  - name: TravelOffer
+    roles: [catalog]
+    aliases: [travel_offers, travel_offer, offers, offer, shopping_offers]
+    parts: [OfferItem]
+  - name: OfferItem
+    roles: [catalog]
+    aliases: [offer_items, offer_item, offer_lines]
+  - name: FareRule
+    roles: [catalog]
+    aliases: [fare_rules, fare_rule, fare_conditions, rate_rules]
+  - name: GroundService
+    roles: [catalog]
+    aliases: [ground_services, ground_service, ground_handling, ground_handling_services]
+  - name: LoyaltyBenefit
+    roles: [catalog]
+    aliases: [loyalty_benefits, loyalty_benefit, member_benefits, tier_benefits]
+  # Inventory and capacity.
+  - name: Flight
+    roles: [event]
+    aliases: [flights, flight, flight_legs, flight_schedule, flight_schedules]
+    parts: [DelayEvent]
+  - name: DelayEvent
+    roles: [event]
+    aliases: [delay_events, delay_event, delays, flight_delays]
+  - name: Departure
+    roles: [event]
+    aliases: [departures, departure, tour_departures, sailings, scheduled_departures]
+    description: one dated run of a scheduled service — a tour, a sailing, a train
+  - name: InventoryAllocation
+    roles: [stock]
+    drawn_as: grid
+    aliases: [inventory_allocations, inventory_allocation, allotments, room_allotments, seat_allocations]
+  - name: InventoryHold
+    roles: [stock]
+    aliases: [inventory_holds, inventory_hold, seat_holds, room_blocks, held_inventory]
+  - name: CapacitySnapshot
+    roles: [stock]
+    aliases: [capacity_snapshots, capacity_snapshot, seat_availability, room_availability, availability]
+  - name: OccupancySnapshot
+    roles: [stock]
+    aliases: [occupancy_snapshots, occupancy_snapshot, occupancy, daily_occupancy, load_factors]
+  - name: YieldForecast
+    roles: [event]
+    aliases: [yield_forecasts, yield_forecast, demand_forecasts, revenue_forecasts]
+  # Search, booking and confirmation.
+  - name: SearchSession
+    roles: [event]
+    aliases: [search_sessions, search_session, searches, shopping_sessions, availability_searches]
+  - name: BookingHold
+    roles: [event]
+    aliases: [booking_holds, booking_hold, held_bookings, option_bookings]
+    description: a booking held for a time before it is confirmed or released
+  - name: Booking
+    roles: [transaction]
+    aliases: [bookings, booking, reservations, reservation, pnrs]
+    parts: [ReservationItem, BookingAmendment]
+    description: a booking is read with its items — the flights, rooms and services on it
+  - name: ReservationItem
+    roles: [event]
+    aliases: [reservation_items, reservation_item, booking_items, booking_lines, booking_segments, pnr_segments]
+  - name: BookingAmendment
+    roles: [event]
+    aliases: [booking_amendments, booking_amendment, booking_changes, reservation_changes]
+  - name: Itinerary
+    roles: [event]
+    aliases: [itineraries, itinerary, trips, trip, travel_itineraries]
+  - name: FareComponent
+    roles: [event]
+    aliases: [fare_components, fare_component, fare_breakdowns, fare_calculations, price_components]
+  - name: ExperienceBooking
+    roles: [transaction]
+    aliases: [experience_bookings, experience_booking, activity_bookings, tour_bookings, excursion_bookings]
+  # Payment and ticketing.
+  - name: Order
+    roles: [transaction]
+    aliases: [orders, order, travel_orders, sales_orders]
+  - name: Payment
+    roles: [transaction]
+    aliases: [payments, payment, booking_payments, payment_transactions]
+  - name: Refund
+    roles: [transaction]
+    aliases: [refunds, refund, ticket_refunds, booking_refunds]
+  - name: Ticket
+    roles: [transaction]
+    aliases: [tickets, ticket, e_tickets, etickets, ticket_coupons]
+  - name: AncillaryPurchase
+    roles: [transaction]
+    aliases: [ancillary_purchases, ancillaries, ancillary_sales, ancillary_orders, emds]
+  - name: SettlementRecord
+    roles: [transaction]
+    aliases: [settlement_records, settlement_record, settlements, payment_settlements, bsp_settlements]
+  - name: PartnerSettlement
+    roles: [transaction]
+    aliases: [partner_settlements, partner_settlement, supplier_settlements, partner_payouts, commission_settlements]
+  # The departure and the stay.
+  - name: CheckIn
+    roles: [event]
+    aliases: [check_ins, checkins, check_in, checkin, passenger_checkins]
+  - name: BoardingPass
+    roles: [event]
+    aliases: [boarding_passes, boarding_pass, boardings, boarding_scans]
+  - name: Stay
+    roles: [event]
+    aliases: [stays, stay, hotel_stays, guest_stays, folios]
+    parts: [RoomAssignment]
+  - name: RoomAssignment
+    roles: [event]
+    aliases: [room_assignments, room_assignment, room_allocations, assigned_rooms]
+  - name: HousekeepingTask
+    roles: [event]
+    aliases: [housekeeping_tasks, housekeeping_task, housekeeping, room_cleanings]
+  - name: ServiceRequest
+    roles: [event]
+    aliases: [service_requests, service_request, guest_requests, special_requests]
+  - name: ServiceEvent
+    roles: [event]
+    aliases: [service_events, service_event, service_deliveries, services_rendered]
+  - name: Transfer
+    roles: [event]
+    aliases: [transfers, transfer, ground_transfers, airport_transfers, shuttles]
+  # Disruption and recovery.
+  - name: DisruptionEvent
+    roles: [event]
+    aliases: [disruption_events, disruption_event, disruptions, irregular_operations, irrops]
+  - name: Cancellation
+    roles: [event]
+    aliases: [cancellations, cancellation, booking_cancellations, flight_cancellations]
+  - name: Rebooking
+    roles: [event]
+    aliases: [rebookings, rebooking, reaccommodations, reaccommodation, reissues]
+    description: a traveller moved to another service — the vocabulary's Rebooking and Reaccommodation
+  - name: CompensationClaim
+    roles: [transaction]
+    aliases: [compensation_claims, compensation_claim, claims, compensations, passenger_claims]
+  - name: ServiceRecoveryCase
+    roles: [event]
+    aliases: [service_recovery_cases, service_recovery, recovery_cases, complaints, customer_cases]
+  # Revenue and loyalty.
+  - name: RevenueSegment
+    roles: [transaction]
+    aliases: [revenue_segments, revenue_segment, segment_revenue, flown_revenue, revenue_accounting]
+    description: revenue recognised for one travelled segment or stayed night
+  - name: CustomerFeedback
+    roles: [event]
+    aliases: [customer_feedback, feedback, reviews, guest_reviews, survey_responses]

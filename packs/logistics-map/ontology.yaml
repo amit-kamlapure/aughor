@@ -1,0 +1,213 @@
+# The logistics, 3PL and freight industry vocabulary (AUGHOR_ATLAS_INDUSTRY_VOCABULARY_v1, 2026-11-11: 59 reference
+# types) as an industry map: expectations matched to tables by name or alias, never facts. Fifty-six objects; three
+# reference types are folded into a near-identical one and kept as its aliases:
+#   * Consignment     → Shipment (the vocabulary's Shipment Order)
+#   * Recipient       → Consignee
+#   * Transport Event → TrackingEvent
+#
+# Two readings were made, and both are this package's, not the vocabulary's:
+#   * its ten classes are read onto the eight roles this map has — by meaning, not by its class column (it calls a
+#     Carrier Payable a party and a Lane a generic business object);
+#   * a record of activity is a PART of the thing it happened to (a shipment's legs, tracking events and proof of
+#     delivery, a booking's amendments, a declaration's duty assessment), never a thing beside it — the vocabulary
+#     lists each as a type of its own.
+# `drawn_as: depot` is on Facility only. The vocabulary names no table spellings; every alias below is a guess the data
+# confirms or leaves unmatched. Nothing here creates an object: one the data has no table for is never proposed and
+# never mentioned.
+objects:
+  # Who.
+  - name: Shipper
+    roles: [party]
+    aliases: [shippers, shipper, consignors, consignor, shipping_customers, customers]
+    description: the party that hands goods over to be moved — usually the paying customer
+  - name: Consignee
+    roles: [party]
+    aliases: [consignees, consignee, recipients, recipient, receivers]
+    description: the party the goods are delivered to
+  - name: Driver
+    roles: [party]
+    aliases: [drivers, driver, couriers, vehicle_drivers]
+  # Where, and what moves the goods.
+  - name: Facility
+    roles: [place]
+    drawn_as: depot
+    aliases: [facilities, facility, warehouses, warehouse, depots, terminals]
+  - name: WarehouseSlot
+    roles: [place]
+    aliases: [warehouse_slots, storage_locations, bin_locations, storage_bins, warehouse_locations]
+    description: one storage position inside a facility
+  - name: Vehicle
+    roles: [asset]
+    aliases: [vehicles, vehicle, trucks, fleet, fleet_vehicles]
+    parts: [TelematicsReading]
+  - name: TelematicsReading
+    roles: [event]
+    aliases: [telematics_readings, telematics, gps_pings, vehicle_positions, vehicle_telemetry]
+  - name: Container
+    roles: [asset]
+    aliases: [containers, container, shipping_containers]
+  - name: Equipment
+    roles: [asset]
+    aliases: [equipment, equipments, trailers, chassis, transport_equipment]
+    parts: [EquipmentEvent]
+  - name: EquipmentEvent
+    roles: [event]
+    aliases: [equipment_events, equipment_event, equipment_moves, gate_events]
+  - name: HandlingUnit
+    roles: [asset]
+    aliases: [handling_units, handling_unit, pallets, cartons, license_plates]
+    description: a pallet, carton or other unit that is handled as one
+  - name: InventoryLot
+    roles: [stock]
+    aliases: [inventory_lots, inventory_lot, stock_lots, warehouse_inventory, inventory]
+    description: goods held in a warehouse, per lot and place
+  # Commercial terms and reference data.
+  - name: Contract
+    roles: [asset]
+    drawn_as: contract
+    aliases: [contracts, contract, customer_contracts, freight_contracts]
+  - name: ServiceAgreement
+    roles: [asset]
+    drawn_as: contract
+    aliases: [service_agreements, service_agreement, service_level_agreements, slas]
+  - name: RateCard
+    roles: [catalog]
+    aliases: [rate_cards, rate_card, freight_rates, rates, tariffs]
+  - name: Lane
+    roles: [catalog]
+    aliases: [lanes, lane, trade_lanes, shipping_lanes, freight_lanes]
+    description: an origin–destination pair that is priced and planned as one
+  - name: TariffCode
+    roles: [catalog]
+    aliases: [tariff_codes, tariff_code, hs_codes, hts_codes, commodity_codes]
+  - name: Schedule
+    roles: [catalog]
+    aliases: [schedules, schedule, sailing_schedules, service_schedules, departure_schedules]
+    description: the planned departures and arrivals of a service
+  - name: Route
+    roles: [catalog]
+    aliases: [routes, route, delivery_routes, transport_routes]
+    parts: [Waypoint, RouteDeviation]
+  - name: Waypoint
+    roles: [place]
+    aliases: [waypoints, waypoint, route_points, route_waypoints]
+  - name: RouteDeviation
+    roles: [event]
+    aliases: [route_deviations, route_deviation, off_route_events]
+  # Quoting, booking and the shipment itself.
+  - name: Quote
+    roles: [transaction]
+    aliases: [quotes, quote, freight_quotes, rate_quotes, quotations]
+  - name: FreightBooking
+    roles: [transaction]
+    aliases: [freight_bookings, freight_booking, bookings, booking, carrier_bookings]
+    parts: [BookingAmendment, ShippingInstruction]
+  - name: BookingAmendment
+    roles: [event]
+    aliases: [booking_amendments, booking_amendment, booking_changes, booking_revisions]
+  - name: ShippingInstruction
+    roles: [event]
+    aliases: [shipping_instructions, shipping_instruction, si_documents]
+  - name: Shipment
+    roles: [transaction]
+    aliases: [shipments, shipment_orders, shipment_order, consignments, consignment, transport_orders]
+    parts: [CargoItem, PackingList, TransportLeg, TrackingEvent, EtaPrediction, DeliveryException, FailedAttempt, ProofOfDelivery]
+    description: the order to move goods, read with its cargo, legs and tracking — the vocabulary's Shipment Order and Consignment
+  - name: CargoItem
+    roles: [asset]
+    aliases: [cargo_items, cargo_item, shipment_items, shipment_lines, cargo_lines, commodities]
+  - name: PackingList
+    roles: [asset]
+    aliases: [packing_lists, packing_list, packing_slips]
+  - name: TransportLeg
+    roles: [event]
+    aliases: [transport_legs, transport_leg, shipment_legs, legs, movements]
+  - name: TrackingEvent
+    roles: [event]
+    aliases: [tracking_events, tracking_event, shipment_events, tracking_scans, transport_events, shipment_milestones]
+  - name: EtaPrediction
+    roles: [event]
+    aliases: [eta_predictions, eta_prediction, etas, eta_updates, predicted_arrivals]
+  - name: DeliveryException
+    roles: [event]
+    aliases: [delivery_exceptions, delivery_exception, shipment_exceptions, exceptions]
+  - name: FailedAttempt
+    roles: [event]
+    aliases: [failed_attempts, failed_attempt, failed_deliveries, delivery_attempts]
+  - name: ProofOfDelivery
+    roles: [event]
+    aliases: [proof_of_delivery, proofs_of_delivery, pods, delivery_confirmations, delivery_receipts]
+  - name: CommercialInvoice
+    roles: [transaction]
+    aliases: [commercial_invoices, commercial_invoice, trade_invoices]
+    description: the seller's invoice for the goods, carried with the shipment for customs
+  - name: TradeDocument
+    roles: [asset]
+    aliases: [trade_documents, trade_document, bills_of_lading, shipping_documents, waybills]
+  # Warehouse work.
+  - name: ReceivingEvent
+    roles: [event]
+    aliases: [receiving_events, receipts, goods_receipts, inbound_receipts, receiving]
+  - name: PickTask
+    roles: [event]
+    aliases: [pick_tasks, pick_task, picking_tasks, picks]
+  - name: CrossDockMove
+    roles: [event]
+    aliases: [cross_dock_moves, cross_dock_move, crossdock_moves, cross_docks]
+  # Planning.
+  - name: DispatchPlan
+    roles: [event]
+    aliases: [dispatch_plans, dispatch_plan, dispatches, load_plans, trip_plans]
+  - name: CapacityAllocation
+    roles: [stock]
+    aliases: [capacity_allocations, capacity_allocation, allocated_capacity, space_allocations]
+  # Customs and the border.
+  - name: CustomsDeclaration
+    roles: [event]
+    aliases: [customs_declarations, customs_declaration, customs_entries, declarations]
+    parts: [CustomsStatusEvent, DutyAssessment]
+  - name: CustomsStatusEvent
+    roles: [event]
+    aliases: [customs_status_events, customs_events, customs_statuses, customs_status]
+  - name: DutyAssessment
+    roles: [event]
+    aliases: [duty_assessments, duty_assessment, duties, duties_and_taxes]
+  - name: BrokerFiling
+    roles: [event]
+    aliases: [broker_filings, broker_filing, customs_filings, brokerage_filings]
+  - name: BorderClearance
+    roles: [event]
+    aliases: [border_clearances, border_clearance, customs_clearances, clearances]
+  - name: InspectionHold
+    roles: [event]
+    aliases: [inspection_holds, inspection_hold, customs_holds, customs_inspections]
+  # Delivery.
+  - name: DeliveryStop
+    roles: [event]
+    aliases: [delivery_stops, delivery_stop, stops, route_stops]
+  - name: DamageReport
+    roles: [event]
+    aliases: [damage_reports, damage_report, cargo_damages, damages]
+  - name: CustomerNotification
+    roles: [event]
+    aliases: [customer_notifications, notifications, shipment_notifications, delivery_notifications]
+  # Billing, settlement and performance.
+  - name: FreightInvoice
+    roles: [transaction]
+    aliases: [freight_invoices, freight_invoice, invoices, invoice, customer_invoices]
+  - name: AccessorialCharge
+    roles: [transaction]
+    aliases: [accessorial_charges, accessorial_charge, accessorials, surcharges, additional_charges]
+  - name: CarrierPayable
+    roles: [transaction]
+    aliases: [carrier_payables, carrier_payable, carrier_invoices, carrier_bills, freight_payables]
+    description: what is owed to a carrier for a move
+  - name: Dispute
+    roles: [transaction]
+    aliases: [disputes, dispute, invoice_disputes, billing_disputes, freight_claims]
+  - name: CostAllocation
+    roles: [event]
+    aliases: [cost_allocations, cost_allocation, shipment_costs, allocated_costs]
+  - name: OnTimeMetric
+    roles: [event]
+    aliases: [on_time_metrics, on_time_performance, otif, delivery_performance]

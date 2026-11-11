@@ -1,0 +1,100 @@
+import type { Metadata } from "next";
+import { Inter, JetBrains_Mono, Source_Sans_3 } from "next/font/google";
+import { Toaster } from "@/components/ui/toast";
+import { Providers } from "./providers";
+import { ThemeRoot } from "./theme-root";
+import { NAV_COLLAPSE_BOOT } from "@/lib/navCollapse";
+import { THEME_BOOT } from "@/lib/themeBoot";
+import "./globals.css";
+
+// Three families, all self-hosted by next/font at build time (no runtime request
+// to a font CDN, so nothing here depends on the network at page load).
+// Inter carries the UI; JetBrains Mono carries every figure, id, timestamp and
+// metric — a tabular face so a column of numbers lines up on the decimal. Source Sans 3
+// is the UI face a person can choose instead of Inter (the look's `typeface` knob,
+// 2026-10-25): narrower, so a row holds more words at the same size.
+const inter = Inter({
+  variable: "--font-inter",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+});
+
+const sourceSans = Source_Sans_3({
+  variable: "--font-source-sans",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+/**
+ * Absolute base for the relative URLs in `metadata` below. The OG image is `/aughor-logo.jpeg`
+ * — a relative path a crawler cannot fetch — so Next resolves it against this. Left unset, Next
+ * warns at build time and falls back to `http://localhost:3000`, which would ship a localhost
+ * image URL in the OG tags of every real deployment.
+ *
+ * Precedence, most specific first:
+ *   1. NEXT_PUBLIC_SITE_URL — an explicit public origin, for any deployment that has one
+ *   2. Vercel's own production domain — the stable one; VERCEL_URL is per-deployment, so a
+ *      preview build would otherwise stamp its throwaway hostname into the tags
+ *   3. http://localhost:3000 — the local development default, same value Next was guessing
+ */
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : "http://localhost:3000");
+
+export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
+  title: "Aughor — Autonomous Intelligence Platform",
+  description: "Aughor is an Autonomous Intelligence Platform — continuously explores your data, builds a living business ontology, and answers complex analytical questions with evidence.",
+  icons: {
+    icon: "/aughor-logo.jpeg",
+    apple: "/aughor-logo.jpeg",
+  },
+  openGraph: {
+    title: "Aughor — Autonomous Intelligence Platform",
+    description: "Your warehouse, always thinking.",
+    images: [{ url: "/aughor-logo.jpeg", width: 1024, height: 1024, alt: "Aughor" }],
+  },
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return (
+    // The Theme's root is <html> itself (see theme-root.tsx): it adds `radix-themes`, the skin's
+    // class and the look's attributes to the element below.
+    <ThemeRoot>
+      <html
+        lang="en"
+        className={`${inter.variable} ${jetbrainsMono.variable} ${sourceSans.variable} h-full antialiased`}
+        // The boot scripts below set <html>'s attributes before React hydrates — data-nav (which React
+        // never renders), and the skin and look (which the Theme renders at their defaults) — so the
+        // first paint is the person's own. Hydration leaves attributes as it finds them; this silences
+        // the warning about the ones the Theme would have set differently.
+        suppressHydrationWarning
+      >
+        <head>
+          <script dangerouslySetInnerHTML={{ __html: NAV_COLLAPSE_BOOT + THEME_BOOT }} />
+        </head>
+        <body className="min-h-full flex flex-col">
+          <Providers>
+            {/* The page is one layer: a Radix dialog, menu or tooltip is portalled into <body>
+                after it and so sits above it, whatever z-index the rail or the topbar carry. */}
+            <div className="aug-root">{children}</div>
+            <Toaster />
+          </Providers>
+        </body>
+      </html>
+    </ThemeRoot>
+  );
+}

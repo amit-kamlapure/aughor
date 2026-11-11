@@ -1,0 +1,964 @@
+"use client";
+import { Pending } from "@/components/ui/motion";
+
+import { useCallback, useEffect, useState } from "react";
+
+import { DropdownMenu } from "@radix-ui/themes";
+
+import { EntityTypeMap, type MapSummary, type NewAsk } from "@/components/ontology/EntityTypeMap";
+import { RemoveAsk } from "@/components/ontology/authoring";
+import { ReleaseStrip } from "@/components/ontology/ReleaseStrip";
+import { Segmented } from "@/components/ui/segmented";
+import { ChromeActions, ChromeFacts, ChromeToolbar, useInShell } from "@/components/shell/PageChrome";
+import { domainScope } from "@/lib/objectTypes";
+import { OverridesDrawer } from "@/components/ontology/OverridesDrawer";
+import { ReadsDrawer } from "@/components/ontology/ReadsDrawer";
+import {
+  getOntology,
+  getConnectionSettings,
+  updateConnectionSettings,
+  rebuildOntology,
+  getDuplicateSuggestions,
+  reconsiderDuplicatePair,
+  rejectDuplicateEntities,
+  mergeOntologyEntities,
+  getLearnedSkills,
+  activateLearnedSkill,
+  deleteLearnedSkill,
+  getAutonomy,
+  type OntologyGraph,
+  type QueryTemplate,
+  type ConnectionSettings,
+  type DuplicateCluster,
+  type RejectedDuplicate,
+  type AutonomyLevel,
+  getOntologyProposals, acceptOntologyProposal, dismissOntologyProposal,
+  OntologyNotBuilt,
+  type OntologyProposal,
+} from "@/lib/api";
+import { OntologyOrgCanvas } from "./OntologyOrgCanvas";
+import { cn } from "@/lib/utils";
+import { formatTimestamp, countNoun, formatCount } from "@/lib/format";
+import { Icon } from "@/components/ui/icon";
+import { VisibilityLine } from "@/components/VisibilityLine";
+import { Button } from "@/components/ui/button";
+import { Loading } from "@/components/ui/states";
+import { Input } from "@/components/ui/input";
+
+// ── Main panel ────────────────────────────────────────────────────────────────
+
+interface Props {
+  connectionId: string;
+  onInvestigate?: (q: string) => void;
+  /** Schema scope from the workspace's shared selector. The ontology store is
+   *  keyed per {connection, schema}; without this the backend falls back to an
+   *  ARBITRARY cached schema on multi-schema connections. */
+  schema?: string;
+}
+
+/** The tools the bar's menu opens beside the map, one at a time. */
+type Drawer = "settings" | "duplicates" | "skills" | "proposals" | "overrides" | "reads";
+
+const REFRESH_OPTIONS: { label: string; value: number | null }[] = [
+  { label: "Off",      value: null },
+  { label: "Daily",    value: 24   },
+  { label: "Every 2d", value: 48   },
+  { label: "Weekly",   value: 168  },
+];
+
+function OntologySettings({
+  connectionId,
+  schema,
+  graph,
+  onClose,
+  onRebuilt,
+}: {
+  connectionId: string;
+  schema?: string;
+  graph: OntologyGraph | null;
+  onClose: () => void;
+  onRebuilt: (g: OntologyGraph) => void;
+}) {
+  const [settings,    setSettings]    = useState<ConnectionSettings | null>(null);
+  const [saving,      setSaving]      = useState(false);
+  const [rebuilding,  setRebuilding]  = useState(false);
+  const [rebuildMsg,  setRebuildMsg]  = useState<string | null>(null);
+
+  useEffect(() => {
+    getConnectionSettings(connectionId).then(setSettings).catch(() => {});
+  }, [connectionId]);
+
+  const saveRefresh = async (hours: number | null) => {
+    setSaving(true);
+    try {
+      const updated = await updateConnectionSettings(connectionId, { ontology_refresh_hours: hours });
+      setSettings(updated);
+    } finally { setSaving(false); }
+  };
+
+  const handleRebuild = async () => {
+    setRebuilding(true);
+    setRebuildMsg(null);
+    try {
+      const result = await rebuildOntology(connectionId, schema);
+      setRebuildMsg(result.warning
+        ? `Rebuilt — ${result.entities} entities. ${result.warning}`
+        : `Rebuilt — ${result.entities} entities`);
+      const fresh = await import("@/lib/api").then(m => m.getOntology(connectionId, schema));
+      onRebuilt(fresh);
+    } catch (e: unknown) {
+      setRebuildMsg((e as Error).message ?? "Rebuild failed");
+    } finally { setRebuilding(false); }
+  };
+
+  const currentHours = settings?.ontology_refresh_hours ?? null;
+
+  return (
+    <div className="w-72 shrink-0 border-l border-zinc-700/70 flex flex-col bg-zinc-900 overflow-hidden">
+      <div className="px-4 pt-4 pb-3 border-b border-zinc-700/60 flex items-center justify-between">
+        <p className="text-xs font-semibold text-zinc-200">Ontology Settings</p>
+        <Button variant="ghost" size="xs" onClick={onClose}>
+          <Icon name="close" size={16} label="Close" />
+        </Button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-5">
+        {/* Refresh schedule */}
+        <div>
+          <p className="aug-fs-xs text-zinc-500 uppercase tracking-wider mb-2 font-semibold">
+            Auto-refresh interval
+          </p>
+          <p className="aug-fs-xs text-zinc-500 mb-3 leading-relaxed">
+            Rebuild the ontology on a schedule. The rebuild runs in the background
+            when the interval elapses; if it fails, the current ontology is kept.
+          </p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {REFRESH_OPTIONS.map(opt => (
+              <Button variant="plain" size="xs"
+                key={String(opt.value)}
+                onClick={() => saveRefresh(opt.value)}
+                disabled={saving}
+                className={cn(
+                  "py-2 aug-fs-xs rounded-[var(--r3)] border transition font-medium",
+                  currentHours === opt.value
+                    ? "bg-violet-500/15 border-violet-500/40 text-violet-300"
+                    : "bg-zinc-800/60 border-zinc-700/50 hover:border-zinc-500",
+                )}
+              >
+                {opt.label}
+              </Button>
+            ))}
+          </div>
+          {currentHours && (
+            <p className="aug-fs-xs text-violet-400/70 mt-2">
+              Refreshes every {currentHours}h
+            </p>
+          )}
+        </div>
+
+        {/* Last built */}
+        {graph && (
+          <div>
+            <p className="aug-fs-xs text-zinc-500 uppercase tracking-wider mb-1.5 font-semibold">
+              Last built
+            </p>
+            <p className="aug-fs-xs text-zinc-400 font-mono">
+              {formatTimestamp(graph.generated_at)}
+            </p>
+          </div>
+        )}
+
+        {/* Manual rebuild */}
+        <div>
+          <p className="aug-fs-xs text-zinc-500 uppercase tracking-wider mb-2 font-semibold">
+            Manual rebuild
+          </p>
+          <Button variant="plain" size="xs"
+            onClick={handleRebuild}
+            disabled={rebuilding}
+            className={cn(
+              "w-full py-2 aug-fs-xs rounded-[var(--r3)] border",
+              rebuilding
+                ? "border-zinc-700 cursor-not-allowed"
+                : "border-violet-500/30 text-violet-400 hover:bg-violet-500/10 hover:border-violet-400/50",
+            )}
+          >
+            {rebuilding ? "Rebuilding…" : "Rebuild ontology now"}
+          </Button>
+          {rebuildMsg && (
+            <p className={cn(
+              "aug-fs-xs mt-2",
+              rebuildMsg.startsWith("Rebuilt") ? "text-emerald-400" : "text-red-400",
+            )}>
+              {rebuildMsg}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Duplicate-entity suggestions drawer (Borrow 5) ────────────────────────────
+// Shows embedding-detected near-duplicate entity clusters; the user picks which entity each cluster
+// merges INTO (the survivor). The merge is the explicit, gated POST — never automatic.
+function DuplicatesDrawer({ connId, schema, onClose, onMerged }: {
+  connId: string; schema?: string; onClose: () => void; onMerged: () => void;
+}) {
+  const [clusters, setClusters] = useState<DuplicateCluster[] | null>(null);
+  const [rejected, setRejected] = useState<RejectedDuplicate[]>([]);
+  const [hidden,   setHidden]   = useState(0);
+  const [loading,  setLoading]  = useState(true);
+  const [merging,  setMerging]  = useState<string | null>(null);
+  const [error,    setError]    = useState<string | null>(null);
+  const [reasons,  setReasons]  = useState<Record<number, string>>({});
+
+  const load = useCallback(() => {
+    setLoading(true); setError(null);
+    getDuplicateSuggestions(connId, schema)
+      .then(d => { setClusters(d.clusters); setRejected(d.rejected); setHidden(d.hidden); })
+      .catch(() => setError("Couldn't load duplicate suggestions."))
+      .finally(() => setLoading(false));
+  }, [connId, schema]);
+  useEffect(() => { load(); }, [load]);
+
+  // CB-4 — "these are different": remembered with its reason; the pair is not suggested again.
+  const doReject = async (cluster: DuplicateCluster, i: number) => {
+    setError(null);
+    try {
+      await rejectDuplicateEntities(connId, cluster.entities.map(e => e.id), reasons[i] ?? "", schema);
+      load();
+    } catch (e) {
+      setError((e as Error).message || "Couldn't record the rejection");
+    }
+  };
+  const doReconsider = async (r: RejectedDuplicate) => {
+    setError(null);
+    try {
+      await reconsiderDuplicatePair(connId, r.pair[0], r.pair[1], schema);
+      load();
+    } catch (e) {
+      setError((e as Error).message || "Couldn't take the rejection back");
+    }
+  };
+
+  const doMerge = async (cluster: DuplicateCluster, canonicalId: string) => {
+    setMerging(canonicalId); setError(null);
+    try {
+      await mergeOntologyEntities(connId, cluster.entities.map(e => e.id), canonicalId, schema);
+      onMerged();   // parent re-fetches the graph
+      load();       // refresh suggestions
+    } catch (e) {
+      setError((e as Error).message || "Merge failed");
+    } finally {
+      setMerging(null);
+    }
+  };
+
+  return (
+    <div className="w-[340px] shrink-0 border-l border-zinc-700/70 bg-zinc-900/40 flex flex-col overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-zinc-700/70">
+        <p className="text-xs font-semibold text-zinc-300">Possible duplicate entities</p>
+        <Button variant="ghost" size="xs" onClick={onClose} className="ml-auto">
+          <Icon name="close" size={16} label="Close" />
+        </Button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
+        {loading && <p className="aug-fs-xs text-zinc-500">Scanning for duplicates…</p>}
+        {error && <p className="aug-fs-xs text-red-400">{error}</p>}
+        {!loading && !error && clusters?.length === 0 && (
+          <p className="aug-fs-xs text-zinc-500">
+            {hidden > 0
+              ? `No new duplicates: ${countNoun(hidden, "suggestion", "suggestions")} you rejected earlier stay hidden.`
+              : "No likely duplicates found. (Detection uses embeddings; if none are configured it returns nothing.)"}
+          </p>
+        )}
+        {clusters?.map((c, i) => (
+          <div key={i} className="rounded border border-violet-500/25 bg-violet-500/[0.04] p-2.5 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="aug-fs-xs text-violet-300">{countNoun(c.entities.length, "entity", "entities")}</span>
+              <span className="aug-fs-xs text-zinc-500">similarity {Math.round(c.similarity * 100)}%</span>
+            </div>
+            <ul className="space-y-0.5">
+              {c.entities.map(e => (
+                <li key={e.id} className="aug-fs-xs text-zinc-300">
+                  {e.display_name} <span className="text-zinc-500">({e.source_tables.join(", ") || "—"})</span>
+                </li>
+              ))}
+            </ul>
+            {c.rejected_pairs?.length ? (
+              <p className="aug-fs-xs text-zinc-500">
+                Already judged different: {c.rejected_pairs.map(rp => rp.pair.join(" ≠ ")).join(", ")}
+              </p>
+            ) : null}
+            <div className="flex flex-col gap-1 pt-0.5">
+              <span className="aug-fs-xs text-zinc-500">Merge all into (the others become its parts):</span>
+              <div className="flex flex-wrap gap-1">
+                {c.entities.map(e => (
+                  <RemoveAsk key={e.id} label={merging === e.id ? "Merging…" : e.display_name} variant="outline" testId="duplicates-merge"
+                    hint={`Merge all into ${e.display_name}`} what={`${c.entities.length - 1} of these as entities of their own`}
+                    effect={`They are merged into ${e.display_name}: the others become its parts and stop being entities of their own.`}
+                    back="A part is released again from its parent's page."
+                    remove={() => doMerge(c, e.id)} />
+                ))}
+              </div>
+            <div className="flex items-center gap-1 pt-1">
+              <Input
+                aria-label={`Why entities ${i + 1} are different`}
+                value={reasons[i] ?? ""}
+                onChange={ev => setReasons(r => ({ ...r, [i]: ev.target.value }))}
+                placeholder="why they are different (optional)"
+                className="flex-1"
+              />
+              <Button size="sm" variant="ghost" onClick={() => doReject(c, i)} disabled={merging !== null}>
+                Not duplicates
+              </Button>
+            </div>
+            </div>
+          </div>
+        ))}
+        {rejected.length > 0 && (
+          <div className="pt-2 border-t border-zinc-700/40 space-y-1">
+            <p className="aug-fs-xs text-zinc-500">Judged different earlier</p>
+            {rejected.map(r => (
+              <div key={r.pair.join("|")} className="flex items-center gap-2">
+                <span className="aug-fs-xs text-zinc-300 flex-1 min-w-0 truncate">
+                  {r.pair.join(" ≠ ")}{r.reason ? ` — ${r.reason}` : ""}{r.rejected_by ? ` (${r.rejected_by})` : ""}
+                </span>
+                <Button size="sm" variant="ghost" onClick={() => doReconsider(r)}>Reconsider</Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+// ── Learned-skills drawer (R8 Agent-Skills) ───────────────────────────────────
+// Lists the skills crystallized from finished investigations (origin='learned'
+// QueryTemplates that the planner already reuses via the ontology overlay). A human can
+// see each skill's reusable SQL + reuse count, "Use" it (records a use → feeds autonomy),
+// or delete it. The connection's EARNED autonomy level is shown at the top.
+const _AUTONOMY_TONE = ["text-zinc-400", "text-sky-300", "text-violet-300", "text-emerald-300"];
+
+const _PROPOSAL_KIND: Record<string, { label: string; tone: string }> = {
+  metric:      { label: "metric gap",  tone: "text-amber-300 border-amber-500/30 bg-amber-500/10" },
+  column_note: { label: "column note", tone: "text-sky-300 border-sky-500/30 bg-sky-500/10" },
+  table_note:  { label: "table note",  tone: "text-violet-300 border-violet-500/30 bg-violet-500/10" },
+};
+
+/** The review inbox for what the engine and the conversation PROPOSE about this connection's
+ *  context — a metric gap the self-improving loop noticed, or a column/table note an agent
+ *  staged with evidence (blast-radius rule: a table-level claim always waits here; a column
+ *  note waits when confidence was not high or a human note already exists). Nothing changes
+ *  the ontology until a person accepts it here. */
+function ProposalsDrawer({ connId, schema, onClose }: { connId: string; schema?: string; onClose: () => void }) {
+  const [items,   setItems]   = useState<OntologyProposal[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy,    setBusy]    = useState<string | null>(null);
+  const [error,   setError]   = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true); setError(null);
+    getOntologyProposals(connId, schema)
+      .then(setItems)
+      .catch(() => setError("Couldn't load proposals."))
+      .finally(() => setLoading(false));
+  }, [connId, schema]);
+  useEffect(() => { load(); }, [load]);
+
+  const doAccept = async (id: string) => {
+    setBusy(id); setError(null);
+    try { await acceptOntologyProposal(id, connId, schema); }
+    catch (e) { setError((e as Error).message || "Accept failed"); }
+    finally { setBusy(null); load(); }
+  };
+  const doDismiss = async (id: string) => {
+    setBusy(id); setError(null);
+    try { await dismissOntologyProposal(id, connId, schema); }
+    catch (e) { setError((e as Error).message || "Dismiss failed"); }
+    finally { setBusy(null); load(); }
+  };
+
+  const pending = (items ?? []).filter(p => p.status === "pending");
+
+  return (
+    <div className="w-[340px] shrink-0 border-l border-zinc-700/70 bg-zinc-900/40 flex flex-col overflow-hidden" data-testid="ontology-proposals-drawer">
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-zinc-700/70">
+        <p className="text-xs font-semibold text-zinc-300">Proposals</p>
+        {pending.length > 0 && (
+          <span className="aug-fs-xs text-zinc-500">{pending.length} awaiting review</span>
+        )}
+        <Button variant="ghost" size="icon-xs" onClick={onClose} className="ml-auto text-zinc-500 hover:text-zinc-300" aria-label="Close">
+          <Icon name="close" size={16} label="Close" />
+        </Button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
+        {loading && <Loading what="proposals" />}
+        {error && <p className="aug-fs-xs text-red-400">{error}</p>}
+        {!loading && !error && pending.length === 0 && (
+          <p className="aug-fs-xs text-zinc-500">
+            Nothing awaiting review. Proposals appear here when the engine notices a
+            recurring metric gap, or when the conversation stages a note about a column
+            or table that needs a person to accept it.
+          </p>
+        )}
+        {pending.map(pr => {
+          const kind = _PROPOSAL_KIND[pr.kind] ?? { label: pr.kind, tone: "text-zinc-300 border-zinc-600 bg-zinc-800/50" };
+          const note = typeof pr.proposed_fields?.note === "string" ? (pr.proposed_fields.note as string) : "";
+          const column = typeof pr.proposed_fields?.column === "string" ? (pr.proposed_fields.column as string) : "";
+          const confidence = typeof pr.proposed_fields?.confidence === "string" ? (pr.proposed_fields.confidence as string) : "";
+          const lastEvidence = pr.evidence?.length ? pr.evidence[pr.evidence.length - 1] : null;
+          const evidenceText = lastEvidence && typeof lastEvidence.evidence === "string" ? (lastEvidence.evidence as string) : "";
+          return (
+            <div key={pr.id} className="rounded border border-zinc-700/70 bg-zinc-900/60 p-2.5 space-y-1.5" data-testid="ontology-proposal">
+              <div className="flex items-center gap-2">
+                <span className={cn("aug-fs-xs border rounded-[var(--r-chip)] px-1.5 py-0.5", kind.tone)}>{kind.label}</span>
+                <span className="aug-fs-xs font-mono text-zinc-300 truncate" title={pr.target_id}>
+                  {pr.entity}{column ? `.${column}` : ""}
+                </span>
+                {pr.support > 1 && <span className="aug-fs-xs text-zinc-500 ml-auto">seen ×{pr.support}</span>}
+              </div>
+              {note && <p className="aug-fs-xs text-zinc-200">{note}</p>}
+              {!note && pr.reason && <p className="aug-fs-xs text-zinc-300">{pr.reason}</p>}
+              {evidenceText && (
+                <p className="aug-fs-xs text-zinc-500">
+                  <span className="text-zinc-600">evidence · </span>{evidenceText}
+                  {confidence && <span className="text-zinc-600"> · confidence {confidence}</span>}
+                </p>
+              )}
+              <div className="flex items-center gap-2 pt-0.5">
+                <Button
+                  variant="outline" size="xs"
+                  onClick={() => doAccept(pr.id)}
+                  disabled={busy === pr.id}
+                  className="aug-fs-xs border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
+                  data-testid="ontology-proposal-accept"
+                >
+                  Confirm
+                </Button>
+                <Button
+                  variant="ghost" size="xs"
+                  onClick={() => doDismiss(pr.id)}
+                  disabled={busy === pr.id}
+                  className="aug-fs-xs text-zinc-400 hover:text-zinc-200"
+                  data-testid="ontology-proposal-dismiss"
+                >
+                  Refuse
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
+function SkillsDrawer({ connId, schema, onClose }: { connId: string; schema?: string; onClose: () => void }) {
+  const [skills,   setSkills]   = useState<QueryTemplate[] | null>(null);
+  const [autonomy, setAutonomy] = useState<AutonomyLevel | null>(null);
+  const [loading,  setLoading]  = useState(true);
+  const [busy,     setBusy]     = useState<string | null>(null);
+  const [error,    setError]    = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true); setError(null);
+    Promise.all([getLearnedSkills(connId, schema), getAutonomy(connId)])
+      .then(([s, a]) => { setSkills(s); setAutonomy(a); })
+      .catch(() => setError("Couldn't load learned skills."))
+      .finally(() => setLoading(false));
+  }, [connId, schema]);
+  useEffect(() => { load(); }, [load]);
+
+  const doUse = async (id: string) => {
+    setBusy(id); setError(null);
+    try { await activateLearnedSkill(id, connId, schema); }
+    catch (e) { setError((e as Error).message || "Use failed"); }
+    finally { setBusy(null); load(); }   // always clear busy (else later actions stay disabled)
+  };
+  const doDelete = async (id: string) => {
+    setBusy(id); setError(null);
+    try { await deleteLearnedSkill(id, connId, schema); }
+    catch (e) { setError((e as Error).message || "Delete failed"); }
+    finally { setBusy(null); load(); }
+  };
+
+  return (
+    <div className="w-[340px] shrink-0 border-l border-zinc-700/70 bg-zinc-900/40 flex flex-col overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-zinc-700/70">
+        <p className="text-xs font-semibold text-zinc-300">Learned skills</p>
+        <Button variant="ghost" size="xs" onClick={onClose} className="ml-auto">
+          <Icon name="close" size={16} label="Close" />
+        </Button>
+      </div>
+      {autonomy && (
+        <div className="px-3 py-2 border-b border-zinc-800/70 aug-fs-xs text-zinc-500">
+          autonomy{" "}
+          <span className={cn("font-medium", _AUTONOMY_TONE[autonomy.level] ?? "text-zinc-400")}>
+            L{autonomy.level} · {autonomy.label}
+          </span>
+          {autonomy.reason && <span className="text-zinc-600"> — {autonomy.reason}</span>}
+        </div>
+      )}
+      <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
+        {loading && <Loading what="skills" />}
+        {error && <p className="aug-fs-xs text-red-400">{error}</p>}
+        {!loading && !error && skills?.length === 0 && (
+          <p className="aug-fs-xs text-zinc-500">
+            No learned skills yet. A skill is crystallized from a finished deep analysis
+            (its grounded, read-only query) — run a deep analysis, then “Save as skill”.
+          </p>
+        )}
+        {skills?.map(sk => (
+          <div key={sk.id} className="rounded border border-violet-500/25 bg-violet-500/[0.04] p-2.5 space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="aug-fs-xs text-violet-200 truncate" title={sk.display_name}>{sk.display_name}</span>
+              <span className="aug-fs-xs text-zinc-500 shrink-0">{sk.action_type} · used {sk.usage_count ?? 0}×</span>
+            </div>
+            {sk.description && <p className="aug-fs-xs text-zinc-500 line-clamp-2">{sk.description}</p>}
+            <pre className="aug-fs-xs text-zinc-400 bg-zinc-900/60 rounded p-1.5 overflow-x-auto whitespace-pre-wrap break-words max-h-24">{sk.sql_template}</pre>
+            {sk.parameters?.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {sk.parameters.map(p => (
+                  <span key={p.name} className="aug-fs-xs px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">{`{${p.name}}`}</span>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-1 pt-0.5">
+              <Button variant="plain" size="xs" onClick={() => doUse(sk.id)} disabled={busy !== null}
+                className="aug-fs-xs px-2 py-0.5 rounded border border-violet-500/40 bg-violet-500/15 text-violet-200 hover:bg-violet-500/25 transition disabled:opacity-40">
+                {busy === sk.id ? "…" : "Use"}
+              </Button>
+              <RemoveAsk what="this learned skill" testId="skill-remove" back="A removed skill does not come back."
+                effect="The agent stops using it in later analyses."
+                remove={() => doDelete(sk.id)} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
+  const [graph,             setGraph]            = useState<OntologyGraph | null>(null);
+  const [loading,           setLoading]          = useState(false);
+  const [error,             setError]            = useState<string | null>(null);
+  const [selectedConnId,    setSelectedConnId]   = useState(connectionId);
+  // The one tool open beside the map, from the Tools menu: settings, duplicates, learned skills, proposals, or PX-6's
+  // human-edit ledger (overrides list/revert, routing proposals, export/import).
+  const [drawer,            setDrawer]           = useState<Drawer | null>(null);
+  const showSettings = drawer === "settings";
+  const setShowSettings = (on: boolean) => setDrawer(on ? "settings" : null);
+  // What the map holds, for the figures in the bar; and a bump that opens the explorer's proposals for review.
+  const [summary,           setSummary]          = useState<MapSummary | null>(null);
+  const [reviewDraft,       setReviewDraft]      = useState(0);
+  // The "New" menu: the one place every kind of thing is made from, on whichever view is drawn.
+  const [newAsk,            setNewAsk]           = useState<NewAsk | undefined>(undefined);
+  const askNew = (kind: NewAsk["kind"]) => setNewAsk(was => ({ kind, n: (was?.n ?? 0) + 1 }));
+  // The Ontology's views (2026-11-10, the user's "Yes, build it" to `design-mockups/evidence-to-action/ontology.html`):
+  // the register of entities, where it opens; the map, as it always was; the one review queue. In the register, a
+  // type opens as a page of its own.
+  const [view,              setView]             = useState<"register" | "map" | "review">("register");
+  const [page,              setPage]             = useState<string | null>(null);
+  // Arc OC-2 — bumped by a publish or a discard so the map re-reads the draft it shows.
+  const [mapVersion,        setMapVersion]        = useState(0);
+  // The release the strip shows, re-read when the process designer declares or publishes — without re-mounting the map,
+  // which would close the designer.
+  const [releaseVersion,    setReleaseVersion]    = useState(0);
+  const [orgMode,           setOrgMode]          = useState(false);
+  // ON-8 — the organisation's ontology: one map over every connection a type is declared on.
+  const [domainMode,        setDomainMode]       = useState(false);
+  // ON-3b — the entity-type map IS this layer (re-laid 2026-09-12, the user: "we need only map in ontology..
+  // overview doesnt matter if it is not being used as context.. remove it in that case"). The whole-graph ERD it
+  // used to sit beside was a second drawing of the same facts that nothing downstream read; the Org board keeps
+  // its own canvas.
+  /** Which schemas DO have an ontology, per the 404. Drives the empty state's offer. */
+  const [builtSchemas,      setBuiltSchemas]      = useState<string[]>([]);
+
+  useEffect(() => { setSelectedConnId(connectionId); }, [connectionId]);
+  // The figures belong to the map on screen: a new scope reads its own.
+  useEffect(() => { setSummary(null); }, [selectedConnId, schema, orgMode, domainMode]);
+  // A type of one scope is not a page of the next.
+  useEffect(() => { setPage(null); }, [selectedConnId, schema, orgMode, domainMode]);
+
+  useEffect(() => {
+    if (!selectedConnId) return;
+    setLoading(true);
+    setError(null);
+    setGraph(null);
+    setDrawer(open => (open === "settings" || open === "duplicates" ? null : open));
+    getOntology(selectedConnId, schema)
+      .then(setGraph)
+      .catch((e: unknown) => {
+        // The server says WHICH schemas are built. It used to say "it builds
+        // automatically on the next query", which stopped being true when the read
+        // path stopped building — a sentence that tells the user to wait for
+        // something that will never happen is worse than no sentence.
+        const built = e instanceof OntologyNotBuilt ? e.builtSchemas : [];
+        setBuiltSchemas(built);
+        setError(e instanceof Error && e.message
+          ? e.message
+          : "No ontology has been built for this connection yet.");
+      })
+      .finally(() => setLoading(false));
+  }, [selectedConnId, schema]);
+
+
+  // ── Header bar ──────────────────────────────────────────────────────────────
+  // Laid out as the approved mockup lays it out (design-mockups/ontology-tab.html, 2026-10-10; the law is
+  // aughor-v2/CLARITY.md): the scope, the figures the map holds, the release everyone reads, what waits on a person,
+  // and every tool in one menu. Inside the app the shell's title row names the screen.
+  const tool = (which: Drawer) => setDrawer(open => (open === which ? null : which));
+  const facts = !orgMode ? summary : null;
+  // Inside the app the bar FOLDS into the shell's rows (2026-11-10, ROADMAP §6 item 64): which ontology and its release
+  // in the toolbar row (the release's changes still open as a full line under it), the scope and what the map holds
+  // beside the title, "to approve" and Tools with the page's actions — every one the same live control. Outside the
+  // app (a Data Canvas) the bar stays one row, as it was.
+  const inShell = useInShell();
+  const barWhich = (
+    <>
+      {/* Org ⟷ Domain ⟷ Connection. ON-8 — Domain is the organisation's ontology: types declared on any connection, and
+          the links between them, read by key where they cross two. */}
+      <Segmented<"org" | "domain" | "connection"> label="Which ontology"
+        value={orgMode ? "org" : domainMode ? "domain" : "connection"}
+        onChange={next => { setOrgMode(next === "org"); setDomainMode(next === "domain"); }}
+        options={[
+          { value: "org", label: "Org" },
+          { value: "domain", label: <span data-testid="ontology-domain-toggle">Domain</span>,
+            title: "The organisation's ontology — types declared on any connection, and the links between them" },
+          { value: "connection", label: "Connection" },
+        ]} />
+    </>
+  );
+  const barView = !orgMode ? (
+    <Segmented<"register" | "map" | "review"> label="Ontology view" value={view}
+      onChange={next => { setView(next); setPage(null); }}
+      options={[
+        // A connection's ontology opens on its Business Atlas, with the register's tables under it; the organisation's
+        // has no Atlas, so the same view is its register.
+        { value: "register", label: <span data-testid="ontology-view-register">{domainMode ? "Register" : "Atlas"}</span>,
+          title: domainMode ? "Every entity, its key, its source, its links and what uses it — an entity opens as its own page"
+            : "The business drawn from its ontology, and under it every entity, process and rule — an entity opens as its own page" },
+        { value: "map", label: <span data-testid="ontology-view-map">Map</span>, title: "The types drawn as a map, with the rail and the panel" },
+        { value: "review", label: <span data-testid="ontology-view-review">{`Review${facts && facts.proposed > 0 ? ` ${facts.proposed}` : ""}`}</span>,
+          title: "Everything that waits for a person: the explorer's proposals, keys not counted, links said twice" },
+      ]} />
+  ) : null;
+  const barFacts = page ? null : (
+    <>
+      {/* The scope, stated. Everything on this screen — entities, relationships,
+          duplicates, proposals, skills, and every edit made here — belongs to this
+          schema and no other. It used to be possible to be looking at a neighbour's
+          graph with nothing on screen saying so. */}
+      {!orgMode && !domainMode && schema && (
+        <span className="aug-tag aug-tag-gray font-code"
+          title="This ontology is scoped to one schema. Switch schemas with the workspace's Schema picker."
+          data-testid="ontology-schema-scope">
+          {schema}
+        </span>
+      )}
+
+      {/* the map's counts beside the title on the Map view; the register says its own, more exactly (a part apart) */}
+      {facts && view === "map" && (
+        <span className="aug-fs-sm flex flex-wrap items-center gap-4" style={{ color: "var(--t2)" }} data-testid="ontology-facts"
+          title={graph && !domainMode ? (graph.enriched ? "described in business terms" : "not yet described in business terms") : undefined}>
+          <Fact n={facts.entities} one="entity" many="entities" />
+          <Fact n={facts.links} one="link" many="links" />
+          <Fact n={facts.processes} one="process" many="processes" />
+          <Fact n={facts.rules} one="rule" many="rules" />
+        </span>
+      )}
+    </>
+  );
+  const barState = (
+    <>
+      {!orgMode && !domainMode && graph && !graph.enriched && (
+        <span className="aug-tag aug-tag-gray">not yet described in business terms</span>
+      )}
+
+      {/* CB-5 — how much of the business the platform can see here, and the one definition holding sends back. */}
+      {!orgMode && !domainMode && selectedConnId && (
+        <VisibilityLine connectionId={selectedConnId} schema={schema} />
+      )}
+    </>
+  );
+  const barRelease = (
+    <>
+      {/* Arc OC-2 — which release everyone reads, and what waits to be published: a chip, which opens the changes when
+          any wait. A publish or a discard re-reads the map, which shows the draft. */}
+      {!orgMode && !domainMode && graph && (
+        <ReleaseStrip connectionId={selectedConnId} schema={schema} version={releaseVersion} onChanged={() => {
+          setMapVersion(v => v + 1);
+          getOntology(selectedConnId, schema).then(setGraph).catch(() => {});
+        }} />
+      )}
+    </>
+  );
+  const barActions = (
+    <>
+      {facts && facts.proposed > 0 && (
+        <Button variant="ghost" size="xs" data-testid="ontology-to-approve" onClick={() => { setView("review"); setPage(null); setReviewDraft(n => n + 1); }}
+          style={{ background: "var(--amb1)", color: "var(--amb4)" }}
+          title={`${countNoun(facts.proposed, "proposal")} an explorer made wait for a person to confirm — open them in the explorer draft`}>
+          {facts.proposed} to approve
+        </Button>
+      )}
+      {!orgMode && (domainMode || graph) && (
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger>
+            <Button variant="default" size="xs" data-testid="ontology-new" title="Make an entity, a link, a process, a rule or an action">
+              <Icon name="plus" size={12} /> New <Icon name="chevd" size={12} />
+            </Button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Content size="1" align="end">
+            <DropdownMenu.Item onSelect={() => askNew("entity")} data-testid="ontology-new-entity" title="A thing the business keeps, read from a table">
+              Entity
+            </DropdownMenu.Item>
+            <DropdownMenu.Item onSelect={() => askNew("link")} data-testid="ontology-new-link" title="How two entities belong together">
+              Link
+            </DropdownMenu.Item>
+            {!domainMode && (
+              <DropdownMenu.Item onSelect={() => askNew("process")} data-testid="ontology-new-process" title="The stages one entity moves through">
+                Process
+              </DropdownMenu.Item>
+            )}
+            <DropdownMenu.Item onSelect={() => askNew("rule")} data-testid="ontology-new-rule" title="A named set of one entity's rows">
+              Rule
+            </DropdownMenu.Item>
+            {!domainMode && (
+              <DropdownMenu.Item onSelect={() => askNew("action")} data-testid="ontology-new-action" title="A button a person can press on an entity">
+                Action
+              </DropdownMenu.Item>
+            )}
+          </DropdownMenu.Content>
+        </DropdownMenu.Root>
+      )}
+      {!orgMode && !domainMode && graph && (
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger>
+            <Button variant="ghost" size="xs" data-testid="ontology-tools">
+              Tools <Icon name="chevd" size={12} />
+            </Button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Content size="1" align="end">
+            <DropdownMenu.Item onSelect={() => tool("duplicates")} title="Find near-duplicate entities to merge">
+              Find duplicates
+            </DropdownMenu.Item>
+            <DropdownMenu.Item onSelect={() => tool("overrides")} data-testid="ontology-overrides-toggle"
+              title="Human overrides on this scope — list them, revert them; routing proposals; export/import">
+              Human edits
+            </DropdownMenu.Item>
+            <DropdownMenu.Item onSelect={() => tool("proposals")} data-testid="ontology-proposals-toggle"
+              title="Proposed context awaiting your review — metric gaps and notes the conversation staged">
+              Proposals
+            </DropdownMenu.Item>
+            <DropdownMenu.Item onSelect={() => tool("skills")} title="Learned skills crystallized from deep analyses">
+              Learned skills
+            </DropdownMenu.Item>
+            {/* Arc FA, FA-3 — the entities by their reads over thirty days. */}
+            <DropdownMenu.Item onSelect={() => tool("reads")} data-testid="ontology-reads-toggle"
+              title="Every entity by how often it was read in the last 30 days, the least read first">
+              Reads by entity
+            </DropdownMenu.Item>
+            <DropdownMenu.Separator />
+            <DropdownMenu.Item onSelect={() => tool("settings")} title="Ontology settings">
+              Settings
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Root>
+      )}
+    </>
+  );
+  const headerBar = inShell ? (
+    <>
+      <ChromeToolbar>{barWhich}{barView}{barRelease}</ChromeToolbar>
+      <ChromeFacts>{barFacts}{barState}</ChromeFacts>
+      <ChromeActions>{barActions}</ChromeActions>
+    </>
+  ) : (
+    // It wraps: on a narrower window its controls used to overflow a container that hides overflow, and focusing a
+    // field in the type panel scrolled the whole layer sideways with no way back (seen at 1440px, 2026-10-10).
+    <div className="flex flex-wrap items-center gap-3 px-4 py-2 border-b shrink-0" style={{ borderColor: "var(--b1)" }}
+      data-testid="ontology-bar">
+      {barWhich}
+      {barView}
+      {barFacts}
+      {barRelease}
+      {barState}
+      <span className="flex items-center gap-2" style={{ marginLeft: "auto" }}>
+        {barActions}
+      </span>
+    </div>
+  );
+
+  // ── ON-8 — the organisation's ontology, which no one connection's graph gates ─────
+  if (domainMode) {
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {headerBar}
+        <div className="flex-1 flex overflow-hidden">
+          <EntityTypeMap connectionId={domainScope()} onSummary={setSummary}
+            view={view} onView={setView} page={page} onPage={setPage} newAsk={newAsk} />
+        </div>
+      </div>
+    );
+  }
+
+  // ── Org-level board — bypasses the single-graph loading/error gates ──────────
+  if (orgMode) {
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {headerBar}
+        <div className="flex-1 relative overflow-hidden">
+          <OntologyOrgCanvas
+            onOpenConnection={(connId) => { setSelectedConnId(connId); setOrgMode(false); }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // ── Loading / error states ──────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {headerBar}
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center space-y-3">
+            {/* The read never builds (routers/ontology.py `_get_ontology_graph`), so this waits on a
+                read — "Building ontology…" promised work that was not happening. */}
+            <Pending label="Reading the ontology" className="aug-fs-h1 text-[var(--t3)]" />
+            <p className="text-sm text-[var(--t3)]">Reading the ontology…</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !graph) {
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {headerBar}
+        {/* The settings drawer lives here too, not only on the populated screen: the
+            build door this state offers is IN it, and a door that opens nothing is
+            the failure mode this codebase keeps re-learning. */}
+        {showSettings && (
+          <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1" />
+            <OntologySettings
+              connectionId={selectedConnId}
+              schema={schema}
+              graph={null}
+              onClose={() => setShowSettings(false)}
+              onRebuilt={(g) => { setGraph(g); setError(null); setShowSettings(false); }}
+            />
+          </div>
+        )}
+        <div className={showSettings ? "hidden" : "flex-1 flex items-center justify-center p-8"}>
+          <div className="text-center space-y-3 max-w-sm">
+            <div className="w-10 h-10 rounded-[var(--r-pill)] bg-zinc-800 text-zinc-400 flex items-center justify-center mx-auto">
+              <Icon name="node" size={24} />
+            </div>
+            <p className="text-sm text-zinc-400">
+              {/* Loading and "no connection yet" are not the empty state: a cold load used to say
+                  "No ontology data available." for a connection with seven entities (§2.1). */}
+              {error ?? (loading ? "Loading the ontology…"
+                : !selectedConnId ? "Finding your connection…"
+                : "No ontology data available.")}
+            </p>
+            {/* PX rule — the empty state names the door rather than describing the
+                absence. Two doors, because there are two reasons to be here: the
+                ontology exists under ANOTHER schema (switch the scope picker above),
+                or it exists nowhere (build it). The read path no longer builds on
+                demand, so without these the screen is a dead end. */}
+            {builtSchemas.length > 0 && (
+              <p className="aug-fs-xs text-zinc-500">
+                Built for{" "}
+                <span className="font-code text-zinc-300">{builtSchemas.join(", ")}</span>
+                {" — switch the schema scope above to see one of those."}
+              </p>
+            )}
+            {selectedConnId && (
+              <Button
+                variant="outline" size="xs"
+                onClick={() => { setShowSettings(true); setError(null); }}
+                className="aug-fs-xs border-zinc-700 text-zinc-300"
+                data-testid="ontology-build-door"
+              >
+                {schema ? `Build the ontology for ${schema}` : "Build the ontology"}
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Main: canvas + optional detail drawer ──────────────────────────────────
+  const close = () => setDrawer(null);
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {headerBar}
+
+      <div className="flex-1 flex overflow-hidden">
+        {/* ON-3b — the entity-type map brings its own rail and entity-type panel. */}
+        <EntityTypeMap key={mapVersion} connectionId={selectedConnId} schema={schema}
+          onReleaseChanged={() => setReleaseVersion(v => v + 1)} onSummary={setSummary} reviewDraft={reviewDraft}
+          view={view} onView={setView} page={page} onPage={setPage} newAsk={newAsk} />
+
+        {/* Settings panel */}
+        {drawer === "settings" && (
+          <OntologySettings
+            connectionId={selectedConnId}
+            schema={schema}
+            graph={graph}
+            onClose={close}
+            onRebuilt={(g) => setGraph(g)}
+          />
+        )}
+
+        {/* Duplicate-entity suggestions */}
+        {drawer === "duplicates" && (
+          <DuplicatesDrawer
+            connId={selectedConnId}
+            schema={schema}
+            onClose={close}
+            onMerged={() => { getOntology(selectedConnId, schema).then(setGraph).catch(() => {}); }}
+          />
+        )}
+
+        {/* Learned skills (agent procedural memory) */}
+        {drawer === "skills" && (
+          <SkillsDrawer connId={selectedConnId} schema={schema} onClose={close} />
+        )}
+        {drawer === "proposals" && (
+          <ProposalsDrawer connId={selectedConnId} schema={schema} onClose={close} />
+        )}
+        {drawer === "overrides" && (
+          <OverridesDrawer connId={selectedConnId} schema={schema}
+            onClose={close}
+            onChanged={() => { getOntology(selectedConnId, schema).then(setGraph).catch(() => {}); }} />
+        )}
+        {drawer === "reads" && (
+          <ReadsDrawer connectionId={selectedConnId} schema={schema} onClose={close} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** One figure in the bar: the number first, then what it counts. */
+function Fact({ n, one, many }: { n: number; one: string; many: string }) {
+  return (
+    <span>
+      <b style={{ color: "var(--t1)", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{formatCount(n)}</b>
+      {` ${n === 1 ? one : many}`}
+    </span>
+  );
+}

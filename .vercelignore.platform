@@ -1,0 +1,30 @@
+# COPY to .vercelignore before a PLATFORM CLI deploy (cp .vercelignore.platform .vercelignore).
+# NOT committed as .vercelignore: the web project builds from this same root via git,
+# and excluding /web starved its builds into a 7-second empty shell whose check PASSED.
+# Platform (Python API) deploy. Root-anchored (a bare name also matches subpaths —
+# `evals` swallowed aughor/evals once). data/ ships ONLY its authored inputs
+# (glossary, rules — the KB ships in /packs since IP-1): the empty-catalogue goal means no generated stores, and
+# per-connection artifacts are keyed to local connections that don't exist there.
+# `/data/*` not `/data`: gitignore semantics cannot re-include under an excluded DIR.
+/web
+/data/*
+!/data/glossary.yaml
+!/data/global_rules.md
+!/data/events.yaml
+!/data/metrics.json
+# The overlay's shipped seed (the catalogue a deployment starts from) and the frozen baseline
+# `data/metrics.json` is read against — without it every shipped row reads as this install's own.
+!/data/shipped
+/tests
+/evals
+/docs
+/scripts
+/scratchpad
+/.venv
+/node_modules
+/.git
+/.github
+/.pytest_cache
+/.ruff_cache
+*.duckdb
+*.db

@@ -1,0 +1,224 @@
+# Extends banking with the rest of the banking and payments industry vocabulary (AUGHOR_ATLAS_INDUSTRY_VOCABULARY_v1,
+# 2026-11-11: 64 reference types). Six of them are the parent's objects, some under another name (Bank Account is its
+# DepositAccount, Loan Account its Loan, Account Transaction its Transaction, Regulatory Report its CallReport, Party
+# its Customer — which already spells `parties` — and Customer itself); Watchlist Match is folded into SanctionsHit as
+# a spelling of it; the other fifty-seven are here. The parent stays the measured package; this is the wider map.
+#
+# Two readings were made, and both are this package's, not the vocabulary's:
+#   * its ten classes are read onto the eight roles this map already has, by meaning and not by the class it printed
+#     (a card authorisation is an event, a payment rail is reference data, a merchant settlement is a transaction);
+#   * a record of activity is a PART of the thing it happened to (a dispute's evidence, a loan's repayment schedule and
+#     delinquencies, a screening's hits), never a thing beside it — the vocabulary lists each as a type of its own.
+# The vocabulary names no table spellings; every alias below is a guess the data confirms or leaves unmatched. Like the
+# parent, nothing here creates an object: one the data has no table for is never proposed and never mentioned.
+objects:
+  # The parent's objects restated — a child replaces an entry by name — to give each its parts and the vocabulary's names.
+  - name: Customer
+    roles: [party]
+    aliases: [customers, clients, borrowers, depositors, parties]
+    parts: [IdentityDocument, CustomerConsent, RiskProfile]
+    description: A person or organisation that holds an account or borrows.
+  - name: DepositAccount
+    roles: [asset]
+    drawn_as: vault
+    aliases: [deposit_accounts, accounts, deposits, bank_accounts, bank_account]
+    parts: [AccountHolderRole]
+    description: A checking, savings, money market or time deposit account.
+  - name: Loan
+    roles: [asset]
+    aliases: [loans, facilities, credit_accounts, loan_accounts, loan_account]
+    parts: [RepaymentSchedule, DelinquencyEvent]
+    description: A loan, lease or line of credit extended to a customer.
+  # What the vocabulary adds — onboarding and identity.
+  - name: IdentityDocument
+    roles: [asset]
+    aliases: [identity_documents, identity_document, id_documents, customer_documents, kyc_documents]
+  - name: CustomerConsent
+    roles: [event]
+    aliases: [customer_consents, consents, consent, data_sharing_consents, marketing_consents]
+  - name: RiskProfile
+    roles: [event]
+    aliases: [risk_profiles, risk_profile, customer_risk_ratings, customer_risk_scores, risk_ratings]
+    description: the risk rating a customer currently carries
+  - name: BeneficialOwner
+    roles: [party]
+    aliases: [beneficial_owners, beneficial_owner, ubos, ultimate_beneficial_owners, controlling_persons]
+  - name: KYCCase
+    roles: [event]
+    aliases: [kyc_cases, kyc_case, kyc_reviews, onboarding_cases, kyc_checks]
+  - name: DueDiligenceReview
+    roles: [event]
+    aliases: [due_diligence_reviews, due_diligence, cdd_reviews, edd_reviews, periodic_reviews]
+  - name: PEPScreening
+    roles: [event]
+    aliases: [pep_screenings, pep_screening, pep_checks, pep_matches]
+  # Deposits and accounts.
+  - name: AccountHolderRole
+    roles: [party]
+    aliases: [account_holder_roles, account_holders, account_owners, account_parties, account_signatories, joint_holders]
+    description: a party in a capacity on an account — owner, joint holder, signatory
+  - name: AccountMandate
+    roles: [asset]
+    drawn_as: contract
+    aliases: [account_mandates, mandates, mandate, direct_debit_mandates, signing_mandates]
+    description: a standing authority to operate or draw on an account
+  - name: BalanceSnapshot
+    roles: [stock]
+    aliases: [balance_snapshots, account_balances, daily_balances, balances, balance_history]
+    description: an account's balance at a moment
+  - name: FeeAssessment
+    roles: [event]
+    aliases: [fee_assessments, account_fees, fees_charged, fee_postings, service_charges]
+  - name: InterestPosting
+    roles: [event]
+    aliases: [interest_postings, interest_accruals, accrued_interest, interest_credits]
+  - name: Statement
+    roles: [event]
+    aliases: [statements, statement, account_statements, periodic_statements]
+  # Payments and settlement.
+  - name: Beneficiary
+    roles: [party]
+    aliases: [beneficiaries, beneficiary, payees, payee, payment_beneficiaries]
+  - name: PaymentRail
+    roles: [catalog]
+    aliases: [payment_rails, payment_rail, payment_schemes, payment_networks, clearing_systems]
+    description: the scheme a payment travels on — ACH, wire, SEPA, instant
+  - name: PaymentInstruction
+    roles: [transaction]
+    aliases: [payment_instructions, payment_instruction, payment_orders, payment_requests, payment_initiations]
+  - name: PaymentTransaction
+    roles: [transaction]
+    aliases: [payment_transactions, payments, payment, transfers, wire_transfers, ach_transactions]
+    parts: [PaymentException]
+  - name: PaymentException
+    roles: [event]
+    aliases: [payment_exceptions, payment_repairs, payment_returns, payment_rejects, failed_payments]
+  - name: ClearingMessage
+    roles: [event]
+    aliases: [clearing_messages, clearing_message, swift_messages, iso20022_messages, payment_messages]
+  - name: Settlement
+    roles: [transaction]
+    aliases: [settlements, settlement, interbank_settlements, settlement_batches, settlement_entries]
+  - name: ReconciliationItem
+    roles: [event]
+    aliases: [reconciliation_items, reconciliation_breaks, recon_items, reconciliations, unmatched_items]
+  - name: SanctionScreening
+    roles: [event]
+    aliases: [sanction_screenings, sanctions_screenings, sanctions_screening, sanctions_checks, name_screenings]
+    parts: [SanctionsHit]
+  - name: SanctionsHit
+    roles: [event]
+    aliases: [sanctions_hits, sanction_hits, screening_hits, watchlist_matches, watchlist_hits, screening_matches]
+    description: a possible match a screening returned, against a sanctions list or another watchlist
+  # Cards and merchant acquiring.
+  - name: Card
+    roles: [asset]
+    aliases: [cards, card, payment_cards, debit_cards, credit_cards]
+  - name: CardLimit
+    roles: [catalog]
+    aliases: [card_limits, card_limit, spending_limits, card_controls]
+  - name: CardTransaction
+    roles: [transaction]
+    aliases: [card_transactions, card_transaction, card_purchases, card_payments, pos_transactions]
+    parts: [CardAuthorization]
+  - name: CardAuthorization
+    roles: [event]
+    aliases: [card_authorizations, card_authorisations, authorizations, authorisations, auth_requests]
+  - name: Terminal
+    roles: [asset]
+    aliases: [terminals, terminal, pos_terminals, card_terminals, atms]
+  - name: MerchantSettlement
+    roles: [transaction]
+    aliases: [merchant_settlements, merchant_settlement, merchant_payouts, acquirer_settlements, merchant_funding]
+  - name: DisputeCase
+    roles: [event]
+    aliases: [dispute_cases, disputes, dispute, card_disputes, transaction_disputes]
+    parts: [DisputeEvidence]
+  - name: DisputeEvidence
+    roles: [event]
+    aliases: [dispute_evidence, dispute_documents, dispute_attachments, evidence_submissions]
+  - name: Chargeback
+    roles: [transaction]
+    aliases: [chargebacks, chargeback, chargeback_cases, representments]
+  # Lending.
+  - name: LoanApplication
+    roles: [transaction]
+    aliases: [loan_applications, loan_application, credit_applications, applications, mortgage_applications]
+  - name: CreditAssessment
+    roles: [event]
+    aliases: [credit_assessments, credit_assessment, credit_decisions, credit_scores, underwriting_decisions]
+  - name: RepaymentSchedule
+    roles: [catalog]
+    aliases: [repayment_schedules, repayment_schedule, amortization_schedules, amortisation_schedules, loan_schedules, loan_installments]
+    description: the instalments a loan is due to be repaid in
+  - name: DelinquencyEvent
+    roles: [event]
+    aliases: [delinquency_events, delinquencies, loan_delinquencies, missed_payments, arrears]
+  - name: Collateral
+    roles: [asset]
+    aliases: [collateral, collaterals, loan_collateral, securities_pledged, pledged_assets]
+  # Fraud and compliance.
+  - name: TransactionAlert
+    roles: [event]
+    aliases: [transaction_alerts, transaction_alert, aml_alerts, fraud_alerts, monitoring_alerts]
+  - name: AMLInvestigation
+    roles: [event]
+    aliases: [aml_investigations, aml_investigation, aml_cases, investigations, financial_crime_cases]
+  - name: SuspiciousActivityCase
+    roles: [event]
+    aliases: [suspicious_activity_cases, suspicious_activity_reports, sars, sar_filings, str_filings]
+  - name: CaseDisposition
+    roles: [event]
+    aliases: [case_dispositions, case_disposition, dispositions, alert_dispositions, case_outcomes]
+  - name: ComplianceEvidence
+    roles: [event]
+    aliases: [compliance_evidence, control_evidence, audit_evidence, compliance_documents]
+  - name: ControlFinding
+    roles: [event]
+    aliases: [control_findings, control_finding, audit_findings, compliance_findings, control_issues]
+  # Treasury and liquidity.
+  - name: Counterparty
+    roles: [party]
+    aliases: [counterparties, counterparty, trading_counterparties, treasury_counterparties]
+  - name: FundingTrade
+    roles: [transaction]
+    aliases: [funding_trades, funding_trade, treasury_trades, money_market_trades, repo_trades, treasury_deals]
+  - name: CashForecast
+    roles: [stock]
+    aliases: [cash_forecasts, cash_forecast, cash_flow_forecasts, liquidity_forecasts]
+    description: cash expected to be held, per account or currency and date
+  - name: LiquidityPosition
+    roles: [stock]
+    aliases: [liquidity_positions, liquidity_position, cash_positions, nostro_balances, liquidity_buffers]
+  - name: CollateralPosition
+    roles: [stock]
+    aliases: [collateral_positions, collateral_position, collateral_balances, pledged_collateral_positions]
+  - name: CurrencyExposure
+    roles: [stock]
+    aliases: [currency_exposures, currency_exposure, fx_exposures, fx_positions, fx_exposure]
+  - name: InterestRateRisk
+    roles: [stock]
+    aliases: [interest_rate_risk, interest_rate_risks, irrbb, rate_sensitivity, repricing_gaps]
+    description: the measured sensitivity of the book to rate moves, at a date
+  - name: LiquidityLimit
+    roles: [catalog]
+    aliases: [liquidity_limits, liquidity_limit, funding_limits, liquidity_thresholds]
+  - name: TreasuryPositionLimit
+    roles: [catalog]
+    aliases: [treasury_position_limits, position_limits, treasury_limits, trading_limits, counterparty_limits]
+  # Customer service and disputes.
+  - name: ChannelInteraction
+    roles: [event]
+    aliases: [channel_interactions, customer_interactions, interactions, contact_history, customer_contacts]
+  - name: ServiceRequest
+    roles: [event]
+    aliases: [service_requests, service_request, customer_requests, support_tickets, service_tickets]
+  - name: Complaint
+    roles: [event]
+    aliases: [complaints, complaint, customer_complaints, complaint_cases]
+  - name: FraudClaim
+    roles: [event]
+    aliases: [fraud_claims, fraud_claim, fraud_cases, fraud_reports, unauthorized_transaction_claims]
+  - name: Resolution
+    roles: [event]
+    aliases: [resolutions, resolution, case_resolutions, complaint_resolutions, dispute_resolutions]

@@ -1,0 +1,693 @@
+"""Tests for the LLM provider resilience layer (aughor/llm/provider.py):
+per-endpoint concurrency semaphore + transient-error retry/backoff/deadline.
+
+This is platform robustness — every Aughor LLM call goes through _run_resilient — so the contract
+matters: retry throttle/transient, surface real failures immediately, never hold a slot while sleeping.
+"""
+from __future__ import annotations
+
+import threading
+
+import pytest
+
+from aughor.llm import coordination as C
+from aughor.llm import provider as P
+
+
+class _Transient(Exception):
+    """A 429 — retryable, but capped at ONE retry since 2026-07-22: another attempt is
+    itself another request against the limit that just refused us."""
+    status_code = 429
+
+
+class _Blip(Exception):
+    """A transient fault that is NOT a volume refusal (network/5xx), so it keeps the full
+    backoff ladder — retrying it costs the endpoint nothing. Used by the ladder tests,
+    which are about the ladder, not about rate limiting."""
+    status_code = 503
+
+
+class _Fatal(Exception):
+    pass
+
+
+@pytest.fixture(autouse=True)
+def _clear_quota_cooldown():
+    """The cooldown is process-global by design (it must outlive any one provider), so a
+    test that trips it would otherwise leak a skipped backend into every later test."""
+    C.set_default(None)
+    yield
+    C.set_default(None)
+
+
+def test_is_transient_classification():
+    assert P._is_transient(_Transient())                       # 429 status
+    assert P._is_transient(_Blip())                            # 503 status
+    assert P._is_transient(Exception("Read timed out"))
+    assert P._is_transient(Exception("429 Too Many Requests"))
+    assert P._is_transient(Exception("upstream overloaded"))
+    # real failures must NOT be retried
+    assert not P._is_transient(_Fatal("validation error: missing field"))
+    assert not P._is_transient(Exception("no such column: foo"))
+    bad = Exception("bad request"); bad.status_code = 400
+    assert not P._is_transient(bad)
+
+
+def test_retries_transient_then_succeeds(monkeypatch):
+    monkeypatch.setattr(P.time, "sleep", lambda *_: None)      # no real backoff in tests
+    monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "3")
+    calls = {"n": 0}
+    def do():
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise _Blip()
+        return "ok"
+    assert P._run_resilient(do, "u1") == "ok"
+    assert calls["n"] == 3                                     # initial + 2 retries
+
+
+def test_non_transient_raises_immediately(monkeypatch):
+    monkeypatch.setattr(P.time, "sleep", lambda *_: None)
+    calls = {"n": 0}
+    def do():
+        calls["n"] += 1
+        raise _Fatal("bad sql")
+    with pytest.raises(_Fatal):
+        P._run_resilient(do, "u2")
+    assert calls["n"] == 1                                     # no retry on real failure
+
+
+def test_retries_bounded_by_max(monkeypatch):
+    monkeypatch.setattr(P.time, "sleep", lambda *_: None)
+    monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "2")
+    calls = {"n": 0}
+    def do():
+        calls["n"] += 1
+        raise _Blip()
+    with pytest.raises(_Blip):
+        P._run_resilient(do, "u3")
+    assert calls["n"] == 3                                     # initial + exactly 2 retries
+
+
+def _acquires_within(key: str, seconds: float = 0.3) -> bool:
+    """Can a slot for ``key`` be taken right now? Probed in a thread so a blocked
+    acquire fails the assertion instead of hanging the suite."""
+    got = threading.Event()
+
+    def probe():
+        with C.default().concurrency_slot(key, 1):
+            got.set()
+
+    threading.Thread(target=probe, daemon=True).start()
+    return got.wait(timeout=seconds)
+
+
+def test_semaphore_shared_per_base_url():
+    """One gate per endpoint — a saturated free endpoint must not block a paid one."""
+    with C.default().concurrency_slot("http://x", 1):
+        assert not _acquires_within("http://x")   # same endpoint, cap 1 ⇒ blocked
+        assert _acquires_within("http://y")       # different endpoint ⇒ its own gate
+
+
+def test_success_path_calls_once(monkeypatch):
+    monkeypatch.setattr(P.time, "sleep", lambda *_: None)
+    calls = {"n": 0}
+    def do():
+        calls["n"] += 1
+        return 42
+    assert P._run_resilient(do, "u4") == 42 and calls["n"] == 1   # happy path unchanged
+
+
+# ── Quota exhaustion vs. throttle ────────────────────────────────────────────
+# A free-tier daily quota arrives as a RateLimitError with status 429 and "rate limit"
+# in the message, so it matched every transient test and was retried three times before
+# raising. That burned ~15s per call AND delayed the fallback that would have answered —
+# a full briefing (digest fan-out + narrator) took 80s to fail with an opaque 500.
+
+def test_daily_quota_is_not_retried_even_though_it_is_a_429():
+    quota = Exception(
+        "Error code: 429 - Rate limit exceeded: free-models-per-day. "
+        "Add 10 credits to unlock 1000 free model requests per day")
+    quota.status_code = 429
+    assert P._is_quota_exhausted(quota)
+    assert not P._is_transient(quota)          # fail over now, don't wait on tomorrow
+
+
+def test_spent_balance_is_not_retried():
+    for msg in ("Credit limit exceeded, please add credits",
+                "402 Payment Required"):
+        assert P._is_quota_exhausted(Exception(msg)), msg
+        assert not P._is_transient(Exception(msg)), msg
+
+
+def test_ordinary_throttle_stays_retryable():
+    """The narrow read matters: a per-minute throttle DOES clear on the retry
+    timescale, so it must keep its backoff ladder."""
+    for msg in ("429 Too Many Requests", "rate limit reached, retry in 2s",
+                "upstream overloaded"):
+        assert not P._is_quota_exhausted(Exception(msg)), msg
+        assert P._is_transient(Exception(msg)), msg
+
+
+def test_gemini_per_minute_limit_is_a_throttle_not_an_exhausted_allowance():
+    """Verbatim from a live Gemini 429. It says "quota" and "billing" but the limit is
+    per MINUTE — classifying it as day-scale parked the backend in a 15-minute cooldown
+    over a 60-second throttle, which a live run caught. Retry it; do not cool it down."""
+    msg = ("Error code: 429 - You exceeded your current quota, please check your plan and "
+           "billing details. Quota exceeded for metric: "
+           "generativelanguage.googleapis.com/generate_content_free_tier_requests, "
+           "limit: 5, model: gemini-3.6-flash")
+    assert not P._is_quota_exhausted(Exception(msg))
+    assert P._is_transient(Exception(msg))
+
+
+def test_openrouter_daily_cap_is_an_exhausted_allowance():
+    """Verbatim from a live OpenRouter 429 — the contrasting case: names a DAY, so it
+    cannot clear on the retry ladder and must fail over immediately."""
+    msg = ("Error code: 429 - Rate limit exceeded: free-models-per-day. Add 10 credits "
+           "to unlock 1000 free model requests per day")
+    assert P._is_quota_exhausted(Exception(msg))
+    assert not P._is_transient(Exception(msg))
+
+
+# ── Fallback chain ───────────────────────────────────────────────────────────
+
+def test_fallback_chain_skips_primary_and_unkeyed_backends(monkeypatch):
+    monkeypatch.delenv("AUGHOR_FALLBACK_DISABLED", raising=False)
+    monkeypatch.delenv("AUGHOR_FALLBACK_BACKENDS", raising=False)
+    monkeypatch.setattr(P, "_active_key", lambda b: "k" if b in ("gemini", "openrouter") else "")
+    prov = P.LLMProvider.__new__(P.LLMProvider)   # no network in a unit test
+    prov.backend, prov.role = "openrouter", "narrator"
+    # openrouter is the primary (excluded); anthropic/groq/together hold no key
+    assert prov._fallback_candidates() == ["gemini"]
+
+
+def test_fallback_chain_is_empty_when_disabled(monkeypatch):
+    monkeypatch.setenv("AUGHOR_FALLBACK_DISABLED", "1")
+    monkeypatch.setattr(P, "_active_key", lambda b: "k")
+    prov = P.LLMProvider.__new__(P.LLMProvider)
+    prov.backend, prov.role = "openrouter", "narrator"
+    assert prov._fallback_candidates() == []
+
+
+def test_fallback_order_is_overridable_and_drops_typos(monkeypatch):
+    monkeypatch.delenv("AUGHOR_FALLBACK_DISABLED", raising=False)
+    monkeypatch.setenv("AUGHOR_FALLBACK_BACKENDS", "gemini, nosuchbackend ,groq")
+    monkeypatch.setattr(P, "_active_key", lambda b: "k")
+    prov = P.LLMProvider.__new__(P.LLMProvider)
+    prov.backend, prov.role = "openrouter", "narrator"
+    assert prov._fallback_candidates() == ["gemini", "groq"]   # order honoured, typo dropped
+
+
+def test_anthropic_keeps_its_pinned_model_others_need_their_own(monkeypatch):
+    """The pre-existing AUGHOR_FALLBACK_MODEL contract is Anthropic's alone — a narrator
+    falling back to Gemini must not inherit a model id from another vendor.
+
+    A backend nobody has configured still resolves to "" and is still SKIPPED: the
+    alternative is dispatching to a vendor with an id tuned for a different one, and the
+    chain answering from somewhere else is precisely how a dead binding used to look
+    healthy."""
+    monkeypatch.setenv("AUGHOR_FALLBACK_MODEL", "vendor/pinned")
+    monkeypatch.delenv("AUGHOR_FALLBACK_MODEL_GEMINI", raising=False)
+    monkeypatch.setattr(P, "_cfg", lambda: {})
+    assert P._fallback_model_for("anthropic", "narrator") == "vendor/pinned"
+    assert P._fallback_model_for("gemini", "narrator") == ""
+    assert P._fallback_model_for("openrouter", "fast") == ""
+
+    monkeypatch.setenv("AUGHOR_FALLBACK_MODEL_GEMINI", "operator/choice")
+    assert P._fallback_model_for("gemini", "narrator") == "operator/choice"
+
+
+def test_a_backend_configured_in_settings_becomes_a_usable_fallback(monkeypatch):
+    """What made the chain real.
+
+    Nothing ships a default and `models` holds bindings only for the CURRENTLY selected
+    backend, so every non-anthropic link resolved to "" and was skipped — a deployment
+    holding three working keys still had no fallback, and a throttled primary took the
+    whole run down while a healthy provider sat unused. The operator's own remembered
+    choice is read instead; no id is invented, it came from the picker for that backend.
+    """
+    monkeypatch.delenv("AUGHOR_FALLBACK_MODEL_GEMINI", raising=False)
+    monkeypatch.setattr(P, "_cfg", lambda: {
+        "backend": "openrouter",
+        "models_by_backend": {"gemini": {"coder": "g/coder", "narrator": "g/narrator"}},
+    })
+    assert P._fallback_model_for("gemini", "coder") == "g/coder"
+    assert P._fallback_model_for("gemini", "narrator") == "g/narrator"
+    # A role they never bound, and a backend they never configured, both stay skippable.
+    assert P._fallback_model_for("gemini", "fast") == ""
+    assert P._fallback_model_for("together", "coder") == ""
+
+
+def test_settings_can_choose_the_fallback_provider_and_model(monkeypatch):
+    """The chain is an operator decision, not an env-file one.
+
+    Before this it could only be steered by AUGHOR_FALLBACK_BACKENDS /
+    AUGHOR_FALLBACK_MODEL_<BACKEND> — invisible from the product, and on a deployment
+    where nobody had set them the chain silently used the built-in order with no model to
+    dispatch with. One model serves every role, which is what Settings offers.
+    """
+    monkeypatch.delenv("AUGHOR_FALLBACK_BACKENDS", raising=False)
+    monkeypatch.delenv("AUGHOR_FALLBACK_MODEL_GEMINI", raising=False)
+    monkeypatch.setattr(P, "_cfg", lambda: {
+        "backend": "openrouter",
+        "fallback": {"backend": "gemini", "model": "vendor/chosen"},
+    })
+    assert P._fallback_backends() == ("gemini",)
+    for role in ("coder", "narrator", "fast"):
+        assert P._fallback_model_for("gemini", role) == "vendor/chosen"
+    # A backend that is not the chosen one is unaffected by that choice.
+    assert P._fallback_model_for("together", "coder") == ""
+
+
+def test_settings_can_switch_the_fallback_off_entirely(monkeypatch):
+    """"none" has to be spelled, because "" already means "the built-in order" — the same
+    reason the env var carries the word."""
+    monkeypatch.delenv("AUGHOR_FALLBACK_BACKENDS", raising=False)
+    monkeypatch.setattr(P, "_cfg", lambda: {"fallback": {"backend": "none"}})
+    assert P._fallback_backends() == ()
+
+    monkeypatch.setattr(P, "_cfg", lambda: {"fallback": {"backend": ""}})
+    assert P._fallback_backends() == P._FALLBACK_ORDER, "blank means the default order"
+
+
+def test_the_env_chain_still_outranks_the_settings_choice(monkeypatch):
+    """How a deployment nobody can open Settings on is steered."""
+    monkeypatch.setattr(P, "_cfg", lambda: {"fallback": {"backend": "gemini"}})
+    monkeypatch.setenv("AUGHOR_FALLBACK_BACKENDS", "groq")
+    assert P._fallback_backends() == ("groq",)
+
+
+def test_an_env_pin_still_outranks_the_remembered_binding(monkeypatch):
+    """The env contract predates the config memory and must keep winning — it is how an
+    operator overrides a deployment they cannot open Settings on."""
+    monkeypatch.setattr(P, "_cfg", lambda: {
+        "models_by_backend": {"gemini": {"coder": "from/settings"}}})
+    monkeypatch.setenv("AUGHOR_FALLBACK_MODEL_GEMINI", "from/env")
+    assert P._fallback_model_for("gemini", "coder") == "from/env"
+
+
+def test_quota_exhausted_primary_fails_over_to_the_next_backend(monkeypatch):
+    """The end-to-end contract this whole change exists for: an exhausted primary
+    hands the SAME call to the next configured backend and the caller never sees
+    the failure. Previously the fallback was Anthropic-or-nothing, so an install
+    without an Anthropic key raised straight through as a 500."""
+    from pydantic import BaseModel
+
+    class _Out(BaseModel):
+        text: str = "ok"
+
+    monkeypatch.delenv("AUGHOR_FALLBACK_DISABLED", raising=False)
+    monkeypatch.setenv("AUGHOR_FALLBACK_BACKENDS", "gemini")
+    monkeypatch.setattr(P, "_active_key", lambda b: "k")
+
+    seen: list[str] = []
+
+    def fake_complete_on(client, backend, model, system, user, response_model,
+                         temperature, **kw):
+        seen.append(backend)
+        if backend == "openrouter":
+            raise Exception("Error code: 429 - Rate limit exceeded: free-models-per-day")
+        return _Out(text=f"from {backend}")
+
+    monkeypatch.setattr(P.LLMProvider, "_complete_on", staticmethod(fake_complete_on))
+
+    prov = P.LLMProvider.__new__(P.LLMProvider)
+    prov.backend, prov.role = "openrouter", "narrator"
+    prov._model, prov._client, prov._base_url = "m:free", object(), "u"
+    monkeypatch.setattr(prov, "_warn_if_over_window", lambda *a, **k: None)
+    # the fallback provider is built lazily; hand back a stub instead of touching the network
+    stub = P.LLMProvider.__new__(P.LLMProvider)
+    stub.backend, stub.role = "gemini", "narrator"
+    stub._model, stub._client, stub._base_url = "gemini-flash-latest", object(), "g"
+    monkeypatch.setattr(prov, "_fallback_provider", lambda b: stub)
+
+    out = prov.complete("s", "u", _Out, 0.3)
+    assert out.text == "from gemini"
+    assert seen == ["openrouter", "gemini"]          # tried primary once, then failed over
+
+
+def test_original_cause_is_raised_when_every_link_fails(monkeypatch):
+    """Diagnosis depends on this: the LAST backend's error explains nothing about
+    why the primary went down, so the chain must surface the ORIGINAL cause."""
+    from pydantic import BaseModel
+
+    class _Out(BaseModel):
+        text: str = "ok"
+
+    monkeypatch.delenv("AUGHOR_FALLBACK_DISABLED", raising=False)
+    monkeypatch.setenv("AUGHOR_FALLBACK_BACKENDS", "gemini")
+    monkeypatch.setattr(P, "_active_key", lambda b: "k")
+
+    def fake_complete_on(client, backend, model, system, user, response_model,
+                         temperature, **kw):
+        raise Exception("primary is out of quota" if backend == "openrouter"
+                        else "gemini key rejected")
+
+    monkeypatch.setattr(P.LLMProvider, "_complete_on", staticmethod(fake_complete_on))
+
+    prov = P.LLMProvider.__new__(P.LLMProvider)
+    prov.backend, prov.role = "openrouter", "narrator"
+    prov._model, prov._client, prov._base_url = "m:free", object(), "u"
+    monkeypatch.setattr(prov, "_warn_if_over_window", lambda *a, **k: None)
+    stub = P.LLMProvider.__new__(P.LLMProvider)
+    stub.backend, stub.role = "gemini", "narrator"
+    stub._model, stub._client, stub._base_url = "gemini-flash-latest", object(), "g"
+    monkeypatch.setattr(prov, "_fallback_provider", lambda b: stub)
+
+    with pytest.raises(Exception, match="primary is out of quota"):
+        prov.complete("s", "u", _Out, 0.3)
+
+
+# ── Quota cooldown ───────────────────────────────────────────────────────────
+# Without this, a briefing's dozens of LLM calls each paid one guaranteed-failed
+# round trip to the exhausted primary: a 9s brief measured 76s.
+
+def test_exhausted_backend_is_skipped_on_the_next_call(monkeypatch):
+    from pydantic import BaseModel
+
+    class _Out(BaseModel):
+        text: str = "ok"
+
+    monkeypatch.delenv("AUGHOR_FALLBACK_DISABLED", raising=False)
+    monkeypatch.setenv("AUGHOR_FALLBACK_BACKENDS", "gemini")
+    monkeypatch.setattr(P, "_active_key", lambda b: "k")
+
+    seen: list[str] = []
+
+    def fake_complete_on(client, backend, model, system, user, response_model,
+                         temperature, **kw):
+        seen.append(backend)
+        if backend == "openrouter":
+            raise Exception("Error code: 429 - Rate limit exceeded: free-models-per-day")
+        return _Out(text=f"from {backend}")
+
+    monkeypatch.setattr(P.LLMProvider, "_complete_on", staticmethod(fake_complete_on))
+
+    prov = P.LLMProvider.__new__(P.LLMProvider)
+    prov.backend, prov.role = "openrouter", "narrator"
+    prov._model, prov._client, prov._base_url = "m:free", object(), "u"
+    monkeypatch.setattr(prov, "_warn_if_over_window", lambda *a, **k: None)
+    stub = P.LLMProvider.__new__(P.LLMProvider)
+    stub.backend, stub.role = "gemini", "narrator"
+    stub._model, stub._client, stub._base_url = "gemini-flash-latest", object(), "g"
+    monkeypatch.setattr(prov, "_fallback_provider", lambda b: stub)
+
+    assert prov.complete("s", "u", _Out, 0.3).text == "from gemini"
+    assert seen == ["openrouter", "gemini"]      # first call learns the hard way
+    seen.clear()
+    assert prov.complete("s", "u", _Out, 0.3).text == "from gemini"
+    assert seen == ["gemini"]                    # second call goes straight there
+
+
+def test_cooldown_expires_so_a_topped_up_account_recovers(monkeypatch):
+    """Self-healing matters: adding credits must not require a restart."""
+    monkeypatch.setenv("AUGHOR_QUOTA_COOLDOWN_S", "0")
+    P._mark_quota_exhausted("openrouter")
+    assert not P._in_quota_cooldown("openrouter")
+    # expired entry is DROPPED, not merely reported false — otherwise a long-lived
+    # process accumulates one row per backend it ever throttled.
+    assert "openrouter" not in C.default()._cooldown_until
+
+
+def test_cooldown_holds_within_its_window(monkeypatch):
+    monkeypatch.setenv("AUGHOR_QUOTA_COOLDOWN_S", "900")
+    P._mark_quota_exhausted("openrouter")
+    assert P._in_quota_cooldown("openrouter")
+    assert not P._in_quota_cooldown("gemini")        # scoped to the backend that failed
+
+
+def test_cooled_backend_is_dropped_from_the_fallback_chain(monkeypatch):
+    """A spent FALLBACK deserves the same treatment as a spent primary."""
+    monkeypatch.delenv("AUGHOR_FALLBACK_DISABLED", raising=False)
+    monkeypatch.setenv("AUGHOR_FALLBACK_BACKENDS", "gemini,groq")
+    monkeypatch.setenv("AUGHOR_QUOTA_COOLDOWN_S", "900")
+    monkeypatch.setattr(P, "_active_key", lambda b: "k")
+    prov = P.LLMProvider.__new__(P.LLMProvider)
+    prov.backend, prov.role = "openrouter", "narrator"
+    assert prov._fallback_candidates() == ["gemini", "groq"]
+    P._mark_quota_exhausted("gemini")
+    assert prov._fallback_candidates() == ["groq"]
+
+
+def test_primary_still_tried_when_it_is_the_only_option(monkeypatch):
+    """Cooldown must never strand a call: with no fallback configured, the primary
+    is still attempted so the caller gets a real error (or a recovered quota)."""
+    from pydantic import BaseModel
+
+    class _Out(BaseModel):
+        text: str = "ok"
+
+    monkeypatch.setenv("AUGHOR_FALLBACK_DISABLED", "1")
+    monkeypatch.setenv("AUGHOR_QUOTA_COOLDOWN_S", "900")
+    P._mark_quota_exhausted("openrouter")
+
+    seen: list[str] = []
+
+    def fake_complete_on(client, backend, model, system, user, response_model,
+                         temperature, **kw):
+        seen.append(backend)
+        return _Out(text="recovered")
+
+    monkeypatch.setattr(P.LLMProvider, "_complete_on", staticmethod(fake_complete_on))
+    prov = P.LLMProvider.__new__(P.LLMProvider)
+    prov.backend, prov.role = "openrouter", "narrator"
+    prov._model, prov._client, prov._base_url = "m:free", object(), "u"
+    monkeypatch.setattr(prov, "_warn_if_over_window", lambda *a, **k: None)
+
+    assert prov.complete("s", "u", _Out, 0.3).text == "recovered"
+    assert seen == ["openrouter"]
+
+
+# ── Server-stated retry delay ────────────────────────────────────────────────
+# Our ladder tops out near 15s. Gemini's free-tier throttle says "Please retry in 42.3s",
+# so every retry was spent inside a window that had not reopened — the call failed even
+# though waiting slightly longer would have succeeded.
+
+def test_retry_after_is_parsed_from_the_provider_message():
+    msg = ("429 You exceeded your current quota … limit: 20, model: gemini-3.6-flash "
+           "Please retry in 42.327199508s.")
+    assert P._retry_after_seconds(Exception(msg)) == pytest.approx(42.327, abs=0.01)
+
+
+def test_retry_after_handles_the_common_spellings():
+    for msg, want in (("Retry-After: 30s", 30.0),
+                      ('"retryDelay": "17s"', 17.0),
+                      ("please retry again in 5s", 5.0)):
+        assert P._retry_after_seconds(Exception(msg)) == pytest.approx(want), msg
+
+
+def test_retry_after_absent_returns_none():
+    assert P._retry_after_seconds(Exception("429 Too Many Requests")) is None
+
+
+def test_retry_after_is_capped():
+    """A pathological value must not park a request indefinitely."""
+    assert P._retry_after_seconds(Exception("retry in 99999s")) == P._RETRY_AFTER_MAX_S
+
+
+def test_ladder_waits_the_server_stated_delay(monkeypatch):
+    slept: list[float] = []
+    monkeypatch.setattr(P.time, "sleep", lambda s: slept.append(s))
+    monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "1")
+    calls = {"n": 0}
+
+    def do():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise Exception("429 rate limit. Please retry in 42.3s")
+        return "ok"
+
+    assert P._run_resilient(do, "u-retry-after") == "ok"
+    assert slept and slept[0] == pytest.approx(42.3, abs=0.01)   # not the ~2s ladder guess
+
+
+def test_ladder_keeps_its_own_backoff_when_the_delay_is_shorter(monkeypatch):
+    """The server's number wins only when it is LONGER — a "retry in 0s" must not
+    turn the ladder into a hot loop."""
+    slept: list[float] = []
+    monkeypatch.setattr(P.time, "sleep", lambda s: slept.append(s))
+    monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "1")
+    calls = {"n": 0}
+
+    def do():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise Exception("429 rate limit. Please retry in 0.1s")
+        return "ok"
+
+    assert P._run_resilient(do, "u-retry-short") == "ok"
+    assert slept[0] >= 2.0
+
+
+def test_gemini_daily_quota_id_is_an_exhausted_allowance():
+    """Verbatim from a live Gemini 429. The prose is IDENTICAL to its per-minute throttle —
+    only the quotaId distinguishes them, and it spells the period with no separator. It also
+    advertises "retry in 36s", which is wrong for a day-long block: honouring that retried a
+    dead backend three times and cost ~110s. The id is the authority, not the prose."""
+    msg = ('Error code: 429 - You exceeded your current quota, please check your plan and '
+           'billing details. "quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier". '
+           'Please retry in 36.284972143s.')
+    assert P._is_quota_exhausted(Exception(msg))
+    assert not P._is_transient(Exception(msg))     # no retry, and no cooldown-defeating wait
+
+
+# ── Request budget (2026-07-22 usage audit) ──────────────────────────────────
+# Grounded in the live OpenRouter export + Gemini rate-limit dashboard:
+#   · 93% of all completion tokens were REASONING; 3 requests ran the full 600s
+#     deadline emitting 13.5k–18.9k reasoning tokens with no finish_reason at all.
+#   · Gemini peaked at 19 RPM against a 15 RPM cap, error chart dominated by 429s.
+#   · 12 of 62 requests were 113-token health-check probes — against a 50/day cap.
+
+def test_openai_compat_calls_now_carry_an_output_cap():
+    """The Anthropic path always passed max_tokens; every other backend passed NOTHING,
+    so a reasoning model generated until our own deadline. That is the runaway."""
+    from pydantic import BaseModel
+
+    class _Out(BaseModel):
+        ok: bool = True
+
+    seen = {}
+
+    class _Endpoint:
+        def create_with_completion(self, **kw):
+            seen.update(kw)
+            return _Out(), None
+
+    client = type("C", (), {"chat": type("Ch", (), {"completions": _Endpoint()})()})()
+    P.LLMProvider._complete_on(client, "openrouter", "m", "s", "u", _Out, 0.1, max_retries=0)
+    assert seen["max_tokens"] == P._max_output_tokens()
+
+
+def test_reasoning_effort_is_sent_only_where_it_is_understood(monkeypatch):
+    """OpenRouter reads `reasoning` from the body; other OpenAI-compat shims reject
+    unknown fields, so sending it everywhere would break them. The VALUE is pinned
+    via env because the default is model-sized (A1 ModelProfile) — asserting the
+    tier default here would make the test depend on this box's llm_config binding."""
+    monkeypatch.setenv("AUGHOR_REASONING_EFFORT", "low")
+    assert P._reasoning_extra_body("openrouter") == {"reasoning": {"effort": "low"}}
+    assert P._reasoning_extra_body("gemini") == {}
+    assert P._reasoning_extra_body("groq") == {}
+
+
+def test_reasoning_can_be_turned_off_for_a_binding_that_rejects_it(monkeypatch):
+    monkeypatch.setenv("AUGHOR_REASONING_EFFORT", "off")
+    assert P._reasoning_extra_body("openrouter") == {}
+
+
+def test_a_binding_that_rejects_the_extras_retries_without_them():
+    """Graceful degradation: an unknown-field complaint must cost the call nothing."""
+    from pydantic import BaseModel
+
+    class _Out(BaseModel):
+        ok: bool = True
+
+    calls = []
+
+    class _Endpoint:
+        def create_with_completion(self, **kw):
+            calls.append(kw)
+            if "extra_body" in kw:
+                raise ValueError("400: unrecognized field 'reasoning'")
+            return _Out(), None
+
+    client = type("C", (), {"chat": type("Ch", (), {"completions": _Endpoint()})()})()
+    P.LLMProvider._complete_on(client, "openrouter", "m", "s", "u", _Out, 0.1, max_retries=0)
+    assert len(calls) == 2
+    assert "extra_body" in calls[0] and "extra_body" not in calls[1]
+
+
+def test_a_rate_limit_still_reaches_the_fallback_chain_rather_than_being_swallowed():
+    """The retry-without-extras path must not eat a 429 — that has to stay transient
+    so the ladder and the provider failover still see it."""
+    from pydantic import BaseModel
+
+    class _Out(BaseModel):
+        ok: bool = True
+
+    class _Endpoint:
+        def create_with_completion(self, **kw):
+            raise Exception("Error code: 429 - rate limit exceeded")
+
+    client = type("C", (), {"chat": type("Ch", (), {"completions": _Endpoint()})()})()
+    with pytest.raises(Exception, match="429"):
+        P.LLMProvider._complete_on(client, "openrouter", "m", "s", "u", _Out, 0.1, max_retries=0)
+
+
+def test_a_rate_limit_gets_one_retry_not_the_full_ladder(monkeypatch):
+    """THE SPIRAL. Every retry is itself another REQUEST against the limit that just
+    rejected us. The live Gemini account peaked at 19 RPM against a 15 RPM cap."""
+    monkeypatch.setattr(P.time, "sleep", lambda *_: None)
+    monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "3")
+    calls = {"n": 0}
+
+    def do():
+        calls["n"] += 1
+        raise _Transient()          # status_code 429
+
+    with pytest.raises(_Transient):
+        P._run_resilient(do, "u-rl")
+    assert calls["n"] == 2          # initial + exactly ONE retry, not four
+
+
+def test_a_non_rate_limit_transient_keeps_the_full_ladder(monkeypatch):
+    """A network blip is not a volume refusal — retrying it costs the endpoint nothing."""
+    monkeypatch.setattr(P.time, "sleep", lambda *_: None)
+    monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "3")
+    calls = {"n": 0}
+
+    def do():
+        calls["n"] += 1
+        raise Exception("read timed out")
+
+    with pytest.raises(Exception):
+        P._run_resilient(do, "u-blip")
+    assert calls["n"] == 4          # initial + 3
+
+
+def test_the_deadline_leaves_headroom_over_the_observed_honest_maximum():
+    """180s, not 90s: the same export contains a LEGITIMATE call that finished at
+    86.7s, and a ceiling that kills real work is worse than a loose one."""
+    assert 90.0 < P._DEADLINE_S < 600.0
+
+
+def test_health_check_verdicts_are_cached(monkeypatch):
+    """12 of 62 requests were 113-token probes against a 50/day cap."""
+    P._ping_cache.clear()
+    calls = {"n": 0}
+    monkeypatch.setattr(P, "_ping", lambda b, m, r="coder": (calls.__setitem__("n", calls["n"] + 1),
+                                                            {"ok": True, "model": m})[1])
+    a = P._ping_cached("openrouter", "m")
+    b = P._ping_cached("openrouter", "m")
+    assert calls["n"] == 1
+    assert a.get("cached") is None and b.get("cached") is True
+
+
+def test_a_forced_health_check_really_re_probes(monkeypatch):
+    """The Settings button must still be able to ask "is it up NOW"."""
+    P._ping_cache.clear()
+    calls = {"n": 0}
+    monkeypatch.setattr(P, "_ping", lambda b, m, r="coder": (calls.__setitem__("n", calls["n"] + 1),
+                                                             {"ok": True, "model": m})[1])
+    P._ping_cached("openrouter", "m")
+    P._ping_cached("openrouter", "m", force=True)
+    assert calls["n"] == 2
+
+
+def test_max_retries_zero_is_honoured_even_for_a_rate_limit(monkeypatch):
+    """The one-retry rate-limit rule is a CEILING on the ladder, not a floor. Written as
+    `budget = 1 if rate_limited else max_retries` it silently RAISED an explicit
+    max_retries=0 to 1 — defeating the health check, which passes 0 precisely so it
+    reports what is true NOW instead of sleeping out the server's retry-after."""
+    slept: list = []
+    monkeypatch.setattr(P.time, "sleep", slept.append)
+    calls = {"n": 0}
+
+    def do():
+        calls["n"] += 1
+        raise _Transient()          # status_code 429
+
+    with pytest.raises(_Transient):
+        P._run_resilient(do, "u-rl-zero", max_retries=0)
+    assert calls["n"] == 1          # the one attempt asked for — no retry, no sleep
+    assert slept == []

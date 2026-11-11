@@ -1,0 +1,142 @@
+{
+  "industry": "Retail / E-commerce",
+  "aliases": ["retail", "ecommerce", "e-commerce", "dtc", "direct-to-consumer", "online retail", "commerce", "consumer goods", "marketplace", "beauty", "cosmetics", "apparel", "cpg"],
+  "generic_aliases": ["retail", "commerce", "marketplace", "consumer goods", "beauty", "cosmetics", "apparel", "cpg"],
+  "kb_files": ["ec_customer_lifecycle", "ec_customer_lifecycle_level_2", "ec_funnel_conversion", "ec_funnel_conversion_level_2", "ec_inventory_merchandising", "ec_inventory_merchandising_level_2", "ec_orders_revenue", "ec_orders_revenue_level_2"],
+  "description": "Transactional sale of physical goods to consumers, online or in-store. Levers are demand generation (acquisition, conversion), unit economics (AOV, margin), retention (repeat purchase), and inventory efficiency.",
+  "metrics": [
+    {
+      "name": "Average Order Value (AOV)",
+      "aliases": ["AOV", "average basket value", "average ticket"],
+      "definition": "Merchandise value per completed order: each order's lines (quantity × unit price) summed, before refunds, discounts and fees — the same basis as GMV — over the number of distinct completed orders. Cancelled, test and fraud orders are left out.",
+      "formula": "SUM(line_quantity * line_unit_price) / NULLIF(COUNT(DISTINCT order_id), 0)",
+      "grain": "Order grain. Sum the line value to the order, then divide by COUNT(DISTINCT order_id) — never average line totals. Where a warehouse keeps only an order total, sum it at one row per order.",
+      "anti_patterns": [
+        "AVG(order_items.line_total) computes average LINE value, not order value.",
+        "After joining orders to items, COUNT(*) counts lines, not orders — dividing revenue by it understates AOV.",
+        "Taking refunds or discounts out of the numerator: that is net revenue per order, a different figure. AOV here is gross, on GMV's basis, so AOV × orders = GMV."
+      ],
+      "sane_range": "USD, strictly positive; typically tens to low-hundreds for DTC.",
+      "needs_concepts": ["orders", "order line quantity and unit price, or an order total"]
+    },
+    {
+      "name": "Cart-to-Order Conversion Rate",
+      "aliases": ["conversion rate", "cart conversion", "checkout conversion"],
+      "definition": "Share of shopping carts (or sessions) that result in a placed/paid order.",
+      "formula": "COUNT(DISTINCT converted_cart_id) / COUNT(DISTINCT cart_id), where a cart is 'converted' iff an order references it (cart_id / session_id / anon_id).",
+      "grain": "Cart grain. Carts and orders are each per session/visitor; relate them at the cart key. A conversion rate is bounded 0..1 BY CONSTRUCTION.",
+      "anti_patterns": [
+        "COUNT(orders) / COUNT(carts) as raw totals → can exceed 1 (the classic >1 bug). If you get >1, the join grain is wrong, not the data.",
+        "Counting order_items instead of distinct orders fans out the numerator.",
+        "A chasm join (carts ⋈ orders both many-side of a session) multiplies counts — pre-aggregate each side to the cart key first."
+      ],
+      "sane_range": "ratio 0..1 (never > 1).",
+      "needs_concepts": ["carts or sessions", "orders", "a key linking cart→order"]
+    },
+    {
+      "name": "Gross Margin %",
+      "aliases": ["gross margin", "contribution margin", "product margin"],
+      "definition": "Share of revenue left after cost of goods sold.",
+      "formula": "SUM(revenue - cogs) / NULLIF(SUM(revenue), 0)",
+      "grain": "Line-item or order grain; sum revenue and COGS at the SAME grain before dividing. Do NOT average per-row margin percentages (revenue-weighting matters).",
+      "anti_patterns": [
+        "AVG(line_margin_pct) is unweighted — a $1 line and a $1,000 line count equally. Aggregate revenue and cogs, then divide.",
+        "Mixing pre-discount price with post-discount revenue inflates margin."
+      ],
+      "sane_range": "percent 0..100 (negative only on loss-leaders / data error).",
+      "needs_concepts": ["revenue", "cogs / unit cost"]
+    },
+    {
+      "name": "Inventory Turnover",
+      "aliases": ["stock turn", "inventory turns", "turnover ratio"],
+      "definition": "How many times inventory is sold and replaced over a period.",
+      "formula": "SUM(units_sold) / NULLIF(AVG(units_on_hand), 0)  -- or COGS / average inventory value",
+      "grain": "Per SKU then aggregate; average the stock level over the period (snapshots), not a single point. A SKU with zero average stock yields NULL/undefined turnover, not zero.",
+      "anti_patterns": [
+        "Dividing by a single end-of-period snapshot overstates turnover for seasonal SKUs.",
+        "Treating NULL average-stock as 0 turnover hides slow-movers; surface them as 'no stock data / overstock' instead."
+      ],
+      "sane_range": "ratio 0..∞ (typical retail 2–12/yr; >50 suggests a grain error).",
+      "needs_concepts": ["units sold / COGS", "inventory snapshots or movements"]
+    },
+    {
+      "name": "Return Rate",
+      "aliases": ["item return rate", "returns rate", "RMA rate"],
+      "definition": "Share of sold lines the customer sent back. The same metric as the package's governed return_rate (metrics/return_rate.yaml).",
+      "formula": "SUM(CASE WHEN returned_at IS NOT NULL THEN 1.0 ELSE 0.0 END) / NULLIF(COUNT(*), 0) over sold lines",
+      "grain": "Line grain: sold lines over a period. Take cancelled lines out of the population where they are marked — a cancelled line never shipped, so it could not be returned.",
+      "anti_patterns": [
+        "A refund is not a return: money can go back without the goods (a damaged item refunded in place), and goods can come back without money (an exchange, store credit). Refund rate is its own metric.",
+        "Counting ORDERS with a return over orders is the order return rate — a different, higher figure: an order with one returned line of five counts whole.",
+        "Counting return ROWS rather than returned lines: one line can carry several rows in a returns table."
+      ],
+      "sane_range": "ratio 0..1; apparel/beauty often 0.1–0.4.",
+      "needs_concepts": ["order lines", "a return date or flag per line"]
+    },
+    {
+      "name": "Repeat Purchase Rate",
+      "aliases": ["repeat rate", "returning customer rate", "reorder rate"],
+      "definition": "Share of customers who place more than one order.",
+      "formula": "COUNT(DISTINCT customer_id WITH order_count > 1) / NULLIF(COUNT(DISTINCT customer_id), 0)",
+      "grain": "Customer grain. Aggregate orders per customer FIRST (subquery), then count those with >1.",
+      "anti_patterns": [
+        "COUNT(orders) / COUNT(customers) is orders-per-customer, NOT repeat rate.",
+        "Window over a join without pre-aggregating customers double-counts."
+      ],
+      "sane_range": "ratio 0..1.",
+      "needs_concepts": ["customers", "orders linked to customers"]
+    },
+    {
+      "name": "Customer Acquisition Cost (CAC)",
+      "aliases": ["CAC", "acquisition cost", "cost per acquisition"],
+      "definition": "Marketing/sales spend divided by newly acquired customers.",
+      "formula": "SUM(marketing_spend) / NULLIF(COUNT(DISTINCT new_customer_id), 0)",
+      "grain": "Spend and new-customers must cover the SAME period and ideally the same channel. 'New' = first-order customers in the window.",
+      "anti_patterns": [
+        "Dividing total spend by ALL customers (not just newly acquired) understates CAC.",
+        "Attributing all spend to one channel when spend spans channels."
+      ],
+      "sane_range": "USD, positive; compare against LTV.",
+      "needs_concepts": ["marketing spend", "customers with first-order date"]
+    },
+    {
+      "name": "ROAS (Return on Ad Spend) by Channel",
+      "aliases": ["ROAS", "return on ad spend", "marketing efficiency"],
+      "definition": "Attributed revenue per dollar of ad spend, by channel.",
+      "formula": "SUM(attributed_revenue) / NULLIF(SUM(spend), 0)  per channel",
+      "grain": "Channel grain. Use a consistent attribution weight; revenue and spend at the same channel+period grain.",
+      "anti_patterns": [
+        "Summing fractional attribution weights as if whole orders double-counts revenue.",
+        "Per-unit revenue divided by total spend yields meaningless ~0 values (e.g. 5.69e-11) — align magnitudes."
+      ],
+      "sane_range": "ratio 0..∞ (typical 1–10x); near-zero scientific-notation = a units/grain error.",
+      "needs_concepts": ["ad spend by channel", "attributed revenue"]
+    }
+  ],
+  "statement": ["gross_sales", "deductions", "net_sales", "cogs", "gross_profit", "fulfilment", "marketing", "contribution", "opex", "profit", "volume", "rate", "operations"],
+  "reading_order": [
+    {"metric": "Gross Merchandise Value", "aliases": ["GMV", "gross merchandise"], "kind": "gross_sales"},
+    {"metric": "Revenue", "aliases": ["gross revenue", "gross sales", "sales"], "kind": "gross_sales"},
+    {"metric": "Discount Rate", "aliases": ["discount", "discounts"], "kind": "deductions"},
+    {"metric": "Return Rate", "aliases": ["item return rate", "returns rate", "returns", "refunds"], "kind": "deductions"},
+    {"metric": "Net Revenue", "aliases": ["net merchandise revenue", "net sales"], "kind": "net_sales"},
+    {"metric": "Cost of Goods Sold", "aliases": ["COGS", "landed cost", "product cost"], "kind": "cogs"},
+    {"metric": "Gross Margin", "aliases": ["gross profit", "product margin"], "kind": "gross_profit"},
+    {"metric": "Fulfilment Cost", "aliases": ["fulfillment cost", "shipping cost", "payment fees"], "kind": "fulfilment"},
+    {"metric": "Marketing Spend", "aliases": ["ad spend", "advertising spend"], "kind": "marketing"},
+    {"metric": "Customer Acquisition Cost", "aliases": ["CAC", "acquisition cost"], "kind": "marketing"},
+    {"metric": "ROAS", "aliases": ["return on ad spend"], "kind": "marketing"},
+    {"metric": "Contribution Margin", "aliases": ["contribution profit"], "kind": "contribution"},
+    {"metric": "Operating Expenses", "aliases": ["opex", "overhead"], "kind": "opex"},
+    {"metric": "Net Profit", "aliases": ["operating profit", "net income", "EBITDA"], "kind": "profit"},
+    {"metric": "Orders", "aliases": ["order count", "number of orders"], "kind": "volume"},
+    {"metric": "Units Sold", "aliases": ["units", "items sold"], "kind": "volume"},
+    {"metric": "Customers", "aliases": ["buyers", "active customers"], "kind": "volume"},
+    {"metric": "Average Order Value", "aliases": ["AOV", "average basket value", "average ticket"], "kind": "rate"},
+    {"metric": "Conversion Rate", "aliases": ["conversion"], "kind": "rate"},
+    {"metric": "Repeat Purchase Rate", "aliases": ["repeat rate", "returning customer rate"], "kind": "rate"},
+    {"metric": "Sell-Through Rate", "aliases": ["sell through"], "kind": "rate"},
+    {"metric": "Inventory Turnover", "aliases": ["stock turn", "inventory turns"], "kind": "rate"},
+    {"metric": "Lead Time", "aliases": ["delivery time", "ship to delivery", "fulfilment time", "fulfillment time"], "kind": "operations"}
+  ]
+}

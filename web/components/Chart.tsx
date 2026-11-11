@@ -1,0 +1,266 @@
+"use client";
+
+/**
+ * Chart — the reusable chart component, and the ONE seam every surface goes through.
+ * Given SQL-shaped { columns, rows } (+ the backend's chart hint, config and exhibit) it
+ * resolves a Vega-Lite spec — or a hand-authored Vega one for the four forms Vega-Lite
+ * cannot express — and renders it with download-PNG, drag-to-resize and label chrome.
+ *
+ * The engine history is Observable Plot → Vega-Lite → ECharts → Vega-Lite (2026-08).
+ * The PUBLIC PROPS have not changed across any of it, which is why every surface (chat,
+ * report, exploration, query builder, canvas, briefing) kept working through each move.
+ * Column roles come from ./charts/columnRoles and type inference from
+ * ./charts/chartTypeInference — both engine-neutral, and both older than either engine.
+ */
+
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useOrgSettings } from "@/lib/useOrgSettings";
+import { barsPerBand } from "@/components/charts/vega/bandFit";
+import { VegaChart } from "@/components/charts/vega/VegaChart";
+import { resolveVegaSpec } from "@/components/charts/vega/resolveSpec";
+import { resolveTier3Spec } from "@/components/charts/vega/tier3";
+import { downloadChartPng, type ChartInstance } from "@/lib/chartExport";
+import type { ChartCustom } from "@/components/charts/chartCustom";
+import type { ExhibitSpec } from "@/components/charts/exhibit";
+import { namesOf } from "@/components/charts/vega/names";
+import { Icon } from "@/components/ui/icon";
+import { Button } from "@/components/ui/button";
+
+/** User chart styling applied as a generic post-pass over the built ECharts option —
+ *  lets the Query Builder Customize tab override colours / number format / legend /
+ *  axis titles. All fields optional; a null/empty custom is a no-op, so non-customizing
+ *  callers (chat, reports, explorer) are unaffected. */
+// Re-exported for the five components that import it through this module.
+export type { ChartCustom };
+
+// ── Customize post-pass (ECharts) ────────────────────────────────────────────
+
+// SCHEME_PALETTES (named categorical palettes) now live in @/lib/chartPalettes.
+
+/** Viewer-selectable value-axis formats (d3-format strings; null = automatic).
+ *  The first slice of the spreadsheet-style formatting ask — custom codes, dates and
+ *  per-column formats are roadmap §8. */
+const FORMAT_CHOICES: { key: string; label: string; d3: string | null; title: string }[] = [
+  { key: "auto",     label: "Auto", d3: null,     title: "Automatic" },
+  { key: "percent",  label: "%",    d3: ".1%",    title: "Percentage" },
+  { key: "int",      label: "123",  d3: ",d",     title: "Integer" },
+  { key: "float",    label: "1.23", d3: ",.2f",   title: "Decimal" },
+  { key: "currency", label: "$",    d3: "$,.2f",  title: "Currency" },
+  { key: "compact",  label: "12K",  d3: "~s",     title: "Compact (K/M/B)" },
+];
+
+
+export function Chart({
+  columns,
+  rows,
+  chartType = "auto",
+  chartConfig = null,
+  title = "chart",
+  chrome = true,
+  showLabels: showLabelsProp,
+  custom = null,
+  heightScale = 1,
+  fitHeight = null,
+  columnUnits,
+  exhibit = null,
+  measure = null,
+  onSelect,
+  onInstanceReady,
+}: {
+  columns: string[];
+  rows: unknown[][];
+  chartType?: string | null;
+  chartConfig?: Record<string, unknown> | null;
+  title?: string;
+  /** Scale the computed chart height (e.g. 0.75 for a compact briefing card). */
+  heightScale?: number;
+  /** Fill an exact pixel height instead of the data-derived default — for a resizeable
+   *  card/canvas node where the chart should grow to fill the box (drops the 350px + few-cat
+   *  width caps). */
+  fitHeight?: number | null;
+  /** Click a mark to drill in — receives the datum behind the clicked bar/point. */
+  onSelect?: (datum: Record<string, unknown>) => void;
+  /** Hand the live chart instance up to a chromeless caller (e.g. so a side-panel
+   *  "Download PNG" can export a chart rendered with chrome={false}). Engine-neutral:
+   *  Vega produces its image asynchronously, so getDataURL may return a promise. */
+  onInstanceReady?: (inst: ChartInstance) => void;
+  /** Render the hover toolbar (labels + download) and drag-to-resize handle. */
+  chrome?: boolean;
+  /** Externally control data-label visibility (chromeless mode). */
+  showLabels?: boolean;
+  /** User styling overrides applied as a post-pass over the option. */
+  custom?: ChartCustom | null;
+  /** Authoritative per-column display unit from the backend finding ({"metric_total":"percent"}),
+   *  so a rate renders "41.0%" on the axis + labels instead of the raw "0.4". */
+  columnUnits?: Record<string, string> | null;
+  /** Optional backend exhibit spec (semantic color mode, reference lines, point labels,
+   *  quadrant dividers). Absent → rendering is byte-identical to before. */
+  exhibit?: ExhibitSpec | null;
+  /** The measure the user chose (viz editor / Query Builder). Wins over inference. */
+  measure?: string | null;
+}) {
+  const outerRef = useRef<HTMLDivElement>(null);
+  const instRef = useRef<ChartInstance | null>(null);
+
+  // userH = null means "use computed default height". Set by drag handle.
+  const [userH, setUserH] = useState<number | null>(null);
+  const [showLabelsState, setShowLabels] = useState(false);
+  const showLabels = showLabelsProp ?? showLabelsState;
+  // The viewer's number format for the value axis + labels. null = automatic.
+  // Overrides custom.format while set — the person LOOKING at the chart outranks
+  // the surface that built it (a margin stored as 0.598… reads as nothing until
+  // the viewer can say "that is a percentage").
+  const [userFormat, setUserFormat] = useState<string | null>(null);
+  const [fmtOpen, setFmtOpen] = useState(false);
+
+  function startDrag(e: React.MouseEvent) {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = outerRef.current?.clientHeight ?? 300;
+    function onMove(ev: MouseEvent) {
+      const newH = Math.max(80, startH + (ev.clientY - startY));
+      if (outerRef.current) outerRef.current.style.minHeight = `${newH}px`;
+    }
+    function onUp(ev: MouseEvent) {
+      if (outerRef.current) outerRef.current.style.minHeight = "";
+      setUserH(Math.max(80, startH + (ev.clientY - startY)));
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
+  function handleDownloadPng() {
+    void downloadChartPng(instRef.current, title);
+  }
+
+  // Re-render + rebuild the option when org settings change, so the currency symbol /
+  // chart palette / relabelled fields apply even if the cache populates after first render.
+  const orgV = useOrgSettings();
+
+  // Build the option + default height. Memoized so its identity is stable across
+  // renders (EChart re-inits when the option object changes) — only rebuilds when
+  // data / type / labels / custom / org settings change. userH & heightScale affect height only.
+  type Built = { spec: Record<string, unknown>; defaultH: number; xCategories: number; tier: 1 | 3 };
+
+  const built = useMemo<Built | null>(() => {
+    // Tier 3 first — the four forms Vega-Lite cannot express are hand-authored Vega.
+    const t3 = resolveTier3Spec({ columns, rows, chartType: String(chartType ?? "") });
+    if (t3) return { spec: t3.spec, defaultH: t3.defaultH, xCategories: 0, tier: 3 };
+
+    const v = resolveVegaSpec({
+      columns, rows, chartType, showLabels, exhibit, measure, names: namesOf(chartConfig),
+      format: userFormat ?? custom?.format ?? null,
+      xTitle: custom?.xTitle ?? null,
+      yTitle: custom?.yTitle ?? null,
+      orient: custom?.orient ?? null,
+      transform: custom?.transform ?? null,
+    });
+    if (v) return { spec: v.spec, defaultH: v.defaultH, xCategories: v.xCategories, tier: 1 };
+    // A customization must never brick the chart. Saved viz-configs key by POSITION
+    // (pinned__N) and pinned findings reorder across briefing regenerations, so a
+    // stale seed can name columns this finding does not have — the customized
+    // resolve then refuses, and the card used to render NOTHING with no way back.
+    // Retry bare (auto) before giving up; only truly unchartable data renders none.
+    // The retreat drops hint, exhibit and custom alike — a finding's hint (e.g.
+    // scatter) can fit the original frame while refusing the reshaped one a saved
+    // metric selection produced. And "auto" is not the floor: type inference
+    // refuses a plain [dimension, stringified-measure] frame that an explicit bar
+    // charts fine (measured on theLook's category/total_volume), so bar is the
+    // last rung. Truly unchartable data still refuses everything and renders none.
+    for (const retreat of ["auto", "bar"] as const) {
+      if (retreat === String(chartType ?? "auto") && !custom && !userFormat && !exhibit) continue;
+      const bare = resolveVegaSpec({
+        // `measure` survives the retreat: it is the user's intent, not styling.
+        columns, rows, chartType: retreat, showLabels, exhibit: null, measure, names: namesOf(chartConfig),
+        format: null, xTitle: null, yTitle: null, orient: null, transform: null,
+      });
+      if (bare) return { spec: bare.spec, defaultH: bare.defaultH, xCategories: bare.xCategories, tier: 1 };
+    }
+    // null is the honest-refusal verdict: data with no chart in it renders none, and the
+    // surface's table view carries it. There is no second engine to fall back to.
+    return null;
+    // orgV: currency / palette / relabel settings feed the resolver via module reads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columns, rows, chartType, chartConfig, showLabels, custom, userFormat, orgV, columnUnits, exhibit, measure]);
+
+  if (!built) return null;
+  const fill = !!(fitHeight && fitHeight > 0);
+  const chartH = fill ? Math.round(fitHeight!) : Math.round((userH ?? built.defaultH) * heightScale);
+
+  return (
+    <div className="mt-2 w-full group/chart">
+      {chrome && (
+        <div className="flex justify-end h-6 mb-0.5 opacity-0 group-hover/chart:opacity-100 transition-opacity gap-1">
+          {/* Number-format picker: the viewer names what the value axis IS. */}
+          <div className="relative">
+            <Button
+              variant={userFormat ? "secondary" : "ghost"} size="xs"
+              onClick={() => setFmtOpen((o) => !o)}
+              title="Number format"
+            >
+              {FORMAT_CHOICES.find((f) => f.d3 === userFormat)?.label ?? "123"}
+            </Button>
+            {fmtOpen && (
+              <div className="absolute right-0 top-7 z-20 flex flex-col rounded border border-zinc-700 bg-zinc-900 shadow-[var(--shadow-sm)]">
+                {FORMAT_CHOICES.map((f) => (
+                  <button
+                    key={f.key}
+                    onClick={() => { setUserFormat(f.d3); setFmtOpen(false); }}
+                    title={f.title}
+                    className={`px-2.5 py-1 text-left text-[11px] whitespace-nowrap transition-colors ${userFormat === f.d3 ? "bg-blue-500/20 text-blue-300" : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"}`}
+                  >
+                    <span className="font-mono">{f.label}</span>
+                    <span className="ml-2 text-zinc-500">{f.title}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <Button
+            variant={showLabels ? "secondary" : "ghost"} size="icon-xs"
+            onClick={() => setShowLabels((s) => !s)}
+            title={showLabels ? "Hide data labels" : "Show data labels"}
+          >
+            <Icon name="expand" size={14} />
+          </Button>
+          <Button
+            variant="ghost" size="icon-xs"
+            onClick={handleDownloadPng}
+            title="Download chart as PNG"
+          >
+            <Icon name="download" size={16} label="Download chart as PNG" />
+          </Button>
+        </div>
+      )}
+
+      {/* Chart viewport — the chart takes the whole row (2026-11-06). A vertical bar chart with few
+          categories used to be capped at n × 130 + 150 px, which counted categories, not bars: a
+          four-platform, two-measure exhibit drew at 670px beside an empty half-row. The bars now keep
+          their thickness by widening the gaps between categories instead (`vega/bandFit.ts`). */}
+      {(() => {
+        const _catN = built.xCategories;
+        const _perBand = _catN > 0 ? barsPerBand(built.spec, columns, rows) : 1;
+        const ready = (inst: ChartInstance) => { instRef.current = inst; onInstanceReady?.(inst); };
+        /* A chart is a picture, not a viewport. It used to cap at 350px and scroll inside
+           that box, so a ranking with many categories became a thing you scrolled through
+           instead of a shape you read — and the axis scrolled out of sight with it. The
+           chart now renders at its natural height and the card grows; orientation flips to
+           upright before the category count gets that far (HORIZONTAL_MAX_CATS). */
+        return (
+      <div ref={outerRef} style={{ height: fill ? chartH : undefined, overflow: "hidden", width: "100%" }}>
+        <VegaChart spec={built.spec} tier={built.tier} height={chartH} onSelect={onSelect} onReady={ready}
+                   bands={_catN} barsPerBand={_perBand} />
+      </div>
+        );
+      })()}
+
+      {chrome && (
+        <div onMouseDown={startDrag} className="flex items-center justify-center h-3 cursor-ns-resize group/drag">
+          <div className="w-10 h-0.5 rounded-[var(--r-pill)] bg-zinc-800 group-hover/drag:bg-zinc-600 transition-colors" />
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,222 @@
+{
+  "what": "PENDING item 4 / ROADMAP 3.22 CP-3 — the paid quick-vs-deep comparison, its rule written BEFORE the run (2026-11-08, before any model call of the run: before the fresh judgments, before either arm). The result is evals/treatment_quick_deep_ab_2026-11-08.json, which records this file's sha256.",
+  "approved_by": "the user, punch list item 30 (the paid comparison); hard ceiling $10 for the whole task",
+  "connection": "LuxExperience, dcc63d83 (Postgres, lux-postgres on :5555). Never theLook.",
+  "install": "a COPY of the newest hourly backup (~/.aughor/state/backups/2026-11-08T094316Z), served by this worktree's API on :8013 with AUGHOR_DISABLE_SCHEDULERS=1; only AUGHOR_SECRET_KEY and AUGHOR_DEFAULT_POSTGRES_DSN taken from the live .env",
+  "arms": {
+    "quick": "POST /ask {connection_id: dcc63d83, depth: 'quick', a fresh session_id, no history} — the light body (the conversation's tool loop)",
+    "deep": "POST /ask {connection_id: dcc63d83, depth: 'deep', a fresh session_id, no history} — the analyst loop",
+    "isolation": "each arm runs on its OWN fresh restore of the same backup (all quick asks on copy A, then all deep asks on copy B), so neither arm can read the other's answer through cross-session recall or the few-shot memory. In both copies the 7 prior LuxExperience chat answers are hidden from cross-session recall (their connection_id is re-keyed in the copy's history.db), so no ask starts from an earlier answer to the same words; everything else the install has learned is identical in both arms.",
+    "same_data": "the warehouse's newest order date is read before and after each arm; a change is reported"
+  },
+  "arm_validity_checked_in_the_run": {
+    "quick_valid": "its trace carries tool_call ask.converse (or no ask.analyst at all, the fast path), and NO deep_analysis tool call and no ask.analyst",
+    "deep_valid": "its trace carries tool_call ask.analyst with at least one analyst step",
+    "proof_recorded_per_ask": "body that served, analyst steps, queries (treatment.observed_for_trace's definition), statements, model calls, tokens",
+    "invalid": "an ask with an invalid arm is EXCLUDED from the tally and reported, never scored"
+  },
+  "the_judge": {
+    "what": "aughor.judgment.treatment.classify — the CP-1 bundle, unchanged, through the seam's provider (the install's coder binding, as the shadow used), no prior turn",
+    "tier": "TIER_FOR: investigation -> heavy; lookup / single_query / multi_query -> light",
+    "p_heavy": "the stated distribution's probability on 'investigation'",
+    "logged_verdicts": "for asks that are in the shadow corpus, the verdict the live shadow logged is recorded beside the fresh one; the FRESH one is scored (one judge, one moment, every ask)"
+  },
+  "candidates_in_order": [
+    {
+      "id": "D1",
+      "kind": "diagnostic",
+      "source": "shadow corpus, LuxExperience, 2026-10-14",
+      "ask": "Why did revenue change in September 2026 against August 2026?"
+    },
+    {
+      "id": "L1",
+      "kind": "descriptive",
+      "source": "shadow corpus, LuxExperience, 2026-10-14",
+      "ask": "Which 10 countries brought in the most revenue in the last 3 months, and how many orders did each have?"
+    },
+    {
+      "id": "D2",
+      "kind": "diagnostic",
+      "source": "shadow corpus, LuxExperience, 2026-10-25",
+      "ask": "Why did gross margin for the ultra brand tier fall in July to September 2026 compared with January to June 2026? Measure gross margin by month for brand_tier = 'ultra' from order_items joined to orders, split it by platform, and say what share of ultra items sold on markdown on THE OUTNET in each period (price_history.is_markdown by product and effective_date). Use the approved gross_margin definition."
+    },
+    {
+      "id": "L2",
+      "kind": "descriptive",
+      "source": "shadow corpus, LuxExperience, 2026-10-17",
+      "ask": "What is the return rate by platform?"
+    },
+    {
+      "id": "D4",
+      "kind": "diagnostic",
+      "source": "LuxExperience history, 2026-10-30 (a Briefing's ask)",
+      "ask": "Why did refunds on returns fall to €251,056 in September 2026, the lowest of the last seven months, against the six months before, by reason, category and storefront, and how much of it is the newest month's returns still settling versus a real fall?"
+    },
+    {
+      "id": "L3",
+      "kind": "descriptive",
+      "source": "shadow corpus, LuxExperience, 2026-10-17",
+      "ask": "What was our average order value in September 2026?"
+    },
+    {
+      "id": "D10",
+      "kind": "diagnostic",
+      "source": "shadow corpus, DuckDB superstore, 2026-10-17 (posed on LuxExperience)",
+      "ask": "Do bigger discounts bring in more profit?"
+    },
+    {
+      "id": "L4",
+      "kind": "descriptive",
+      "source": "shadow corpus, LuxExperience (Slack), 2026-10-25",
+      "ask": "On Mytheresa, how many orders and how much GMV came from paid social in the last 90 days, and which campaign led?"
+    },
+    {
+      "id": "D7",
+      "kind": "diagnostic",
+      "source": "LuxExperience history, 2026-11-04 (a Briefing's ask)",
+      "ask": "Why did Mytheresa's gross margin on items rise to about 52% in October 2026 from about 44% in September 2026, by brand tier, category and product mix, and is it a price/cost change or a mix shift?"
+    },
+    {
+      "id": "L5",
+      "kind": "descriptive",
+      "source": "LuxExperience history, 2026-10-30",
+      "ask": "Explain the metric \"avg_carrier_transit_days\": how it is computed here, and show its current value."
+    },
+    {
+      "id": "D9",
+      "kind": "diagnostic",
+      "source": "LuxExperience history, 2026-11-05 (a Briefing's ask)",
+      "ask": "Why did price realization fall to 97.0% in the week of 26 October 2026, below its usual range and from 100.4% the week before, by storefront, category, brand tier and markdown status?"
+    },
+    {
+      "id": "L7",
+      "kind": "descriptive",
+      "source": "shadow corpus, Sheets, 2026-10-27 (posed on LuxExperience)",
+      "ask": "How many orders were canceled?"
+    },
+    {
+      "id": "D3",
+      "kind": "diagnostic",
+      "source": "LuxExperience history, 2026-10-24 (a monitor's ask)",
+      "ask": "Why is this happening? Item Return Rate moved from 25.9% to 29.5% (+3.6 pts): 2026-01-01 to 2026-10-23 (296 days) against the 296 days before, 2025-03-11 to 2025-12-31; 26.1% a year earlier, 2025-01-02 to 2025-10-24 (+3.5 pts) — provisional: its outcome is still arriving."
+    },
+    {
+      "id": "L8",
+      "kind": "descriptive",
+      "source": "shadow corpus, DuckDB superstore, 2026-10-17 (posed on LuxExperience)",
+      "ask": "What are total sales by region?"
+    },
+    {
+      "id": "D5",
+      "kind": "diagnostic",
+      "source": "LuxExperience history, 2026-10-30 (a Briefing's ask)",
+      "ask": "With paid social paused on Mytheresa in September 2026, did Mytheresa GMV hold within 3% of the other shops (NET-A-PORTER, MR PORTER, YOOX) against August 2026 and September 2025, and how many orders came from paid social by last touch channel?"
+    },
+    {
+      "id": "L9",
+      "kind": "descriptive",
+      "source": "shadow corpus, DuckDB superstore, 2026-10-17 (posed on LuxExperience)",
+      "ask": "What is our average order value by customer segment?"
+    },
+    {
+      "id": "D8",
+      "kind": "diagnostic",
+      "source": "LuxExperience history, 2026-11-04 (a Briefing's ask)",
+      "ask": "Why did refunds on returns rise to €279,268 in October 2026, the highest of the last seven months and about 11% above both September 2026 and October 2025, by reason (changed_mind, late_delivery), category and storefront, and how much comes from returns on orders placed in earlier months?"
+    },
+    {
+      "id": "L10",
+      "kind": "descriptive",
+      "source": "shadow corpus, DuckDB superstore, 2026-10-17 (posed on LuxExperience)",
+      "ask": "Which sub-category loses the most money?"
+    },
+    {
+      "id": "D11",
+      "kind": "diagnostic",
+      "source": "shadow corpus, olist workspace, 2026-10-22 (posed on LuxExperience)",
+      "ask": "What drives low review scores, and what should we fix first?"
+    },
+    {
+      "id": "L6",
+      "kind": "descriptive",
+      "source": "LuxExperience history, 2026-11-05",
+      "ask": "gmv_eur"
+    },
+    {
+      "id": "D6",
+      "kind": "diagnostic",
+      "source": "LuxExperience history, 2026-11-03 (a Briefing's ask)",
+      "ask": "How much of the rise in net revenue after refunds and gross profit per order excluding returned items, over the weeks of 12, 19 and 26 October 2026, is returns that have not yet arrived, compared with the same order weeks once settled (27 days) in earlier months, by storefront?"
+    },
+    {
+      "id": "D12",
+      "kind": "diagnostic",
+      "source": "LuxExperience history, 2026-10-24 (a monitor's ask)",
+      "ask": "Investigate: Item Return Rate was 0.0% in 2026-10-23 (Friday), against 0.0% in the same weekday a week earlier, 2026-10-16 — provisional: its outcome is still arriving."
+    }
+  ],
+  "selection": {
+    "judge_all": "all 22 candidates are judged fresh first (about $0.02 each)",
+    "run_set": "14 asks: every candidate the fresh judge calls HEAVY, in candidate order (at most 7), then the remaining candidates in candidate order until there are 14. The candidate order interleaves diagnostic and descriptive asks, so the set is spread across both whatever the judge says.",
+    "why_14": "measured on this install's own traces, a LuxExperience analyst turn costs about $0.34-0.41 and a conversation turn about $0.18-0.22 (Sonnet 5.5 $2/$10, Haiku 5.5 $0.10/$0.50 per M; the Anthropic binding sends no cache_control, so every prompt token is billed). 14 pairs is about $8.4 + $0.45 of judgments, under the $10 ceiling with a margin; 20 would not fit.",
+    "spend_stop": "before each run, if spend so far + the remaining runs at $0.45 (deep) / $0.25 (quick) each would pass $9.60, the remaining asks are not run and are reported as not run"
+  },
+  "scoring_rule": {
+    "unit": "one ask: the quick arm's final answer against the deep arm's final answer (envelope headline + body; for the analyst, the report's headline, summary and findings) and the figures each states",
+    "reference": "for each ask, BEFORE either answer is read, the figure(s) the ask requests are computed by SQL against the warehouse (POST /query/run on the copy), with the approved metric definition where the connection has one; for a why-ask, the size of the change asked about and its split along the dimensions the ask names (platform/storefront, category, brand tier, reason, country when none is named) — the largest contributor is the reference driver",
+    "deep_worth_it_if_any": {
+      "W1_number": "the ask requests a figure or a part (each named part is listed before the run) that deep states correctly and quick does not state, or states wrongly. Correct = within 2% relative (0.5 pt for a rate) of the reference, under the approved definition or the definition the answer itself declares.",
+      "W2_cause": "a why / what-drives / how-much-of ask: deep names a driver with its quantified contribution that matches the reference driver or a SQL check confirms, and quick names no quantified driver, or one the reference contradicts.",
+      "W3_premise": "the ask's stated premise is false (a stated figure off by more than 2% / 0.5 pt) or the data cannot carry it (a known trap, a provisional period), and deep says so while quick answers as if it were true."
+    },
+    "quick_better_if": "deep makes a W1/W2/W3-type error quick does not (deep wrong where quick right), or deep returns no answer where quick answered",
+    "tie": "everything else, including both right, both wrong, and both missing the same part",
+    "who_judges": "W1 and the premise half of W3 are deterministic against SQL. Whether a stated driver MATCHES the reference driver (W2), and whether an answer FLAGS a premise (W3), are read by a model: this agent (claude-opus-5-5), not blind to which arm wrote which answer; the sentence that decided each W is quoted per ask in the result so a person can overrule it."
+  },
+  "calibration": {
+    "label": "y = 1 when the ask scores deep_better, else 0 (tie and quick_better are 0)",
+    "judge_predicts": "heavy (treatment = investigation) means 'deep is worth it'",
+    "reported": [
+      "the 2x2 of judged tier against y",
+      "accuracy against the majority-class baseline",
+      "Fisher exact test, one-sided (heavy enriches y=1)",
+      "AUC of p_heavy against y with a permutation p",
+      "ECE of the stated confidence in the chosen treatment against whether its tier matched y (the module's 10 bins)"
+    ],
+    "better_than_chance": "Fisher exact one-sided p < 0.05. With n = 14 this needs a near-clean split; the power is stated beside the number.",
+    "exploratory_not_decisive": "the other levers (causal, intent = diagnose, steps_implied_score) against y, and the ask's kind (diagnostic / descriptive) against y, as the baseline a router would have to beat"
+  },
+  "decision_reading_for_cp3": {
+    "supported": "CP-3's premise holds only if BOTH (a) deep beats quick on at least 25% of the valid asks AND (b) the judge's tier predicts those asks better than chance by the test above",
+    "a_without_b": "deep earns its cost on some asks but this judge cannot find which: CP-3 stays held; the next lever is the judge, not the router",
+    "not_a": "deep rarely earns its ~2-4x cost on these asks: a router has little to gain on this path; CP-3 stays held"
+  },
+  "amendments": [
+    {
+      "at": "2026-11-08T10:55Z, during the quick arm, before any answer of either arm was read",
+      "what": "n raised from 14 to all 22 candidates: the 8 not in the first 14 run after them, in candidate order, in both arms",
+      "why": "the 14 was set by cost alone (selection.why_14). The install's Anthropic binding refused every arm call ('Your credit balance is too low', HTTP 400) and each call fell back to openrouter deepseek/deepseek-v4.1-flash, which the copy prices from the provider's catalogue at about $0.001 per call: the first 6 quick asks cost $0.057. The cost that set n no longer binds; nothing about any answer was known.",
+      "consequence": "both arms are served by deepseek/deepseek-v4.1-flash through the platform's fallback, not by the configured claude-sonnet-5-5; the fresh judgments (taken 10:44Z, before the credit ran out) were answered by the configured coder, claude-sonnet-5-5. The result says this beside every number.",
+      "spend_stop": "unchanged: $9.60 projected, now read from the copy's own priced usage (/obs/usage-summary cost_usd) plus the judgments' upper bound"
+    },
+    {
+      "at": "2026-11-08T11:23Z, after both arms' first attempts and before any answer of either arm was read",
+      "what": "a run that ended without an answer because no model was reached is re-run ONCE on a restarted server over the same copy, and the retry is the one scored; if the retry also fails, the ask is excluded and reported",
+      "why": "12 of 22 deep attempts reached no model: from 11:20Z the platform stopped falling back to openrouter at all (the Anthropic primary answered every call 'Your credit balance is too low'), so 9 analyst runs stopped at intake with 'Nothing was measured' (0 steps); 2 more (D1, L6) ended on an error frame carrying that 400 mid-run, and D9's stream ended with neither done nor error. All 22 quick attempts reached a model and ended with done + envelope, so the rule touches the deep arm only. The retries read no earlier attempt: an analyst turn is filed as kind 'investigation', which cross-session recall does not read.",
+      "affected": [
+        "L1",
+        "D2",
+        "L2",
+        "L3",
+        "D10",
+        "L4",
+        "D7",
+        "D6",
+        "D12",
+        "D1",
+        "L6",
+        "D9"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,176 @@
+/**
+ * chart-ssr-entry.ts — the headless print renderer, on Vega.
+ *
+ * Reads one JSON payload from stdin:
+ *   { charts: [{ columns, rows, chart_type, chart_config, exhibit, column_units, title,
+ *                labels, width, height }], money_symbol }
+ * and writes { svgs: [string | null, …] } — one SVG per requested chart, null where the
+ * data has no honest chart, which is the same verdict the browser reaches because this IS
+ * the browser's resolver.
+ *
+ * Phase 5d. This used to bundle ECharts (825 KB) purely to draw a PDF's charts. Vega renders
+ * SVG headlessly with no DOM shim, so the print path and the screen path now run the same
+ * two functions over the same specs — and geo, which the ECharts print path skipped because
+ * it needed a ~1 MB registered map, works here: the base map is just another data URL.
+ *
+ * The print theme is the LIGHT token set, because a PDF is a light-surface artifact.
+ */
+import * as vega from "vega";
+import * as vl from "vega-lite";
+import { resolveVegaSpec } from "../components/charts/vega/resolveSpec";
+import { resolveTier3Spec, TIER3_TYPES } from "../components/charts/vega/tier3";
+import { inferChartType } from "../components/charts/chartTypeInference";
+import { buildVegaConfig, buildVegaRuntimeConfig, printVegaTokens } from "../components/charts/vega/config";
+import { setCurrentDataset, setDataCurrency } from "../lib/orgSettings";
+import { namesOf } from "../components/charts/vega/names";
+
+interface ChartRequest {
+  columns?: string[];
+  rows?: unknown[][];
+  chart_type?: string | null;
+  chart_config?: Record<string, unknown> | null;
+  exhibit?: Record<string, unknown> | null;
+  column_units?: Record<string, string> | null;
+  title?: string | null;
+  labels?: boolean;
+  width?: number;
+  height?: number;
+}
+
+const TOKENS = printVegaTokens();
+const VL_CONFIG = buildVegaConfig(TOKENS);
+const VEGA_CONFIG = buildVegaRuntimeConfig(TOKENS);
+
+/**
+ * A title longer than the chart is wide is broken into lines (three at most). Vega-Lite sizes the
+ * view around a one-line title, so the Daily Briefing's finding sentence as a title squeezed a line
+ * chart into a third of its width (measured 2026-11-06). The width is known only here.
+ */
+function wrapTitle<T>(spec: T, width: number): T {
+  const title = (spec as { title?: unknown }).title;
+  if (typeof title !== "string") return spec;
+  const perLine = Math.max(24, Math.floor(width / 8.6));      // the title's 16px semibold, measured
+  if (title.length <= perLine) return spec;
+  const lines: string[] = [];
+  let line = "";
+  for (const word of title.split(/\s+/)) {
+    if (line && (line + " " + word).length > perLine) { lines.push(line); line = word; }
+    else line = line ? `${line} ${word}` : word;
+  }
+  if (line) lines.push(line);
+  const kept = lines.length > 3 ? [...lines.slice(0, 2), `${lines.slice(2).join(" ").slice(0, perLine - 1)}…`] : lines;
+  return { ...spec, title: kept } as T;
+}
+
+async function renderOne(req: ChartRequest): Promise<string | null> {
+  const columns = req.columns ?? [];
+  const rows = req.rows ?? [];
+  let chartType = String(req.chart_type ?? "auto");
+  const width = req.width && req.width > 0 ? req.width : 760;
+
+  /**
+   * `auto` is resolved HERE, before tier 3 is asked — the one line that decides whether a
+   * whole class of chart exists headlessly.
+   *
+   * Tier 1 defers `auto` to `inferChartType` inside `resolveVegaSpec`, which is fine for
+   * the types tier 1 draws. But tier 3 matches on the CONCRETE type, so asking it about
+   * the literal string "auto" never matched anything. `auto` sends a category plus an
+   * ADDITIVE measure at 7-24 unique values to a `treemap` (chartTypeInference.ts) — the
+   * commonest business grid there is, "top sellers by revenue" — and tier 3 has drawn
+   * treemaps all along. Nothing ever asked it. Measured: 7, 12, 20 and 24 categories all
+   * returned null while 6 and 25 rendered, on EVERY headless surface at once — the PDF,
+   * the PPTX deck, `POST /charts/svg` and the Slack bot that relays it.
+   *
+   * The browser never had this hole because it resolves the type before it picks an
+   * engine (`ResultChartCard.tsx`). This is that same step, in the same order.
+   *
+   * Only a TIER 3 type is substituted. Everything else stays `auto` on purpose: tier 1's
+   * inference returns the chosen xCol/yCols along with the type, and a pre-resolved hint
+   * would throw that away and let the resolver re-pick columns — changing charts that
+   * render correctly today to fix ones that do not render at all.
+   */
+  if (chartType === "auto") {
+    const inferred = inferChartType(columns, rows);
+    if (inferred && TIER3_TYPES.has(inferred.type)) chartType = inferred.type;
+  }
+
+  /**
+   * Geo is refused in print, as it was under ECharts — but for a reason worth stating,
+   * because the failure is silent otherwise. The base map is fetched from `/geo/world.json`,
+   * a relative URL with no base in Node, so the request simply yields nothing: Vega renders
+   * an empty shape container and a colour legend reading "NaN to NaN", which is a
+   * well-formed SVG of nothing. A null sends the export to the data table instead, which is
+   * the honest fallback. Inlining the ~1 MB geojson would double the bundle to fix a chart
+   * type the ledger has never once recorded.
+   */
+  if (chartType === "choropleth" || chartType === "point_map" || chartType === "point-map") return null;
+
+  // Tier 3 first — hand-authored Vega, parsed as written.
+  const t3 = resolveTier3Spec({ columns, rows, chartType, title: req.title ?? null });
+  if (t3) {
+    const height = req.height && req.height > 0 ? req.height : Math.min(Math.max(t3.defaultH, 200), 560);
+    const runtime = vega.parse({ ...t3.spec, width, height } as Parameters<typeof vega.parse>[0],
+                               VEGA_CONFIG as Parameters<typeof vega.parse>[1]);
+    const view = new vega.View(runtime, { renderer: "none" });
+    const svg = await view.toSVG();
+    view.finalize();
+    return svg;
+  }
+
+  const resolved = resolveVegaSpec({
+    columns, rows, chartType,
+    names: namesOf(req.chart_config),
+    exhibit: req.exhibit ?? null,
+    columnUnits: req.column_units ?? null,
+    showLabels: req.labels !== false,
+    title: req.title ?? null,
+  });
+  if (!resolved) return null;
+
+  const height = req.height && req.height > 0 ? req.height : Math.min(Math.max(resolved.defaultH, 200), 560);
+  const compiled = vl.compile({ ...wrapTitle(resolved.spec, width), width, height } as Parameters<typeof vl.compile>[0],
+                              { config: VL_CONFIG }).spec;
+  const view = new vega.View(vega.parse(compiled), { renderer: "none" });
+  const svg = await view.toSVG();
+  view.finalize();
+  return svg;
+}
+
+// The resolver reads the currency of the dataset in view (its CONFIRMED one, never the org's
+// preference); headless, the export passes the resolved SYMBOL — sent only for a currency a
+// person confirmed (`resolve_currency_symbol`) — and this shim maps it back to a code and keeps
+// it as the export's dataset's confirmed currency, so the print axis shows "CHF 34.7M" exactly
+// as the app did, and an export with no symbol prints plain amounts as the app does.
+const SYMBOL_TO_CODE: Record<string, string> = {
+  "$": "USD", "€": "EUR", "£": "GBP", "¥": "JPY", "₹": "INR",
+  "A$": "AUD", "C$": "CAD", "CHF": "CHF", "S$": "SGD", "R$": "BRL", "R": "ZAR",
+};
+function applyMoneySymbol(sym: string | undefined): void {
+  const s = (sym ?? "").trim();
+  if (!s) return;
+  const code = SYMBOL_TO_CODE[s] ?? (/^[A-Za-z]{3}$/.test(s) ? s.toUpperCase() : null);
+  if (!code) return;
+  setCurrentDataset("export");
+  setDataCurrency({ connection_id: "export", schema_name: null, code, status: "confirmed", inferred: code,
+    confirmed_by: "export", confirmed_at: "" });
+}
+
+async function main(): Promise<void> {
+  const chunks: Buffer[] = [];
+  for await (const c of process.stdin) chunks.push(c as Buffer);
+  const payload = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}") as
+    { charts?: ChartRequest[]; money_symbol?: string };
+  applyMoneySymbol(payload.money_symbol);
+  const svgs: (string | null)[] = [];
+  for (const req of payload.charts ?? []) {
+    try {
+      svgs.push(await renderOne(req));
+    } catch (e) {
+      process.stderr.write(`chart-ssr: ${String(e)}\n`);
+      svgs.push(null);
+    }
+  }
+  process.stdout.write(JSON.stringify({ svgs }));
+}
+
+void main();

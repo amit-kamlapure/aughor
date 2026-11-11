@@ -1,0 +1,419 @@
+"""SQLite-backed persistence for Monitors and MonitorAlerts.
+
+Two tables in data/monitors.db:
+  monitors       — configuration rows; mutable (upsert by id)
+  monitor_alerts — append-only fired alerts; acknowledged flag is the only mutable field
+"""
+from __future__ import annotations
+
+import json
+import logging
+import sqlite3
+import threading
+from pathlib import Path
+from typing import Optional
+
+from aughor.monitors.models import Monitor, MonitorAlert
+from aughor.db.sqlite_util import resolve_db_path
+from aughor.db.backend import connect_store
+
+logger = logging.getLogger(__name__)
+
+_DB_PATH = resolve_db_path("AUGHOR_MONITORS_DB", Path("data") / "monitors.db")
+_LOCK = threading.Lock()
+
+
+# ── Schema ────────────────────────────────────────────────────────────────────
+
+_DDL = """
+CREATE TABLE IF NOT EXISTS monitors (
+    id                  TEXT PRIMARY KEY,
+    conn_id             TEXT NOT NULL,
+    name                TEXT NOT NULL,
+    metric_name         TEXT,
+    custom_sql          TEXT,
+    check_cron          TEXT NOT NULL DEFAULT '0 * * * *',
+    alert_on            TEXT NOT NULL DEFAULT 'threshold_cross',
+    warning_threshold   REAL,
+    critical_threshold  REAL,
+    threshold_direction TEXT NOT NULL DEFAULT 'below',
+    sigma_threshold     REAL NOT NULL DEFAULT 2.5,
+    history_days        INTEGER NOT NULL DEFAULT 30,
+    dimension_column    TEXT,
+    drift_p_threshold   REAL NOT NULL DEFAULT 0.05,
+    freshness_table     TEXT,
+    freshness_column    TEXT NOT NULL DEFAULT 'updated_at',
+    freshness_sla_hours REAL NOT NULL DEFAULT 24.0,
+    notification_channel TEXT NOT NULL DEFAULT 'in_app',
+    enabled             INTEGER NOT NULL DEFAULT 1,
+    created_at          TEXT NOT NULL DEFAULT '',
+    updated_at          TEXT NOT NULL DEFAULT '',
+    extra               TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS monitor_alerts (
+    id               TEXT PRIMARY KEY,
+    monitor_id       TEXT NOT NULL,
+    monitor_name     TEXT NOT NULL DEFAULT '',
+    conn_id          TEXT NOT NULL DEFAULT '',
+    metric_name      TEXT,
+    triggered_at     TEXT NOT NULL,
+    alert_on         TEXT NOT NULL DEFAULT '',
+    severity         TEXT NOT NULL DEFAULT 'warning',
+    current_value    REAL,
+    previous_value   REAL,
+    threshold        REAL,
+    message          TEXT NOT NULL DEFAULT '',
+    acknowledged     INTEGER NOT NULL DEFAULT 0,
+    acknowledged_at  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_alerts_monitor ON monitor_alerts (monitor_id);
+CREATE INDEX IF NOT EXISTS idx_alerts_conn    ON monitor_alerts (conn_id);
+CREATE INDEX IF NOT EXISTS idx_alerts_time    ON monitor_alerts (triggered_at DESC);
+"""
+
+
+def _connect() -> sqlite3.Connection:
+    conn = connect_store(_DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+# WP-1b — this store now rides the forward-only migration framework (DATA-05):
+# the base DDL stays conceptually v1; each additive change is a versioned step.
+from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
+
+_MIGRATIONS = [
+    Migration(2, "alert caveat (guarded monitor evaluations, WP-1b)",
+              lambda c: add_column_if_missing(c, "monitor_alerts", "caveat", "TEXT")),
+]
+
+
+def _init_schema() -> None:
+    with _LOCK:
+        conn = _connect()
+        try:
+            conn.executescript(_DDL)
+            conn.commit()
+            run_migrations(conn, _MIGRATIONS, store="monitors")
+        finally:
+            conn.close()
+
+
+_init_schema()
+
+
+# ── Monitor CRUD ──────────────────────────────────────────────────────────────
+
+def _row_to_monitor(row: sqlite3.Row) -> Monitor:
+    d = dict(row)
+    d["enabled"] = bool(d["enabled"])
+    # Fields added after the original schema live in the `extra` JSON blob (avoids a
+    # column migration). Merge them back into the Monitor kwargs.
+    extra_raw = d.pop("extra", None)
+    if extra_raw:
+        try:
+            d.update(json.loads(extra_raw))
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "the extra JSON blob is optional post-schema fields; a corrupt blob just leaves defaults",
+                     counter="monitors.store.extra_decode")
+    return Monitor(**{k: v for k, v in d.items() if v is not None or k in {
+        "metric_name", "custom_sql", "warning_threshold", "critical_threshold",
+        "dimension_column", "freshness_table",
+    }})
+
+
+def list_monitors(conn_id: Optional[str] = None) -> list[Monitor]:
+    with _LOCK:
+        conn = _connect()
+        try:
+            if conn_id:
+                rows = conn.execute(
+                    "SELECT * FROM monitors WHERE conn_id = ? ORDER BY name", (conn_id,)
+                ).fetchall()
+            else:
+                rows = conn.execute("SELECT * FROM monitors ORDER BY name").fetchall()
+            return [_row_to_monitor(r) for r in rows]
+        finally:
+            conn.close()
+
+
+def get_monitor(monitor_id: str) -> Optional[Monitor]:
+    with _LOCK:
+        conn = _connect()
+        try:
+            row = conn.execute(
+                "SELECT * FROM monitors WHERE id = ?", (monitor_id,)
+            ).fetchone()
+            return _row_to_monitor(row) if row else None
+        finally:
+            conn.close()
+
+
+def upsert_monitor(monitor: Monitor) -> Monitor:
+    """Create or update a monitor (full replace by id)."""
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    if not monitor.created_at:
+        monitor = monitor.model_copy(update={"created_at": now})
+    monitor = monitor.model_copy(update={"updated_at": now})
+    # TC-3 — the definition is kept as a version before the row is replaced (and the one it
+    # replaces first, if nothing kept it); a save whose version cannot be kept is refused.
+    from aughor.automations.versions import keep_monitor_version
+    keep_monitor_version(monitor)
+
+    params = monitor.model_dump()
+    # Persist post-schema fields in the `extra` JSON blob (no column migration). A field left out of it is never
+    # saved: `grace_period_hours` was, and every monitor read back the 4-hour default whatever a person set.
+    params["extra"] = json.dumps({"reanchor_window": monitor.reanchor_window,
+                                  "grace_period_hours": monitor.grace_period_hours})
+
+    with _LOCK:
+        conn = _connect()
+        try:
+            conn.execute("""
+                INSERT INTO monitors (
+                    id, conn_id, name, metric_name, custom_sql, check_cron,
+                    alert_on, warning_threshold, critical_threshold, threshold_direction,
+                    sigma_threshold, history_days, dimension_column, drift_p_threshold,
+                    freshness_table, freshness_column, freshness_sla_hours,
+                    notification_channel, enabled, created_at, updated_at, extra
+                ) VALUES (
+                    :id, :conn_id, :name, :metric_name, :custom_sql, :check_cron,
+                    :alert_on, :warning_threshold, :critical_threshold, :threshold_direction,
+                    :sigma_threshold, :history_days, :dimension_column, :drift_p_threshold,
+                    :freshness_table, :freshness_column, :freshness_sla_hours,
+                    :notification_channel, :enabled, :created_at, :updated_at, :extra
+                )
+                ON CONFLICT(id) DO UPDATE SET
+                    name=excluded.name,
+                    metric_name=excluded.metric_name,
+                    custom_sql=excluded.custom_sql,
+                    check_cron=excluded.check_cron,
+                    alert_on=excluded.alert_on,
+                    warning_threshold=excluded.warning_threshold,
+                    critical_threshold=excluded.critical_threshold,
+                    threshold_direction=excluded.threshold_direction,
+                    sigma_threshold=excluded.sigma_threshold,
+                    history_days=excluded.history_days,
+                    dimension_column=excluded.dimension_column,
+                    drift_p_threshold=excluded.drift_p_threshold,
+                    freshness_table=excluded.freshness_table,
+                    freshness_column=excluded.freshness_column,
+                    freshness_sla_hours=excluded.freshness_sla_hours,
+                    notification_channel=excluded.notification_channel,
+                    enabled=excluded.enabled,
+                    updated_at=excluded.updated_at,
+                    extra=excluded.extra
+            """, params)
+            conn.commit()
+        finally:
+            conn.close()
+    return monitor
+
+
+def delete_monitor(monitor_id: str) -> bool:
+    with _LOCK:
+        conn = _connect()
+        try:
+            cur = conn.execute("DELETE FROM monitors WHERE id = ?", (monitor_id,))
+            conn.commit()
+            return cur.rowcount > 0
+        finally:
+            conn.close()
+
+
+def purge_connection(conn_id: str) -> int:
+    """Delete every monitor and alert for a connection (catalog delete cascade).
+    Returns the total rows removed across both tables."""
+    with _LOCK:
+        conn = _connect()
+        try:
+            n = conn.execute("DELETE FROM monitors WHERE conn_id = ?", (conn_id,)).rowcount
+            n += conn.execute("DELETE FROM monitor_alerts WHERE conn_id = ?", (conn_id,)).rowcount
+            conn.commit()
+            return n
+        finally:
+            conn.close()
+
+
+def purge_schema(conn_id: str, schema: str) -> int:
+    """Delete monitors (and their alerts) for a connection whose SQL/metric references a
+    removed schema (schema-qualified ``schema.``). Best-effort schema scoping. Returns
+    the number of monitors removed."""
+    like = f"%{schema}.%"
+    with _LOCK:
+        conn = _connect()
+        try:
+            ids = [r[0] for r in conn.execute(
+                "SELECT id FROM monitors WHERE conn_id=? AND "
+                "(COALESCE(custom_sql,'') LIKE ? OR COALESCE(metric_name,'') LIKE ?)",
+                (conn_id, like, like),
+            ).fetchall()]
+            n = 0
+            for mid in ids:
+                n += conn.execute("DELETE FROM monitors WHERE id=?", (mid,)).rowcount
+                conn.execute("DELETE FROM monitor_alerts WHERE monitor_id=?", (mid,))
+            conn.commit()
+            return n
+        finally:
+            conn.close()
+
+
+def set_monitor_enabled(monitor_id: str, enabled: bool) -> Optional[Monitor]:
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    with _LOCK:
+        conn = _connect()
+        try:
+            conn.execute(
+                "UPDATE monitors SET enabled = ?, updated_at = ? WHERE id = ?",
+                (int(enabled), now, monitor_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    return get_monitor(monitor_id)
+
+
+# ── Alert append + queries ────────────────────────────────────────────────────
+
+def _row_to_alert(row: sqlite3.Row) -> MonitorAlert:
+    d = dict(row)
+    d["acknowledged"] = bool(d["acknowledged"])
+    return MonitorAlert(**{k: v for k, v in d.items() if v is not None or k in {
+        "metric_name", "current_value", "previous_value", "threshold", "acknowledged_at",
+    }})
+
+
+def append_alert(alert: MonitorAlert) -> MonitorAlert:
+    """Persist a new alert, then fan it out. Idempotent — silent no-op on duplicate id.
+
+    Every path that fires a monitor funnels through here (the scheduler's test trigger
+    and the automation engine's tick), which is why the fan-out lives here rather than
+    at each caller: a third path added later inherits it instead of forgetting it.
+    """
+    with _LOCK:
+        conn = _connect()
+        try:
+            cur = conn.execute("""
+                INSERT OR IGNORE INTO monitor_alerts (
+                    id, monitor_id, monitor_name, conn_id, metric_name,
+                    triggered_at, alert_on, severity, current_value, previous_value,
+                    threshold, message, caveat, acknowledged, acknowledged_at
+                ) VALUES (
+                    :id, :monitor_id, :monitor_name, :conn_id, :metric_name,
+                    :triggered_at, :alert_on, :severity, :current_value, :previous_value,
+                    :threshold, :message, :caveat, :acknowledged, :acknowledged_at
+                )
+            """, alert.model_dump())
+            # OR IGNORE makes a duplicate id a no-op ROW-wise, but the fan-out below
+            # would still run — re-emitting the event and, since OA·N8-0, re-sending
+            # the webhook. Delivery leaves the building, so "idempotent" has to mean
+            # the side effects too, not just the insert.
+            inserted = cur.rowcount > 0
+            conn.commit()
+        finally:
+            conn.close()
+    if not inserted:
+        return alert
+    # T3 kernel-leverage: surface a fired alert on the event spine so any panel
+    # (and a second tab) sees it live, the same way explorer insights do. The
+    # alert row is the source of truth — a failed emit never blocks the alert.
+    try:
+        from aughor.kernel.ledger import Ledger
+        Ledger.default().emit(
+            "monitor.alert",
+            {"monitor_id": alert.monitor_id, "monitor_name": alert.monitor_name,
+             "severity": alert.severity, "metric": alert.metric_name,
+             "current_value": alert.current_value, "message": alert.message[:200]},
+            conn_id=alert.conn_id,
+        )
+    except Exception:
+        logger.debug("monitor.alert emit failed", exc_info=True)
+    # OA·N8-0 — deliver outward when the monitor names an Action Hub trigger. No-op
+    # for in_app monitors (the default), and fail-open: the alert is already committed.
+    from aughor.monitors.notify import dispatch_alert
+    dispatch_alert(alert)
+    return alert
+
+
+def get_alerts(
+    monitor_id: Optional[str] = None,
+    conn_id: Optional[str] = None,
+    limit: int = 100,
+    unacknowledged_only: bool = False,
+) -> list[MonitorAlert]:
+    clauses = []
+    params: list = []
+    if monitor_id:
+        clauses.append("monitor_id = ?"); params.append(monitor_id)
+    if conn_id:
+        clauses.append("conn_id = ?"); params.append(conn_id)
+    if unacknowledged_only:
+        clauses.append("acknowledged = 0")
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+
+    with _LOCK:
+        conn = _connect()
+        try:
+            rows = conn.execute(
+                f"SELECT * FROM monitor_alerts {where} ORDER BY triggered_at DESC LIMIT ?",
+                [*params, limit],
+            ).fetchall()
+            return [_row_to_alert(r) for r in rows]
+        finally:
+            conn.close()
+
+
+def alert_timeline(monitor_ids: list[str]) -> list[dict]:
+    """Every alert of these monitors, oldest first, as ``id · monitor_id · triggered_at · alert_on · severity`` only —
+    what `monitors/recovery.links` reads to say which alerts a recovery closed. [] for no monitors."""
+    if not monitor_ids:
+        return []
+    marks = ",".join("?" * len(monitor_ids))
+    with _LOCK:
+        conn = _connect()
+        try:
+            rows = conn.execute(
+                "SELECT id, monitor_id, triggered_at, alert_on, severity FROM monitor_alerts "
+                f"WHERE monitor_id IN ({marks}) ORDER BY monitor_id, triggered_at", list(monitor_ids),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+
+def get_alert(alert_id: str) -> Optional[MonitorAlert]:
+    """Fetch a single alert by id (used for object-level authz — an alert's org is
+    its connection's org). Returns None when the id is unknown."""
+    with _LOCK:
+        conn = _connect()
+        try:
+            row = conn.execute(
+                "SELECT * FROM monitor_alerts WHERE id = ?", (alert_id,)
+            ).fetchone()
+            return _row_to_alert(row) if row else None
+        finally:
+            conn.close()
+
+
+def acknowledge_alert(alert_id: str) -> Optional[MonitorAlert]:
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
+    with _LOCK:
+        conn = _connect()
+        try:
+            conn.execute(
+                "UPDATE monitor_alerts SET acknowledged = 1, acknowledged_at = ? WHERE id = ?",
+                (now, alert_id),
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT * FROM monitor_alerts WHERE id = ?", (alert_id,)
+            ).fetchone()
+            return _row_to_alert(row) if row else None
+        finally:
+            conn.close()

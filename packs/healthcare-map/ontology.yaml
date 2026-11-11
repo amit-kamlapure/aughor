@@ -1,0 +1,238 @@
+# The healthcare providers and hospitals industry vocabulary (AUGHOR_ATLAS_INDUSTRY_VOCABULARY_v1, 2026-11-11: 66
+# reference types) as an industry map: what a provider's data is expected to hold, matched to tables by name or alias
+# and measured — expectations, never facts. Sixty-five objects: Treatment Episode is folded into EpisodeOfCare as a
+# spelling of it; every other type is an object here (Consent is named PatientConsent).
+#
+# Two readings were made, and both are this package's, not the vocabulary's:
+#   * its ten classes are read onto the eight roles a map has, by meaning and not by the class it printed (a
+#     medication administration is an event, a medication is reference data, a staff assignment is not a party, an
+#     order inside the hospital is an event and not a commercial exchange);
+#   * a record of activity is a PART of the thing it happened to (an encounter's admission, transfers, discharge and
+#     diagnoses; a claim's responses; an order's report and the report's results), never a thing beside it — the
+#     vocabulary lists each as a type of its own.
+# The vocabulary names no table spellings; every alias below is a guess the data confirms or leaves unmatched. Nothing
+# here creates an object: one the data has no table for is never proposed and never mentioned.
+objects:
+  # Access and scheduling.
+  - name: Patient
+    roles: [party]
+    aliases: [patients, patient, patient_master, patient_demographics]
+    parts: [PatientConsent]
+  - name: PatientConsent
+    roles: [event]
+    aliases: [patient_consents, consents, consent, consent_forms, treatment_consents]
+  - name: Practitioner
+    roles: [party]
+    aliases: [practitioners, practitioner, providers, physicians, doctors, clinicians]
+  - name: Location
+    roles: [place]
+    drawn_as: campus
+    aliases: [locations, location, facilities, sites, clinics, hospitals]
+  - name: Appointment
+    roles: [event]
+    aliases: [appointments, appointment, bookings, scheduled_visits, visit_schedule]
+  - name: Schedule
+    roles: [calendar]
+    aliases: [schedules, schedule, provider_schedules, clinic_schedules, availability]
+    parts: [Slot]
+    description: the time a practitioner or room is available, read with its slots
+  - name: Slot
+    roles: [calendar]
+    aliases: [slots, slot, appointment_slots, schedule_slots, time_slots]
+  - name: Referral
+    roles: [event]
+    aliases: [referrals, referral, patient_referrals, referral_requests]
+  # Registration and encounters.
+  - name: Encounter
+    roles: [event]
+    aliases: [encounters, encounter, visits, visit, patient_visits, patient_encounters]
+    parts: [ChiefComplaint, Admission, Transfer, Discharge, EncounterDiagnosis, EncounterStatusEvent]
+    description: an encounter is read with what happened in it — admission, transfers, discharge, its diagnoses
+  - name: ChiefComplaint
+    roles: [event]
+    aliases: [chief_complaints, chief_complaint, presenting_complaints, reasons_for_visit]
+  - name: Admission
+    roles: [event]
+    aliases: [admissions, admission, inpatient_admissions, hospital_admissions]
+  - name: Transfer
+    roles: [event]
+    aliases: [transfers, transfer, patient_transfers, bed_transfers, patient_movements]
+  - name: Discharge
+    roles: [event]
+    aliases: [discharges, discharge, patient_discharges, discharge_summaries]
+  - name: EncounterDiagnosis
+    roles: [event]
+    aliases: [encounter_diagnoses, encounter_diagnosis, diagnoses, diagnosis, visit_diagnoses]
+  - name: EncounterStatusEvent
+    roles: [event]
+    aliases: [encounter_status_events, encounter_status_history, encounter_events, adt_events, visit_status_history]
+  - name: EpisodeOfCare
+    roles: [event]
+    aliases: [episodes_of_care, episode_of_care, care_episodes, episodes, treatment_episodes, treatment_episode]
+    description: a run of care for one problem, across encounters
+  - name: CareTeam
+    roles: [party]
+    aliases: [care_teams, care_team, care_team_members, treatment_teams]
+  # Clinical assessment.
+  - name: Condition
+    roles: [event]
+    aliases: [conditions, condition, problems, problem_list, patient_conditions]
+  - name: Observation
+    roles: [event]
+    aliases: [observations, observation, clinical_observations, measurements, flowsheet_rows]
+  - name: VitalSign
+    roles: [event]
+    aliases: [vital_signs, vital_sign, vitals, patient_vitals]
+  - name: ClinicalFinding
+    roles: [event]
+    aliases: [clinical_findings, clinical_finding, findings, exam_findings, assessment_findings]
+  - name: AllergyIntolerance
+    roles: [event]
+    aliases: [allergy_intolerances, allergies, allergy, patient_allergies, intolerances]
+  - name: RiskAssessment
+    roles: [event]
+    aliases: [risk_assessments, risk_assessment, risk_scores, clinical_risk_scores, fall_risk_assessments]
+  - name: CarePlan
+    roles: [asset]
+    aliases: [care_plans, care_plan, treatment_plans, patient_care_plans]
+    parts: [Goal]
+    description: a patient's standing plan of care, read with its goals
+  - name: Goal
+    roles: [event]
+    aliases: [care_goals, care_plan_goals, patient_goals, treatment_goals]
+  # Diagnostics and procedures.
+  - name: ServiceRequest
+    roles: [event]
+    aliases: [service_requests, service_request, clinical_orders, order_requests, referral_orders]
+  - name: DiagnosticOrder
+    roles: [event]
+    aliases: [diagnostic_orders, diagnostic_order, lab_orders, imaging_orders, radiology_orders, test_orders]
+    parts: [DiagnosticReport]
+  - name: DiagnosticReport
+    roles: [event]
+    aliases: [diagnostic_reports, diagnostic_report, lab_reports, radiology_reports, pathology_reports]
+    parts: [TestResult]
+  - name: TestResult
+    roles: [event]
+    aliases: [test_results, test_result, lab_results, lab_result, result_values]
+  - name: LabTest
+    roles: [catalog]
+    aliases: [lab_tests, lab_test, test_catalog, test_definitions, lab_test_codes]
+    description: a test the laboratory offers
+  - name: Laboratory
+    roles: [place]
+    aliases: [laboratories, laboratory, labs, performing_labs, reference_labs]
+  - name: Specimen
+    roles: [asset]
+    aliases: [specimens, specimen, samples, lab_samples, specimen_collections]
+  - name: ImagingStudy
+    roles: [event]
+    aliases: [imaging_studies, imaging_study, radiology_studies, studies, radiology_exams]
+  - name: Procedure
+    roles: [event]
+    aliases: [procedures, procedure, surgeries, surgical_procedures, operations, procedure_events]
+    parts: [ProcedureOutcome]
+  - name: ProcedureOutcome
+    roles: [event]
+    aliases: [procedure_outcomes, procedure_outcome, surgical_outcomes, procedure_complications]
+  # Medications and treatment.
+  - name: Medication
+    roles: [catalog]
+    aliases: [medications, medication, drugs, drug, formulary, medication_master]
+  - name: MedicationRequest
+    roles: [event]
+    aliases: [medication_requests, medication_request, prescriptions, prescription, medication_orders]
+    parts: [MedicationDispense, MedicationAdministration]
+    description: a prescription is read with what was dispensed and given against it
+  - name: MedicationDispense
+    roles: [event]
+    aliases: [medication_dispenses, medication_dispense, dispenses, pharmacy_dispenses, dispensing_records]
+  - name: MedicationAdministration
+    roles: [event]
+    aliases: [medication_administrations, medication_administration, med_admin, emar, drug_administrations]
+  - name: TreatmentOrder
+    roles: [event]
+    aliases: [treatment_orders, treatment_order, therapy_orders, nursing_orders, order_sets]
+  - name: Immunization
+    roles: [event]
+    aliases: [immunizations, immunization, immunisations, vaccinations, vaccines_administered]
+  - name: AdverseEvent
+    roles: [event]
+    aliases: [adverse_events, adverse_event, adverse_drug_events, adverse_reactions]
+  - name: PharmacyStock
+    roles: [stock]
+    aliases: [pharmacy_stock, pharmacy_inventory, drug_inventory, medication_stock, pharmacy_stock_levels]
+  # Bed and resource operations.
+  - name: CareUnit
+    roles: [place]
+    aliases: [care_units, care_unit, wards, ward, nursing_units, departments]
+  - name: Bed
+    roles: [place]
+    aliases: [beds, bed, hospital_beds, bed_master]
+  - name: OccupancySnapshot
+    roles: [stock]
+    aliases: [occupancy_snapshots, bed_occupancy, occupancy, census, daily_census, bed_census]
+    description: beds occupied and free at a moment, per unit
+  - name: Equipment
+    roles: [asset]
+    aliases: [equipment, medical_equipment, devices, medical_devices, biomedical_assets]
+    parts: [EquipmentMaintenance]
+  - name: EquipmentMaintenance
+    roles: [event]
+    aliases: [equipment_maintenance, maintenance_records, maintenance_orders, equipment_service_history, work_orders]
+  - name: StaffAssignment
+    roles: [event]
+    aliases: [staff_assignments, staff_assignment, shift_assignments, nurse_assignments, rosters, staffing]
+  - name: TheatreSlot
+    roles: [calendar]
+    aliases: [theatre_slots, theater_slots, or_slots, or_schedule, operating_room_schedule, surgery_schedule]
+  # Revenue and coverage.
+  - name: EligibilityRequest
+    roles: [event]
+    aliases: [eligibility_requests, eligibility_request, eligibility_checks, coverage_checks, insurance_verifications]
+  - name: Preauthorization
+    roles: [transaction]
+    aliases: [preauthorizations, preauthorization, prior_authorizations, prior_auths, authorizations, preauthorisations]
+  - name: ChargeItem
+    roles: [transaction]
+    aliases: [charge_items, charge_item, charges, billing_charges, charge_lines]
+  - name: Claim
+    roles: [transaction]
+    aliases: [claims, claim, insurance_claims, medical_claims, billing_claims]
+    parts: [ClaimResponse, ExplanationOfBenefit]
+    description: a claim is read with what the payer answered
+  - name: ClaimResponse
+    roles: [event]
+    aliases: [claim_responses, claim_response, remittances, remittance_advice, claim_adjudications, denials]
+  - name: ExplanationOfBenefit
+    roles: [event]
+    aliases: [explanations_of_benefit, explanation_of_benefit, explanation_of_benefits, eobs, eob]
+  - name: Invoice
+    roles: [transaction]
+    aliases: [invoices, invoice, patient_invoices, patient_bills, billing_invoices]
+  # Quality and follow-up.
+  - name: QualityMeasure
+    roles: [catalog]
+    aliases: [quality_measures, quality_measure, measure_definitions, quality_indicators, kpi_definitions]
+  - name: ClinicalOutcomeMeasure
+    roles: [event]
+    aliases: [clinical_outcome_measures, outcome_measures, outcome_scores, proms, measure_results]
+    description: a scored outcome recorded for a patient — a scale, a survey instrument
+  - name: PatientOutcome
+    roles: [event]
+    aliases: [patient_outcomes, patient_outcome, outcomes, treatment_outcomes, clinical_outcomes]
+  - name: ReadmissionEvent
+    roles: [event]
+    aliases: [readmission_events, readmissions, readmission, unplanned_readmissions]
+  - name: SafetyIncident
+    roles: [event]
+    aliases: [safety_incidents, safety_incident, incidents, incident_reports, patient_safety_events]
+  - name: CareGap
+    roles: [event]
+    aliases: [care_gaps, care_gap, gaps_in_care, open_care_gaps]
+  - name: PatientFeedback
+    roles: [event]
+    aliases: [patient_feedback, patient_surveys, satisfaction_surveys, survey_responses, patient_complaints]
+  - name: PopulationCohort
+    roles: [catalog]
+    aliases: [population_cohorts, cohorts, cohort, patient_cohorts, registries, patient_registries]

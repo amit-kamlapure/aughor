@@ -1,0 +1,429 @@
+"""SQLite-backed store for human verdicts on investigation findings (Bet 0, 0-V).
+
+Every verdict is org-scoped (`org_id` from the request context) so multi-tenant falls out
+for free, matching the rest of the platform. Mirrors the PRAGMA-free additive-schema idiom
+of `aughor/org/store.py`. Best-effort, never raises into the request path beyond validation.
+"""
+from __future__ import annotations
+
+import sqlite3
+from pathlib import Path
+from typing import Optional
+
+from aughor.org.context import current_org_id
+from aughor.util.time import now_iso as _now
+from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
+from aughor.db.sqlite_util import resolve_db_path
+from aughor.db.backend import connect_store
+from aughor.db.store_pool import ensure_once
+
+_DB_PATH = resolve_db_path("AUGHOR_VERDICTS_DB", Path(__file__).parent.parent.parent / "data" / "verdicts.db")
+
+
+def _add_closeloop_cols(c: "sqlite3.Connection") -> None:
+    # The SQL that produced a judged finding + any human correction — what lets a
+    # verdict feed back into the planner instead of dying as a bare label.
+    add_column_if_missing(c, "finding_verdicts", "sql_source", "TEXT NOT NULL DEFAULT ''")
+    add_column_if_missing(c, "finding_verdicts", "corrected_sql", "TEXT NOT NULL DEFAULT ''")
+
+
+def _add_agent_col(c: "sqlite3.Connection") -> None:
+    # AO-7a — WHOSE answer was judged. The platform learned per connection; an agent
+    # learned nothing as itself, because no verdict knew which agent had answered.
+    add_column_if_missing(c, "finding_verdicts", "agent_id", "TEXT NOT NULL DEFAULT ''")
+
+
+# Schema evolution (DATA-05). The `finding_verdicts` base table is v1; changes are Migration(v>=2).
+_MIGRATIONS = [Migration(2, "close-the-loop columns (sql_source, corrected_sql)", _add_closeloop_cols),
+               Migration(3, "agent_id (the custom agent whose answer was judged)", _add_agent_col)]
+
+# accept = the finding is correct/useful · correct = right direction but a detail is wrong
+# · reject = wrong or misleading. These are the labels the trust economy calibrates against.
+VERDICTS = ("accept", "correct", "reject")
+
+
+def _conn() -> sqlite3.Connection:
+    c = connect_store(_DB_PATH)
+    c.row_factory = sqlite3.Row
+    ensure_once(c, _ensure_schema)
+    return c
+
+
+def _ensure_schema(c: sqlite3.Connection) -> None:
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS finding_verdicts (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            org_id          TEXT NOT NULL,
+            connection_id   TEXT NOT NULL DEFAULT '',
+            investigation_id TEXT NOT NULL DEFAULT '',
+            verdict         TEXT NOT NULL,
+            note            TEXT NOT NULL DEFAULT '',
+            headline        TEXT NOT NULL DEFAULT '',
+            sql_source      TEXT NOT NULL DEFAULT '',
+            corrected_sql   TEXT NOT NULL DEFAULT '',
+            created_at      TEXT NOT NULL
+        )
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS ix_verdicts_org_conn "
+              "ON finding_verdicts (org_id, connection_id)")
+    run_migrations(c, _MIGRATIONS, store="verdicts")
+    c.commit()
+
+
+def record_verdict(
+    connection_id: str,
+    investigation_id: str,
+    verdict: str,
+    note: str = "",
+    headline: str = "",
+    sql_source: str = "",
+    corrected_sql: str = "",
+    agent_id: str = "",
+) -> dict:
+    """Persist a human verdict on a finding. Raises ValueError on an invalid verdict label
+    (the only failure the caller must handle); everything else is a normal insert.
+
+    ``sql_source`` is the SQL that produced the judged finding and ``corrected_sql`` an
+    optional human fix — the structural payload the planner reads back (P1 close-the-loop).
+    Both are optional so every existing caller keeps working unchanged.
+
+    AO-7a/7b: what the caller did not say is read from the turn's own record — the agent
+    that answered, the connection, the headline and the SQL. A Slack ✅ arrives with an
+    investigation id and little else; before this it was stored as a verdict on nothing in
+    particular, and no agent could learn from it."""
+    v = (verdict or "").strip().lower()
+    if v not in VERDICTS:
+        raise ValueError(f"verdict must be one of {VERDICTS}, got {verdict!r}")
+    _OVERRULED.clear()          # the few-shot memory's tombstone reads the verdict store fresh from here on
+    turn = _turn_record(investigation_id) if investigation_id else {}
+    if turn:
+        agent_id = agent_id or str(turn.get("agent_id") or "")
+        connection_id = connection_id or str(turn.get("connection_id") or "")
+        headline = headline or str(turn.get("headline") or "")
+        sql_source = sql_source or str(turn.get("sql") or "")
+    org = current_org_id()
+    now = _now()
+    c = _conn()
+    try:
+        from aughor.db.backend import insert_returning_id
+        new_id = insert_returning_id(
+            c,
+            "INSERT INTO finding_verdicts "
+            "(org_id, connection_id, investigation_id, verdict, note, headline, "
+            "sql_source, corrected_sql, created_at, agent_id) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (org, connection_id or "", investigation_id or "", v, note or "", headline or "",
+             sql_source or "", corrected_sql or "", now, agent_id or ""),
+        )
+        c.commit()
+        # MI-2 — the verdict just made this run's evidence permanent. Best-effort and
+        # AFTER the commit: the verdict is the durable thing, pinning is bookkeeping.
+        from aughor.obs.session_log import pin_run
+        pin_run(investigation_id=investigation_id or "")
+        # A1 — the decision corpus's return path, and the ONLY caller `mark_outcome` has
+        # ever had. This run's route, definition and tool picks led to the finding a person
+        # just judged, so the judgement is theirs too. `accept` is deliberately not
+        # propagated: it means the finding was right, which does not establish that any
+        # individual pick was — but `reject` does rule the chain out, and a label that can
+        # come out negative is the whole point (before this, every row read 'ok').
+        # Best-effort and after the commit, like the pin above.
+        if v in ("reject", "correct"):
+            from aughor.learning.decisions import mark_outcomes_for_run
+            mark_outcomes_for_run(inv_id=investigation_id or "",
+                                  outcome="rejected" if v == "reject" else "corrected")
+            # PENDING item 24 — the few-shot memory forgets what a person overruled. After the commit: the verdict is
+            # the tombstone every later write and read of the memory checks, so a failed eviction here only leaves a
+            # point that the next search already refuses.
+            from aughor.tools.prior_analyses import forget_answer
+            forget_answer(investigation_id or "")
+        result = {
+            "id": new_id, "org_id": org, "connection_id": connection_id or "",
+            "investigation_id": investigation_id or "", "verdict": v,
+            "note": note or "", "headline": headline or "",
+            "sql_source": sql_source or "", "corrected_sql": corrected_sql or "",
+            "created_at": now, "agent_id": agent_id or "",
+        }
+    finally:
+        c.close()
+    # AO-7c/7d — the agent's own loop, behind its flag: an accepted answer becomes an
+    # UNCERTIFIED golden candidate on the agent's Quality tab, and every Nth verdict on
+    # the agent re-runs its evaluation. Best-effort, after the commit.
+    if agent_id:
+        try:
+            from aughor.custom_agents.learning import on_verdict
+            on_verdict(agent_id, verdict=v, investigation_id=investigation_id or "",
+                       question=str(turn.get("question") or ""), sql=sql_source or "",
+                       headline=headline or "")
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "the agent's learning loop is best-effort; the verdict stands",
+                     counter="verdicts.agent_loop")
+    # Verdict → Ambiguity Ledger bridge: a reviewer's reject/correct on a headlined finding
+    # crystallizes as the HIGHEST-authority resolution (overrides any probe/user reading on that
+    # question). Best-effort; never fails the verdict write.
+    if v in ("reject", "correct") and (headline or "").strip():
+        try:
+            from aughor.semantic.ambiguity_ledger import crystallize_verdict
+            crystallize_verdict(connection_id or "", headline, org_id=org,
+                                corrected_sql=corrected_sql or "", note=note or "")
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "verdict→ledger crystallization is best-effort",
+                     counter="verdicts.ledger_bridge")
+    return result
+
+
+def sql_key(sql: str) -> str:
+    """One query as the verdict store compares it: case, spacing and a trailing semicolon are not a different query.
+    The ONE normalisation the tombstone below and the training exporters share."""
+    return " ".join(str(sql or "").strip().rstrip(";").lower().split())
+
+
+#: `overruled` is read on every search of the few-shot memory; a verdict clears it at once in this process, and a
+#: sibling worker's copy is at most this old — its vector points were evicted when the verdict was recorded anyway.
+_OVERRULED_TTL_S = 30.0
+_OVERRULED: dict[tuple[str, str], tuple[float, tuple[set[str], set[str]]]] = {}
+
+
+def overruled(connection_id: str = "") -> tuple[set[str], set[str]]:
+    """The answers a person has overruled — each one's LATEST verdict is ``reject`` or ``correct`` — and the SQL they
+    ran, normalised (`sql_key`), in this organisation (and on ``connection_id`` when one is given).
+
+    The authority over what the few-shot memory may hold (PENDING item 24). It is a tombstone in AGENTS.md's sense: a
+    point evicted from the vector store comes back on the next reindex, backfill, or the same query answered again —
+    the verdict does not, so memory is checked against it when a point is written AND when one is read. A later
+    ``accept`` on the same answer lifts it: a person may change their mind.
+
+    The SQL is the verdict's own when it carries one, else the answer's — but only when the answer ran ONE distinct
+    statement: a run that issued several has no single query its verdict rests on (the rule `lib/verdictSql` holds
+    every grading surface to)."""
+    import time
+    key = (current_org_id() or "", connection_id or "")
+    hit = _OVERRULED.get(key)
+    if hit and time.monotonic() - hit[0] < _OVERRULED_TTL_S:
+        return set(hit[1][0]), set(hit[1][1])
+    answers, queries = _overruled_now(connection_id)
+    _OVERRULED[key] = (time.monotonic(), (answers, queries))
+    return set(answers), set(queries)
+
+
+def _overruled_now(connection_id: str) -> tuple[set[str], set[str]]:
+    where, params = "org_id=?", [current_org_id()]
+    if connection_id:
+        where += " AND connection_id=?"
+        params.append(connection_id)
+    c = _conn()
+    try:
+        rows = c.execute(
+            f"SELECT investigation_id, verdict, sql_source FROM finding_verdicts WHERE id IN ("
+            f"SELECT MAX(id) FROM finding_verdicts WHERE {where} AND investigation_id != '' "
+            f"GROUP BY investigation_id)", params).fetchall()
+    finally:
+        c.close()
+    answers, queries, unnamed = set(), set(), []
+    for r in rows:
+        if r["verdict"] in ("reject", "correct"):
+            answers.add(r["investigation_id"])
+            if (r["sql_source"] or "").strip():
+                queries.add(sql_key(r["sql_source"]))
+            else:
+                unnamed.append(r["investigation_id"])
+    if unnamed:
+        from aughor.db.history import sql_ran_by_ids
+        for ran in sql_ran_by_ids(unnamed).values():
+            sole = {sql_key(s) for s in ran}
+            if len(sole) == 1:
+                queries |= sole
+    return answers, queries
+
+
+def latest_verdict(investigation_id: str) -> Optional[dict]:
+    """The newest verdict this organisation recorded on one answer, or None."""
+    if not investigation_id:
+        return None
+    c = _conn()
+    try:
+        row = c.execute("SELECT * FROM finding_verdicts WHERE org_id=? AND investigation_id=? "
+                        "ORDER BY id DESC LIMIT 1", (current_org_id(), investigation_id)).fetchone()
+        return dict(row) if row else None
+    finally:
+        c.close()
+
+
+def verdict_stats(connection_id: Optional[str] = None) -> dict:
+    """Counts by verdict for the current org (optionally filtered to one connection) plus the
+    acceptance rate — the headline calibration signal the trust economy reads."""
+    org = current_org_id()
+    c = _conn()
+    try:
+        if connection_id:
+            rows = c.execute(
+                "SELECT verdict, COUNT(*) n FROM finding_verdicts "
+                "WHERE org_id=? AND connection_id=? GROUP BY verdict",
+                (org, connection_id),
+            ).fetchall()
+        else:
+            rows = c.execute(
+                "SELECT verdict, COUNT(*) n FROM finding_verdicts WHERE org_id=? GROUP BY verdict",
+                (org,),
+            ).fetchall()
+    finally:
+        c.close()
+    counts = {v: 0 for v in VERDICTS}
+    for r in rows:
+        if r["verdict"] in counts:
+            counts[r["verdict"]] = r["n"]
+    total = sum(counts.values())
+    # acceptance credits a full accept and a half-credit "correct" (right direction).
+    acceptance = round((counts["accept"] + 0.5 * counts["correct"]) / total, 3) if total else None
+    return {"counts": counts, "total": total, "acceptance_rate": acceptance,
+            "trend": _acceptance_trend(org, connection_id)}
+
+
+def _acceptance_trend(org: str, connection_id: Optional[str], weeks: int = 8) -> list[dict]:
+    """Weekly acceptance for the last ``weeks`` ISO weeks (oldest first) — the
+    product's per-connection accuracy TREND (S3). Same half-credit convention as
+    the headline rate. Weeks with no verdicts are simply absent: an empty week is
+    "no measurements", which must not render as 0% accuracy."""
+    c = _conn()
+    try:
+        where = "WHERE org_id=?"
+        params: list = [org]
+        if connection_id:
+            where += " AND connection_id=?"
+            params.append(connection_id)
+        rows = c.execute(
+            f"SELECT substr(created_at, 1, 10) d, verdict FROM finding_verdicts {where}",
+            tuple(params),
+        ).fetchall()
+    finally:
+        c.close()
+    from collections import defaultdict
+    from datetime import date, timedelta
+    by_week: dict[str, dict] = defaultdict(lambda: {"accept": 0, "correct": 0, "reject": 0})
+    cutoff = (date.today() - timedelta(weeks=weeks)).isoformat()
+    for r in rows:
+        d = r["d"] or ""
+        if len(d) == 10 and d >= cutoff:
+            try:
+                y, w, _ = date.fromisoformat(d).isocalendar()
+            except ValueError:
+                continue
+            wk = f"{y}-W{w:02d}"
+            if r["verdict"] in by_week[wk]:
+                by_week[wk][r["verdict"]] += 1
+    out = []
+    for wk in sorted(by_week):
+        n = sum(by_week[wk].values())
+        rate = round((by_week[wk]["accept"] + 0.5 * by_week[wk]["correct"]) / n, 3)
+        out.append({"week": wk, "total": n, "acceptance_rate": rate})
+    return out
+
+
+def list_verdicts(connection_id: Optional[str] = None, limit: int = 50) -> list[dict]:
+    """Most-recent verdicts for the current org (optionally one connection)."""
+    org = current_org_id()
+    limit = max(1, min(int(limit), 500))
+    c = _conn()
+    try:
+        if connection_id:
+            rows = c.execute(
+                "SELECT * FROM finding_verdicts WHERE org_id=? AND connection_id=? "
+                "ORDER BY id DESC LIMIT ?", (org, connection_id, limit),
+            ).fetchall()
+        else:
+            rows = c.execute(
+                "SELECT * FROM finding_verdicts WHERE org_id=? ORDER BY id DESC LIMIT ?",
+                (org, limit),
+            ).fetchall()
+    finally:
+        c.close()
+    return [dict(r) for r in rows]
+
+
+def list_for_export(kinds: tuple[str, ...] = ("accept",), *, require_sql: bool = True,
+                    limit: int = 100000) -> list[dict]:
+    """Verdicts as TRAINING material, oldest first — MI-3's read path.
+
+    Oldest-first, unlike every other reader here, and the direction is load-bearing: a
+    corpus must be stable as it grows, so a new verdict APPENDS rather than shifting every
+    example's position. A newest-first export would produce a different content hash on
+    every run and make the determinism receipt meaningless.
+
+    ``require_sql`` keeps rows that carry the structural payload. Measured on the live
+    store 2026-09-03: of 5 verdicts, 0 carried `sql_source` and 0 carried `corrected_sql`,
+    so this filter is currently the difference between an empty corpus and a corpus of
+    prose with nothing to learn from. That is a grading-funnel fact, not a schema one.
+    """
+    org = current_org_id()
+    placeholders = ",".join("?" for _ in kinds)
+    q = (f"SELECT * FROM finding_verdicts WHERE org_id=? AND verdict IN ({placeholders})")
+    if require_sql:
+        q += " AND sql_source != ''"
+    q += " ORDER BY id ASC LIMIT ?"
+    c = _conn()
+    try:
+        return [dict(r) for r in c.execute(q, (org, *kinds, max(1, int(limit)))).fetchall()]
+    finally:
+        c.close()
+
+
+def _turn_record(investigation_id: str) -> dict:
+    """What the history store knows about the judged turn — agent, connection, headline,
+    SQL, question. ``{}`` when it has nothing; never raises (a verdict must land even when
+    the turn is gone)."""
+    try:
+        from aughor.db.history import get_investigation
+        inv = get_investigation(investigation_id) or {}
+    except Exception:
+        return {}
+    if not inv:
+        return {}
+    report = inv.get("report") if isinstance(inv.get("report"), dict) else {}
+    return {
+        "agent_id": inv.get("agent_id") or "",
+        "connection_id": inv.get("connection_id") or "",
+        "headline": inv.get("headline") or (report or {}).get("headline") or "",
+        "sql": (report or {}).get("sql") or "",
+        "question": inv.get("question") or "",
+    }
+
+
+def list_corrections(connection_id: Optional[str] = None, limit: int = 20,
+                     agent_id: Optional[str] = None) -> list[dict]:
+    """Recent verdicts that carry a *lesson* — ``reject`` (the finding was wrong) or
+    ``correct`` (right direction, a detail was off). These are what the planner reads
+    back as priors (P1 close-the-loop): an accepted finding teaches nothing new, but a
+    rejected/corrected one names a mistake not to repeat. Org-scoped, most-recent-first.
+    ``agent_id`` (AO-7a) narrows to the lessons ONE agent earned."""
+    org = current_org_id()
+    limit = max(1, min(int(limit), 200))
+    where = ["org_id=?", "verdict IN ('reject','correct')"]
+    args: list = [org]
+    if connection_id:
+        where.append("connection_id=?")
+        args.append(connection_id)
+    if agent_id:
+        where.append("agent_id=?")
+        args.append(agent_id)
+    args.append(limit)
+    c = _conn()
+    try:
+        rows = c.execute(
+            f"SELECT * FROM finding_verdicts WHERE {' AND '.join(where)} "
+            "ORDER BY id DESC LIMIT ?", args).fetchall()
+    finally:
+        c.close()
+    return [dict(r) for r in rows]
+
+
+def count_verdicts_for_agent(agent_id: str) -> int:
+    """How many verdicts name this agent — the counter AO-7d re-evaluates on."""
+    org = current_org_id()
+    c = _conn()
+    try:
+        row = c.execute("SELECT COUNT(*) FROM finding_verdicts WHERE org_id=? AND agent_id=?",
+                        (org, agent_id)).fetchone()
+    finally:
+        c.close()
+    return int(row[0]) if row else 0

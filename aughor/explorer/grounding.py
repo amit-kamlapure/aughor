@@ -1,0 +1,345 @@
+"""
+Numeral grounding for autonomous-explorer findings.
+
+questions-pass findings are 1-2 sentence business insights an LLM writes from a SQL
+result. The LLM free-forms numbers into that prose, and it sometimes fabricates
+the *magnitude* or *unit* — the canonical bug was a finding that read
+``"2.49M attribution credit"`` when the underlying result cell was ``2.49`` (off
+by 1e6, with an invented "M"). Directionally true, numerically false — and a
+single wrong magnitude in a headline destroys trust in the whole surface (the
+same failure mode as the ``$3T`` product-of-aggregates revenue bug).
+
+This module is a deterministic guard: it extracts every numeral a finding
+*claims* and verifies each **magnitude-bearing** one against the actual numeric
+cells of the result it was derived from. It is deliberately conservative — it
+only enforces grounding on numbers that carry a magnitude claim (a K/M/B/T
+suffix, or a value ≥ 1000), so legitimately *derived* quantities (growth
+percentages, ranks, small counts, calendar years) are never false-flagged. The
+goal is to catch catastrophic magnitude/unit hallucinations, not to police every
+digit.
+
+Pure + dependency-free so it stays cheap to call on every finding and trivial to
+unit-test. See ``tests/unit/test_grounding.py``.
+"""
+from __future__ import annotations
+
+import math
+import re
+from dataclasses import dataclass, field
+from typing import Iterable, Optional
+
+# Word/letter magnitude suffixes → multiplier. "%" is handled separately (a
+# percentage is a derived ratio, never enforced).
+_SUFFIX_MULT: dict[str, float] = {
+    "k": 1e3, "thousand": 1e3,
+    "m": 1e6, "mm": 1e6, "million": 1e6,
+    "b": 1e9, "bn": 1e9, "billion": 1e9,
+    "t": 1e12, "trillion": 1e12,
+}
+
+# A numeral token: optional currency, digits (optional thousands grouping),
+# optional decimal, optional magnitude/percent suffix (letter or word). The
+# lookbehind/lookahead keep us off the middle of larger tokens (IDs, dates,
+# version strings). A trailing "." (sentence end) is allowed after a suffix.
+_NUM_RE = re.compile(
+    r"(?<![\w.])"
+    r"[$€£]?\s?"
+    r"(?P<int>\d{1,3}(?:,\d{3})+|\d+)"
+    r"(?P<frac>\.\d+)?"
+    r"\s?(?P<suf>%|mm|bn|[kmbt]|thousand|million|billion|trillion)?"
+    r"(?![\w])",
+    re.I,
+)
+
+
+@dataclass(frozen=True)
+class Numeral:
+    """One numeric token parsed out of finding prose."""
+    text: str            # the matched substring, e.g. "2.49M"
+    value: float         # magnitude-expanded value, e.g. 2_490_000.0
+    decimals: int        # decimal places shown (drives the rounding window)
+    multiplier: float    # suffix multiplier (1.0 when none / percent)
+    suffix: str          # normalised suffix ("m", "%", "" …)
+    enforce: bool        # True ⇒ must be grounded in a real result cell
+
+
+@dataclass
+class GroundingResult:
+    grounded: bool
+    ungrounded: list[str] = field(default_factory=list)   # offending token texts
+    checked: int = 0                                       # # enforced numerals
+
+
+def extract_numerals(text: str) -> list[Numeral]:
+    """Parse every numeric token from ``text`` into structured :class:`Numeral`s."""
+    out: list[Numeral] = []
+    for m in _NUM_RE.finditer(text or ""):
+        int_str = m.group("int")
+        frac = m.group("frac") or ""
+        suf = (m.group("suf") or "").lower()
+        try:
+            raw = float(int_str.replace(",", "") + frac)
+        except ValueError:  # pragma: no cover - regex guarantees digits
+            continue
+        is_percent = suf == "%"
+        multiplier = 1.0 if is_percent else _SUFFIX_MULT.get(suf, 1.0)
+        has_suffix_mult = suf in _SUFFIX_MULT
+        decimals = len(frac) - 1 if frac else 0  # frac includes the leading "."
+        value = raw * multiplier
+        # Calendar years (1900-2100, integer, no suffix) read as dates, not metrics.
+        is_year = (not suf) and decimals == 0 and 1900.0 <= raw <= 2100.0
+        # Enforce grounding only on magnitude claims: an explicit K/M/B/T unit, or a
+        # bare value ≥ 1000. Percentages, ranks, small counts and years are exempt.
+        enforce = (
+            (has_suffix_mult or (abs(value) >= 1000.0 and not is_percent))
+            and not is_percent
+            and not is_year
+        )
+        out.append(Numeral(
+            text=m.group(0).strip(),
+            value=value,
+            decimals=decimals,
+            multiplier=multiplier,
+            suffix=suf,
+            enforce=enforce,
+        ))
+    return out
+
+
+def _to_float(cell) -> Optional[float]:
+    """Best-effort numeric coercion of a single result cell; None when non-numeric."""
+    if isinstance(cell, bool):           # bool is an int subclass — never a metric
+        return None
+    if isinstance(cell, (int, float)):
+        return float(cell) if math.isfinite(float(cell)) else None
+    if isinstance(cell, str):
+        s = cell.strip().lstrip("$€£").rstrip("%").replace(",", "").strip()
+        try:
+            v = float(s)
+        except ValueError:
+            return None
+        return v if math.isfinite(v) else None
+    try:                                  # Decimal and other numerics
+        v = float(cell)
+        return v if math.isfinite(v) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def cell_values(rows, extra: Optional[Iterable] = None) -> list[float]:
+    """All numeric cell values across ``rows`` (list-of-list or list-of-dict),
+    plus any ``extra`` known totals (e.g. result row_count, profiled cardinalities)."""
+    out: list[float] = []
+    for r in (rows or []):
+        cells = r.values() if isinstance(r, dict) else r
+        for c in cells:
+            v = _to_float(c)
+            if v is not None:
+                out.append(v)
+    for e in (extra or []):
+        v = _to_float(e)
+        if v is not None:
+            out.append(v)
+    return out
+
+
+def _grounds(n: Numeral, cell: float) -> bool:
+    """Does result ``cell`` support numeral ``n``? Compared on absolute value so a
+    "loss of 2.4M" grounds against a -2.4M cell. Two acceptors:
+
+    * **rounding window** — the half-unit implied by the displayed precision, so
+      "2M" grounds a 2.45M cell (1 sig fig) but "2.49M" needs ~2.49M (3 sig figs);
+    * **2 % relative tolerance** — absorbs benign LLM rounding/abbreviation.
+
+    The 1e6-scale bug ("2.49M" vs a 2.49 cell) clears neither and is flagged."""
+    target = abs(n.value)
+    c = abs(cell)
+    half = 0.5 * (10.0 ** (-n.decimals)) * n.multiplier
+    if (target - half) <= c <= (target + half):
+        return True
+    denom = c if c else 1.0
+    return abs(target - c) / denom <= 0.02
+
+
+def numeral_matches_measure(n: Numeral, cell: float) -> bool:
+    """Public, and stricter than the finding guard: does ``cell`` support numeral ``n`` AT
+    THE PRECISION IT IS WRITTEN?
+
+    A number written in full claims its last significant digit, so it matches only within
+    half a unit of that digit — "99,441" allows ±0.5, "4,100" ±50, "22,128.43" ±0.005, and a
+    percentage its shown decimals. Only an ABBREVIATED number ("2.5M") keeps the finding
+    guard's acceptors (its rounding window and 2% relative), because abbreviating is
+    rounding by construction.
+
+    The HB-2 departure gate reads this (law 1). The finding guard's 2% was built to catch
+    1e6 unit slips, not to confirm counts: under it, the 2026-09-16 dispatch watch's
+    "99,441 order lines" — Olist's ORDER count — passed as 1.6% from the promise's stamped
+    101,033 kept lines, a number it never meant."""
+    if n.multiplier != 1.0:
+        return _grounds(n, cell)
+    if n.decimals > 0 or n.suffix == "%":
+        half = 0.5 * (10.0 ** (-n.decimals))
+    else:
+        digits = n.text.replace(",", "").lstrip("$€£").strip()
+        significant = digits.rstrip("0")
+        half = 0.5 * (10.0 ** (len(digits) - len(significant) if significant else 0))
+    return abs(n.value) - half <= abs(cell) <= abs(n.value) + half
+
+
+def verify_finding(finding: str, rows, extra: Optional[Iterable] = None) -> GroundingResult:
+    """Verify that every magnitude-bearing numeral in ``finding`` is grounded in a
+    real cell of ``rows``. Returns which tokens (if any) are ungrounded."""
+    cells = cell_values(rows, extra)
+    ungrounded: list[str] = []
+    checked = 0
+    for n in extract_numerals(finding):
+        if not n.enforce:
+            continue
+        checked += 1
+        if not any(_grounds(n, c) for c in cells):
+            ungrounded.append(n.text)
+    return GroundingResult(grounded=not ungrounded, ungrounded=ungrounded, checked=checked)
+
+
+def ground_numerals(finding: str, rows, extra: Optional[Iterable] = None) -> list[dict]:
+    """Per-numeral grounding map for the "show the receipt" UI.
+
+    Where :func:`verify_finding` returns only a pass/fail verdict, this returns one
+    record *per numeral* in ``finding`` so a UI can make each number clickable and
+    show exactly which result cell backs it. Reuses the same extraction + matching
+    logic, so the verdict here is consistent with the guard that gates the finding.
+
+    Each record::
+
+        {"text": "2.49M",          # the token as written
+         "value": 2_490_000.0,     # magnitude-expanded value
+         "enforce": True,          # was grounding required for this token?
+         "grounded": True,         # for enforced tokens: backed by a real cell?
+         "matched_cell": 2_490_000.0}  # the first cell that grounds it, else None
+
+    Non-enforced tokens (percentages, ranks, small counts, calendar years) carry
+    ``enforce=False`` / ``grounded=True`` / ``matched_cell=None`` — they are shown as
+    "derived, not enforced" rather than flagged, mirroring the conservative policy
+    in :func:`extract_numerals`."""
+    cells = cell_values(rows, extra)
+    out: list[dict] = []
+    for n in extract_numerals(finding):
+        matched: Optional[float] = None
+        grounded = True
+        if n.enforce:
+            matched = next((c for c in cells if _grounds(n, c)), None)
+            grounded = matched is not None
+        out.append({
+            "text": n.text,
+            "value": n.value,
+            "enforce": n.enforce,
+            "grounded": grounded,
+            "matched_cell": matched,
+        })
+    return out
+
+
+def numeric_cells_block(rows, limit: int = 40) -> str:
+    """A compact, de-duplicated list of the actual numeric result values, for a
+    corrective re-grounding prompt. Preserves natural magnitude, sorted descending."""
+    seen: list[float] = []
+    for v in cell_values(rows):
+        if v not in seen:
+            seen.append(v)
+    seen.sort(key=lambda x: abs(x), reverse=True)
+    shown = seen[:limit]
+    parts = []
+    for v in shown:
+        parts.append(str(int(v)) if float(v).is_integer() else f"{v:g}")
+    out = ", ".join(parts) if parts else "(no numeric values in the result)"
+    if len(seen) > limit:
+        out += f", … (+{len(seen) - limit} more)"
+    return out
+
+
+# ── cited pairs: "ZRH-LHR 108" when that row says 28 ─────────────────────────
+# The magnitude rule above is deliberately blind to small counts, so that a derived
+# "top 10" or a "84 routes" row-count is never false-flagged. That blindness has a
+# cost: a chat answer that tabulates entity → value pairs fabricates numbers well
+# under 1000 and passes untouched (live: flights per route answered 108 / 96 / 84
+# against real counts of 28 / 42 / 35).
+#
+# A pair is checkable in a way a lone number is not: the LABEL says which row the
+# number claims to be. So this asks a narrower question than "does this number exist
+# anywhere" — "does the row this number NAMES actually hold it?" — which is why it can
+# be strict about small integers without flagging the qualifiers around them.
+
+#: How far past a label to look for the number it claims. Wide enough for a markdown
+#: cell separator or a few words of prose, short enough to stay on the same claim.
+_PAIR_WINDOW = 48
+#: Numbers considered per label occurrence. More than one because a table's window
+#: spills into the next row and prose can put a qualifier first ("in 7 days, 28").
+_PAIR_LOOKAHEAD = 3
+
+_PAIR_NUM_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
+
+
+def _row_label_values(rows) -> dict:
+    """``{label: {numbers on that label's row}}`` — the pairs a result asserts."""
+    facts: dict = {}
+    for row in rows or []:
+        cells = list(row.values()) if isinstance(row, dict) else list(row or [])
+        labels, values = [], []
+        for c in cells:
+            if isinstance(c, bool):
+                continue
+            f = _to_float(c)
+            if f is not None:
+                values.append(f)
+            elif isinstance(c, str) and len(c.strip()) >= 2:
+                labels.append(c.strip().lower())
+        for lab in labels:
+            facts.setdefault(lab, set()).update(values)
+    return {k: v for k, v in facts.items() if v}
+
+
+def ungrounded_label_values(text: str, rows) -> list[str]:
+    """Labels whose cited number contradicts that label's own row.
+
+    Conservative on purpose: a label followed by NO number is not a claim, and a label
+    whose window holds several numbers passes if ANY of them matches — so "ZRH-LHR flew
+    28 flights over 7 days" grounds on the 28 and never trips on the 7.
+    """
+    facts = _row_label_values(rows)
+    if not facts or not text:
+        return []
+    low = text.lower()
+    bad: list[str] = []
+    for label, values in facts.items():
+        if label not in low:
+            continue
+        # The label as a word, never a piece of one: "delivered" is not in `order_delivered_carrier_date` or
+        # "undelivered". Matched as a substring, a sheet's answer "1,783 of 99,441 orders have no
+        # order_delivered_carrier_date" read as "delivered=1783" against a status row of 2, and was withheld whole
+        # (live, trace 062247c1).
+        for m in re.finditer(r"(?<!\w)" + re.escape(label) + r"(?!\w)", low):
+            # BOTH directions. A table writes "ZRH-LHR | 28" and prose writes "28
+            # flights on ZRH-LHR"; a forward-only window reads the second as a label
+            # with no claim attached and waves the fabrication through.
+            after = _PAIR_NUM_RE.findall(low[m.end():m.end() + _PAIR_WINDOW])[:_PAIR_LOOKAHEAD]
+            before = _PAIR_NUM_RE.findall(low[max(0, m.start() - _PAIR_WINDOW):m.start()])[-_PAIR_LOOKAHEAD:]
+            nums: list[float] = []
+            for tok in list(after) + list(before):
+                try:
+                    nums.append(float(tok.replace(",", "")))
+                except ValueError:
+                    continue
+            if not nums:
+                continue
+            if not any(_pair_matches(n, v) for n in nums for v in values):
+                bad.append(f"{label}={nums[0]:g}")
+                break
+    return bad
+
+
+def _pair_matches(cited: float, cell: float) -> bool:
+    """Exact, or within the rounding a writer would do (0.5%)."""
+    if cited == cell:
+        return True
+    denom = abs(cell) or 1.0
+    return abs(cited - cell) / denom <= 0.005

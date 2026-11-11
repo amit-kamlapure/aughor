@@ -1,0 +1,123 @@
+"use client";
+
+/**
+ * commandRegistry — a tiny module-level store of executable commands for the ⌘K
+ * command palette. Mirrors the vizEditorStore / toast idiom (module state +
+ * useSyncExternalStore; no provider).
+ *
+ * Commands are registered per SCOPE so a view can contribute CONTEXTUAL commands
+ * while it is mounted (e.g. Briefing → "Regenerate brief"; Query Builder → "Run
+ * query") and withdraw them on unmount — exactly the context-aware behaviour of a
+ * real command palette. Global commands register once under a stable scope.
+ *
+ * Callers pass a STABLE (useMemo'd) command array to useRegisterCommands so the
+ * scope isn't churned every render; run() closures should reach current handlers
+ * via refs where the handler identity isn't stable.
+ */
+
+import { useEffect, useSyncExternalStore } from "react";
+
+export interface Command {
+  id: string;
+  label: string;
+  sublabel?: string;
+  icon?: string;        // ICONS key in CommandPalette (defaults to "spark")
+  accent?: string;      // CSS colour for the icon (defaults to violet)
+  keywords?: string;    // extra fuzzy-match terms, not displayed
+  /** SP-2 — a command may do async work. The palette keeps the overlay open with
+   *  the row busy until the promise settles; a rejection surfaces as a visible
+   *  error line instead of vanishing with the overlay. Sync commands (returning
+   *  void) behave exactly as before. */
+  run: () => void | Promise<void>;
+  /** Keep the overlay open after run() settles — for commands whose work happens
+   *  IN the overlay (e.g. switching it into the Spotlight answer pane). */
+  keepOpen?: boolean;
+}
+
+let scopes: Record<string, Command[]> = {};
+let flat: Command[] = [];                 // memoised flat list; stable ref until a change
+const listeners = new Set<() => void>();
+
+function recompute() {
+  flat = Object.values(scopes).flat();
+}
+function emit() {
+  for (const l of listeners) l();
+}
+
+export function registerCommands(scopeId: string, commands: Command[]) {
+  scopes = { ...scopes, [scopeId]: commands };
+  recompute();
+  emit();
+}
+
+export function unregisterCommands(scopeId: string) {
+  if (!(scopeId in scopes)) return;
+  const next = { ...scopes };
+  delete next[scopeId];
+  scopes = next;
+  recompute();
+  emit();
+}
+
+function subscribe(cb: () => void) {
+  listeners.add(cb);
+  return () => {
+    listeners.delete(cb);
+  };
+}
+
+/** All currently-registered commands, flattened across scopes. */
+export function useCommands(): Command[] {
+  return useSyncExternalStore(subscribe, () => flat, () => flat);
+}
+
+/** Register a scope's commands for the mounting component's lifetime. Pass a
+ *  STABLE (useMemo'd) `commands` array to avoid re-registering every render. */
+export function useRegisterCommands(scopeId: string, commands: Command[]) {
+  useEffect(() => {
+    registerCommands(scopeId, commands);
+    return () => unregisterCommands(scopeId);
+  }, [scopeId, commands]);
+}
+
+// ── SP-2: the in-context summon ───────────────────────────────────────────────
+//
+// A view that meets a question mid-flow — an empty Agents screen, a failed run
+// row — summons Spotlight WITH the question, instead of telling the user to go
+// find ⌘K. The seam is deliberately tiny: the question parks here, one event
+// tells the shell to open the palette, and the palette consumes the question on
+// open and asks it straight into the Spotlight pane. Module state rather than
+// props because the summoner and the palette share no ancestor closer than the
+// page shell.
+
+/** SP-15 — the object a question is summoned FROM, by kind and id. It travels beside the
+ *  question, never inside it: the backend opens the turn on the object's live state
+ *  (`explain`) instead of parsing an id out of a sentence and spending tool calls to find it. */
+export interface AskFocus {
+  kind: "departure" | "automation" | "metric";
+  id: string;
+}
+
+export interface PendingAsk {
+  question: string;
+  focus: AskFocus | null;
+}
+
+let pendingAsk: PendingAsk = { question: "", focus: null };
+
+/** Summon the Spotlight overlay with a seeded question — and, when a screen's row
+ *  summoned it, the object that row shows. */
+export function askSpotlight(question: string, focus: AskFocus | null = null) {
+  pendingAsk = { question: (question || "").trim(), focus };
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("aughor:ask-spotlight"));
+  }
+}
+
+/** The parked question (and its object), cleared on read — the palette calls this on open. */
+export function consumePendingAsk(): PendingAsk {
+  const parked = pendingAsk;
+  pendingAsk = { question: "", focus: null };
+  return parked;
+}

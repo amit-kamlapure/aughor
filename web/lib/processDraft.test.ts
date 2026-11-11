@@ -1,0 +1,169 @@
+/**
+ * The process designer's draft (2026-10-09): a person names things in words and the ids are made for them; a draft
+ * that cannot be counted yet always says why. The walk-through typed "Delivery time", "Shipped" and "Delivered" and the
+ * old form's button stayed disabled with nothing beside it.
+ */
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import {
+  dashboardIdFor, draftFromProcess, dropDraft, emptyDraft, freshId, idFrom, keepDraft, keptDraft, notReady, toSpec,
+  toggledMoves, type ProcessDraft,
+} from "@/lib/processDraft";
+
+const ready: ProcessDraft = {
+  ...emptyDraft("Order"),
+  name: "Order delivery",
+  stages: [
+    { label: "Placed", anchor: { kind: "moment", path: "order_date" }, promise: null },
+    { label: "Shipped", anchor: { kind: "moment", path: "shipped_at" }, promise: null },
+    { label: "Delivered", anchor: { kind: "moment", path: "delivered_at" },
+      promise: { kind: "days", amount: "5", name: "Delivery", target: "95" } },
+  ],
+};
+
+describe("ids made from a person's words", () => {
+  it("lower-cases, joins words with underscores, and starts with a letter", () => {
+    expect(idFrom("Delivery time")).toBe("delivery_time");
+    expect(idFrom("  Order → Delivery!  ")).toBe("order_delivery");
+    expect(idFrom("2-day dispatch")).toBe("p_2_day_dispatch");
+    expect(idFrom("Ça déménage")).toBe("ca_demenage");
+    expect(idFrom("—")).toBe("");
+  });
+
+  it("never takes an id already held", () => {
+    expect(freshId("order_delivery", ["order_fulfilment"])).toBe("order_delivery");
+    expect(freshId("order_delivery", ["order_delivery", "order_delivery_2"])).toBe("order_delivery_3");
+  });
+});
+
+describe("a new dashboard's id", () => {
+  it("is the server's shape — lower-case words joined by hyphens, then a random suffix", () => {
+    expect(dashboardIdFor("Order delivery", () => "a1b2c3")).toBe("order-delivery-a1b2c3");
+    expect(dashboardIdFor("Délai d'expédition — 2 jours", () => "000000")).toBe("delai-d-expedition-2-jours-000000");
+    expect(dashboardIdFor("—", () => "ffffff")).toBe("cockpit-ffffff");
+    expect(dashboardIdFor("x".repeat(80))).toMatch(/^x{32}-[0-9a-f]{6}$/);
+    expect(dashboardIdFor("Order delivery")).not.toBe(dashboardIdFor("Order delivery"));   // never counted, never the same
+  });
+});
+
+describe("a draft that cannot be counted yet says why", () => {
+  const stage = (i: number, change: object): ProcessDraft =>
+    ({ ...ready, stages: ready.stages.map((s, j) => (j === i ? { ...s, ...change } : s)) });
+
+  it.each([
+    [{ ...ready, name: " " }, "Name the process."],
+    [{ ...ready, entity: "" }, "Choose what moves through the process."],
+    [{ ...ready, stages: ready.stages.slice(0, 1) }, "A process has at least two stages."],
+    [stage(1, { label: "" }), "Name stage 2."],
+    [stage(1, { anchor: null }), "Choose when an object reaches Shipped."],
+    [stage(1, { anchor: { kind: "state", property: "status", values: [] } }), "Choose the status values that place an object in Shipped."],
+    [stage(0, { promise: { kind: "days", amount: "2", name: "", target: "" } }), "Placed is the first stage — there is no stage before it to count a promise from."],
+    [stage(1, { anchor: { kind: "state", property: "status", values: ["shipped"] } }),
+      "Delivered's promise counts from the stage before it, which is reached by a status and has no moment to count from."],
+    [stage(2, { promise: { kind: "days", amount: "five", name: "", target: "" } }), "Say how many days the promise on Delivered allows."],
+    [stage(2, { promise: { kind: "deadline", deadline: "", name: "", target: "" } }), "Choose the deadline the promise on Delivered is kept by."],
+    [stage(2, { promise: { kind: "days", amount: "5", name: "", target: "120" } }), "The target on Delivered is a percentage above 0, at most 100."],
+    [stage(2, { label: "shipped" }), "Two stages are named alike (shipped) — name each stage differently."],
+  ])("%#", (draft, why) => {
+    expect(notReady(draft as ProcessDraft)).toBe(why);
+  });
+
+  it("is ready when every stage is named, reached and its promise complete", () => {
+    expect(notReady(ready)).toBe("");
+  });
+});
+
+describe("the declaration a draft becomes", () => {
+  it("keeps the words as the names a reader sees and makes the ids from them", () => {
+    expect(toSpec({ ...ready, owner: " Logistics ", leaves: { property: "status", values: ["cancelled", "refunded"] } },
+      ["order_fulfilment"])).toEqual({
+      id: "order_delivery", display_name: "Order delivery", entity: "Order", owner: "Logistics",
+      stages: [
+        { name: "placed", display_name: "Placed", timestamp: "order_date" },
+        { name: "shipped", display_name: "Shipped", timestamp: "shipped_at" },
+        { name: "delivered", display_name: "Delivered", timestamp: "delivered_at",
+          promise: { name: "delivery", within_days: 5, target: 0.95 } },
+      ],
+      leaves: { property: "status", values: ["cancelled", "refunded"] },
+    });
+  });
+
+  it("reads a status stage, an hours promise and a deadline promise in the door's own shape", () => {
+    const spec = toSpec({ ...ready, stages: [
+      { label: "Placed", anchor: { kind: "moment", path: "order_date" }, promise: null },
+      { label: "Packed", anchor: { kind: "state", property: "status", values: ["packed"] }, promise: null },
+      { label: "Shipped", anchor: { kind: "moment", path: "shipped_at" }, promise: { kind: "deadline", deadline: "ship_by", name: "", target: "" } },
+      { label: "Delivered", anchor: { kind: "moment", path: "delivered_at" }, promise: { kind: "hours", amount: "72", name: "", target: "" } },
+    ] }, ["order_delivery"]);
+    expect(spec.id).toBe("order_delivery_2");
+    expect(spec.stages.slice(1)).toEqual([
+      { name: "packed", display_name: "Packed", property: "status", state: ["packed"] },
+      { name: "shipped", display_name: "Shipped", timestamp: "shipped_at", promise: { deadline: "ship_by" } },
+      { name: "delivered", display_name: "Delivered", timestamp: "delivered_at", promise: { within_hours: 72 } },
+    ]);
+  });
+});
+
+describe("a draft kept in this browser", () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it("is kept, read back and dropped — and a browser that keeps nothing says so", () => {
+    const store = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    });
+    expect(keepDraft("c1", "s", ready)).toBe(true);
+    expect(keptDraft("c1", "s")).toEqual(ready);
+    expect(keptDraft("c1", "other")).toBeNull();
+    dropDraft("c1", "s");
+    expect(keptDraft("c1", "s")).toBeNull();
+    vi.stubGlobal("localStorage", { setItem: () => { throw new Error("private mode"); }, getItem: () => null, removeItem: () => {} });
+    expect(keepDraft("c1", "s", ready)).toBe(false);
+  });
+});
+
+// ── Arc OC-5 — changing a declared process, and the moves a person expects ──────────────────────────────────────────
+
+describe("a declared process changed in the designer", () => {
+  const declared = {
+    id: "order_fulfilment", display_name: "Order Fulfilment", description: "", entity: "order", entity_id: "Order",
+    owner: "", origin: "human" as const, provenance: "", objects: 10, verified: true, note: "", measured_at: "",
+    derived: { segments: [], properties: [], metrics: [] },
+    leaves: { property: "status", values: ["Cancelled"], left: 1, missing: [], unknown: 0, note: "" },
+    transitions: [{ from_stage: "placed", to_stage: "dispatched", declared: true, objects: 5 }],
+    stages: [
+      { name: "placed", display_name: "placed", anchor: { timestamp: "created_at" }, reached: 10, share: 1, verified: true,
+        note: "", transition: null, promise: null },
+      { name: "dispatched", display_name: "Shipped", anchor: { timestamp: "shipped_at" }, reached: 8, share: 0.8,
+        verified: true, note: "", transition: null,
+        promise: { name: "dispatch", kind: "within_days" as const, deadline: "", within_days: 2, grain: "order",
+                   grain_id: "Order", via: "", target: 0.95, objects: 10, reached: 8, breached: 1, kept: 7, open: 2,
+                   open_overdue: 1, breach_rate: 0.125, as_of: "", verified: true, flags: [], note: "",
+                   segment: "late_dispatch", metric: "dispatch_breach_rate" } },
+    ],
+  };
+
+  it("reads back as the declaration it came from — the id and every stage's name kept", () => {
+    const d = draftFromProcess(declared);
+    expect(notReady(d)).toBe("");
+    expect(toSpec(d, ["order_fulfilment"])).toEqual({
+      id: "order_fulfilment", display_name: "Order Fulfilment", entity: "Order",
+      stages: [{ name: "placed", display_name: "placed", timestamp: "created_at" },
+               { name: "dispatched", display_name: "Shipped", timestamp: "shipped_at",
+                 promise: { name: "dispatch", within_days: 2, target: 0.95 } }],
+      leaves: { property: "status", values: ["Cancelled"] },
+      transitions: [{ from: "placed", to: "dispatched" }],
+    });
+  });
+
+  it("starts the moves from those the data shows as expected, and a move to a stage taken away is said", () => {
+    const d = { ...draftFromProcess(declared), moves: null };
+    const shown = [{ from_stage: "placed", to_stage: "dispatched", declared: true },
+                   { from_stage: "dispatched", to_stage: "left", declared: false }];
+    expect(toggledMoves(d, shown, { from: "dispatched", to: "left" }, true))
+      .toEqual([{ from: "placed", to: "dispatched" }, { from: "dispatched", to: "left" }]);
+    expect(toggledMoves(d, shown, { from: "placed", to: "dispatched" }, false)).toEqual([]);
+    expect(notReady({ ...d, moves: [{ from: "placed", to: "gone" }] })).toContain("names a stage that is not here");
+  });
+});
