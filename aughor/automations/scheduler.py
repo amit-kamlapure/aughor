@@ -1,0 +1,390 @@
+"""Wave A2 — the automation heartbeat.
+
+Deliberately **one interval job, not one cron job per automation** — the opposite of what
+the legacy monitor and brief schedulers did, and the reason those two could never merge.
+A per-automation cron job can only ever encode a *time* condition, so an automation whose
+trigger is "revenue dropped" or "new rows landed" has nothing to register. A single
+heartbeat that asks each enabled automation "are your conditions true?" handles time and
+non-time conditions with one mechanism, and a ``schedule`` condition stays exact because
+:func:`~aughor.automations.engine._schedule_fired` asks whether the cron matched *since the
+last run*, not whether this instant is the cron minute.
+
+Since flag endgame Wave 4 (2026-08-06) this is the ONLY loop: monitors and brief
+subscriptions ride every tick as virtual automations (:mod:`aughor.automations.adopt`),
+their legacy per-object schedulers deleted.
+"""
+from __future__ import annotations
+
+import logging
+from typing import Optional
+
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.interval import IntervalTrigger
+
+from aughor.automations.models import AutomationRun
+
+logger = logging.getLogger(__name__)
+
+_scheduler = BackgroundScheduler(timezone="UTC", job_defaults={"misfire_grace_time": 300})
+_started = False
+
+#: How often the heartbeat asks every automation whether it should fire. One minute is the finest
+#: grain a cron expression can express, so a coarser tick would make ``schedule`` conditions late.
+TICK_SECONDS = 60
+
+
+def tick_once() -> dict[str, int]:
+    """Evaluate every enabled automation once. One automation's failure never stops the rest.
+
+    The same tick ALSO runs every enabled monitor and brief subscription as a virtual
+    automation (adoption is permanent — flag endgame Wave 4, 2026-08-06; the legacy
+    per-object schedulers were deleted, so this is the ONE loop). Returns per-family
+    counts of what was evaluated — each object's own ``schedule`` condition decides
+    whether it actually fires — so a caller holding an external clock (``/cron/tick``)
+    can report a tick that did something distinguishable from one that found nothing."""
+    from aughor.automations.adopt import (
+        AGENT_ALERT_PREFIX,
+        BRIEF_PREFIX,
+        MONITOR_PREFIX,
+        list_adopted_automations,
+    )
+
+    try:
+        from aughor.automations.store import list_automations
+        automations = list_automations(enabled_only=True)
+    except Exception as exc:
+        logger.warning("automation heartbeat could not load automations: %s", exc)
+        automations = []
+
+    try:
+        automations = list(automations) + list_adopted_automations()
+    except Exception as exc:
+        logger.warning("automation heartbeat could not adopt legacy objects: %s", exc)
+
+    # A family per adopted kind, not one bucket: "the tick evaluated 40 automations" is not
+    # an answer to "is the alert plane running", and a caller holding an external clock has
+    # nothing else to read.
+    counts = {"automations": 0, "monitors": 0, "briefs": 0, "agent_alerts": 0, "resumed": 0}
+    for automation in automations:
+        aid = str(automation.id)
+        if aid.startswith(MONITOR_PREFIX):
+            counts["monitors"] += 1
+        elif aid.startswith(BRIEF_PREFIX):
+            counts["briefs"] += 1
+        elif aid.startswith(AGENT_ALERT_PREFIX):
+            counts["agent_alerts"] += 1
+        else:
+            counts["automations"] += 1
+        try:
+            _run_one(automation)
+        except Exception as exc:
+            logger.error("automation %s (%s) crashed the tick: %s",
+                         automation.id, automation.name, exc)
+
+    # DS-8 — and the runs that are already going, waiting on a person. A parked run belongs
+    # to no automation's schedule (its conditions fired long ago; re-evaluating them would
+    # abandon it whenever they stopped holding), so nothing above would ever reach it. The
+    # routers that resolve a proposal resume it immediately; this is what makes the resume a
+    # property of the system rather than of whichever surface happened to be used.
+    try:
+        from aughor.automations.engine import resume_parked_runs
+        counts["resumed"] = resume_parked_runs()
+    except Exception as exc:
+        logger.warning("automation heartbeat could not resume parked runs: %s", exc)
+        counts["resumed"] = 0
+    # CB-2 — the reviews that came due: measure again with the answer's own definition and ask.
+    # Once an hour is the right grain for a question dated in days; the tick is a minute.
+    try:
+        counts["reviews"] = run_due_reviews_hourly()
+    except Exception as exc:
+        logger.warning("automation heartbeat could not run due reviews: %s", exc)
+        counts["reviews"] = 0
+    # Phase 3 of the 2027 study — predictions whose range is Final are scored by code, hourly.
+    try:
+        counts["predictions_scored"] = score_due_predictions_hourly()
+    except Exception as exc:
+        logger.warning("automation heartbeat could not score due predictions: %s", exc)
+        counts["predictions_scored"] = 0
+    # Phase 2 of the 2027 study — the inquiries whose check date has come wake (state open, the
+    # reason recorded); the settle tick is the loop's heartbeat. Hourly, like the reviews.
+    try:
+        counts["inquiries_woken"] = wake_due_inquiries_hourly()
+    except Exception as exc:
+        logger.warning("automation heartbeat could not wake due inquiries: %s", exc)
+        counts["inquiries_woken"] = 0
+    # Phase 5 of the 2027 study — every active mission whose report date has come is reported:
+    # composed from fields, booked, delivered to its owner through the gate. Hourly.
+    try:
+        counts["mission_reports"] = report_due_missions_hourly()
+    except Exception as exc:
+        logger.warning("automation heartbeat could not report due missions: %s", exc)
+        counts["mission_reports"] = 0
+    # Idea 4 — the daily reading of every table's recent days, so the platform LEARNS when a
+    # source's numbers stop changing instead of being told a lag by hand. Once a UTC day; a
+    # count per table, no model.
+    try:
+        from aughor.settling.sampler import run_settling_samples_daily
+        counts["settling"] = run_settling_samples_daily()
+    except Exception as exc:
+        logger.warning("automation heartbeat could not take the settling reading: %s", exc)
+        counts["settling"] = 0
+    # Idea 5 — re-check the answers people were given, once a UTC day, AFTER the settling
+    # reading so a change is judged against today's lag.
+    try:
+        from aughor.answer.recheck import run_rechecks_daily
+        counts["rechecks"] = run_rechecks_daily()
+    except Exception as exc:
+        logger.warning("automation heartbeat could not re-check past answers: %s", exc)
+        counts["rechecks"] = 0
+    # AO-6 — the agents' nightly evaluation, once a UTC day, behind `agents.testing_centre`:
+    # every enabled custom agent with certified goldens is re-measured on the production
+    # path and the diff against its last stamp is written onto the result.
+    try:
+        from aughor.custom_agents.learning import nightly as agents_nightly
+        counts["agent_evals"] = len((agents_nightly() or {}).get("ran") or [])
+    except Exception as exc:
+        logger.warning("automation heartbeat could not run the agents' nightly evals: %s", exc)
+        counts["agent_evals"] = 0
+    # BR-6 — the same recall for BRIEFINGS, beside the answers one and behind the same switch.
+    # A Briefing's figures are the ones likeliest to move: it is written about the most recent
+    # complete period, which is exactly the period still filling. After the settling reading,
+    # for the same reason the answers pass is.
+    try:
+        from aughor.briefing.recall import run_recall_daily
+        counts["briefing_recall"] = run_recall_daily()
+    except Exception as exc:
+        logger.warning("automation heartbeat could not re-measure past Briefings: %s", exc)
+        counts["briefing_recall"] = 0
+    return counts
+
+
+REVIEW_CHECK_SECONDS = 3600
+_last_review_check: float = 0.0
+
+
+def run_due_reviews_hourly(*, now: Optional[float] = None, force: bool = False) -> int:
+    """Run `playbook.outcomes.run_due_reviews` at most once per `REVIEW_CHECK_SECONDS`. Returns how
+    many reviews ran (0 when the hour has not passed). ``force`` is for an external clock."""
+    global _last_review_check
+    import time as _time
+    t = _time.time() if now is None else now
+    if not force and t - _last_review_check < REVIEW_CHECK_SECONDS:
+        return 0
+    _last_review_check = t
+    from aughor.playbook.outcomes import run_due_reviews
+    from aughor.db.measure import run_sql_for
+    reviewed = run_due_reviews(run_sql_for=run_sql_for)
+    for o in reviewed:
+        logger.info("review due on %s asked %s: %s", o.id, o.review_asked_to or "(nobody linked)",
+                    o.review_question[:120])
+    # PENDING 57, D-2: every other decision that came due is reviewed in the same tick
+    from aughor.record.reviews import review_due_decisions
+    booked = review_due_decisions()
+    for oid in booked:
+        logger.info("decision review booked outcome %s", oid)
+    return len(reviewed) + len(booked)
+
+
+_last_prediction_check: float = 0.0
+
+
+def score_due_predictions_hourly(*, now: Optional[float] = None, force: bool = False) -> int:
+    """Score every open prediction whose settle date has passed and whose spec is measurable, at
+    most once per `REVIEW_CHECK_SECONDS`. Returns how many were scored."""
+    global _last_prediction_check
+    import time as _time
+    t = _time.time() if now is None else now
+    if not force and t - _last_prediction_check < REVIEW_CHECK_SECONDS:
+        return 0
+    _last_prediction_check = t
+    from aughor.db.measure import run_sql_for
+    from aughor.record.scenario import score_due_predictions
+    scored = score_due_predictions(run_sql_for=run_sql_for)
+    # A Briefing's own predictions carry no one-table spec: each is scored by measuring its metric
+    # for its range the Briefing's way (`aughor.briefing.expected`).
+    try:
+        from aughor.briefing.expected import score_due
+        scored = [*scored, *score_due()]
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the Briefing's predictions could not be scored this hour; the next tick tries again",
+                 counter="briefing.expected.score")
+    for cid in scored:
+        logger.info("prediction %s scored", cid)
+    return len(scored)
+
+
+_last_inquiry_check: float = 0.0
+
+
+def wake_due_inquiries_hourly(*, now: Optional[float] = None, force: bool = False) -> int:
+    """Wake every waiting inquiry whose check date has come, at most once per
+    `REVIEW_CHECK_SECONDS`. Returns how many woke."""
+    global _last_inquiry_check
+    import time as _time
+    t = _time.time() if now is None else now
+    if not force and t - _last_inquiry_check < REVIEW_CHECK_SECONDS:
+        return 0
+    _last_inquiry_check = t
+    from aughor.record.inquiry import wake_due
+    woken = wake_due()
+    for q in woken:
+        logger.info("inquiry %s woke: %s", q.key, q.question[:120])
+    return len(woken)
+
+
+_last_mission_check: float = 0.0
+
+
+def report_due_missions_hourly(*, now: Optional[float] = None, force: bool = False) -> int:
+    """Report every active mission whose report date has come, at most once per
+    `REVIEW_CHECK_SECONDS`. Returns how many reports were booked."""
+    global _last_mission_check
+    import time as _time
+    t = _time.time() if now is None else now
+    if not force and t - _last_mission_check < REVIEW_CHECK_SECONDS:
+        return 0
+    _last_mission_check = t
+    from aughor.db.measure import run_sql_for
+    from aughor.record.mission import report_due_missions
+    reported = report_due_missions(run_sql_for=run_sql_for)
+    for r in reported:
+        logger.info("mission %s reported (%s): %s", r["report"]["name"], r["delivery"].get("status"),
+                    r["report"]["headline"][:160])
+    return len(reported)
+
+
+def _run_one(automation) -> None:
+    """Run one automation with its tenant bound, metered as a supervised job when possible.
+
+    DATA-06: a background tick carries no request context, so ``current_org_id()`` would default to
+    'default' and mis-stamp the emitted ``automation.run`` event. Re-bind the automation's tenant
+    (its connection's org) for the run — the same re-bind the monitor and brief schedulers do.
+    """
+    from aughor.automations.engine import run_automation
+    from aughor.db.registry import get_connection_org
+    from aughor.org.context import using_org
+
+    org = get_connection_org(automation.conn_id) or ""
+
+    def _work():
+        with using_org(org):
+            run_automation(automation)
+
+    # Serverless: run the work INLINE, before the tick responds. The kernel path
+    # only awaits the SUBMIT — the work itself becomes an asyncio task, and Vercel
+    # freezes the instance the moment /cron/tick returns, so an enqueued delivery
+    # may never start. Worse, its job row then sits PENDING under this
+    # idempotency key and `submit` hands that same job back on every later tick:
+    # one frozen instance wedged the automation permanently. Inline is the
+    # no-loop fallback below, chosen deliberately — the cron route's maxDuration
+    # is the budget, and the run's own automation_runs row stays the record.
+    import os
+    if os.environ.get("VERCEL"):
+        _work()
+        return
+    # Metered execution is permanent (flag endgame Wave 2, 2026-08-06; receipt
+    # b167bb891764) — the automation runs as a supervised job when the kernel
+    # loop is up; _work() stays the no-loop fallback.
+    from aughor.kernel.jobs import submit_background_tick
+    job_id = submit_background_tick(
+        "automation", _work, conn_id=automation.conn_id, org_id=org,
+        idempotency_key=f"automation:{automation.id}")
+    if job_id is not None:
+        return       # routed through the kernel
+    _work()              # no-loop fallback
+
+
+def trigger_now(automation_id: str, run_id: Optional[str] = None,
+                via: str = "hand") -> Optional[AutomationRun]:
+    """Run one automation immediately (synchronous, for the API test endpoint).
+
+    Unlike the heartbeat this does NOT skip a disabled or paused automation — it runs it through
+    the same gates and hands back the resulting run, so an operator asking "why isn't this firing?"
+    gets the reason rather than silence.
+
+    ``manual=True``: the SCHEDULE is not consulted, because pressing this button is the
+    answer to the question a schedule asks. Every other condition still is — a threshold
+    or a source change describes the world, and nobody changed the world by clicking.
+    The lifecycle gates above are untouched for the reason in the paragraph above: a
+    disabled automation should say it is disabled, not run.
+
+    ``via`` (DS-17) names what asked, for the run history only — ``"hand"`` (Run now) or
+    ``"webhook"`` (the chain's own URL was called). It changes no decision: a webhook
+    arrival is an external ask exactly as a button press is, and both must clear the same
+    lifecycle gates, which is why the webhook route calls THIS rather than the engine.
+    """
+    try:
+        from aughor.automations.engine import run_automation
+        from aughor.automations.store import get_automation
+        from aughor.db.registry import get_connection_org
+        from aughor.org.context import using_org
+
+        automation = get_automation(automation_id)
+        if automation is None:
+            return None
+        with using_org(get_connection_org(automation.conn_id) or ""):
+            return run_automation(automation, manual=True, via=via, run_id=run_id)
+    except Exception as exc:
+        logger.error("trigger_now failed for automation %s: %s", automation_id, exc)
+        return None
+
+
+def start() -> None:
+    """Start the heartbeat."""
+    global _started
+    if _started:
+        return
+    try:
+        _scheduler.add_job(
+            tick_once,
+            trigger=IntervalTrigger(seconds=TICK_SECONDS),
+            id="automation_heartbeat",
+            name="automation heartbeat",
+            replace_existing=True,
+        )
+        _scheduler.start()
+        _started = True
+        logger.info("Automation heartbeat started (every %ds)", TICK_SECONDS)
+    except Exception as exc:
+        logger.warning("Automation heartbeat failed to start (non-fatal): %s", exc)
+
+
+def clock() -> tuple[str, str]:
+    """DS-17 — what drives the tick HERE, as ``(state, detail)``. Measured, not assumed.
+
+    Three answers, and the middle one is the whole reason this exists:
+
+    - ``("heartbeat", …)`` — the in-process interval job is running; nothing else needed.
+    - ``("external", …)`` — a serverless deployment, where in-process schedulers are OFF by
+      design (`api.py`'s lifespan) and an outside clock calls ``GET /cron/tick``. The
+      schedule door is open here too, but for a different reason, and a surface that only
+      knew how to look for a thread would tell a Vercel deployment its schedules are dead
+      while they fire every minute.
+    - ``("stopped", …)`` — neither. `start()` swallows its own failure as non-fatal (a
+      correct choice: an API that refuses to boot because APScheduler could not start is
+      worse than one that serves), so this is a state a deployment can genuinely be in and
+      nothing else reports it. A schedule door that read `open` here would be the palette's
+      original sin — offering something that quietly does nothing.
+    """
+    import os
+    if _started:
+        return "heartbeat", f"in-process heartbeat, every {TICK_SECONDS}s"
+    if os.environ.get("VERCEL"):
+        return "external", "serverless — an external cron calls GET /cron/tick"
+    return "stopped", "no clock is running in this process"
+
+
+def stop() -> None:
+    global _started
+    if _started:
+        try:
+            _scheduler.shutdown(wait=False)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "scheduler shutdown is best-effort; the process is stopping anyway",
+                     counter="automations.scheduler.stop")
+        _started = False
+
+
+automation_scheduler = _scheduler

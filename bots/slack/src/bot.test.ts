@@ -1,0 +1,838 @@
+/**
+ * The seam test: a mention drives the REAL Chat pipeline (mention detection,
+ * thread resolution, post streaming) with a mock adapter and a fake ask.
+ * This fails if the handler is unplugged — not merely if the transport
+ * misparses — which is the built-but-not-wired failure the whole repo guards.
+ */
+import {
+  createMockAdapter,
+  createMockState,
+  createTestMessage,
+} from "@chat-adapter/tests";
+import { describe, expect, it, type Mock } from "vitest";
+import type { Adapter } from "chat";
+
+import type { Author, EmojiValue } from "chat";
+
+import type {
+  AnswerEnvelope, ApprovalBody, AskOptions, DecisionBody, DecisionResult, TurnArtifacts, VerdictBody,
+} from "./aughor.js";
+import type { Grid, TableRendering } from "./artifacts.js";
+import { buildBot, CORRECTION, parseDecision, stripMention, withoutTables } from "./bot.js";
+
+/** CP-5 — the platform's table door as the bot sees it. The bot formats nothing, so this
+ *  stands in for `POST /exhibits/table`: it returns what the door would, and records the
+ *  grid the bot asked about. What the table looks like is pinned in Python. */
+const REGION_TABLE: TableRendering = {
+  markdown: "| Region | Revenue |\n| --- | --- |\n| East | 12 |\n| West | 9 |", csv: null };
+function tableDoor(rendering: TableRendering | null = REGION_TABLE) {
+  const asked: Grid[] = [];
+  return { asked, renderTable: async (g: Grid) => { asked.push(g); return rendering; } };
+}
+
+const THREAD = "slack:C1:1712.001";
+
+// Mention detection matches the ADAPTER's userName (the real Slack adapter
+// resolves the installed bot's name); the mock defaults to "slack-bot", so
+// align it with the bot we build.
+const mockAughorAdapter = () => createMockAdapter("slack", { userName: "aughor" });
+
+function fakeAsk(chunks: string[]) {
+  const calls: { question: string; opts: AskOptions }[] = [];
+  async function* ask(question: string, opts: AskOptions) {
+    calls.push({ question, opts });
+    for (const c of chunks) yield c;
+  }
+  return { ask, calls };
+}
+
+describe("buildBot", () => {
+  it("a mention streams the governed answer into the thread", async () => {
+    const adapter = mockAughorAdapter();
+    const { ask, calls } = fakeAsk(["East is flat.", " South is down 4%."]);
+    const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState() });
+
+    await bot.handleIncomingMessage(
+      adapter,
+      THREAD,
+      createTestMessage("m1", "@aughor why did revenue dip?"),
+    );
+
+    // Streaming is post-then-edit: the placeholder posts, the accumulated
+    // answer arrives through edits — the FINAL edit carries the whole text.
+    expect(adapter).toHavePosted(THREAD);
+    expect(adapter).toHaveEdited(THREAD, "msg-1", /East is flat\. South is down 4%\./);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].question).toBe("why did revenue dip?");
+    // The thread IS the conversation — follow-ups in the thread must compose.
+    expect(calls[0].opts.sessionId).toBe(THREAD);
+  });
+
+  it("a bare mention gets usage, and spends nothing", async () => {
+    const adapter = mockAughorAdapter();
+    const { ask, calls } = fakeAsk(["never"]);
+    const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState() });
+
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m2", "@aughor"));
+
+    expect(adapter).toHavePosted(THREAD, /Ask me a data question/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("an unmentioned message is not answered — reply on address, never on overhear", async () => {
+    const adapter = mockAughorAdapter();
+    const { ask, calls } = fakeAsk(["never"]);
+    const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState() });
+
+    await bot.handleIncomingMessage(
+      adapter,
+      THREAD,
+      createTestMessage("m3", "let's look at revenue tomorrow"),
+    );
+
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe("stripMention", () => {
+  it("removes plain and raw mention tokens, keeping the question", () => {
+    expect(stripMention("@aughor why did revenue dip?")).toBe("why did revenue dip?");
+    expect(stripMention("<@U0AUGHOR> why did revenue dip?")).toBe("why did revenue dip?");
+    expect(stripMention("hey @Aughor — why?")).toBe("hey — why?");
+    // The SDK normalizes a Slack mention to "@" + user id WITHOUT brackets —
+    // seen live: the raw token leaked into the question and the session title.
+    expect(stripMention("@U0BT4QWH0KH why did revenue dip most recently")).toBe(
+      "why did revenue dip most recently",
+    );
+  });
+});
+
+/** The exhibits ride the LAST post — the streamed answer posts first. */
+function lastPost(adapter: Adapter): unknown {
+  const calls = (adapter.postMessage as unknown as Mock).mock.calls;
+  return calls[calls.length - 1]?.[1];
+}
+
+function askYielding(chunks: string[], artifacts?: Partial<TurnArtifacts>) {
+  const seen: AskOptions[] = [];
+  async function* ask(_q: string, opts: AskOptions) {
+    seen.push(opts);
+    for (const c of chunks) yield c;
+    if (artifacts) {
+      opts.onTurn?.({
+        investigationId: "inv-1", question: "why?", sessionId: opts.sessionId,
+        columns: [], rows: [], chartType: "auto", chartConfig: {}, ...artifacts,
+      });
+    }
+  }
+  return { ask, seen };
+}
+
+describe("buildBot — RC-2", () => {
+  it("an answer is the answer — no link back to the platform", async () => {
+    // The user's call, 2026-09-23: "dont keep deeplink". Every answer used to end with
+    // "<…|Open in Aughor →>". It reads as the same decision that took receipts off Slack
+    // messages a day earlier — the message is for the people in the channel, and a trail
+    // back into the platform is not what they are there for. The record still exists in
+    // Aughor; the Slack message just stops advertising it.
+    const adapter = mockAughorAdapter();
+    const { ask } = askYielding(["East leads."]);
+    const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState() });
+
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
+
+    expect(adapter).toHaveEdited(THREAD, "msg-1", /^East leads\.$/);
+  });
+
+  it("the turn's exhibits follow the answer as their own message — table and chart", async () => {
+    const adapter = mockAughorAdapter();
+    const { ask } = askYielding(["East leads."], {
+      columns: ["region", "revenue"],
+      rows: [["East", 12], ["West", 9]],
+      chartType: "bar",
+    });
+    const door = tableDoor();
+    const bot = buildBot({
+      ask,
+      renderChart: async () => Buffer.from("PNGBYTES"),
+      renderTable: door.renderTable,
+      adapters: { slack: adapter }, state: createMockState(),
+    });
+
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
+
+    const post = lastPost(adapter) as { markdown: string; files: { filename: string }[] };
+    expect(door.asked).toEqual([{ columns: ["region", "revenue"], rows: [["East", 12], ["West", 9]] }]);
+    expect(post.markdown).toContain("| East | 12 |");
+    expect(post.files.map((f) => f.filename)).toEqual(["chart.png"]);
+  });
+
+  it("a wide result is attached as CSV, never tabled into a wall", async () => {
+    const adapter = mockAughorAdapter();
+    const { ask } = askYielding(["Here."], {
+      columns: ["a", "b", "c", "d", "e", "f", "g"],
+      rows: [[1, 2, 3, 4, 5, 6, 7], [8, 9, 10, 11, 12, 13, 14]],
+    });
+    const bot = buildBot({
+      ask, renderChart: async () => null,
+      renderTable: tableDoor({ markdown: "_2 rows × 7 columns — the full result is attached as CSV._",
+                               csv: "a,b,c,d,e,f,g\n1,2,3,4,5,6,7\n8,9,10,11,12,13,14" }).renderTable,
+      adapters: { slack: adapter }, state: createMockState(),
+    });
+
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
+
+    const post = lastPost(adapter) as { markdown: string; files: { filename: string }[] };
+    expect(post.markdown).toBe("_2 rows × 7 columns — the full result is attached as CSV._");
+    expect(post.files.map((f) => f.filename)).toEqual(["why.csv"]);
+  });
+
+  it("a one-number result gets no exhibit — the prose already said it", async () => {
+    const adapter = mockAughorAdapter();
+    const { ask } = askYielding(["Revenue was €1.2M."], {
+      columns: ["revenue"], rows: [[1200000]],
+    });
+    const bot = buildBot({
+      ask, renderChart: async () => Buffer.from("PNGBYTES"),
+      renderTable: tableDoor(null).renderTable,       // the door: not worth a second message
+      adapters: { slack: adapter }, state: createMockState(),
+    });
+
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor how much?"));
+
+    // Only the streamed answer's own placeholder post — nothing followed it.
+    expect((adapter.postMessage as unknown as Mock).mock.calls).toHaveLength(1);
+  });
+
+  it("a failed chart render costs the picture, not the answer", async () => {
+    const adapter = mockAughorAdapter();
+    const { ask } = askYielding(["East leads."], {
+      columns: ["region", "revenue"], rows: [["East", 12], ["West", 9]],
+    });
+    const bot = buildBot({
+      ask, renderChart: async () => null,       // no honest chart, or no renderer
+      renderTable: tableDoor().renderTable,
+      adapters: { slack: adapter }, state: createMockState(),
+    });
+
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
+
+    const post = lastPost(adapter) as { markdown: string; files?: unknown[] };
+    expect(post.markdown).toContain("| East | 12 |");
+    expect(post.files).toBeUndefined();
+  });
+
+  it("the platform's stop signal reaches the transport", async () => {
+    // Without this the stop button stops the VIEW and leaves the run burning:
+    // FL-1 detached the producer, so only a server-side cancel ends the spend.
+    const adapter = mockAughorAdapter();
+    const { ask, seen } = askYielding(["partial"]);
+    const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState() });
+
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0].signal).toBeInstanceOf(AbortSignal);
+    expect(seen[0].sessionId).toBe(THREAD);
+  });
+});
+
+// ── HB-5 · the note verb: arrivals, never asks ──────────────────────────────────
+
+import { parseSlackThreadRef } from "./bot.js";
+import type { ArrivalBody, ArrivalResult } from "./aughor.js";
+
+function fakeArrivals(result: Partial<ArrivalResult> = {}) {
+  const posted: ArrivalBody[] = [];
+  const postArrival = async (body: ArrivalBody): Promise<ArrivalResult> => {
+    posted.push(body);
+    return { ok: true, status: 200, detail: "staged for human review", ...result };
+  };
+  return { postArrival, posted };
+}
+
+describe("parseSlackThreadRef", () => {
+  it("reads channel and root ts off the adapter's colon-joined id", () => {
+    expect(parseSlackThreadRef("slack:C1:1712.001")).toEqual({ channel: "C1", ts: "1712.001" });
+    expect(parseSlackThreadRef("C1:1712.001")).toEqual({ channel: "C1", ts: "1712.001" });
+  });
+  it("refuses an id with no ts tail rather than guessing", () => {
+    expect(parseSlackThreadRef("slack:C1")).toBeNull();
+    expect(parseSlackThreadRef("")).toBeNull();
+  });
+});
+
+// ── AO-6 · rehearse: a channel mention is answered in the asker's DM first ──────
+
+describe("AO-6 — rehearse: a mention is answered privately first, the channel on the asker's ✅", () => {
+  const DM = "slack:D77:";
+  /** The mock adapter, taught the two optional doors the Slack adapter has: a DM per user
+   *  and an ephemeral per thread. The DM detection mirrors Slack's (a `D…` channel). */
+  function rehearsingAdapter() {
+    const adapter = mockAughorAdapter();
+    const ephemerals: { threadId: string; userId: string }[] = [];
+    Object.assign(adapter, {
+      openDM: async (_userId: string) => DM,
+      isDM: (threadId: string) => threadId.startsWith("slack:D"),
+      postEphemeral: async (threadId: string, userId: string, _message: unknown) => {
+        ephemerals.push({ threadId, userId });
+        return { id: `eph-${ephemerals.length}`, threadId, userId };
+      },
+    });
+    return { adapter, ephemerals };
+  }
+  const postsTo = (adapter: Adapter, threadId: string) =>
+    (adapter.postMessage as unknown as Mock).mock.calls.filter((c) => c[0] === threadId);
+  const reaction = (adapter: Adapter, rawEmoji: string, messageId: string, threadId: string) => ({
+    adapter, added: true, emoji: rawEmoji as unknown as EmojiValue, messageId, raw: {}, rawEmoji, threadId,
+    user: { userId: "U123", userName: "testuser", fullName: "Test User", isBot: false } as unknown as Author,
+  });
+  async function settle() { await new Promise(r => setTimeout(r, 20)); }
+
+  it("the channel sees nothing public; the DM gets where it was asked, the rules, and the streamed answer", async () => {
+    const { adapter, ephemerals } = rehearsingAdapter();
+    const { ask, seen } = askYielding(["East is flat.", " South is down 4%."], { investigationId: "inv-42" });
+    const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState(), rehearse: true });
+
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why did revenue dip?"));
+
+    expect(postsTo(adapter, THREAD)).toHaveLength(0);
+    expect(adapter).toHavePosted(DM, /You asked in <#C1>: “why did revenue dip\?”/);
+    expect(adapter).toHavePosted(DM, /only you see this\. React ✅/);
+    // (The mock hands every post the id "msg-1"; the edit is the streamed answer's.)
+    expect(adapter).toHaveEdited(DM, "msg-1", /East is flat\. South is down 4%\./);
+    // The asker alone is told in the channel, where the transport can say it to one person.
+    expect(ephemerals).toEqual([{ threadId: THREAD, userId: "U123" }]);
+    // The CHANNEL thread stays the conversation: the promoted answer's follow-ups compose there.
+    expect(seen[0].sessionId).toBe(THREAD);
+    expect(seen[0].principalRef).toBe("slack:U123");
+  });
+
+  it("✅ in the DM posts the answer in the channel thread, records the accept, and promotes once", async () => {
+    const { adapter } = rehearsingAdapter();
+    const verdicts: VerdictBody[] = [];
+    const postVerdict = async (body: VerdictBody) => { verdicts.push(body); return { ok: true, status: 200, detail: "recorded" }; };
+    const { ask } = askYielding(["Nine orders."], { investigationId: "inv-42" });
+    const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState(), rehearse: true, postVerdict });
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor how many orders?"));
+    expect(postsTo(adapter, THREAD)).toHaveLength(0);
+
+    bot.processReaction(reaction(adapter, "white_check_mark", "msg-1", DM));   // msg-1 is the DM's prelude
+    await settle();
+    expect(adapter).toHavePosted(THREAD, /Nine orders\./);
+    expect(adapter).toHavePosted(DM, /Posted in <#C1>\./);
+    expect(verdicts.map(v => v.verdict)).toEqual(["accept"]);
+
+    bot.processReaction(reaction(adapter, "white_check_mark", "msg-1", DM));
+    await settle();
+    expect(postsTo(adapter, THREAD)).toHaveLength(1);
+  });
+
+  it("❌ in the DM drops it: the channel never sees the answer", async () => {
+    const { adapter } = rehearsingAdapter();
+    const { ask } = askYielding(["Nine orders."], { investigationId: "inv-42" });
+    const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState(), rehearse: true });
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor how many orders?"));
+
+    bot.processReaction(reaction(adapter, "x", "msg-1", DM));
+    await settle();
+    expect(postsTo(adapter, THREAD)).toHaveLength(0);
+    expect(adapter).toHavePosted(DM, /Dropped — nothing was posted in the channel\./);
+  });
+
+  it("a mention already in a DM has no channel to promote to and is answered in place", async () => {
+    const { adapter } = rehearsingAdapter();
+    const { ask } = askYielding(["Nine orders."], { investigationId: "inv-42" });
+    const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState(), rehearse: true });
+    await bot.handleIncomingMessage(adapter, DM, createTestMessage("m1", "@aughor how many orders?"));
+
+    expect(adapter).toHaveEdited(DM, "msg-1", /Nine orders\./);
+    expect((adapter.postMessage as unknown as Mock).mock.calls.some(
+      (c) => JSON.stringify(c[1]).includes("Rehearsal"))).toBe(false);
+  });
+
+  it("off by default: without rehearse the channel is answered as before", async () => {
+    const { adapter, ephemerals } = rehearsingAdapter();
+    const { ask } = askYielding(["Nine orders."], { investigationId: "inv-42" });
+    const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState() });
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor how many orders?"));
+
+    expect(adapter).toHaveEdited(THREAD, "msg-1", /Nine orders\./);
+    expect(postsTo(adapter, DM)).toHaveLength(0);
+    expect(ephemerals).toHaveLength(0);
+  });
+});
+
+describe("the note verb", () => {
+  it("files the sentence through the arrivals door and never calls ask", async () => {
+    const adapter = mockAughorAdapter();
+    const { ask, calls } = fakeAsk(["never"]);
+    const { postArrival, posted } = fakeArrivals();
+    const bot = buildBot({ ask, postArrival, adapters: { slack: adapter }, state: createMockState() });
+
+    await bot.handleIncomingMessage(
+      adapter,
+      THREAD,
+      createTestMessage("m9", "@aughor note: carrier X was on strike last week"),
+    );
+
+    expect(calls).toHaveLength(0);                      // an arrival is not an ask
+    expect(posted).toHaveLength(1);
+    expect(posted[0].channel).toBe("C1");
+    expect(posted[0].threadTs).toBe("1712.001");
+    expect(posted[0].text).toBe("carrier X was on strike last week");
+    expect(adapter).toHavePosted(THREAD);               // the door's sentence, repeated
+  });
+
+  it("repeats the door's refusal honestly on an unfiled thread", async () => {
+    const adapter = mockAughorAdapter();
+    const { ask, calls } = fakeAsk(["never"]);
+    const { postArrival } = fakeArrivals({ ok: false, status: 404,
+      detail: "thread C1:1712.001 is not filed on any object — nothing to note" });
+    const bot = buildBot({ ask, postArrival, adapters: { slack: adapter }, state: createMockState() });
+
+    await bot.handleIncomingMessage(
+      adapter, THREAD, createTestMessage("m10", "@aughor note: this thread is unfiled"));
+
+    expect(calls).toHaveLength(0);
+    expect(adapter).toHavePosted(THREAD);
+  });
+
+  it("without the verb, a question still asks — the arrival path never hijacks", async () => {
+    const adapter = mockAughorAdapter();
+    const { ask, calls } = fakeAsk(["East is flat."]);
+    const { posted, postArrival } = fakeArrivals();
+    const bot = buildBot({ ask, postArrival, adapters: { slack: adapter }, state: createMockState() });
+
+    await bot.handleIncomingMessage(
+      adapter, THREAD, createTestMessage("m11", "@aughor note that revenue dipped?"));
+
+    // The COLON is the verb: "note that…" is prose and asks; only "note: …" files.
+    expect(posted).toHaveLength(0);
+    expect(calls).toHaveLength(1);
+  });
+});
+
+describe("withoutTables — a table the model typed never reaches the thread (CP-4)", () => {
+  async function* chunks(...parts: (string | { kind: string })[]) {
+    for (const p of parts) yield p as never;
+  }
+  const text = async (parts: (string | { kind: string })[]) => {
+    const out: string[] = [];
+    for await (const c of withoutTables(chunks(...parts))) if (typeof c === "string") out.push(c);
+    return out.join("");
+  };
+
+  it("drops a GFM table split across arbitrary chunks and keeps the prose around it", async () => {
+    const got = await text(["Top regions:\n\n| # | Reg", "ion |\n|---|---|\n| 1 | East |\n| 2 | We", "st |\n\nEast leads."]);
+    expect(got).toBe("Top regions:\n\n\nEast leads.");
+  });
+
+  it("releases a pipe run that has no delimiter under it — prose, not a table", async () => {
+    expect(await text(["We compared revenue | margin.\nThen a | b\nand stopped."]))
+      .toBe("We compared revenue | margin.\nThen a | b\nand stopped.");
+  });
+
+  it("judges a table with no trailing newline with the run it belongs to", async () => {
+    expect(await text(["Here:\n| a | b |\n|---|---|\n| 1 | 2 |"])).toBe("Here:\n");
+  });
+
+  it("releases the last unterminated line and passes non-text chunks through", async () => {
+    const out: unknown[] = [];
+    for await (const c of withoutTables(chunks("East is", { kind: "card" }, " flat."))) out.push(c);
+    expect(out).toEqual(["East is", { kind: "card" }, " flat."]);
+  });
+});
+
+describe("buildBot — the grid posts once, from the envelope (CP-4)", () => {
+  const GRID = {
+    columns: ["region", "revenue"],
+    rows: [["East", 12], ["West", 9]] as unknown[][],
+    chartType: "bar",
+  };
+  /** What a model writes when it tabulates in prose — different headers, same rows. */
+  const TABULATED =
+    "Top regions:\n\n| # | Region | Revenue |\n|---|--------|---------|\n| 1 | East | 12 |\n| 2 | West | 9 |\n";
+
+  const editedText = (adapter: Adapter): string =>
+    (adapter.editMessage as unknown as Mock).mock.calls.map((c) => JSON.stringify(c[2])).join("\n");
+
+  it("the model's own table never reaches the thread; the grid posts once, as the exhibit", async () => {
+    // Measured 2026-09-23: a real answer carried the same five rows twice — the model's
+    // table in the prose, then the transport's grid. The prose table is held back as it
+    // streams; the grid is the one field that renders it.
+    const adapter = mockAughorAdapter();
+    const { ask } = askYielding([TABULATED], GRID);
+    const bot = buildBot({
+      ask, renderChart: async () => Buffer.from("PNGBYTES"),
+      renderTable: tableDoor().renderTable,
+      adapters: { slack: adapter }, state: createMockState(),
+    });
+
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
+
+    expect(adapter).toHaveEdited(THREAD, "msg-1", /Top regions:/);
+    expect(editedText(adapter)).not.toContain("| 1 | East |");
+    const post = lastPost(adapter) as { markdown: string; files: { filename: string }[] };
+    expect(post.markdown).toContain("| East | 12 |");
+    expect(post.markdown.match(/East/g)).toHaveLength(1);
+    expect(post.files.map((f) => f.filename)).toEqual(["chart.png"]);
+  });
+
+  it("selects the envelope's grid, chart decision and top two caveats — never its provenance", async () => {
+    const adapter = mockAughorAdapter();
+    const rendered: Record<string, unknown>[] = [];
+    const envelope: AnswerEnvelope = {
+      version: 1, question: "why?", headline: "East leads.", body: "",
+      grid: { columns: ["region", "revenue"], rows: [["East", 12], ["West", 9]] },
+      chart: { chart_type: "bar", chart_config: { exhibit: { kind: "ranked" } } },
+      caveats: ["returns counted at request", "March is still settling", "a third caveat"],
+      follow_ups: ["Which region next?"],
+      provenance: { guard_receipts: [{ guard: "numeric grounding", action: "rewrote the answer" }] },
+      error: "", lifted_tables: 0,
+    };
+    // The frame-level artifacts disagree with the envelope on purpose: the envelope wins.
+    const { ask } = askYielding(["East leads."], { columns: ["x"], rows: [[1]], chartType: "line", envelope });
+    const door = tableDoor();
+    const bot = buildBot({
+      ask, renderChart: async (req) => { rendered.push(req as unknown as Record<string, unknown>); return Buffer.from("PNG"); },
+      renderTable: door.renderTable,
+      adapters: { slack: adapter }, state: createMockState(),
+    });
+
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
+
+    const post = lastPost(adapter) as { markdown: string; files: { filename: string }[] };
+    expect(door.asked).toEqual([envelope.grid]);     // the envelope's grid, not the frames'
+
+    expect(post.markdown).toContain("| East | 12 |");
+    expect(post.markdown).toContain("⚠️ returns counted at request");
+    expect(post.markdown).toContain("⚠️ March is still settling");
+    expect(post.markdown).not.toContain("a third caveat");
+    expect(post.markdown).not.toContain("numeric grounding");
+    expect(post.markdown).not.toContain("Which region next?");
+    expect(rendered).toHaveLength(1);
+    expect(rendered[0].chart_type).toBe("bar");
+    expect(rendered[0].chart_config).toEqual({ exhibit: { kind: "ranked" } });
+    expect(rendered[0].columns).toEqual(["region", "revenue"]);
+  });
+
+  it("keeps the exhibit table when the answer is prose", async () => {
+    const adapter = mockAughorAdapter();
+    const { ask } = askYielding(["East leads, and it is not close."], GRID);
+    const bot = buildBot({
+      ask, renderChart: async () => null,
+      renderTable: tableDoor().renderTable,
+      adapters: { slack: adapter }, state: createMockState(),
+    });
+
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
+
+    expect((lastPost(adapter) as { markdown: string }).markdown).toContain("| East | 12 |");
+  });
+
+  it("a one-number envelope with a caveat posts the caveat and no table", async () => {
+    const adapter = mockAughorAdapter();
+    const envelope: AnswerEnvelope = {
+      version: 1, question: "q", headline: "Revenue was $1.2M.", body: "",
+      grid: { columns: ["revenue"], rows: [[1.2e6]] }, chart: { chart_type: "auto", chart_config: {} },
+      caveats: ["excludes refunds"], follow_ups: [], provenance: {}, error: "", lifted_tables: 0,
+    };
+    const { ask } = askYielding(["Revenue was $1.2M."], { envelope });
+    const bot = buildBot({
+      ask, renderChart: async () => Buffer.from("PNG"),
+      renderTable: tableDoor(null).renderTable,
+      adapters: { slack: adapter }, state: createMockState(),
+    });
+
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor q"));
+
+    const post = lastPost(adapter) as { markdown: string; files?: unknown[] };
+    expect(post.markdown).toBe("⚠️ excludes refunds");
+    expect(post.files).toBeUndefined();
+  });
+
+  it("keeps a PREVIEW for a long grid — its caption is the only thing naming the rest", async () => {
+    // A long grid renders as first-rows + CSV, and "Showing N of M rows" is what tells the
+    // reader more exists. The model's own table is an excerpt too, so dropping the caption
+    // would hide the remainder rather than de-duplicate it.
+    const adapter = mockAughorAdapter();
+    const rows = Array.from({ length: 60 }, (_, i) => [`r${i}`, i]) as unknown[][];
+    const { ask } = askYielding([TABULATED], { columns: ["region", "revenue"], rows });
+    const bot = buildBot({
+      ask, renderChart: async () => null,
+      renderTable: tableDoor({
+        markdown: "| Region | Revenue |\n| --- | --- |\n| r0 | 0 |\n\n_Showing 5 of 60 rows — the full result is attached as CSV._",
+        csv: "region,revenue\nr0,0" }).renderTable,
+      adapters: { slack: adapter }, state: createMockState(),
+    });
+
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
+
+    const post = lastPost(adapter) as { markdown: string; files: { filename: string }[] };
+    expect(post.markdown).toContain("of 60 rows");
+    expect(post.files.map((f) => f.filename)).toEqual(["why.csv"]);
+  });
+});
+
+describe("buildBot — the check verb (idea 7)", () => {
+  const ENVELOPE: AnswerEnvelope = {
+    version: 1, question: "fact-check (text): Revenue in August was $4.2M.",
+    headline: "1 numeric claim: 0 match the data, 1 contradicted, 0 could not be checked.",
+    body: '- CONTRADICTED — "Revenue in August was $4.2M": said $4.2M; the data shows 3,000,000.00 (40% off) for revenue, 2026-08-01 → 2026-08-31.',
+    grid: { columns: ["claim", "said", "measured", "verdict", "why"],
+            rows: [["Revenue in August was $4.2M", "$4.2M", 3000000, "contradicted", "said $4.2M; the data shows 3,000,000.00 (40% off)"]] },
+    chart: null, caveats: ["A contradicted claim is measured with the approved definition."],
+    follow_ups: [], provenance: { investigation_id: "fc-1", mode: "factcheck" }, error: "", lifted_tables: 0,
+  };
+
+  it("checks the memo through the door and posts the verdict as prose, then the grid", async () => {
+    const adapter = mockAughorAdapter();
+    const { ask, calls } = fakeAsk(["never"]);
+    const checked: string[] = [];
+    const door = tableDoor({ markdown: "| Claim | Said | Measured | Verdict | Why |\n| --- | --- | --- | --- | --- |\n"
+                                      + "| Revenue in August was $4.2M | $4.2M | 3,000,000 | contradicted | said $4.2M |", csv: null });
+    const bot = buildBot({
+      ask, adapters: { slack: adapter }, state: createMockState(), renderTable: door.renderTable,
+      factCheck: async (text) => { checked.push(text); return { ok: true, status: 200, detail: "", envelope: ENVELOPE }; },
+    });
+
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor check: Revenue in August was $4.2M."));
+
+    expect(door.asked).toEqual([ENVELOPE.grid]);
+
+    expect(checked).toEqual(["Revenue in August was $4.2M."]);
+    expect(calls).toHaveLength(0);                                   // the ask path was not spent
+    expect(adapter).toHavePosted(THREAD, /1 numeric claim: 0 match the data, 1 contradicted/);
+    const post = lastPost(adapter) as { markdown: string };
+    expect(post.markdown).toContain("| contradicted |");
+    expect(post.markdown).toContain("⚠️ A contradicted claim is measured with the approved definition.");
+  });
+
+  it("an empty check explains itself, and a refused check says why", async () => {
+    const adapter = mockAughorAdapter();
+    const { ask } = fakeAsk(["never"]);
+    const bot = buildBot({
+      ask, adapters: { slack: adapter }, state: createMockState(),
+      factCheck: async () => ({ ok: false, status: 400, detail: "nothing to check: the text is empty", envelope: null }),
+    });
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor check:"));
+    expect(adapter).toHavePosted(THREAD, /Paste the memo after `check:`/);
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m2", "@aughor check: 3 regions"));
+    expect(adapter).toHavePosted(THREAD, /Not checked: nothing to check/);
+  });
+});
+
+describe("TJ-4 — a reaction is a verdict", () => {
+  const turnOf = (question: string, sessionId: string): TurnArtifacts => ({
+    investigationId: "inv-9", question, sessionId, columns: [], rows: [], chartType: "auto", chartConfig: {},
+  });
+  const reaction = (adapter: Adapter, rawEmoji: string, added = true, messageId = "msg-1") => ({
+    adapter, added, emoji: rawEmoji as unknown as EmojiValue, messageId, raw: {}, rawEmoji,
+    threadId: THREAD, user: { userId: "U1", userName: "amit", fullName: "Amit", isBot: false } as unknown as Author,
+  });
+  async function settle() { await new Promise(r => setTimeout(r, 10)); }
+
+  it("✅ records an accept on the turn the answer came from, ❌ a reject, a removed emoji nothing", async () => {
+    const adapter = mockAughorAdapter();
+    const verdicts: VerdictBody[] = [];
+    const postVerdict = async (body: VerdictBody) => { verdicts.push(body); return { ok: true, status: 200, detail: "recorded" }; };
+    async function* ask(question: string, opts: AskOptions) {
+      opts.onTurn?.(turnOf(question, opts.sessionId));
+      yield "Nine orders.";
+    }
+    const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState(), postVerdict });
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor how many orders?"));
+
+    bot.processReaction(reaction(adapter, "white_check_mark"));
+    await settle();
+    // AO-7b: no headline from this process — the verdict door reads the answer's own from
+    // the turn's record; the question rides in the note, where it was never a headline.
+    expect(verdicts).toEqual([{ investigationId: "inv-9", verdict: "accept",
+      note: 'slack reaction :white_check_mark: by amit on "how many orders?"' }]);
+
+    bot.processReaction(reaction(adapter, "x", true, "some-other-message-in-the-thread"));
+    await settle();
+    expect(verdicts.map(v => v.verdict)).toEqual(["accept", "reject"]);
+
+    bot.processReaction(reaction(adapter, "white_check_mark", false));
+    bot.processReaction(reaction(adapter, "eyes"));
+    await settle();
+    expect(verdicts).toHaveLength(2);
+  });
+
+  it("a reaction on a thread the bot never answered records nothing", async () => {
+    const adapter = mockAughorAdapter();
+    const verdicts: VerdictBody[] = [];
+    const postVerdict = async (body: VerdictBody) => { verdicts.push(body); return { ok: true, status: 200, detail: "recorded" }; };
+    const { ask } = fakeAsk(["Answer."]);
+    const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState(), postVerdict });
+    bot.processReaction(reaction(adapter, "white_check_mark", true, "unknown"));
+    await settle();
+    expect(verdicts).toHaveLength(0);
+  });
+});
+
+// ── a reply that says the answer is wrong (2026-10-04) ───────────────────────────────────
+
+describe("buildBot — a correction said in the thread", () => {
+  function verdicts() {
+    const posted: VerdictBody[] = [];
+    const postVerdict = async (body: VerdictBody) => {
+      posted.push(body);
+      return { ok: true, status: 200, detail: "recorded" };
+    };
+    return { posted, postVerdict };
+  }
+
+  async function answered(postVerdict?: (b: VerdictBody) => Promise<{ ok: boolean; status: number; detail: string }>) {
+    const adapter = mockAughorAdapter();
+    const { ask, seen } = askYielding(["Revenue was 365,320."], { investigationId: "inv-42", question: "revenue in 2023?" });
+    const bot = buildBot({ ask, postVerdict, adapters: { slack: adapter }, state: createMockState() });
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor revenue in 2023?"));
+    return { adapter, bot, seen };
+  }
+
+  it("a reply that says what is right is recorded as a correction on the thread's answer", async () => {
+    const { posted, postVerdict } = verdicts();
+    const { adapter, bot, seen } = await answered(postVerdict);
+
+    await bot.handleIncomingMessage(adapter, THREAD,
+      createTestMessage("m2", "That's wrong — 2023 means the calendar year, not the last twelve months."));
+
+    expect(posted).toHaveLength(1);
+    expect(posted[0].investigationId).toBe("inv-42");
+    expect(posted[0].verdict).toBe("correct");
+    expect(posted[0].note).toContain("2023 means the calendar year");
+    expect(posted[0].note).toContain("revenue in 2023?");
+    expect(lastPost(adapter)).toBe("Recorded as a correction on this answer.");
+    expect(seen).toHaveLength(1);          // a correction is not a question: nothing is asked
+  });
+
+  it("a reply that only says wrong is a reject", async () => {
+    const { posted, postVerdict } = verdicts();
+    const { adapter, bot } = await answered(postVerdict);
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m2", "no, that is incorrect."));
+    expect(posted.map((v) => v.verdict)).toEqual(["reject"]);
+  });
+
+  it("the people's own conversation in the thread is left alone", async () => {
+    const { posted, postVerdict } = verdicts();
+    const { adapter, bot, seen } = await answered(postVerdict);
+    const before = (adapter.postMessage as unknown as Mock).mock.calls.length;
+
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m2", "is anything wrong with shipping this week?"));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m3", "thanks, sharing this with finance"));
+
+    expect(posted).toHaveLength(0);
+    expect(seen).toHaveLength(1);
+    expect((adapter.postMessage as unknown as Mock).mock.calls.length).toBe(before);
+  });
+
+  it("a mention in a thread the bot follows is still answered", async () => {
+    // Once a thread is followed the SDK stops calling the mention handler for it; every
+    // message, mentions included, goes to the followed-thread handler. Without the hand-over
+    // a follow-up question in the bot's own thread would be met with silence.
+    const { adapter, bot, seen } = await answered();
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m2", "@aughor and for 2024?"));
+    expect(seen).toHaveLength(2);
+  });
+
+  it("opens with the verdict, or it is not one", () => {
+    for (const yes of ["that's wrong", "That’s wrong — use net revenue", "This is incorrect", "no, it is not right",
+                       "Wrong. The filter is missing", "correction: exclude cancelled lines", "not correct"]) {
+      expect(CORRECTION.test(yes), yes).toBe(true);
+    }
+    for (const no of ["is anything wrong with shipping?", "what went wrong in July?", "I was wrong about the date, ignore me",
+                      "thanks", "that's right", "correctional facilities by state"]) {
+      expect(CORRECTION.test(no), no).toBe(false);
+    }
+  });
+});
+
+// ── the decide verb and its card (the decision-framework study §3.2) ────────────────────
+
+describe("the decide verb", () => {
+  const author = (userId: string, fullName: string) =>
+    ({ author: { userId, userName: fullName.toLowerCase(), fullName, isBot: false } as unknown as Author });
+  const reaction = (adapter: Adapter, rawEmoji: string, messageId: string, userId: string, userName: string) => ({
+    adapter, added: true, emoji: rawEmoji as unknown as EmojiValue, messageId, raw: {}, rawEmoji, threadId: THREAD,
+    user: { userId, userName, fullName: userName, isBot: false } as unknown as Author,
+  });
+  async function settle() { await new Promise(r => setTimeout(r, 10)); }
+
+  async function decided(extra: { approvalOk?: boolean } = {}) {
+    const adapter = mockAughorAdapter();
+    const decisions: DecisionBody[] = [];
+    const approvals: ApprovalBody[] = [];
+    const verdicts: VerdictBody[] = [];
+    const postDecision = async (b: DecisionBody): Promise<DecisionResult> => {
+      decisions.push(b);
+      return { ok: true, status: 200, detail: "", decisionId: "dec-7", reviewOn: "2026-11-25", cited: 1 };
+    };
+    const postApproval = async (b: ApprovalBody) => {
+      approvals.push(b);
+      return { ok: extra.approvalOk ?? true, status: extra.approvalOk === false ? 404 : 200, detail: "no decision dec-7" };
+    };
+    const postVerdict = async (b: VerdictBody) => { verdicts.push(b); return { ok: true, status: 200, detail: "recorded" }; };
+    const { ask } = askYielding(["Paid social brought 132 of 923 orders."], { investigationId: "inv-3", question: "what did paid social bring?" });
+    const bot = buildBot({ ask, postDecision, postApproval, postVerdict, adapters: { slack: adapter }, state: createMockState() });
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor what did paid social bring?", author("U9", "Amit")));
+    (adapter.postMessage as unknown as Mock).mockResolvedValueOnce({ id: "card-1", threadId: THREAD, raw: {} });
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m2",
+      "@aughor decide: pause paid social on Mytheresa for September — approvers <@U2> <@U3>", author("U9", "Amit")));
+    return { adapter, bot, decisions, approvals, verdicts };
+  }
+
+  it("reads what was decided and the approvers named after the verb", () => {
+    expect(parseDecision("<@UBOT> decide: pause paid social — approvers <@U2> <@U3|ben>")).toEqual(
+      { decided: "pause paid social", approverIds: ["U2", "U3"] });
+    expect(parseDecision("@aughor decide: raise the threshold to 49 EUR")).toEqual(
+      { decided: "raise the threshold to 49 EUR", approverIds: [] });
+    expect(parseDecision("@aughor decide:")).toEqual({ decided: "", approverIds: [] });
+  });
+
+  it("books the decision citing the thread's answer, and posts the card its approvers react on", async () => {
+    const { adapter, decisions } = await decided();
+    expect(decisions).toEqual([{
+      channel: "C1", threadTs: "1712.001", decided: "pause paid social on Mytheresa for September",
+      question: "what did paid social bring?", investigationId: "inv-3", author: "Amit", authorRef: "slack:U9",
+      approverRefs: ["slack:U2", "slack:U3"],
+    }]);
+    expect(adapter).toHavePosted(THREAD, /Booked as a decision: “pause paid social on Mytheresa for September”\. Review 2026-11-25\. It cites the answer above\./);
+    expect(adapter).toHavePosted(THREAD, /Approvers <@U2> <@U3>: react ✅ on this message to approve, ❌ to dissent\./);
+  });
+
+  it("a named approver's ✅ on the card is an approval, never a verdict on the answer", async () => {
+    const { adapter, bot, approvals, verdicts } = await decided();
+    bot.processReaction(reaction(adapter, "white_check_mark", "card-1", "U2", "ana"));
+    await settle();
+    expect(approvals).toEqual([{ decisionId: "dec-7", verdict: "approve", author: "ana", authorRef: "slack:U2" }]);
+    expect(verdicts).toHaveLength(0);
+    expect(adapter).toHavePosted(THREAD, /Approved by ana — booked on the decision\./);
+  });
+
+  it("someone not named cannot approve, and a ❌ is kept as a dissent", async () => {
+    const { adapter, bot, approvals } = await decided();
+    bot.processReaction(reaction(adapter, "white_check_mark", "card-1", "U5", "eve"));
+    await settle();
+    expect(approvals).toHaveLength(0);
+    expect(adapter).toHavePosted(THREAD, /Only the approvers named on this decision approve it — <@U2>, <@U3>\./);
+    bot.processReaction(reaction(adapter, "x", "card-1", "U5", "eve"));
+    await settle();
+    expect(approvals).toEqual([{ decisionId: "dec-7", verdict: "dissent", author: "eve", authorRef: "slack:U5" }]);
+  });
+
+  it("a refused approval is said, and with no door the verb is asked like any text", async () => {
+    const { adapter, bot } = await decided({ approvalOk: false });
+    bot.processReaction(reaction(adapter, "white_check_mark", "card-1", "U2", "ana"));
+    await settle();
+    expect(adapter).toHavePosted(THREAD, /Not booked: no decision dec-7/);
+
+    const plain = mockAughorAdapter();
+    const { ask, calls } = fakeAsk(["Answer."]);
+    const bot2 = buildBot({ ask, adapters: { slack: plain }, state: createMockState() });
+    await bot2.handleIncomingMessage(plain, THREAD, createTestMessage("m3", "@aughor decide: something"));
+    expect(calls).toHaveLength(1);
+  });
+});

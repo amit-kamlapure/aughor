@@ -1,0 +1,227 @@
+/* The Business Atlas — its own tokens, declared for both themes, and the layout of its viewport.
+   The scene is the page's theme: steel, glass and warm materials in a dark and a light rendition, never a dark panel
+   on a light page. Every colour the drawing uses (components/ontology/atlas/draw.tsx) is named here. */
+:root {
+  --atlas-sky-a: #1b2a3b; --atlas-sky-b: #111821; --atlas-sky-c: #0a0d12;
+  --atlas-ground-a: #1c2836; --atlas-ground-b: #111922; --atlas-ground-line: #33485c; --atlas-ground-edge: #0c1219; --atlas-ground-under: #080c12;
+  --atlas-grid: rgba(255, 255, 255, .035); --atlas-glow: rgba(90, 160, 230, .13);
+  --atlas-pad: #1a2632; --atlas-pad-line: #40566c; --atlas-pad-side: #0e151d; --atlas-pad-under: #0a1017; --atlas-pad-expected: #62768b; --atlas-ring: #4ccce6;
+  --atlas-lane: #0c131b; --atlas-lane-line: #2c4055; --atlas-apron: #1d2c3b; --atlas-marking: #e8eef4;
+  --atlas-shadow: rgba(0, 0, 0, .5); --atlas-shade: #000; --atlas-shine: #fff;
+  --atlas-steel-top: #40586f; --atlas-steel-left: #2b4056; --atlas-steel-right: #1c2d3f; --atlas-steel-line: #6485a5;
+  --atlas-wall-top: #131d27; --atlas-wall-left: #2e4a63; --atlas-wall-right: #1c3248; --atlas-wall-line: #6388aa;
+  --atlas-roof-top: #19252f; --atlas-roof-left: #35526b; --atlas-roof-right: #223a50; --atlas-roof-line: #6f93b3;
+  --atlas-warm-top: #d8ad72; --atlas-warm-left: #9c7a52; --atlas-warm-right: #70563c; --atlas-warm-line: #ecca98;
+  --atlas-lit-top: #8cc4ff; --atlas-lit-left: #2f6fb0; --atlas-lit-right: #1f4f82; --atlas-lit-line: #c4e2ff;
+  --atlas-glass-top: rgba(125, 184, 255, .34); --atlas-glass-left: rgba(125, 184, 255, .18); --atlas-glass-right: rgba(125, 184, 255, .11); --atlas-glass-line: #8cc4ff;
+  --atlas-amber-top: #ffc53d; --atlas-amber-left: #b88a2c; --atlas-amber-right: #7d5e1e; --atlas-amber-line: #ffe08a;
+  --atlas-teal-top: #2f5f59; --atlas-teal-left: #244b45; --atlas-teal-right: #183833; --atlas-teal-line: #63c2b4;
+  --atlas-tile-a-top: #7896b3; --atlas-tile-a-left: #33485c; --atlas-tile-a-right: #22313f; --atlas-tile-a-line: #8aa5bf;
+  --atlas-tile-b-top: #d4a868; --atlas-tile-b-left: #33485c; --atlas-tile-b-right: #22313f; --atlas-tile-b-line: #8aa5bf;
+  --atlas-tile-c-top: #52b4ab; --atlas-tile-c-left: #33485c; --atlas-tile-c-right: #22313f; --atlas-tile-c-line: #8aa5bf;
+  --atlas-window: #ffd58a; --atlas-glaze: #9ad4ff; --atlas-door: #0f1a25; --atlas-bay-a: #ffe2a6; --atlas-bay-b: #c98d3e;
+  --atlas-link: #9db4cb; --atlas-board: rgba(17, 22, 29, .94); --atlas-board-line: #3b4b5c; --atlas-record: #b79cf5; --atlas-cap-start: #46b06a; --atlas-cap-end: #e8eef4;
+}
+[data-theme="light"] {
+  --atlas-sky-a: #f4f7fa; --atlas-sky-b: #e9eef4; --atlas-sky-c: #dde5ee;
+  --atlas-ground-a: #f7f9fb; --atlas-ground-b: #e4ebf2; --atlas-ground-line: #b3c1cf; --atlas-ground-edge: #c3cfdb; --atlas-ground-under: #afbdcb;
+  --atlas-grid: rgba(20, 40, 70, .05); --atlas-glow: rgba(15, 108, 189, .07);
+  --atlas-pad: #ffffff; --atlas-pad-line: #a9b9c9; --atlas-pad-side: #cdd8e3; --atlas-pad-under: #b9c7d5; --atlas-pad-expected: #8496a8; --atlas-ring: #00819c;
+  --atlas-lane: #d6e0ea; --atlas-lane-line: #a9b9c9; --atlas-apron: #e6edf4; --atlas-marking: #5d7286;
+  --atlas-shadow: rgba(30, 50, 80, .28); --atlas-shade: #1a2c44; --atlas-shine: #fff;
+  --atlas-steel-top: #e3ebf3; --atlas-steel-left: #bccbda; --atlas-steel-right: #a1b4c7; --atlas-steel-line: #6c8399;
+  --atlas-wall-top: #cfdbe7; --atlas-wall-left: #c3d2e1; --atlas-wall-right: #a6b9cc; --atlas-wall-line: #64809b;
+  --atlas-roof-top: #dae4ee; --atlas-roof-left: #b3c4d5; --atlas-roof-right: #9aaec2; --atlas-roof-line: #64809b;
+  --atlas-warm-top: #edcb98; --atlas-warm-left: #cfa66f; --atlas-warm-right: #b08a56; --atlas-warm-line: #8c6c40;
+  --atlas-lit-top: #58a6f0; --atlas-lit-left: #2f7fd0; --atlas-lit-right: #1f63a8; --atlas-lit-line: #184f88;
+  --atlas-glass-top: rgba(15, 108, 189, .26); --atlas-glass-left: rgba(15, 108, 189, .16); --atlas-glass-right: rgba(15, 108, 189, .10); --atlas-glass-line: #0f6cbd;
+  --atlas-amber-top: #f4bd3a; --atlas-amber-left: #d39a1f; --atlas-amber-right: #b07d12; --atlas-amber-line: #8a620c;
+  --atlas-teal-top: #9fd9d0; --atlas-teal-left: #74bfb4; --atlas-teal-right: #58a79b; --atlas-teal-line: #2d7f74;
+  --atlas-tile-a-top: #a9bdd1; --atlas-tile-a-left: #bccbda; --atlas-tile-a-right: #a1b4c7; --atlas-tile-a-line: #6c8399;
+  --atlas-tile-b-top: #e6bb7a; --atlas-tile-b-left: #bccbda; --atlas-tile-b-right: #a1b4c7; --atlas-tile-b-line: #6c8399;
+  --atlas-tile-c-top: #6cc4ba; --atlas-tile-c-left: #bccbda; --atlas-tile-c-right: #a1b4c7; --atlas-tile-c-line: #6c8399;
+  --atlas-window: #f3b93f; --atlas-glaze: #6fb6ee; --atlas-door: #5f7890; --atlas-bay-a: #ffe2a6; --atlas-bay-b: #e0a24c;
+  --atlas-link: #5d7286; --atlas-board: rgba(255, 255, 255, .96); --atlas-board-line: #a9b9c9; --atlas-record: #6b3fa0; --atlas-cap-start: #1e8a55; --atlas-cap-end: #37485a;
+}
+
+.aug-atlas { flex: 1; min-width: 0; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 12px; padding: 14px 20px 20px; }
+/* never shrunk to the page: a scene taller than the window scrolls, it is not cut off with its legend */
+.aug-atlas-frame { flex: none; border: 1px solid var(--b0); border-radius: var(--r3); background: var(--bg-2); overflow: hidden; }
+.aug-atlas-head { display: flex; align-items: center; gap: 12px; padding: 7px 14px; border-bottom: 1px solid var(--b0); flex-wrap: wrap; }
+.aug-atlas-tools { margin-left: auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.aug-atlas-head h2 { margin: 0; font-size: 15px; font-weight: 600; color: var(--t1); }
+/* the picked entity's bar: in the title's place, so the header keeps its one row and nothing floats over the scene */
+.aug-atlas-acts { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.aug-atlas-sub { color: var(--t3); font-size: 12px; }
+.aug-atlas-stage { position: relative; overflow: hidden; background: radial-gradient(90% 70% at 50% 38%, var(--atlas-sky-a) 0%, var(--atlas-sky-b) 52%, var(--atlas-sky-c) 100%); }
+/* The frame is as tall as the window leaves it, so the whole Atlas — its row of controls, the scene, the legend — is on
+   screen at once; on a narrow page it is no taller than the drawing's own shape. The drawing is fitted to the frame. */
+.aug-atlas-stage { container-type: inline-size; }
+.aug-atlas-world { container-type: inline-size; position: relative; width: 100%; height: 100%; }
+.aug-atlas-world > svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.aug-atlas-st { cursor: pointer; }
+.aug-atlas-st:hover { filter: brightness(1.1); }
+.aug-atlas-st:hover .aug-atlas-pad { stroke: var(--blue4); stroke-width: 2; }
+.aug-atlas-st.is-picked .aug-atlas-pad { stroke: var(--blue3); stroke-width: 2.4; filter: drop-shadow(0 0 8px var(--blue2)); }
+.aug-atlas-pad.is-past { stroke: var(--red3); }
+.aug-atlas-st.is-expected { opacity: .74; }
+.aug-atlas-move { cursor: pointer; }
+.aug-atlas-move .hit { stroke: transparent; stroke-width: 22; fill: none; }
+.aug-atlas-move .ln { stroke: var(--blue3); stroke-width: 3; fill: none; stroke-linecap: round; filter: drop-shadow(0 0 4px var(--blue2)); }
+.aug-atlas-move .hd { fill: var(--blue3); }
+.aug-atlas-move:hover .ln, .aug-atlas-move.is-picked .ln { stroke: var(--blue4); stroke-width: 4.5; }
+.aug-atlas-move.is-expected .ln { stroke-dasharray: 6 6; filter: none; opacity: .6; }
+.aug-atlas-move.is-expected .hd { opacity: .6; }
+.aug-atlas-move.is-exit .ln { stroke: var(--t3); stroke-dasharray: 5 5; stroke-width: 2; filter: none; }
+.aug-atlas-move.is-exit .hd { fill: var(--t3); }
+.aug-atlas-link { stroke: var(--atlas-link); stroke-width: 1.2; stroke-dasharray: 2 6; fill: none; opacity: .55; }
+.aug-atlas-link { stroke-linejoin: round; }
+.aug-atlas-link.is-picked { stroke: var(--blue3); stroke-width: 1.8; opacity: 1; stroke-dasharray: 3 4; }
+
+/* a label keeps the size it is read at: zooming draws the scene larger, and a label's own size does not follow */
+.aug-atlas-mark { position: absolute; transform: translate(-50%, -100%); transform-origin: 50% 100%; display: flex; flex-direction: column; align-items: center; pointer-events: none; font-size: clamp(11px, 1.2cqw, 13px); }
+.aug-atlas-mark.is-on-ground { transform: translate(-50%, -50%); transform-origin: 50% 50%; }
+/* tucked: no room for the name at this zoom, so the mark alone — the name on hover and on focus */
+.aug-atlas-mark.is-tucked .aug-atlas-board { padding: .32em; gap: 0; box-shadow: none; }
+.aug-atlas-mark.is-tucked .aug-atlas-board > :not(.dot) { display: none; }
+.aug-atlas-mark.is-tucked .aug-atlas-board { font-size: 0; }
+.aug-atlas-mark.is-tucked .aug-atlas-board .dot { font-size: clamp(11px, 1.2cqw, 13px); }
+.aug-atlas-mark.is-tucked:hover, .aug-atlas-mark.is-tucked:focus-within, .aug-atlas-mark.is-tucked.is-picked, .aug-atlas-mark.is-tucked.is-over { z-index: 6; }
+.aug-atlas-mark.is-tucked:hover .aug-atlas-board, .aug-atlas-mark.is-tucked:focus-within .aug-atlas-board, .aug-atlas-mark.is-tucked.is-picked .aug-atlas-board, .aug-atlas-mark.is-tucked.is-over .aug-atlas-board { font-size: inherit; padding: .28em .7em .34em; gap: .5em; box-shadow: 0 6px 18px var(--atlas-shadow); }
+.aug-atlas-mark.is-tucked:hover .aug-atlas-board > *, .aug-atlas-mark.is-tucked:focus-within .aug-atlas-board > *, .aug-atlas-mark.is-tucked.is-picked .aug-atlas-board > *, .aug-atlas-mark.is-tucked.is-over .aug-atlas-board > * { display: revert; }
+.aug-atlas-board .route { display: inline-flex; align-items: center; gap: .45em; }
+.aug-atlas-board .route + .ix { margin-left: .2em; }
+.aug-atlas-mark { z-index: 1; } .aug-atlas-mark.is-stage { z-index: 2; } .aug-atlas-mark.is-on-ground { z-index: 0; }
+.aug-atlas-mark > * { pointer-events: auto; }
+.aug-atlas-board { display: inline-flex; align-items: center; gap: .5em; white-space: nowrap; padding: .28em .7em .34em; border-radius: var(--r2); border: 1px solid var(--atlas-board-line);
+  background: var(--atlas-board); color: var(--t1); font: inherit; font-weight: 600; cursor: pointer; height: auto; min-height: 0; margin: 0; box-shadow: 0 6px 18px var(--atlas-shadow); }
+.aug-atlas-board:hover { border-color: var(--blue4); }
+.aug-atlas-board:focus-visible { outline: 2px solid var(--blue3); outline-offset: 2px; }
+.aug-atlas-mark.is-picked .aug-atlas-board { border-color: var(--blue3); box-shadow: 0 0 0 1px var(--blue3), 0 6px 18px var(--atlas-shadow); }
+.aug-atlas-board .n { color: var(--t2); font-weight: 400; font-variant-numeric: tabular-nums; }
+.aug-atlas-board .n b { color: var(--t1); font-weight: 600; }
+.aug-atlas-board .ix { font-family: var(--font-mono); font-size: .8em; padding: 0 .4em; border-radius: 2px; background: var(--blue1); color: var(--blue4); }
+.aug-atlas-board .dot { width: .55em; height: .55em; border-radius: 50%; background: var(--grn3); flex: none; }
+.aug-atlas-board .dot.is-entity { border-radius: 1px; background: var(--atlas-ring); }
+.aug-atlas-board .dot.is-expected { background: none; border: 1px dashed var(--t3); }
+.aug-atlas-board.is-quiet { font-weight: 400; box-shadow: none; padding: .2em .65em; color: var(--t2); }
+.aug-atlas-board.is-past { margin-top: 4px; background: var(--red1); border-color: var(--red2); color: var(--red4); font-weight: 500; box-shadow: none; }
+.aug-atlas-stem { width: 1px; height: 12px; background: var(--atlas-board-line); pointer-events: none; }
+.aug-atlas-legend { display: flex; gap: 18px; padding: 8px 14px; border-top: 1px solid var(--b0); color: var(--t2); font-size: 12px; flex-wrap: wrap; }
+.aug-atlas-legend span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.aug-atlas-legend i { display: inline-block; }
+.aug-atlas-legend .tally { margin-left: auto; color: var(--t3); }
+.aug-atlas-said { padding: 9px 14px; border-top: 1px solid var(--b0); color: var(--t2); font-size: 12px; background: var(--amb1); }
+
+/* the flat drawing: the same scene from above */
+.aug-atlas-flat { background-image: linear-gradient(var(--atlas-grid) 1px, transparent 1px), linear-gradient(90deg, var(--atlas-grid) 1px, transparent 1px); background-size: 3.5% 5.2%; }
+.aug-atlas-flat > svg * { vector-effect: non-scaling-stroke; }
+.aug-atlas-flat .aug-atlas-move .ln { filter: none; }
+.aug-atlas-flat-lane { position: absolute; background: var(--atlas-lane); border: 1px solid var(--atlas-lane-line); border-radius: var(--r2); }
+.aug-atlas-flat-lane.is-expected { border-style: dashed; opacity: .6; }
+.aug-atlas-flat-plot { position: absolute; background: var(--atlas-pad); border: 1px solid var(--atlas-pad-line); border-radius: var(--r2); box-shadow: 0 4px 14px var(--atlas-shadow); display: flex; align-items: flex-end; justify-content: center; padding: 6px 8px; }
+.aug-atlas-flat-plot.is-expected { border-style: dashed; opacity: .74; }
+.aug-atlas-flat-plot.is-picked { border-color: var(--blue3); box-shadow: 0 0 0 1px var(--blue3); }
+.aug-atlas-flat-plot .shape { color: var(--t3); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+
+/* a record of activity: marked on the ground between the things it links */
+.aug-atlas-record { fill: var(--atlas-record); stroke: var(--atlas-board); stroke-width: 1.5; cursor: pointer; }
+.aug-atlas-record:hover, .aug-atlas-record.is-picked { stroke: var(--blue3); stroke-width: 2.5; }
+.aug-atlas-board .dot.is-record { border-radius: 1px; transform: rotate(45deg); background: var(--atlas-record); width: .5em; height: .5em; }
+.aug-atlas-flat .aug-atlas-mark.is-record .aug-atlas-board { border-style: dashed; }
+
+/* closer, further, moved about */
+/* The view is the frame: as tall as the window leaves it. Zooming makes what is inside it LARGER — the drawing is
+   drawn again at that size, so it stays sharp at any zoom; scaling a painted layer would only magnify its pixels. */
+.aug-atlas-view { position: relative; overflow: hidden; touch-action: pan-y; height: min(53.6cqw, max(340px, calc(100dvh - 318px))); }
+.aug-atlas-view.is-zoomed { cursor: grab; touch-action: none; }
+.aug-atlas-view.is-zoomed:active { cursor: grabbing; }
+.aug-atlas-zoom { position: absolute; left: 0; top: 0; }
+.aug-atlas-zoomer { display: flex; align-items: center; gap: 6px; }
+.aug-atlas-zoomer .pct { min-width: 3.2em; text-align: center; color: var(--t2); font-size: 12px; font-variant-numeric: tabular-nums; }
+.aug-atlas-zoomer .how { color: var(--t3); font-size: 12px; padding-right: 6px; }
+
+/* where a route starts and where it ends */
+.aug-atlas-cap.is-start { fill: var(--atlas-cap-start); }
+.aug-atlas-cap.is-end { fill: var(--atlas-cap-end); }
+.aug-atlas-board .cap { flex: none; width: 0; height: 0; }
+.aug-atlas-board .cap.is-start { border-left: .62em solid var(--atlas-cap-start); border-top: .4em solid transparent; border-bottom: .4em solid transparent; }
+.aug-atlas-board .cap.is-end { width: .62em; height: .62em; background: var(--atlas-cap-end); border-radius: 1px; }
+.aug-atlas-board.is-start, .aug-atlas-board.is-end { color: var(--t1); border-color: var(--atlas-lane-line); }
+span.aug-atlas-board { cursor: default; }
+span.aug-atlas-board:hover { border-color: var(--atlas-lane-line); }
+
+.aug-atlas-legend .left-out { height: auto; padding: 0 6px; font-size: 12px; color: var(--t3); border: 1px dashed var(--b1); }
+.aug-atlas-legend .left-out.is-picked { border-color: var(--blue3); color: var(--t1); }
+
+/* zones, and names written on the ground */
+.aug-atlas-zone { cursor: pointer; }
+.aug-atlas-zone:hover .aug-atlas-zone-plate { stroke: var(--blue4); }
+.aug-atlas-zone.is-picked .aug-atlas-zone-plate { stroke: var(--blue3); stroke-width: 2.2; }
+.aug-atlas-written { font-family: inherit; font-weight: 600; fill: var(--t2); pointer-events: none; }
+.aug-atlas-written.is-zone { font-size: 15px; letter-spacing: .14em; opacity: .9; }
+.aug-atlas-zone.is-aside .aug-atlas-written { fill: var(--t3); font-weight: 500; }
+.aug-atlas-written.is-entity { font-size: 13px; font-weight: 500; fill: var(--t1); opacity: .92; }
+.aug-atlas-written.is-route { font-size: 14px; font-weight: 600; letter-spacing: .04em; fill: var(--blue4); }
+.aug-atlas-flat-lane .name { position: absolute; left: 34px; top: 100%; margin-top: 2px; font-size: 12px; font-weight: 600; color: var(--blue4); white-space: nowrap; }
+.aug-atlas-flat-lane .name.is-along-v { left: auto; right: 100%; top: 34px; margin: 0 6px 0 0; }
+.is-dim { opacity: .2; }
+/* one process handing to the next, and an entity the ontology has not connected */
+.aug-atlas-move.is-joint .ln { stroke: var(--amb3); } .aug-atlas-move.is-joint .hd { fill: var(--amb3); }
+.aug-atlas-st.is-loose .aug-atlas-pad { stroke: var(--red3); stroke-dasharray: 5 4; }
+.aug-atlas-board.is-gap { border-style: dashed; border-color: var(--red2); color: var(--red4); }
+.aug-atlas-board.is-gap .n b { color: var(--red4); }
+.aug-atlas-flat-zone { position: absolute; display: block; height: auto; padding: 0; border: 1px solid var(--atlas-lane-line); border-radius: var(--r2); background: var(--atlas-lane); opacity: .9; cursor: pointer; }
+.aug-atlas-flat-zone.is-aside { border-style: dashed; opacity: .6; }
+.aug-atlas-flat-zone.is-picked { border-color: var(--blue3); }
+.aug-atlas-flat-zone .name { position: absolute; left: 8px; bottom: 4px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--t2); }
+.aug-atlas-flat-plot.is-loose { border-color: var(--red3); border-style: dashed; }
+/* a stage's label lies on the ground beside its stage and reads away from it, so it covers neither the stage nor what stands behind */
+.aug-atlas-mark.is-on-ground.is-stage { transform: translate(0, -50%); transform-origin: 0 50%; align-items: flex-start; z-index: 2; }
+/* the flat drawing sits in the same frame as the raised one, fitted and centred, so switching moves nothing on the page */
+.aug-atlas-flat-frame { display: flex; align-items: center; justify-content: center; }
+.aug-atlas-flat-frame > .aug-atlas-flat { position: relative; flex: none; max-width: 100%; max-height: 100%; container-type: inline-size; }
+.aug-atlas-flat > svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.aug-atlas-flat-plot .name { position: absolute; left: 6px; top: 4px; right: 6px; font-size: 11px; color: var(--t1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aug-atlas-flat-plot .name b { margin-left: .5em; font-weight: 600; color: var(--t2); font-variant-numeric: tabular-nums; }
+/* a ground label that ends at its point, so it lies wholly on one side of a leg */
+.aug-atlas-mark.is-on-ground.is-ending { transform: translate(-100%, -50%); transform-origin: 100% 50%; align-items: flex-end; }
+/* inside another page, which scrolls and pads for it */
+.aug-atlas.is-embedded { flex: none; overflow: visible; padding: 0; }
+/* what the journey says, written on the ground; and the labels that are tips, shown only while pointed at or focused */
+.aug-atlas-written.is-stage { font-size: 13px; font-weight: 600; fill: var(--t1); }
+.aug-atlas-written.is-said { font-size: 12px; font-weight: 500; fill: var(--t2); }
+.aug-atlas-written.is-past { font-size: 12px; font-weight: 600; fill: var(--red4); }
+.aug-atlas-mark.is-tip { opacity: 0; }
+.aug-atlas-mark.is-tip > * { pointer-events: none; }
+.aug-atlas-mark.is-tip.is-over, .aug-atlas-mark.is-tip:focus-within { opacity: 1; z-index: 6; }
+.aug-atlas-mark.is-tucked:not(:hover):not(.is-over):not(:focus-within):not(.is-picked) .aug-atlas-board.is-past { display: none; }
+.aug-atlas-cap.is-start { cursor: pointer; }
+/* selected: the label stays up and carries the way into the page */
+.aug-atlas-mark.is-tip.is-picked { opacity: 1; z-index: 6; }
+.aug-atlas-mark.is-tip.is-picked > * { pointer-events: auto; }
+.aug-atlas-board .go { margin-left: .2em; padding-left: .55em; border-left: 1px solid var(--atlas-board-line); color: var(--blue4); font-weight: 700; font-size: 1.15em; line-height: 1; }
+
+/* an entity's shape on its own page, and the catalogue it is chosen from */
+/* An entity's page while it is edited: a grid of cards, each with its count and its "+ New" at the head (the mockup
+   the user approved, 2026-11-11). Two across on a page's width, one in the side panel's. */
+.aug-entity-cards { container-type: inline-size; padding: 4px 16px 20px; }
+.aug-entity-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 12px; align-items: start; }
+.aug-entity-card { border: 1px solid var(--b0); border-radius: var(--r3); background: var(--bg-2); min-width: 0; }
+.aug-entity-card-head { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--b0); min-height: 41px; flex-wrap: wrap; }
+.aug-entity-card-head h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--t1); }
+.aug-entity-card-head .n { color: var(--t3); font-size: 13px; font-variant-numeric: tabular-nums; }
+.aug-entity-card-head .said { color: var(--t3); }
+.aug-entity-card-head .act { margin-left: auto; display: inline-flex; gap: 6px; }
+.aug-entity-card-body { padding: 8px 12px 10px; }
+.aug-entity-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 36px; font-size: 13px; border-top: 1px solid var(--b0); }
+.aug-entity-row:first-child { border-top: 0; }
+.aug-entity-row .acts { margin-left: auto; display: inline-flex; gap: 6px; }
+.aug-entity-mode { display: inline-flex; gap: 0; }
+.aug-entity-mode > :first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.aug-entity-mode > :last-child { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; }
+.aug-entity-shape { display: flex; align-items: center; gap: 12px; margin-top: 8px; padding: 6px 10px; border-radius: var(--r2); background: var(--bg-2); }
+.aug-entity-shapes { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.aug-entity-shape-tile { display: flex; flex-direction: column; align-items: center; gap: 2px; height: auto; padding: 10px 8px; border: 1px solid var(--b0); border-radius: var(--r2); background: var(--bg-2); text-align: center; white-space: normal; }
+.aug-entity-shape-tile:hover { border-color: var(--blue4); }
+.aug-entity-shape-tile.is-chosen { border-color: var(--blue3); box-shadow: 0 0 0 1px var(--blue3); }

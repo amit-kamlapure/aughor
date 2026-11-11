@@ -1,0 +1,209 @@
+# The insurance carriers and brokers industry vocabulary (AUGHOR_ATLAS_INDUSTRY_VOCABULARY_v1, 2026-11-11: 57 reference
+# types) as an industry map: what an insurer's data is expected to hold, matched to tables by name or alias and
+# measured — expectations, never facts. Fifty-six objects: Risk Item is folded into InsuredAsset as a spelling of it
+# (the thing underwritten is the thing insured once the policy is issued); every other type is an object here.
+#
+# Two readings were made, and both are this package's, not the vocabulary's:
+#   * its ten classes are read onto the eight roles a map has, by meaning and not by the class it printed (a product
+#     is reference data, a billing account is a thing held, a reserve is an amount at a moment);
+#   * a record of activity is a PART of the thing it happened to (a policy's endorsements and cancellation, a claim's
+#     assessments and payments, a schedule's instalments), never a thing beside it — the vocabulary lists each as a
+#     type of its own.
+# The vocabulary names no table spellings; every alias below is a guess the data confirms or leaves unmatched. Nothing
+# here creates an object: one the data has no table for is never proposed and never mentioned.
+objects:
+  # Distribution and prospecting.
+  - name: Prospect
+    roles: [party]
+    aliases: [prospects, prospect, leads, lead, insurance_leads]
+  - name: Agent
+    roles: [party]
+    aliases: [agents, agent, insurance_agents, producers, sales_agents]
+  - name: Agency
+    roles: [party]
+    aliases: [agencies, agency, insurance_agencies, producer_agencies]
+  - name: Broker
+    roles: [party]
+    aliases: [brokers, broker, brokerages, insurance_brokers, intermediaries]
+  - name: DistributionChannel
+    roles: [catalog]
+    aliases: [distribution_channels, distribution_channel, sales_channels]
+  - name: CommissionAgreement
+    roles: [asset]
+    drawn_as: contract
+    aliases: [commission_agreements, commission_agreement, commission_plans, producer_agreements, commission_schedules]
+  - name: QuoteRequest
+    roles: [event]
+    aliases: [quote_requests, quote_request, quotes, quote, quotations]
+  # Underwriting and risk.
+  - name: InsuranceApplication
+    roles: [transaction]
+    aliases: [insurance_applications, applications, application, policy_applications, submissions]
+    parts: [UnderwritingDecision]
+  - name: UnderwritingDecision
+    roles: [event]
+    aliases: [underwriting_decisions, underwriting_decision, underwriting_results, uw_decisions]
+  - name: UnderwritingRule
+    roles: [catalog]
+    aliases: [underwriting_rules, underwriting_rule, uw_rules, underwriting_guidelines, eligibility_rules]
+  - name: RiskAssessment
+    roles: [event]
+    aliases: [risk_assessments, risk_assessment, risk_scores, risk_evaluations]
+  - name: InspectionReport
+    roles: [event]
+    aliases: [inspection_reports, inspection_report, inspections, risk_surveys, survey_reports]
+  - name: PricingFactor
+    roles: [catalog]
+    aliases: [pricing_factors, pricing_factor, rating_factors, rating_variables]
+  - name: RiskModelVersion
+    roles: [catalog]
+    aliases: [risk_model_versions, risk_models, model_versions, rating_model_versions, pricing_models]
+  # Product and coverage.
+  - name: InsuranceProduct
+    roles: [catalog]
+    aliases: [insurance_products, products, product, lines_of_business, plans]
+  - name: Coverage
+    roles: [catalog]
+    aliases: [coverages, coverage, policy_coverages, coverage_types, covers]
+    parts: [CoverageLimit, Deductible]
+    description: a coverage is read with its limits and deductibles
+  - name: CoverageLimit
+    roles: [catalog]
+    aliases: [coverage_limits, coverage_limit, sums_insured, policy_limits]
+  - name: Deductible
+    roles: [catalog]
+    aliases: [deductibles, deductible, excesses, policy_deductibles, coverage_deductibles]
+  - name: Exclusion
+    roles: [catalog]
+    aliases: [exclusions, exclusion, policy_exclusions, coverage_exclusions]
+  - name: InsuredPeril
+    roles: [catalog]
+    aliases: [insured_perils, perils, peril, causes_of_loss, covered_perils]
+  - name: Rider
+    roles: [catalog]
+    aliases: [riders, rider, policy_riders, optional_covers, add_ons]
+  - name: RateTable
+    roles: [catalog]
+    aliases: [rate_tables, rate_table, premium_rates, rating_tables, tariffs]
+  # Policy issue and servicing.
+  - name: Policy
+    roles: [asset]
+    drawn_as: folios
+    aliases: [policies, policy, insurance_policies, policy_master]
+    parts: [PolicyTerm, PolicyTransaction, PolicyEndorsement, Cancellation, RenewalOffer]
+    description: a policy is read with its terms and what was done to it — endorsements, renewals, cancellation
+  - name: PolicyTerm
+    roles: [calendar]
+    aliases: [policy_terms, policy_term, policy_periods, coverage_periods, policy_versions]
+    description: one period a policy is in force for
+  - name: PolicyTransaction
+    roles: [event]
+    aliases: [policy_transactions, policy_transaction, policy_changes, policy_events, policy_history]
+  - name: PolicyEndorsement
+    roles: [event]
+    aliases: [policy_endorsements, endorsements, endorsement, policy_amendments, mid_term_adjustments]
+  - name: Cancellation
+    roles: [event]
+    aliases: [cancellations, cancellation, policy_cancellations, lapses, terminations]
+  - name: RenewalOffer
+    roles: [event]
+    aliases: [renewal_offers, renewal_offer, renewals, renewal_quotes, renewal_notices]
+  - name: InsuredAsset
+    roles: [asset]
+    aliases: [insured_assets, insured_objects, insured_items, risk_items, risk_objects, insured_vehicles, insured_properties]
+    description: the thing underwritten and insured — a vehicle, a property, a life
+  # Premiums and billing.
+  - name: BillingAccount
+    roles: [asset]
+    drawn_as: vault
+    aliases: [billing_accounts, billing_account, premium_accounts, policy_accounts]
+  - name: PremiumSchedule
+    roles: [catalog]
+    aliases: [premium_schedules, premium_schedule, payment_plans, billing_schedules, payment_schedules]
+    parts: [Installment]
+  - name: Installment
+    roles: [transaction]
+    aliases: [installments, installment, instalments, premium_installments, scheduled_payments]
+  - name: PremiumInvoice
+    roles: [transaction]
+    aliases: [premium_invoices, premium_invoice, invoices, invoice, premium_bills, billing_statements]
+  - name: PremiumPayment
+    roles: [transaction]
+    aliases: [premium_payments, premium_payment, payments, payment, premium_receipts]
+  - name: Receivable
+    roles: [stock]
+    aliases: [receivables, receivable, premium_receivables, accounts_receivable, outstanding_premiums]
+    description: premium owed and not yet paid, at a moment
+  - name: CollectionAttempt
+    roles: [event]
+    aliases: [collection_attempts, collection_attempt, dunning_notices, collections, payment_reminders]
+  # Claims and adjudication.
+  - name: LossEvent
+    roles: [event]
+    aliases: [loss_events, loss_event, losses, incidents, first_notice_of_loss, fnol]
+  - name: Claim
+    roles: [transaction]
+    aliases: [claims, claim, insurance_claims, claim_master, claim_files]
+    parts: [ClaimAssessment, ClaimSettlement, ClaimPayment]
+    description: a claim is read with its assessments, its settlement and the payments made on it
+  - name: Claimant
+    roles: [party]
+    aliases: [claimants, claimant, claim_parties, injured_parties]
+  - name: Adjuster
+    roles: [party]
+    aliases: [adjusters, adjuster, claims_adjusters, claim_handlers, loss_adjusters, examiners]
+  - name: ClaimAssessment
+    roles: [event]
+    aliases: [claim_assessments, claim_assessment, claim_evaluations, damage_assessments, appraisals, claim_reviews]
+  - name: Reserve
+    roles: [stock]
+    aliases: [reserves, reserve, claim_reserves, loss_reserves, case_reserves]
+    description: the amount set aside for a claim or a book, at a moment
+  # Settlement and recovery.
+  - name: ClaimSettlement
+    roles: [transaction]
+    aliases: [claim_settlements, claim_settlement, settlements, settlement, settlement_offers]
+    parts: [SettlementDispute]
+  - name: SettlementDispute
+    roles: [event]
+    aliases: [settlement_disputes, settlement_dispute, claim_disputes, claim_appeals, disputes]
+  - name: ClaimPayment
+    roles: [transaction]
+    aliases: [claim_payments, claim_payment, loss_payments, indemnity_payments, claim_disbursements]
+  - name: RepairProvider
+    roles: [party]
+    aliases: [repair_providers, repair_shops, body_shops, service_providers, repairers]
+  - name: SalvageAsset
+    roles: [asset]
+    aliases: [salvage_assets, salvage, salvage_items, salvage_vehicles]
+  - name: SubrogationCase
+    roles: [event]
+    aliases: [subrogation_cases, subrogation_case, subrogations, subrogation, recovery_cases]
+  - name: Recoverable
+    roles: [stock]
+    aliases: [recoverables, recoverable, reinsurance_recoverables, recoverable_amounts, expected_recoveries]
+    description: an amount expected back from a reinsurer, a third party or salvage, at a moment
+  - name: ReinsuranceRecovery
+    roles: [transaction]
+    aliases: [reinsurance_recoveries, reinsurance_recovery, ceded_recoveries, ceded_claims, reinsurance_claims]
+  # Risk portfolio and regulation.
+  - name: RiskPortfolio
+    roles: [catalog]
+    aliases: [risk_portfolios, risk_portfolio, portfolios, books_of_business, portfolio_segments]
+    description: a book of policies grouped to be managed and reported together
+  - name: Exposure
+    roles: [stock]
+    aliases: [exposures, exposure, risk_exposures, exposure_snapshots, accumulations]
+  - name: CatastropheEvent
+    roles: [event]
+    aliases: [catastrophe_events, catastrophe_event, catastrophes, cat_events, cat_codes]
+  - name: ReinsuranceTreaty
+    roles: [asset]
+    drawn_as: contract
+    aliases: [reinsurance_treaties, reinsurance_treaty, treaties, treaty, reinsurance_contracts]
+  - name: ActuarialAssumption
+    roles: [catalog]
+    aliases: [actuarial_assumptions, actuarial_assumption, assumption_sets, loss_development_factors]
+  - name: RegulatoryFiling
+    roles: [event]
+    aliases: [regulatory_filings, regulatory_filing, statutory_filings, rate_filings, regulatory_reports]

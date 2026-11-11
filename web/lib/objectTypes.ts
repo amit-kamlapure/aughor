@@ -1,0 +1,1615 @@
+/**
+ * ON-3b — the entity-type map's doors (ROADMAP §3.15, amended 2026-09-11): every object type with the facts its
+ * card shows, one type as the entity-type panel shows it, and the paths from one type to another; plus the writes the
+ * panel offers — declare a display property, bind or remove a further source (ON-1b), and measure what was declared.
+ *
+ * The shapes mirror `aughor/semantic/object_types.py` and `aughor/ontology/display.py`. The routes return plain
+ * dicts, so `api.gen.ts` types their paths but not their bodies — these do. A refusal is an answer, not an error.
+ */
+import { DECLARED_ACTIONS, type DEEP_ANALYSIS_EFFECT } from "@/lib/api";
+import { getApiBase } from "@/lib/config";
+
+/** One object type on the map: the measured facts its card and its rail row show. */
+export interface TypeMapRow {
+  /** What a package deployed on the connection says this entity does (party, place, asset, catalog, stock,
+   *  transaction, event, calendar) — empty where none matched it. The Business Atlas draws by it. */
+  pack_roles?: string[];
+  /** The package's own name for the entity it matched, and the package. */
+  pack_object?: string;
+  pack?: string;
+  /** A shape the package asks the Atlas for, where it refines what the entity does: a place that is a depot. */
+  pack_drawn_as?: string;
+  /** The shape a person chose for it on the Business Atlas; used before any package's word. */
+  drawn_as?: string;
+  object_type: string;
+  id: string;
+  display_name: string;
+  role: string;
+  domain: string;
+  key: string;
+  key_verified: boolean | null;
+  rows: number | null;
+  table: string;
+  display_property: string;
+  display_is_key: boolean;
+  properties: number;
+  bindings: number;
+  proposed_bindings: number;
+  links: number;
+  traversable_links: number;
+  actions: number;
+  metrics: number;
+  /** ON-7 — who made the type: the builder from a table, a person, or an explorer's proposal. */
+  origin?: "table" | "human" | "model";
+  /** ON-7 — the type this one is a PART of (its api name), "" when it stands on its own. */
+  absorbed_into?: string;
+  /** ON-7 — the types that are parts of this one, each with the binding it is read through. */
+  parts?: TypePart[];
+  /** ON-7b — who said a declared type exists when a model did: `model:<id>@<version>`, kept once a person confirms. */
+  provenance?: string;
+  /** ON-7b — what an explorer proposed on this card that no person has confirmed yet: the type itself, and its bindings. */
+  unconfirmed?: number;
+  /** ON-8 — the connection this type's objects are read from; in an organisation's ontology each type names its own. */
+  connection_id?: string;
+}
+
+/** ON-7 — a type that is a part of another: an order's lines under Order. */
+export interface TypePart {
+  object_type: string;
+  display_name: string;
+  binding: string;
+  kind: string;
+  /** ON-7b — `model` while the binding the part is read through is an explorer's unconfirmed proposal. */
+  origin?: "human" | "model";
+  provenance?: string;
+}
+
+/** One link between two types, read from → to. */
+export interface TypeMapLink {
+  /** Arc OC-5 — what the declarations route through it (`LinkCarries`). */
+  carries?: LinkCarries[];
+  relationship: string;
+  from: string;
+  to: string;
+  name: string;
+  reverse_name: string;
+  business_name: string;
+  verb: string;
+  cardinality: string;
+  measured: boolean;
+  traversable: boolean;
+  why_not?: string;
+  /** ON-7 — the type each end is DRAWN as: a part's links are drawn from its parent's card. */
+  shown_from?: string;
+  shown_to?: string;
+  origin?: "join_map" | "human" | "model";
+  /** ON-7b — `model:<id>@<version>` for a link an explorer proposed. */
+  provenance?: string;
+  /** ON-8 — `cross-source` when its two types live on two connections: the compiler reads the far side by key. */
+  traversal?: "join" | "cross-source";
+}
+
+export interface TypeMap {
+  connection_id: string;
+  schema_name: string;
+  generated_at: string;
+  /** ON-8 — `org/domain` when this is an organisation's ontology rather than one connection's. */
+  domain?: string;
+  object_types: TypeMapRow[];
+  links: TypeMapLink[];
+  /** ON-9 — every declared process and rule, one short row each. Absent on an API older than ON-9. */
+  processes?: ProcessRow[];
+  rules?: RuleRow[];
+}
+
+/** What titles one object of a type, and on what warrant. `source` "key" means nothing else names it — or a
+ *  proposal was refuted, named in `refuted`. */
+export interface DisplayPropertyFact {
+  property: string;
+  source: "proposed" | "human" | "key";
+  is_key: boolean;
+  verified: boolean | null;
+  rows: number | null;
+  non_null: number | null;
+  distinct: number | null;
+  note: string;
+  refuted?: string;
+}
+
+/** Where a property is read from: a binding and its column, or the overlay of accepted edits. `kind` is set for a
+ *  further binding (ON-1b), and `read` is false when the compiler does not read that binding yet. */
+export interface PropertySource {
+  binding: string;
+  table?: string;
+  column?: string;
+  edits?: number;
+  kind?: "static" | "timeseries" | "detail";
+  read?: boolean;
+  /** ON-5 — set when the property is a FRAME over the readings rather than a column of the source. */
+  frame?: string;
+  /** ON-7 — set when the property is a ROLLUP over a detail binding's rows rather than a column of the source. */
+  rollup?: string;
+  /** 2026-09-22 — set when the property is an EXPRESSION a person mapped over the type's own row. */
+  expression?: string;
+  verified?: boolean | null;
+}
+
+export interface TypeProperty {
+  name: string;
+  display_name: string;
+  role: string;
+  data_type: string;
+  unit: string;
+  is_key: boolean;
+  null_rate: number | null;
+  description: string;
+  source: PropertySource;
+}
+
+/** One binding a type reads properties through. The first is its backing, whose rows ARE its objects; a further one
+ *  (ON-1b) is a table or keyed SELECT joined on the object's key — static (one row per object) or timeseries (many
+ *  rows over time). `usable` says whether the compiler and the object page read it, and `why_not` why not. */
+export interface TypeBinding {
+  name: string;
+  primary: boolean;
+  kind: "static" | "timeseries" | "detail";
+  reads: "table" | "query";
+  table?: string;
+  sql?: string;
+  key: string;
+  object_key: string;
+  time_column?: string;
+  /** `model` — an explorer bound its own proposal (ON-7b): read like any other, proposed until a person confirms it. */
+  source: "backing" | "human" | "proposed" | "model";
+  provenance?: string;
+  verified: boolean | null;
+  rows: number | null;
+  non_null?: number | null;
+  distinct?: number | null;
+  objects?: number | null;
+  covered?: number | null;
+  orphans?: number | null;
+  note: string;
+  supplies: number;
+  skipped?: Record<string, string>;
+  usable: boolean;
+  why_not?: string;
+  /** ON-5 — property name → what its frame over the readings is, in words. */
+  frames?: Record<string, string>;
+  /** ON-7 — property name → what its rollup over the rows is, in words. */
+  rollups?: Record<string, string>;
+  /** ON-8 — the connection the source lives on; a further binding names one only when it is not the type's own. */
+  connection_id?: string;
+}
+
+/** ON-5 — a frame over a timeseries binding's readings: what it reads, how the readings inside the frame are
+ *  reduced, and how far the frame reaches. `offset` is "the reading N back", which takes neither an aggregate nor
+ *  a window. Each frame becomes a property of the type, read at the object's latest reading. */
+export interface FrameSpec {
+  column: string;
+  agg?: "sum" | "avg" | "min" | "max" | "count";
+  range?: "current" | "cumulative" | "trailing" | "leading" | "all";
+  window?: number;
+  offset?: number;
+}
+
+/** What a person sends to bind a source: its table or SELECT, the column holding the object's key, its kind, and —
+ *  optionally — `{property: column}` to name what it supplies and `{property: frame}` to compute one. */
+export interface BindingSpec {
+  kind: "static" | "timeseries" | "detail";
+  key: string;
+  table?: string;
+  sql?: string;
+  time_column?: string;
+  properties?: Record<string, string>;
+  frames?: Record<string, FrameSpec>;
+  /** ON-7 — a DETAIL binding (many rows per object, no clock) supplies exactly these, each one value per object. */
+  rollups?: Record<string, RollupSpec>;
+  /** ON-7 — mark the bound table's own type a PART of this one; the mark holds only while the binding does. */
+  absorb?: boolean;
+  /** ON-8 — in an organisation's ontology: the connection the source lives on, and the schema that qualifies its table. */
+  connection_id?: string;
+  schema_name?: string;
+}
+
+/** ON-7 — one rollup over a detail binding's rows: the column it reads and how the rows reduce to one value. */
+export interface RollupSpec {
+  column: string;
+  agg?: "sum" | "avg" | "min" | "max" | "count";
+}
+
+/** A binding the data proposes — another type's table carrying this type's key, measured one row per object. Nothing
+ *  reads it until a person binds it with `spec`. */
+export interface ProposedBinding {
+  name: string;
+  kind: "static" | "timeseries" | "detail";
+  table: string;
+  key: string;
+  object_key: string;
+  rows: number | null;
+  distinct: number | null;
+  objects: number | null;
+  covered: number | null;
+  orphans: number | null;
+  verified: boolean | null;
+  note: string;
+  supplies: string[];
+  skipped: Record<string, string>;
+  spec: BindingSpec;
+}
+
+/** Arc OC-5 — what a link carries: a process's stage, a promise kept through it, an impact read through it. */
+export interface LinkCarries {
+  process: string;
+  process_label: string;
+  stage?: string;
+  promise?: string;
+  impact?: string;
+  how: string;
+}
+
+/** A link as read from the type it leaves. A refused one carries the compiler's reason. */
+export interface TypeLink {
+  /** Arc OC-5 — what the declarations route through it; absent: nothing declared reads it. */
+  carries?: LinkCarries[];
+  name: string;
+  business_name: string;
+  /** `model` (2026-09-22): the explorer proposed the name; a person confirms it in the draft rail. */
+  business_name_source: "human" | "model" | "proposed" | "";
+  verb: string;
+  relationship: string;
+  direction: "out" | "in";
+  to: string;
+  to_type: string;
+  to_name: string;
+  cardinality: string;
+  measured: boolean;
+  kind: "to-one" | "to-many";
+  on: string;
+  traversable: boolean;
+  why_not?: string;
+  /** ON-7 — a link a person declared (or an explorer proposed) can be withdrawn; a found one is named, never deleted. */
+  origin?: "join_map" | "human" | "model";
+  /** ON-7b — `model:<id>@<version>` for a link an explorer proposed, kept once a person confirms it. */
+  provenance?: string;
+  /** ON-8 — `cross-source` when the two types live on two connections. */
+  traversal?: "join" | "cross-source";
+}
+
+export interface TypeAction {
+  id: string;
+  display_name: string;
+  description: string;
+  kind: string;
+  risk: string;
+  why: string;
+  params: { name: string; kind: "value" | "object"; object_type: string; data_type: string; required: boolean }[];
+  edits: { object: string; property: string }[];
+}
+
+export interface TypeMetric {
+  id: string;
+  display_name: string;
+  unit: string;
+  formula_sql: string;
+}
+
+/** 2026-09-22 — a typed property mapped to a SQL expression over the type's own row. */
+export interface TypeExpression {
+  name: string;
+  expression: string;
+  role: "measure" | "dimension";
+  unit: string;
+  description: string;
+  verified: boolean | null;
+  note: string;
+}
+
+/** Arc OC-6 — the moves a property the edit layer holds may make; "" in a move is the start (`initial`). */
+export interface EditStates {
+  states: string[];
+  moves: [string, string][];
+  initial: string;
+}
+
+/** Arc OC-6 — declare the moves of a property the edit layer holds; an action off them is refused before it runs. */
+export async function declareEditStates(
+  connectionId: string, entityId: string, property: string, spec: EditStates, schemaName?: string,
+): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/edit-states/${encodeURIComponent(property)}?${scope(connectionId, schemaName)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** Arc OC-6 — withdraw a property's declared moves. */
+export async function withdrawEditStates(
+  connectionId: string, entityId: string, property: string, schemaName?: string,
+): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/edit-states/${encodeURIComponent(property)}?${scope(connectionId, schemaName)}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+export interface ObjectTypeDetail {
+  /** The shape a person chose for it on the Business Atlas ("" — nobody chose), and what that shape says it is. */
+  drawn_as?: string;
+  drawn_role?: string;
+  /** Arc OC-6 — the declared moves of each property the edit layer holds, by property. */
+  edit_states?: Record<string, EditStates>;
+  /** Arc OC-6 — a platform-owned type: its objects live in the edit layer, so nothing about it is counted on a warehouse. */
+  platform?: boolean;
+  /** 2026-09-22 — the expression properties a person declared on this type, verified or not. */
+  expressions?: TypeExpression[];
+  /** 2026-09-22 — what a person withdrew on this type: builder-found bindings and found links, restorable. */
+  withdrawn?: { bindings: string[]; links: { relationship: string; from_entity: string; to_entity: string }[] };
+  /** Arc FA, FA-3 — the type's mark, or null when it carries none; absent when it could not be read (`retiring_said`). */
+  retiring?: RetiringMark | null;
+  /** Said when whether it is retiring could not be read. */
+  retiring_said?: string;
+  path: "object_type";
+  connection_id: string;
+  schema_name: string;
+  object_type: string;
+  id: string;
+  display_name: string;
+  description: string;
+  role: string;
+  domain: string;
+  key: { property: string; verified: boolean | null; rows: number | null; note: string };
+  display_property: DisplayPropertyFact;
+  /** ON-7 — who made the type, its parts, and the type it is a part of (a lapsed mark says why). */
+  origin?: "table" | "human" | "model";
+  /** ON-7b — `model:<id>@<version>` when an explorer proposed the type. */
+  provenance?: string;
+  parts?: TypePart[];
+  part_of?: PartOf | null;
+  time: string;
+  properties: TypeProperty[];
+  properties_truncated: boolean;
+  bindings: TypeBinding[];
+  proposed_bindings: ProposedBinding[];
+  links: TypeLink[];
+  actions: TypeAction[];
+  metrics: TypeMetric[];
+  unverified_metrics: string[];
+  segments: string[];
+  /** ON-9 — the processes this type takes part in, and what declared processes and rules derive on it. */
+  processes?: TypeProcessRole[];
+  derived?: DerivedRows;
+  lifecycle: { property: string; states: string[]; terminal: string[]; verified: boolean | null; note: string } | null;
+  counts: {
+    properties: number; bindings: number; proposed_bindings: number; links: number; traversable_links: number;
+    actions: number; metrics: number; parts?: number;
+  };
+  summary: string;
+}
+
+/** ON-7 — the type this one is a part of. `holds` is false when the parent no longer binds this type's table;
+ *  `note` says so. */
+export interface PartOf {
+  object_type: string;
+  id: string;
+  display_name: string;
+  holds: boolean;
+  note: string;
+}
+
+/** ON-7 — a business entity a person declares: the noun first, then the source bound into it. */
+export interface DeclaredEntitySpec {
+  id: string;
+  display_name: string;
+  description?: string;
+  domain?: string;
+  entity_type?: "reference_data" | "business_object" | "event" | "standalone";
+  /** ON-8 — in an organisation's ontology the backing names the connection its rows live on, and the schema that
+   *  qualifies its table there. */
+  backing: { table?: string; sql?: string; primary_key: string; connection_id?: string; schema_name?: string };
+}
+
+/** ON-7 — a link a person declares between two types: a business verb and the column each side joins on. */
+export interface DeclaredLinkSpec {
+  from_entity: string;
+  to_entity: string;
+  name: string;
+  from_column: string;
+  to_column: string;
+  cardinality?: "1:1" | "1:N" | "N:1" | "N:N";
+  reverse_name?: string;
+}
+
+export interface PathHop {
+  link: string;
+  business_name: string;
+  verb: string;
+  from: string;
+  from_name: string;
+  to: string;
+  to_name: string;
+  direction: "out" | "in";
+  cardinality: string;
+  kind: "to-one" | "to-many";
+  measured: boolean;
+  traversable: boolean;
+  why_not?: string;
+}
+
+/** One chain of links. `compiles_as` says what the compiler builds along it; empty when it builds nothing. */
+export interface TypePath {
+  hops: PathHop[];
+  length: number;
+  traversable: boolean;
+  reach: "to-one" | "to-many";
+  path: string;
+  compiles_as: string[];
+  why_not?: string;
+}
+
+export interface TypePaths {
+  path: "paths";
+  connection_id: string;
+  schema_name: string;
+  from: string;
+  from_name: string;
+  to: string;
+  to_name: string;
+  max_hops: number;
+  compiler_max_hops: number;
+  paths: TypePath[];
+  found: number;
+  truncated: boolean;
+}
+
+export interface TypeRefusal {
+  path: "refused";
+  refused: string;
+  available: string[];
+  connection_id: string;
+  schema_name: string;
+}
+
+/** ON-8 — an organisation's ontology is a scope of its own, carried where a connection id goes: `domain:<name>`. A door
+ *  that reads domains is sent `?domain=`; one that does not reads the scope as a connection nobody registered and
+ *  answers nothing, rather than another connection's graph. */
+const DOMAIN_SCOPE = "domain:";
+
+export function domainScope(name = "default"): string {
+  return `${DOMAIN_SCOPE}${name}`;
+}
+
+/** The domain a scope names, or null when the scope is a connection. */
+export function scopeDomain(connectionId: string): string | null {
+  return connectionId.startsWith(DOMAIN_SCOPE) ? connectionId.slice(DOMAIN_SCOPE.length) || "default" : null;
+}
+
+/** Arc OC-2 — every door this file calls belongs to the ontology's editing screens, so each asks for the DRAFT: the
+ *  published ontology with the changes waiting to be published laid over it. The agent, the Briefing and every other
+ *  reader get the published ontology. */
+function scope(connectionId: string, schemaName?: string, extra: Record<string, string> = {}): string {
+  const q = new URLSearchParams({ connection_id: connectionId, ontology_view: "draft", ...extra });
+  const domain = scopeDomain(connectionId);
+  if (domain) q.set("domain", domain);
+  else if (schemaName) q.set("schema_name", schemaName);
+  return q.toString();
+}
+
+/** ON-8 — one of the organisation's ontologies: what it holds, and the connections it reads. */
+export interface DomainRow {
+  domain: string;
+  key: string;
+  object_types: number;
+  links: number;
+  cross_source_links: number;
+  connections: string[];
+}
+
+export async function getDomains(): Promise<{ org: string; default: string; domains: DomainRow[] }> {
+  const res = await fetch(`${getApiBase()}/ontology/domains`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+async function detailOf(res: Response): Promise<string> {
+  const body = (await res.json().catch(() => null)) as { detail?: unknown } | null;
+  return typeof body?.detail === "string" ? body.detail : `HTTP ${res.status}`;
+}
+
+export async function getTypeMap(connectionId: string, schemaName?: string): Promise<TypeMap> {
+  const res = await fetch(`${getApiBase()}/object-types?${scope(connectionId, schemaName)}`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** ROADMAP §6 item 53 — what a type is used by, from its own door: its dependents, each with how it depends; the
+ *  dashboards whose pieces read it; and how many audited statements named its tables in each of the last twelve
+ *  months. `refused` as the detail refuses. */
+export interface ObjectTypeUses {
+  path: "uses";
+  connection_id: string;
+  schema_name: string;
+  entity: string;
+  dependents: { consumer: string; id: string; name: string; how: string }[];
+  dashboards: { id: string; title: string; pieces: string[] }[];
+  /** Said when the dashboards could not be listed; the rest still stands. */
+  dashboards_said?: string;
+  reads: {
+    tables: string[]; months: { month: string; reads: number }[]; source: string; said?: string;
+    /** Arc FA, FA-3 — the last thirty days, today included. */
+    window?: ReadsWindow;
+    /** Its tables another entity is read from too — a statement naming one counts for both. */
+    shared?: SharedTable[];
+    shared_said?: string;
+  };
+}
+
+/** Arc FA, FA-3 — an entity's reads over a recent window: how many statements named its tables, the newest one's
+ *  moment, and how many people the session log names for the runs that issued them. `readers` is null when the log
+ *  could not be read; `unattributed` reads name no one, and `readers_said` says so. */
+export interface ReadsWindow {
+  days: number;
+  reads: number;
+  last_read: string | null;
+  readers: number | null;
+  unattributed: number | null;
+  readers_said?: string;
+}
+
+export interface SharedTable { table: string; with: string[] }
+
+/** One entity in the list a person cleaning up reads, the least read first. `reads` is null when it is not counted
+ *  (no table bound, or the log unread) — `said` says which. */
+export interface EntityReadsRow extends Partial<Omit<ReadsWindow, "reads">> {
+  entity: string;
+  object_type: string;
+  display_name: string;
+  tables: string[];
+  part_of: string;
+  reads: number | null;
+  said?: string;
+  shared?: SharedTable[];
+  shared_said?: string;
+}
+
+export interface EntitiesByReads {
+  path: "by_reads";
+  connection_id: string;
+  schema_name: string;
+  days: number;
+  source: string;
+  entities: EntityReadsRow[];
+  said?: string;
+}
+
+/** Arc FA, FA-3 — every entity ranked by its reads over the last `days` days, the least read first. */
+export async function getEntitiesByReads(
+  connectionId: string, schemaName?: string, days = 30,
+): Promise<EntitiesByReads> {
+  const res = await fetch(`${getApiBase()}/object-types/uses?${scope(connectionId, schemaName, { window: String(days) })}`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** Arc FA, FA-3 — a declaration marked retiring: the element of the same kind to use instead, the day it goes, and
+ *  the sentence every reader is told ("retiring on 2026-12-01 — use Customer instead"). */
+export interface RetiringMark {
+  successor: string;
+  successor_name: string;
+  on: string;
+  note?: string;
+  past: boolean;
+  said: string;
+}
+
+/** Mark one declaration retiring. It waits in the draft as a change of meaning. */
+export async function markRetiring(
+  connectionId: string,
+  mark: { kind: string; target_id: string; successor: string; on: string; note?: string },
+  schemaName?: string,
+): Promise<{ retiring: RetiringMark | null; landed: "draft" | "published" }> {
+  const res = await fetch(`${getApiBase()}/ontology/retiring?${scope(connectionId, schemaName)}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(mark),
+  });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** Take a retiring mark off. */
+export async function unmarkRetiring(connectionId: string, kind: string, targetId: string, schemaName?: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/retiring?${scope(connectionId, schemaName, { kind, target_id: targetId })}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** Arc OC-1 — one version of a declaration, newest first in its history. `version` is null for a declaration whose
+ *  history starts at its next change. */
+export interface DeclarationVersion {
+  version: number | null;
+  state: "declared" | "drafted" | "withdrawn";
+  in_force_from: string;
+  recorded_at: string;
+  by: string;
+  note: string;
+  fields: Record<string, unknown>;
+  source: string;
+  changes: string[];
+  /** Arc FA, FA-3 — the declaration's own note ("put back from version 2"). */
+  declaration_note?: string;
+}
+
+export interface DeclarationHistory {
+  element: string;
+  versions: DeclarationVersion[];
+  /** Arc FA, FA-3 — whether a version can go back into the draft here, and why not. */
+  put_back: { enabled: boolean; said: string };
+}
+
+export async function getDeclarationHistory(
+  kind: string, targetId: string, connectionId: string, schemaName?: string,
+): Promise<DeclarationHistory> {
+  const res = await fetch(`${getApiBase()}/ontology/history?${scope(connectionId, schemaName, { kind, target_id: targetId })}`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** Arc FA, FA-3 — put an earlier version back into the draft. Refused with the sentence when it cannot go back. */
+export async function putBackVersion(
+  connectionId: string, kind: string, targetId: string, version: number, schemaName?: string,
+): Promise<{ landed: "draft" | "discard"; said: string; change: ReleaseChange | null; warnings: string[] }> {
+  const res = await fetch(`${getApiBase()}/ontology/history/put-back?${scope(connectionId, schemaName)}`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, target_id: targetId, version }),
+  });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+export async function getObjectTypeUses(
+  objectType: string, connectionId: string, schemaName?: string,
+): Promise<ObjectTypeUses | TypeRefusal> {
+  const res = await fetch(
+    `${getApiBase()}/object-types/${encodeURIComponent(objectType)}/uses?${scope(connectionId, schemaName)}`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+export async function getObjectType(
+  objectType: string, connectionId: string, schemaName?: string,
+): Promise<ObjectTypeDetail | TypeRefusal> {
+  const res = await fetch(
+    `${getApiBase()}/object-types/${encodeURIComponent(objectType)}?${scope(connectionId, schemaName)}`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+export async function getTypePaths(
+  source: string, target: string, connectionId: string, schemaName?: string, maxHops = 4,
+): Promise<TypePaths | TypeRefusal> {
+  const extra = { source, target, max_hops: String(maxHops) };
+  const res = await fetch(`${getApiBase()}/object-paths?${scope(connectionId, schemaName, extra)}`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** Choose the shape an entity is drawn as on the Business Atlas; "" lets go of the choice. It is a change to the
+ *  ontology like any other a person makes: it waits in the draft, where the editing screens already show it. */
+export async function chooseEntityShape(connectionId: string, entityId: string, shape: string, schemaName?: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}?${scope(connectionId, schemaName)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ drawn_as: shape }) });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** Change the words of an entity: what people call it, the sentence that says what it is, the domain it is filed
+ *  under. Its id — what links, rules and metrics point at — never changes. Only the words handed in are changed. */
+export async function changeEntityWords(
+  connectionId: string, entityId: string, words: { display_name?: string; description?: string; domain?: string },
+  schemaName?: string,
+): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}?${scope(connectionId, schemaName)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(words) });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** Declare the property that names one object of a type. The server refuses a property the type does not have,
+ *  and merges the declaration into the type's other human edits rather than replacing them. */
+export async function declareDisplayProperty(
+  connectionId: string, entityId: string, property: string, schemaName?: string,
+): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}?${scope(connectionId, schemaName)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ display_property: property }) });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** Name what makes one object of a type: one column, or several together — order lines by (order_id, order_item_id)
+ *  (the Olist study, Gap 13). The key is measured over the rows and said unique or not. */
+export async function setEntityKey(
+  connectionId: string, entityId: string, columns: string[], schemaName?: string,
+): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/key?${scope(connectionId, schemaName)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ columns }) });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** Measure the ontology against the data — cardinalities, lifecycles, keys, display properties and bindings, and the
+ *  bindings the data proposes. No model call. */
+export async function measureOntology(connectionId: string, schemaName?: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/ontology/measure?${scope(connectionId, schemaName)}`, { method: "POST" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+function bindingUrl(connectionId: string, entityId: string, name: string, schemaName?: string): string {
+  return `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/bindings/${encodeURIComponent(name)}`
+    + `?${scope(connectionId, schemaName)}`;
+}
+
+/** Bind a further source to a type (ON-1b). The server reads the source's columns and counts it against the objects
+ *  before it answers; a spec that does not bind is refused with the reason and nothing is written. */
+export async function addBinding(
+  connectionId: string, entityId: string, name: string, spec: BindingSpec, schemaName?: string,
+): Promise<void> {
+  const res = await fetch(bindingUrl(connectionId, entityId, name, schemaName),
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** Remove a binding a person set; the properties it supplied stop resolving on the next read. */
+export async function removeBinding(connectionId: string, entityId: string, name: string, schemaName?: string): Promise<void> {
+  const res = await fetch(bindingUrl(connectionId, entityId, name, schemaName), { method: "DELETE" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+
+/** Name a link by its business verb (ON-3b). The mechanical names stay and still resolve; this one is accepted
+ *  beside them. Refused when it is not snake_case, or already names another link or a property on either type
+ *  the link joins — a path segment must name exactly one thing. */
+export async function nameLink(
+  connectionId: string, relationshipId: string, name: string, schemaName?: string,
+): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/links/${encodeURIComponent(relationshipId)}?${scope(connectionId, schemaName)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+
+/** ON-7 — declare a business entity. The server reads the source's columns and counts its key before anything is
+ *  written; a table that already backs a type is refused with the reason. Returns the type as the panel shows it. */
+export async function declareEntity(
+  connectionId: string, spec: DeclaredEntitySpec, schemaName?: string,
+): Promise<ObjectTypeDetail> {
+  const res = await fetch(`${getApiBase()}/ontology/entities?${scope(connectionId, schemaName)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return (await res.json()).entity;
+}
+
+/** ON-7 — withdraw a DECLARED entity. A type the builder made from a table is refused: absorb it instead. */
+export async function deleteEntity(connectionId: string, entityId: string, schemaName?: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}?${scope(connectionId, schemaName)}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** ON-7 — declare a link between two types. Both columns must exist, the name must be free, and each side is
+ *  counted before anything is written; the compiler follows it exactly as a found link — measured, not N:N. */
+export async function declareLink(connectionId: string, spec: DeclaredLinkSpec, schemaName?: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/ontology/links?${scope(connectionId, schemaName)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** ON-7 — withdraw a DECLARED link. A found link is named, never deleted. */
+/** 2026-09-22 — map a typed property to a SQL expression over the type's own row. The server checks the shape, runs
+ *  it on one row, and refuses with the reason when it does not bind; nothing is written on a refusal. */
+export async function declareExpression(
+  connectionId: string, entityId: string, name: string,
+  spec: { expression: string; semantic_type?: "measure" | "dimension"; unit?: string; description?: string },
+  schemaName?: string,
+): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/expressions/${encodeURIComponent(name)}?${scope(connectionId, schemaName)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+export async function removeExpression(connectionId: string, entityId: string, name: string, schemaName?: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/expressions/${encodeURIComponent(name)}?${scope(connectionId, schemaName)}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** 2026-09-22 — put back a builder-found binding a person withdrew. */
+export async function restoreBinding(connectionId: string, entityId: string, name: string, schemaName?: string): Promise<void> {
+  const res = await fetch(`${bindingUrl(connectionId, entityId, name, schemaName).replace(/\?/, "/restore?")}`, { method: "POST" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** 2026-09-22 — put back a found link a person withdrew. */
+export async function restoreLink(connectionId: string, relationshipId: string, schemaName?: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/links/${encodeURIComponent(relationshipId)}/restore?${scope(connectionId, schemaName)}`,
+    { method: "POST" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+export async function deleteLink(connectionId: string, relationshipId: string, schemaName?: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/links/${encodeURIComponent(relationshipId)}?${scope(connectionId, schemaName)}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** ON-7 — mark a type a part of another ("" releases it). Bound against the graph: the parent must carry a binding
+ *  over this type's own table, and the mark holds only while it does. */
+export async function setPartOf(
+  connectionId: string, entityId: string, parentId: string, schemaName?: string,
+): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}?${scope(connectionId, schemaName)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ absorbed_into: parentId }) });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** What a keyed SELECT would change if it became a type's backing — read, never written: whether it reads, its rows
+ *  and whether its key is unique over them, and the type's properties it keeps, drops (they would stop resolving) and
+ *  adds, beside what the type is read from now. */
+export interface BackingPreview {
+  readable: boolean;
+  note: string;
+  rows: number | null;
+  unique: boolean | null;
+  unique_note: string;
+  columns: string[];
+  kept: string[];
+  dropped: string[];
+  added: string[];
+  current: { reads: "table" | "query"; source: string; key: string; rows: number | null; unique: boolean | null };
+}
+
+export async function previewBacking(
+  connectionId: string, entityId: string, sql: string, primaryKey: string, schemaName?: string,
+): Promise<BackingPreview> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/backing/preview?${scope(connectionId, schemaName)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sql, primary_key: primaryKey }) });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** Read a type from a keyed SELECT (ON-1). It binds by a dry run now; its key is counted on the measure door. */
+export async function setQueryBacking(
+  connectionId: string, entityId: string, sql: string, primaryKey: string, schemaName?: string,
+): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}?${scope(connectionId, schemaName)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backing: { kind: "query", sql, primary_key: primaryKey } }) });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** Withdraw the backing a person set: the type is read from its table again, and its other edits stay. */
+export async function withdrawBacking(connectionId: string, entityId: string, schemaName?: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/backing?${scope(connectionId, schemaName)}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** ON-7b — where an explorer's proposal stands NOW, read from the served graph; `refused` is what the data said when it
+ *  was proposed. */
+export type ProposalTier = "proposed" | "confirmed" | "released" | "withdrawn" | "refused";
+
+/** ON-7b — one thing an explorer proposed: an entity, a part (a table read under an entity), or a link. */
+export interface DraftProposal {
+  key: string;
+  kind: "entity" | "part" | "link" | "link_name" | "process" | "rule";
+  tier: ProposalTier;
+  sentence: string;
+  /** What the measurement said — the counts it rests on, or why it was refused. */
+  note: string;
+  /** The model's own reason. */
+  reason: string;
+  provenance: string;
+  target: { entity?: string; binding?: string; table?: string; part?: string; relationship?: string; process?: string;
+            rule?: string };
+  /** The type to open to see it where it lives ("" when nothing was written). */
+  object_type: string;
+}
+
+/** ON-7b — one explorer run: the model that ANSWERED (a fallback link may stand in for the one asked) and what came of it. */
+export interface DraftRun {
+  id: string;
+  at: string;
+  backend: string;
+  model: string;
+  fallback: boolean;
+  version: number;
+  provenance: string;
+  /** The run's trace — its model call and what it wrote, replayable in Agent Ops' Overview, under Every trace. */
+  trace_id?: string;
+  catalogue_chars: number;
+  said: { entities?: number; parts?: number; links?: number };
+  written: number;
+  refused: number;
+  already: number;
+  withdrawn: number;
+}
+
+export interface OntologyDraft {
+  connection_id: string;
+  schema_name: string;
+  /** Newest first. */
+  runs: DraftRun[];
+  proposals: DraftProposal[];
+  counts: Record<ProposalTier, number>;
+  /** How the tables group into business entities: each card's tables. */
+  grouping: Record<string, string[]>;
+}
+
+/** ON-7b — a declaration a person makes theirs: a declared entity, a declared link, or the binding a part is read through. */
+export interface ConfirmTarget {
+  kind: "entity" | "binding" | "link" | "link_name" | "process" | "rule";
+  entity?: string;
+  binding?: string;
+  relationship?: string;
+  process?: string;
+  rule?: string;
+}
+
+export interface ConfirmResult extends OntologyDraft {
+  confirmed: ConfirmTarget[];
+  refused: (ConfirmTarget & { why: string })[];
+}
+
+/** ON-7b — the scope's explorer draft. No model call. */
+export async function getOntologyDraft(connectionId: string, schemaName?: string): Promise<OntologyDraft> {
+  const res = await fetch(`${getApiBase()}/ontology/draft?${scope(connectionId, schemaName)}`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** ON-7b — ask an explorer to draft the business: ONE model call. Every proposal is measured before it lands, and what
+ *  survives is written through the declaration doors, proposed until a person confirms it. */
+export async function exploreOntology(connectionId: string, schemaName?: string): Promise<OntologyDraft> {
+  const res = await fetch(`${getApiBase()}/ontology/explore?${scope(connectionId, schemaName)}`, { method: "POST" });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** ON-7b — make proposals a person's: every one still the model's (`all`), or the named ones. A target that is not a
+ *  model's proposal comes back in `refused` with the reason. */
+export async function confirmProposals(
+  connectionId: string, request: { all?: boolean; targets?: ConfirmTarget[] }, schemaName?: string,
+): Promise<ConfirmResult> {
+  const res = await fetch(`${getApiBase()}/ontology/draft/confirm?${scope(connectionId, schemaName)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request) });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+
+// ── ON-9: processes, promises and rules ────────────────────────────────────────────────────
+
+export type DeclarationOrigin = "human" | "model" | "pack";
+
+/** ON-9 — one declared process as the map's rail lists it. */
+export interface ProcessRow {
+  id: string;
+  display_name: string;
+  /** The api name of the type that goes through it. */
+  entity: string;
+  origin: DeclarationOrigin;
+  verified: boolean | null;
+  objects: number | null;
+  stages: string[];
+  promises: { stage: string; name: string; breach_rate: number | null; verified: boolean | null; flags: number }[];
+}
+
+/** ON-9 — one declared rule as the map's rail lists it. */
+export interface RuleRow {
+  id: string;
+  display_name: string;
+  entity: string;
+  kind: "value_set" | "condition";
+  origin: DeclarationOrigin;
+  verified: boolean | null;
+  admitted: number | null;
+  objects: number | null;
+  flags: number;
+  /** The metrics the rule scopes: each read within it wherever it is read. */
+  scopes?: string[];
+}
+
+/** ON-9 — a name a declared process or rule derives on a type, and whether the compiler reads it yet. */
+export interface DerivedRow {
+  name: string;
+  kind: "segment" | "property" | "metric";
+  source: string;
+  description: string;
+  usable: boolean;
+  why_not?: string;
+  caveats?: string[];
+  target_value?: number;
+}
+
+export interface DerivedRows {
+  segments: DerivedRow[];
+  properties: DerivedRow[];
+  metrics: DerivedRow[];
+}
+
+/** ON-9 — a process a type takes part in: as the type that goes through it, or as the type a promise is kept per. */
+export interface TypeProcessRole {
+  id: string;
+  display_name: string;
+  roles: string[];
+  verified: boolean | null;
+  stages: string[];
+}
+
+/** The move from the previous stage, timed in calendar days. */
+export interface ProcessTransition {
+  from: string;
+  both: number | null;
+  skipped: number | null;
+  out_of_order: number | null;
+  p50_days: number | null;
+  p90_days: number | null;
+  p95_days: number | null;
+  /** The derived property that holds the lag, per object. */
+  lag: string;
+}
+
+/** A promise about reaching a stage, with what the data counted and the names it derives. */
+export interface ProcessPromise {
+  name: string;
+  kind: "deadline" | "within_days" | "within_hours";
+  deadline: string;
+  within_days: number | null;
+  /** Hours from the stage before, counted to the second — set when `kind` is `within_hours`. */
+  within_hours?: number | null;
+  /** The api name of the type the promise is kept per, and its id. */
+  grain: string;
+  grain_id: string;
+  via: string;
+  target: number | null;
+  objects: number | null;
+  reached: number | null;
+  breached: number | null;
+  kept: number | null;
+  open: number | null;
+  open_overdue: number | null;
+  breach_rate: number | null;
+  as_of: string;
+  verified: boolean | null;
+  flags: string[];
+  note: string;
+  segment: string;
+  metric: string;
+  /** Arc OC-4 — the segment of the objects still waiting and already past the promise. */
+  overdue_segment?: string;
+}
+
+/** Arc OC-5 — an object a stage touches, and its role: the one that goes through the process, the lead object a
+ *  promise is kept per (with why), the ones a moment or a deadline is read from. */
+export interface StageRole {
+  entity: string;
+  role: string;
+  why?: string;
+}
+
+export interface ProcessStageDetail {
+  name: string;
+  display_name: string;
+  anchor: { timestamp: string } | { state: string[]; property: string };
+  reached: number | null;
+  share: number | null;
+  verified: boolean | null;
+  note: string;
+  transition: ProcessTransition | null;
+  promise: ProcessPromise | null;
+  /** Arc OC-5 — earlier stage → how many objects reached this one BEFORE it (every earlier stage with a moment). */
+  precedes?: Record<string, number>;
+  roles?: StageRole[];
+}
+
+/** Arc OC-5 — a move between two stages, or out of the process (`to_stage` "left"): declared, or seen in the data. */
+export interface ProcessMove {
+  from_stage: string;
+  to_stage: string;
+  declared: boolean;
+  objects: number | null;
+}
+
+/** Arc OC-5 — one promise's bearing on another, as `GET /ontology/processes` describes it. */
+export interface ImpactDetail {
+  id: string;
+  display_name: string;
+  description: string;
+  owner: string;
+  upstream: string;
+  downstream: string;
+  upstream_label: string;
+  downstream_label: string;
+  mechanism: "influence" | "validated" | "formula";
+  formula: string;
+  evidence: string;
+  window_days: number | null;
+  lead: string;
+  path: string;
+  to_many: boolean;
+  objects: number | null;
+  upstream_broke: number | null;
+  upstream_kept: number | null;
+  rate_when_broke: number | null;
+  rate_when_kept: number | null;
+  lag_days: number | null;
+  window: string;
+  as_of: string;
+  verified: boolean | null;
+  flags: string[];
+  note: string;
+  /** The impact in a reader's words, by its mechanism. */
+  reading: string;
+}
+
+/** Arc OC-5 — an impact as a person declares it. */
+export interface DeclaredImpactSpec {
+  id: string;
+  upstream: string;
+  downstream: string;
+  mechanism: ImpactDetail["mechanism"];
+  formula?: string;
+  evidence?: string;
+  window_days?: number;
+  display_name?: string;
+}
+
+/** ON-9 — one declared process, as `GET /ontology/processes` describes it. */
+export interface ProcessDetail {
+  id: string;
+  /** Arc OC-7 — set when the reader's rows of its entity are restricted: the counts are over every object. */
+  counted_over?: string;
+  display_name: string;
+  description: string;
+  entity: string;
+  entity_id: string;
+  owner: string;
+  origin: DeclarationOrigin;
+  provenance: string;
+  objects: number | null;
+  verified: boolean | null;
+  note: string;
+  measured_at: string;
+  stages: ProcessStageDetail[];
+  derived: DerivedRows;
+  /** Arc OC-4 — how an object leaves the process, when a person declared it: no longer open, never overdue. */
+  leaves?: { property: string; values: string[]; left: number | null; missing: string[]; unknown: number | null; note: string };
+  /** Arc OC-5 — the moves declared, the moves the data makes, and where they disagree. */
+  transitions?: ProcessMove[];
+  observed?: ProcessMove[];
+  conformance?: { seen_only_in_data?: string[]; never_observed?: string[]; untimed?: string[] };
+}
+
+/** ON-9 — one declared rule, as `GET /ontology/processes` describes it. */
+export interface RuleDetail {
+  id: string;
+  display_name: string;
+  description: string;
+  owner: string;
+  entity: string;
+  entity_id: string;
+  kind: "value_set" | "condition";
+  property: string;
+  values: string[];
+  conditions: Record<string, unknown>[];
+  origin: DeclarationOrigin;
+  provenance: string;
+  objects: number | null;
+  admitted: number | null;
+  observed: Record<string, number>;
+  missing: string[];
+  verified: boolean | null;
+  flags: string[];
+  note: string;
+  segment: string;
+  /** The metrics the rule scopes, and each one's value as measured without the rule and within it. */
+  scopes?: string[];
+  scoped?: Record<string, { without: string | null; within: string | null }>;
+}
+
+export interface ProcessesAndRules {
+  /** One connection's ontology; an organisation's names its `domain` instead (ON-8). */
+  connection_id?: string;
+  schema_name?: string;
+  domain?: string;
+  processes: ProcessDetail[];
+  rules: RuleDetail[];
+  /** Arc OC-5 — every declared impact between promises. */
+  impacts?: ImpactDetail[];
+}
+
+/** ON-9 — a process a person declares: the type that goes through it and its stages in order. */
+export interface DeclaredProcessSpec {
+  id: string;
+  display_name?: string;
+  description?: string;
+  entity: string;
+  owner?: string;
+  stages: {
+    name: string;
+    display_name?: string;
+    timestamp?: string;
+    state?: string[];
+    property?: string;
+    promise?: { name?: string; within_days?: number; within_hours?: number; deadline?: string; grain?: string; via?: string;
+                target?: number };
+  }[];
+  /** Arc OC-4 — how an object leaves the process: a property and the values that mean gone. */
+  leaves?: { property: string; values: string[] };
+  /** Arc OC-5 — the moves the business expects; absent: each stage to the next. */
+  transitions?: { from: string; to: string }[];
+}
+
+// ── The process designer: the data read for a person designing a process (2026-10-09) ──────────────────────────────
+
+/** A moment an object of the type — or a record it reaches by a to-one link — carries. */
+export interface ProcessMoment {
+  path: string;
+  property: string;
+  label: string;
+  /** The link it is read through; "" for the type's own. */
+  via: string;
+  on: string;
+  on_label: string;
+  /** How many objects have it. */
+  set: number;
+  earliest: string;
+  latest: string;
+}
+
+export interface ProcessStateValue { value: string | null; objects: number }
+
+/** A property whose few values place an object in a state, with how many objects hold each (most held first). */
+export interface ProcessState { property: string; label: string; values: ProcessStateValue[] }
+
+export interface ProcessCandidates {
+  entity: string;
+  label: string;
+  api_name: string;
+  objects: number;
+  table: string;
+  key: string;
+  moments: ProcessMoment[];
+  states: ProcessState[];
+  /** What could not be read, said. */
+  unread: string[];
+}
+
+/** What a stage may be anchored to, read from the data — no model call, nothing written. */
+export async function getProcessCandidates(
+  connectionId: string, entity: string, schemaName?: string,
+): Promise<ProcessCandidates> {
+  const res = await fetch(`${getApiBase()}/ontology/processes/candidates?${scope(connectionId, schemaName, { entity })}`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** One thing a person reads about a draft before publishing it. */
+export interface DesignCheck {
+  id: string;
+  /** `ask` — a question with answers; `warn`; `error`; `ok`. */
+  level: "ask" | "warn" | "error" | "ok";
+  stage?: string;
+  says: string;
+  numbers?: Record<string, number>;
+  /** The object door's filters that list the objects this check is about. */
+  show?: { entity: string; filters: Record<string, unknown>[]; columns: string[] };
+  /** For a stuck stage: the state values that explain the waiting objects — the way they may have left. */
+  exit?: { property: string; label: string; values: string[]; explains: number; of: number; holding: number; recent: number };
+}
+
+/** What a published process derives, with its number now. */
+export interface DesignCreate { kind: "segment" | "metric" | "property"; name: string; noun: string; value: number | null; says: string }
+
+export interface MeasuredStage {
+  name: string;
+  display_name: string;
+  timestamp: string;
+  state: string[];
+  property: string;
+  reached: number | null;
+  verified: boolean | null;
+  note: string;
+  skipped: number | null;
+  out_of_order: number | null;
+  p50_days: number | null;
+  promise: null | {
+    name: string; within_days: number | null; within_hours: number | null; deadline: string;
+    reached: number | null; breached: number | null; open: number | null; open_overdue: number | null;
+    breach_rate: number | null; as_of: string; flags: string[];
+  };
+}
+
+export interface ProcessPreview {
+  process: { id: string; entity: string; objects: number | null; stages: MeasuredStage[];
+             leaves?: { property: string; values: string[]; left: number | null; missing: string[]; unknown: number | null } | null;
+             /** Arc OC-5 — the moves the data makes, and where they disagree with those declared. */
+             observed?: ProcessMove[];
+             conformance?: { seen_only_in_data?: string[]; never_observed?: string[]; untimed?: string[] } };
+  checks: DesignCheck[];
+  creates: DesignCreate[];
+}
+
+/** Count a draft exactly as declaring it would, and say what to read before publishing it. Nothing is written.
+ *  ``replace`` counts a change to the declared process of the same id. */
+export async function previewProcess(
+  connectionId: string, spec: DeclaredProcessSpec, schemaName?: string, replace = false,
+): Promise<ProcessPreview> {
+  const res = await fetch(`${getApiBase()}/ontology/processes/preview?${scope(connectionId, schemaName, replace ? { replace: "true" } : undefined)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** A declared action as the declare door takes it (a `PUT` to `DECLARED_ACTIONS`/{id}) — what the action designer
+ *  writes (`lib/actionDraft`). */
+export interface DeclaredActionSpec {
+  display_name?: string;
+  description?: string;
+  kind: "annotate" | "side_effect";
+  risk: "low" | "high";
+  object_type: string;
+  params: { name: string; display_name?: string; kind: "value" | "object"; object_type?: string; data_type?: string;
+            required?: boolean }[];
+  submission_criteria: { expr: string; message: string }[];
+  edits?: { object: string; property: string; value: string; note: string }[];
+  side_effects?: { kind: "http" | "notify" | typeof DEEP_ANALYSIS_EFFECT; config: Record<string, unknown> }[];
+  reversibility?: "irreversible" | "compensable";
+  verification?: { sql: string; expects: "rows" | "no_rows" | "value"; value?: string };
+  undo?: { action_id: string; window_hours: number; params?: Record<string, string> };
+}
+
+/** A press of a draft action, dry-run on one real object by the executor's own rules — nothing dispatched or written. */
+export interface ActionPress {
+  key: string;
+  /** `allowed`; `criterion_failed` (the author's message); `invalid_params`; `unread`. */
+  status: "allowed" | "criterion_failed" | "invalid_params" | "unread";
+  message: string;
+  properties?: Record<string, unknown>;
+  edits?: { property: string; value: string; note: string }[];
+  call?: { method: string; url: string; body: unknown } | null;
+  /** The message a press would send, filled — nothing is sent from a preview. */
+  tell?: { destination: string; type: string; saved: boolean; message: string } | null;
+  /** The question a press would ask in a deep analysis, filled — nothing runs from a preview. */
+  analysis?: { question: string } | null;
+}
+
+/** What declaring a draft action would offer, counted (`POST /ontology/declared-actions/preview`). */
+export interface ActionPreview {
+  entity: string;
+  objects: number | null;
+  /** How many allow a press now — null when the conditions are not counted (`uncounted` says why). */
+  allowed: number | null;
+  uncounted: string;
+  segments: { segment: string; objects: number; allowed: number | null }[];
+  sample: ActionPress | null;
+  unread: string[];
+}
+
+export async function previewAction(
+  connectionId: string,
+  draft: { id: string; action: DeclaredActionSpec; segments?: string[]; said?: Record<string, string> },
+  schemaName?: string,
+): Promise<ActionPreview> {
+  const res = await fetch(`${getApiBase()}/ontology/declared-actions/preview?${scope(connectionId, schemaName)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(draft) });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** Declare an action — the approval gate may hold it (HTTP 428), which the designer says in words. */
+export async function declareAction(
+  connectionId: string, id: string, spec: DeclaredActionSpec, schemaName?: string,
+): Promise<void> {
+  const res = await fetch(`${getApiBase()}${DECLARED_ACTIONS}/${encodeURIComponent(id)}?${scope(connectionId, schemaName)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(`${res.status} ${await detailOf(res)}`);
+}
+
+/** The schemas of one connection that have an ontology built, beside the one its registry names — a read of the store;
+ *  no connection is opened. */
+export async function listOntologySchemas(connectionId: string): Promise<string[]> {
+  const res = await fetch(`${getApiBase()}/ontology/schemas?${new URLSearchParams({ connection_id: connectionId })}`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return ((await res.json()) as { schemas?: string[] }).schemas ?? [];
+}
+
+/** A schema picker's list with `found` added after what it already offers, each once and in the order found. */
+export function withSchemas(current: string[], found: string[]): string[] {
+  return [...current, ...found.filter((name, i) => name && !current.includes(name) && found.indexOf(name) === i)];
+}
+
+/** ON-9 — every declared process and rule on the scope, with what their measurement counted. */
+export async function getProcesses(connectionId: string, schemaName?: string): Promise<ProcessesAndRules> {
+  const res = await fetch(`${getApiBase()}/ontology/processes?${scope(connectionId, schemaName)}`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** ON-9 — declare a process. Every anchor is resolved and the whole declaration is counted before anything is written;
+ *  a declaration the data cannot hold is refused with the reason. Returns the process as the panel shows it. */
+export async function declareProcess(
+  connectionId: string, spec: DeclaredProcessSpec, schemaName?: string,
+): Promise<ProcessDetail> {
+  const res = await fetch(`${getApiBase()}/ontology/processes?${scope(connectionId, schemaName)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return (await res.json()).process;
+}
+
+/** Arc OC-1/OC-5 — change a declared process through the same law as declaring it; each change is a version. */
+export async function changeProcess(
+  connectionId: string, spec: DeclaredProcessSpec, schemaName?: string,
+): Promise<ProcessDetail> {
+  const res = await fetch(`${getApiBase()}/ontology/processes/${encodeURIComponent(spec.id)}?${scope(connectionId, schemaName)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return (await res.json()).process;
+}
+
+/** Arc OC-5 — count a draft impact exactly as declaring it would; nothing is written. */
+export async function previewImpact(
+  connectionId: string, spec: DeclaredImpactSpec, schemaName?: string,
+): Promise<ImpactDetail> {
+  const res = await fetch(`${getApiBase()}/ontology/impacts/preview?${scope(connectionId, schemaName)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return (await res.json()).impact;
+}
+
+/** Arc OC-5 — declare an impact: both promises resolved, an influence counted, before anything is written. */
+export async function declareImpact(
+  connectionId: string, spec: DeclaredImpactSpec, schemaName?: string,
+): Promise<ImpactDetail> {
+  const res = await fetch(`${getApiBase()}/ontology/impacts?${scope(connectionId, schemaName)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return (await res.json()).impact;
+}
+
+/** Arc OC-5 — withdraw a declared impact. */
+export async function deleteImpact(connectionId: string, impactId: string, schemaName?: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/ontology/impacts/${encodeURIComponent(impactId)}?${scope(connectionId, schemaName)}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** ON-9 — a rule a person declares: a value set (one property's values grouped under one name) or conditions in the
+ *  object door's shape — and the verified metrics of its type it scopes. */
+export interface DeclaredRuleSpec {
+  id: string;
+  display_name?: string;
+  description?: string;
+  entity: string;
+  kind: "value_set" | "condition";
+  property?: string;
+  values?: string[];
+  conditions?: { path: string; op: string; value?: unknown; values?: unknown[] }[];
+  scopes?: string[];
+  owner?: string;
+}
+
+/** ON-9 — declare a rule. It is compiled and counted before anything is written; a rule the data cannot hold is refused
+ *  with the reason. Returns the rule as the panel shows it. */
+export async function declareRule(connectionId: string, spec: DeclaredRuleSpec, schemaName?: string): Promise<RuleDetail> {
+  const res = await fetch(`${getApiBase()}/ontology/rules?${scope(connectionId, schemaName)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return (await res.json()).rule;
+}
+
+/** Change a declared rule: compiled and counted again before it replaces the one that stands. Its id stays. */
+export async function changeRule(connectionId: string, spec: DeclaredRuleSpec, schemaName?: string): Promise<RuleDetail> {
+  const res = await fetch(`${getApiBase()}/ontology/rules/${encodeURIComponent(spec.id)}?${scope(connectionId, schemaName)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return (await res.json()).rule;
+}
+
+/** ON-9 — withdraw a declared process; every name it derives stops resolving on the next read. */
+export async function deleteProcess(connectionId: string, processId: string, schemaName?: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/processes/${encodeURIComponent(processId)}?${scope(connectionId, schemaName)}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** ON-9 — withdraw a declared rule; the segment it named stops resolving on the next read. */
+export async function deleteRule(connectionId: string, ruleId: string, schemaName?: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/rules/${encodeURIComponent(ruleId)}?${scope(connectionId, schemaName)}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+
+// ── Arc OC-2 — the release ──────────────────────────────────────────────────────────────────────
+
+export type ChangeClass = "ERR" | "MEANING" | "WARN" | "SAFE";
+
+/** One change waiting in the draft, as `GET /ontology/release` classes it. */
+export interface ReleaseChange {
+  element: string;
+  kind: string;
+  target_id: string;
+  change: "added" | "changed" | "withdrawn";
+  class: ChangeClass;
+  reasons: { class: ChangeClass; why: string }[];
+  /** What changed, field by field ("changed stages[1].promise.within_days"). */
+  fields: string[];
+  touches: {
+    claims: { id: string; key: string; text: string; definition_version: string }[];
+    cards: { id: string; title: string }[];
+    automations: { id: string; name: string; how: string }[];
+    /** Arc OC-3 — the approved metrics keyed to the element. */
+    metrics?: { id: string; name: string; how: string }[];
+    /** Arc OC-4 — the dashboards whose pieces read it, while dashboards may be built from the ontology. */
+    cockpits?: { cockpit: string; title: string; pieces: string[] }[];
+  };
+  by: string;
+}
+
+export interface ReleaseRow {
+  number: number;
+  id: string;
+  at: string;
+  by: string;
+  note: string;
+  elements: number;
+}
+
+export interface ReleaseState {
+  connection_id: string;
+  schema_name: string;
+  published: ReleaseRow | null;
+  releases: ReleaseRow[];
+  draft: ReleaseChange[];
+}
+
+/** The scope's published release and the changes waiting in its draft. */
+export async function getRelease(connectionId: string, schemaName?: string): Promise<ReleaseState> {
+  const res = await fetch(`${getApiBase()}/ontology/release?${scope(connectionId, schemaName)}`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** Publish the draft as the next release. Refused with every reason while a change would break something, a model's
+ *  proposal is unconfirmed, or nothing waits. */
+export async function publishRelease(
+  connectionId: string, schemaName?: string,
+): Promise<{ number: number; id: string; restated_claims: string[] }> {
+  const res = await fetch(`${getApiBase()}/ontology/release/publish?${scope(connectionId, schemaName)}`,
+    { method: "POST" });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** Drop changes from the draft — all of them, or the one named. What readers get is untouched. */
+export async function discardDraft(
+  connectionId: string, schemaName?: string, change?: { kind: string; target_id: string },
+): Promise<number> {
+  const extra: Record<string, string> = change ? { kind: change.kind, target_id: change.target_id } : {};
+  const res = await fetch(`${getApiBase()}/ontology/release/discard?${scope(connectionId, schemaName, extra)}`,
+    { method: "POST" });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return (await res.json()).discarded;
+}

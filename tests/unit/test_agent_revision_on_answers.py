@@ -1,0 +1,202 @@
+"""Arc TC-1 (ROADMAP §3.59) — which revision of an agent said this (`agents.revision_on_answers` until it was made
+unconditional, 2026-10-28, ROADMAP §3.65).
+
+The premise, measured at 48d5016b: `UserAgent.config_rev` was read by the agents router and the evals and stamped
+nowhere an answer is kept. A receipt said `{id, name}` and a stored chat turn said nothing but the `agent_id` column,
+so an agent edited between two answers gave two answers that could not be told apart.
+
+Held here:
+* the receipt and the turn carry `rev`, the revision of the configuration the answer RAN under (the activated
+  record, not the stored one, which may have moved while it answered); an unbound answer carries no agent;
+* a save or a restore sent with the revision its caller read is refused with 409 naming both revisions when the
+  agent has moved since, and writes nothing; sent with the current one, or not sent, it is taken.
+
+Hermetic: the conftest-redirected agents, history and ledger stores. No model calls, no warehouse.
+"""
+from __future__ import annotations
+
+import uuid
+
+import pytest
+from fastapi.testclient import TestClient
+
+import aughor.routers.investigations as inv
+from aughor.custom_agents import create_agent, delete_agent, get_agent, list_agents, update_agent
+from aughor.custom_agents.context import activate_agent, answer_stamp, release_agent
+from aughor.custom_agents.revisions import list_revisions
+import aughor.custom_agents.store as agent_store
+from aughor.db.history import get_session_turns, save_chat_turn
+
+@pytest.fixture(autouse=True)
+def _clean_store():
+    yield
+    for a in list_agents():
+        delete_agent(a.id)
+
+
+class _Cap:
+    def __init__(self):
+        self.payloads: list[dict] = []
+
+    def artifact_write(self, kind, natural_key, payload, *, conn_id=None, canvas_id=None, lineage=None):
+        self.payloads.append(payload)
+
+
+@pytest.fixture
+def cap_ledger(monkeypatch):
+    from aughor.kernel.ledger import Ledger
+    cap = _Cap()
+    # On the CLASS: patching the shared default instance leaves the class's own method pinned on it when the patch is
+    # undone (the undo sets the bound method back as an instance attribute), so every later test that patches
+    # `Ledger.artifact_write` patches nothing for that instance.
+    monkeypatch.setattr(Ledger, "artifact_write", lambda self, *a, **k: cap.artifact_write(*a, **k))
+    monkeypatch.setattr(Ledger, "emit", lambda self, *a, **k: None)
+    return cap
+
+
+@pytest.fixture
+def agent():
+    return create_agent("Revision Analyst", instructions="Segment by cohort first.", doc_ids=["d1"])
+
+
+def _receipt(cap) -> dict:
+    inv._write_answer_receipt(kind="chat_answer", natural_key=f"chat:tc1:{uuid.uuid4().hex[:6]}",
+                              question="how many orders?", sqls=["SELECT 1"], headline="",
+                              schema="", connection_id="tc1-conn")
+    assert cap.payloads, "the receipt should have been written"
+    return cap.payloads[-1]
+
+
+def _as(agent_record, fn):
+    token = activate_agent(agent_record)
+    try:
+        return fn()
+    finally:
+        release_agent(token)
+
+
+# ── the receipt ───────────────────────────────────────────────────────────────────────
+
+def test_a_receipt_names_the_revision_the_answer_ran_under(cap_ledger, agent):
+    payload = _as(agent, lambda: _receipt(cap_ledger))
+    assert payload["agent"] == {"id": agent.id, "name": "Revision Analyst", "rev": agent.config_rev}
+    assert len(payload["agent"]["rev"]) == 12
+
+
+def test_an_agent_edited_while_it_answered_is_stamped_with_the_revision_it_ran_under(cap_ledger, agent):
+    """The activated record is what built the prompt; the stored one may have moved since. Stamping the stored one
+    would credit the answer to a configuration that did not give it."""
+
+    def _edit_then_answer():
+        update_agent(agent.id, instructions="Ignore cohorts. Report totals only.")
+        return _receipt(cap_ledger)
+
+    payload = _as(agent, _edit_then_answer)
+    stored = get_agent(agent.id)
+    assert stored.config_rev != agent.config_rev
+    assert payload["agent"]["rev"] == agent.config_rev
+
+
+def test_an_unbound_answer_carries_no_agent(cap_ledger):
+    assert "agent" not in _receipt(cap_ledger)
+
+
+def test_the_revision_is_inside_the_public_receipts_signature():
+    from aughor.trust.receipt import build_public_receipt, verify
+    raw = {"artifact": {"id": "art_1", "kind": "chat_answer", "created_at": "2026-10-26T00:00:00Z",
+                        "conn_id": "c", "payload": {"question": "q", "headline": "h",
+                                                    "agent": {"id": "ua_1", "name": "A", "rev": "abc123def456"}}},
+           "lineage": [], "cost": None}
+    signed = build_public_receipt(raw, signed=True)
+    assert signed["agent"]["rev"] == "abc123def456" and verify(signed) is True
+    assert verify({**signed, "agent": {**signed["agent"], "rev": "000000000000"}}) is False
+
+
+# ── the stored chat turn ──────────────────────────────────────────────────────────────
+
+def _turn(session_id: str) -> str:
+    return save_chat_turn(question="how many orders?", connection_id="tc1-conn", headline="12 orders",
+                          sql="SELECT 1", session_id=session_id, columns=["n"], rows=[[12]])
+
+
+def test_a_turn_names_the_agent_and_the_revision_that_answered_it(agent):
+    session = f"tc1on_{uuid.uuid4().hex[:6]}"
+    _as(agent, lambda: _turn(session))
+    (turn,) = get_session_turns(session)
+    assert turn["agent"] == {"id": agent.id, "name": "Revision Analyst", "rev": agent.config_rev}
+    # the turn and the receipt are stamped by one builder, so they cannot name the agent differently
+    assert turn["agent"] == _as(agent, lambda: answer_stamp(agent))
+
+
+def test_an_unbound_turn_carries_no_agent():
+    session = f"tc1u_{uuid.uuid4().hex[:6]}"
+    _turn(session)
+    (turn,) = get_session_turns(session)
+    assert "agent" not in turn
+
+
+# ── the precondition, in the store ────────────────────────────────────────────────────
+
+def test_a_save_against_a_stale_revision_raises_and_writes_nothing(agent):
+    read_at = agent.config_rev
+    update_agent(agent.id, instructions="Ignore cohorts. Report totals only.")
+    moved = get_agent(agent.id)
+    history_before = list_revisions(agent.id)
+    # read from the module at use time: other tests reload the store, which rebinds the class
+    with pytest.raises(agent_store.RevisionConflict) as caught:
+        update_agent(agent.id, expected_rev=read_at, instructions="Something else entirely.", name="Renamed")
+    assert caught.value.expected == read_at and caught.value.current == moved.config_rev
+    assert read_at in str(caught.value) and moved.config_rev in str(caught.value)
+    after = get_agent(agent.id)
+    assert after.model_dump() == moved.model_dump()
+    assert list_revisions(agent.id) == history_before
+
+
+def test_a_save_against_the_current_revision_is_taken(agent):
+    saved = update_agent(agent.id, expected_rev=agent.config_rev, instructions="Ignore cohorts.")
+    assert saved.instructions == "Ignore cohorts." and saved.config_rev != agent.config_rev
+
+
+# ── the precondition, at the doors ────────────────────────────────────────────────────
+
+@pytest.fixture()
+def client():
+    from aughor.api import app
+    return TestClient(app)
+
+
+def _stale(agent) -> str:
+    """The revision a caller read, made stale by an edit after the read."""
+    read_at = agent.config_rev
+    update_agent(agent.id, instructions="Ignore cohorts. Report totals only.")
+    return read_at
+
+
+def test_a_patch_against_a_stale_revision_is_refused_naming_both(client, agent):
+    read_at = _stale(agent)
+    current = get_agent(agent.id).config_rev
+    r = client.patch(f"/agents/custom/{agent.id}", json={"instructions": "Mine.", "expected_rev": read_at})
+    assert r.status_code == 409, r.text
+    detail = r.json()["detail"]
+    assert detail["status"] == "revision_conflict"
+    assert detail["expected_rev"] == read_at and detail["current_rev"] == current
+    assert read_at in detail["message"] and current in detail["message"]
+    assert get_agent(agent.id).instructions == "Ignore cohorts. Report totals only."
+
+
+def test_a_patch_against_the_current_revision_or_none_is_taken(client, agent):
+    r = client.patch(f"/agents/custom/{agent.id}", json={"instructions": "One.", "expected_rev": agent.config_rev})
+    assert r.status_code == 200 and r.json()["instructions"] == "One."
+    r = client.patch(f"/agents/custom/{agent.id}", json={"instructions": "Two."})
+    assert r.status_code == 200 and r.json()["instructions"] == "Two."
+
+
+def test_a_restore_against_a_stale_revision_is_refused(client, agent):
+    read_at = _stale(agent)
+    r = client.post(f"/agents/custom/{agent.id}/revisions/1/restore", params={"expected_rev": read_at})
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["current_rev"] == get_agent(agent.id).config_rev
+    assert get_agent(agent.id).instructions == "Ignore cohorts. Report totals only."
+    r = client.post(f"/agents/custom/{agent.id}/revisions/1/restore",
+                    params={"expected_rev": get_agent(agent.id).config_rev})
+    assert r.status_code == 200 and r.json()["agent"]["instructions"] == "Segment by cohort first."

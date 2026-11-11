@@ -1,0 +1,476 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import type { InvestigationState } from "@/lib/types";
+import type { ChatTurn } from "@/lib/chatTurn";
+import { localizeCurrency } from "@/lib/orgSettings";
+import { Icon } from "@/components/ui/icon";
+
+// Map a ChatTurn → InvestigationState so the trace can be rendered both inline
+// (ChatMessage) and, historically, in a side panel. `running` reflects whether
+// this turn is still streaming.
+export function turnToTraceState(turn: ChatTurn, running: boolean): InvestigationState {
+  return {
+    status: running ? "running" : turn.status === "error" ? "error" : "done",
+    question: turn.question,
+    investigationId: turn.investigationId,
+    hypotheses: turn.hypotheses,
+    queriesExecuted: turn.queriesExecuted.length,
+    currentIteration: 0,
+    log: [],
+    report: null,
+    queryHistory: [],
+    error: turn.error,
+    statsPerHypothesis: {},
+    fromCache: turn.fromCache,
+    cachedQuestion: turn.cachedQuestion,
+    humanFeedback: null,
+    queryMode: turn.queryMode as InvestigationState["queryMode"],
+    routeReasoning: shapeReading(turn.route?.shape || turn.deepReport?.question_shape),
+    routeConfidence: null,
+    subQuestions: turn.subQuestions,
+    subqAnswers: turn.subqAnswers,
+    exploreReport: turn.exploreReport,
+    investigationPhases: turn.phases,
+    deepReport: turn.deepReport,
+  };
+}
+
+/** What the route step says of a question's shape — describe · check · diagnose · survey, the one
+ *  vocabulary for a question's kind. A describe answer measured what was asked and tested no
+ *  hypotheses; "Multi-hypothesis analysis" was once said of every Agent answer. */
+export function shapeReading(shape?: string | null): string | null {
+  switch (shape) {
+    case "describe": return "Measured what was asked";
+    case "check":    return "Checked the data — a verdict and its counts";
+    case "diagnose": return "Looked for the cause";
+    case "survey":   return "Mapped the landscape";
+    default:         return null;
+  }
+}
+
+type StepStatus = "pending" | "running" | "done" | "error";
+type Verdict = "confirmed" | "refuted" | "inconclusive" | "untested";
+
+/** A named query the phase ran. Carries its result so the reader can OPEN it —
+ *  a reader clicks a dataset/code node, not just reads its name. */
+interface SubStep {
+  title: string;
+  sql?: string;
+  columns?: string[];
+  rows?: unknown[][];
+}
+
+interface Step {
+  id: string;
+  label: string;
+  /** Leading icon rendered before the label (explore sub-question purposes). */
+  icon?: ReactNode;
+  sublabel?: string;
+  status: StepStatus;
+  verdict?: Verdict;
+  /** Named query steps nested under this beat: what was asked of the data, clickable. */
+  substeps?: SubStep[];
+}
+
+// A char-by-char reveal for a line of trace text — the "it's thinking out loud"
+// feel. Only types while `active` (the live turn's current line); a restored or
+// already-finished line renders whole, so history never re-animates. Retypes when
+// the text itself changes (a phase's running label → its summary).
+function useTypewriter(text: string, active: boolean): string {
+  const [shown, setShown] = useState(text);
+  const raf = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (!active) return;                         // inactive: the render path returns `text` directly
+    const start = performance.now();
+    const CPS = 90;                              // chars/sec — brisk, not sluggish
+    const tick = (now: number) => {              // setState only inside the async rAF callback
+      const target = Math.min(text.length, Math.floor(((now - start) / 1000) * CPS));
+      setShown(text.slice(0, target));
+      if (target < text.length) raf.current = requestAnimationFrame(tick);
+    };
+    raf.current = requestAnimationFrame(tick);
+    return () => { if (raf.current) cancelAnimationFrame(raf.current); };
+  }, [text, active]);
+  return active ? shown : text;
+}
+
+function TypeLine({ text, active }: { text: string; active: boolean }) {
+  const shown = useTypewriter(text, active);
+  const typing = active && shown.length < text.length;
+  return (
+    <>
+      {shown}
+      {typing && <span className="aug-caret ml-px align-baseline" aria-hidden />}
+    </>
+  );
+}
+
+const VERDICT_COLOR: Record<Verdict, string> = {
+  confirmed: "text-[var(--grn4)]",
+  refuted: "text-[var(--red4)]",
+  inconclusive: "text-[var(--amb4)]",
+  untested: "text-[var(--t3)]",
+};
+
+// Sub-question purpose → leading icon (the platform set, 16px, colour
+// inherited from the step label). Real icons replace the old unicode glyphs.
+const PURPOSE_ICON: Record<string, ReactNode> = {
+  landscape:    <Icon name="compass" size={16} />,
+  relationship: <Icon name="process" size={16} />,
+  threshold:    <Icon name="scales" size={16} />,
+  drill_down:   <Icon name="zoom" size={16} />,
+  confounder:   <Icon name="flask" size={16} />,
+  synthesis:    <Icon name="idea" size={16} />,
+};
+// Neutral fallback for purposes the map doesn't know (was "·").
+const PURPOSE_FALLBACK_ICON: ReactNode = <Icon name="minus" size={16} />;
+
+// Present-tense, plain-language labels for the deep analysis phases — what the
+// agent is doing right now, not internal phase jargon. Falls back to phase_name.
+const PHASE_ACTION: Record<string, string> = {
+  intake:      "Understanding the question",
+  baseline:    "Establishing the baseline & scanning for anomalies",
+  cross_section: "Scanning dimensions for where value is weakest",
+  decompose:   "Breaking the metric into its drivers",
+  dimensional: "Comparing across regions, products & segments",
+  behavioral:  "Checking customer & operational behavior",
+  synthesis:   "Writing the report",
+  synthesize:  "Writing the report",
+};
+
+function deriveSteps(state: InvestigationState): Step[] {
+  const { queryMode, hypotheses, status, queriesExecuted, routeReasoning, routeConfidence, subQuestions, subqAnswers, exploreReport, investigationPhases, deepReport } = state;
+  const isRunning = status === "running";
+  const isDone = status === "done" || status === "paused";
+  const steps: Step[] = [];
+
+  // Route
+  const routeDone = queryMode !== null;
+  const confidenceLabel = routeConfidence != null ? ` · ${Math.round(routeConfidence * 100)}% confidence` : "";
+  steps.push({
+    id: "route",
+    label: routeDone
+      ? queryMode === "direct" ? "Direct Query" : queryMode === "explore" ? "Exploration" : "Agent"
+      : "Classifying question…",
+    sublabel: routeDone
+      ? (routeReasoning ?? (
+          queryMode === "direct" ? "Single-pass answer" :
+          queryMode === "explore" ? "Characterisation / open-ended analysis" :
+          "Multi-hypothesis analysis"
+        )) + confidenceLabel
+      : undefined,
+    status: routeDone ? "done" : "running",
+  });
+
+  if (!routeDone) return steps;
+
+  if (queryMode === "direct") {
+    steps.push({
+      id: "query",
+      label: queriesExecuted > 0
+        ? `${queriesExecuted} quer${queriesExecuted === 1 ? "y" : "ies"} executed`
+        : "Running query…",
+      status: queriesExecuted > 0 ? "done" : "running",
+    });
+    steps.push({
+      id: "summarize",
+      label: "Summarizing results",
+      status: isDone ? "done" : isRunning && queriesExecuted > 0 ? "running" : "pending",
+    });
+    return steps;
+  }
+
+  if (queryMode === "explore") {
+    const hasSubqs = subQuestions.length > 0;
+    steps.push({
+      id: "explore-plan",
+      label: hasSubqs
+        ? `${subQuestions.length} sub-question${subQuestions.length !== 1 ? "s" : ""} planned`
+        : "Designing investigative chain…",
+      status: hasSubqs ? "done" : "running",
+    });
+
+    if (!hasSubqs) return steps;
+
+    const answeredIds = new Set(subqAnswers.map(a => a.subq_id));
+
+    for (let i = 0; i < subQuestions.length; i++) {
+      const sq = subQuestions[i];
+      const answered = sq.done || answeredIds.has(sq.id);
+      const label = sq.question.length > 44 ? sq.question.slice(0, 44) + "…" : sq.question;
+      const answer = subqAnswers.find(a => a.subq_id === sq.id);
+      // Current = running and this is the first unanswered
+      const isCurrentlyRunning = isRunning && !answered && subQuestions.slice(0, i).every(s => s.done || answeredIds.has(s.id));
+      steps.push({
+        id: `sq-${sq.id}`,
+        label,
+        icon: PURPOSE_ICON[sq.purpose] ?? PURPOSE_FALLBACK_ICON,
+        sublabel: answered && answer
+          ? answer.answer.length > 56 ? answer.answer.slice(0, 56) + "…" : answer.answer
+          : isCurrentlyRunning ? "running…" : undefined,
+        status: answered ? "done" : isCurrentlyRunning ? "running" : "pending",
+      });
+    }
+
+    steps.push({
+      id: "synthesize-explore",
+      label: "Synthesizing exploration",
+      status: exploreReport ? "done" : isRunning && subQuestions.every(sq => sq.done || answeredIds.has(sq.id)) ? "running" : "pending",
+    });
+
+    return steps;
+  }
+
+  // ── Investigate mode (deep analysis) — render the streamed phases as the live trace. ──
+  // The deep analysis flow populates investigationPhases (and finally deepReport), NOT the
+  // legacy `hypotheses` list, so derive the trace from the phases as they stream.
+  const phases = (deepReport?.phases ?? investigationPhases ?? []);
+  if (phases.length > 0) {
+    for (const p of phases) {
+      // Intake ("Question intake" / "Understanding the question") is setup, not thinking —
+      // users don't value it in the trace. Drop it entirely.
+      if (p.phase_id === "intake") continue;
+      const skipped = p.status === "skipped";
+      const errored = p.status === "error";
+      const done = p.status === "complete" || p.status === "partial" || skipped;
+      const running = p.status === "running";
+      // The trace renders plain text (no markdown), so strip **bold** (else "**gift_sets**"
+      // leaks literal asterisks) and honour the configured currency.
+      const summary = localizeCurrency((p.summary || "").trim()).replace(/\*+/g, "");
+      // Nested named query steps: each finding is a clickable node — its human title
+      // over its own result (SQL + rows), so the reader can OPEN what was asked of the
+      // data. Errored/blank titles dropped; capped for readability.
+      const substeps: SubStep[] = (p.findings ?? [])
+        .filter(f => !f.error && (f.title || "").trim())
+        .slice(0, 8)
+        .map(f => ({
+          title: localizeCurrency(f.title).replace(/\*+/g, ""),
+          sql: f.sql || undefined,
+          columns: f.columns,
+          rows: f.rows,
+        }));
+      // Lead with the model's actual conclusion (the summary) once it exists — that reads
+      // as thinking. While running, the present-tense action is the live "what it's doing".
+      const thought = done && summary
+        ? (summary.length > 200 ? summary.slice(0, 200) + "…" : summary)
+        : (PHASE_ACTION[p.phase_id] ?? p.phase_name);
+      steps.push({
+        id: `ph-${p.phase_id}`,
+        label: thought,
+        sublabel: skipped ? "skipped — not needed" : running ? "working…" : undefined,
+        status: errored ? "error" : done ? "done" : running ? "running" : "pending",
+        substeps: substeps.length ? substeps : undefined,
+      });
+    }
+    // Trailing report step — the synthesis node isn't streamed as a phase, so show
+    // it explicitly: running until the final report materialises.
+    const hasSynthPhase = phases.some(p => /synth/.test(p.phase_id));
+    if (!hasSynthPhase) {
+      steps.push({
+        id: "synthesize",
+        label: deepReport ? "Report ready" : "Analysing the data…",
+        status: deepReport ? "done" : isRunning ? "running" : "pending",
+      });
+    }
+    return steps;
+  }
+
+  // Fallback: legacy hypothesis-based investigate trace (pre-deep-analysis flows).
+  const hasHypotheses = hypotheses.length > 0;
+  steps.push({
+    id: "decompose",
+    label: hasHypotheses
+      ? `${hypotheses.length} hypotheses formed`
+      : "Decomposing question…",
+    status: hasHypotheses ? "done" : "running",
+  });
+
+  if (!hasHypotheses) return steps;
+
+  const firstUntested = hypotheses.findIndex(h => h.verdict === "untested");
+
+  for (let i = 0; i < hypotheses.length; i++) {
+    const h = hypotheses[i];
+    const tested = h.verdict !== "untested";
+    const isCurrent = isRunning && i === firstUntested;
+    steps.push({
+      id: `h-${i}`,
+      label: `H${i + 1} · ${h.description.length > 48 ? h.description.slice(0, 48) + "…" : h.description}`,
+      sublabel: tested
+        ? `${h.verdict} · ${Math.round(h.confidence * 100)}%`
+        : isCurrent ? "testing…" : undefined,
+      status: tested ? "done" : isCurrent ? "running" : "pending",
+      verdict: tested ? h.verdict : undefined,
+    });
+  }
+
+  const allTested = firstUntested === -1;
+  steps.push({
+    id: "synthesize",
+    label: "Synthesizing report",
+    status: isDone ? "done" : isRunning && allTested ? "running" : "pending",
+  });
+
+  return steps;
+}
+
+// R16 P3 — a thinking trace is a quiet, structured text
+// tree, not a status dashboard. Monochrome markers (no colored pills, no check
+// pop): running = a soft pulsing dot, done = a filled dot, error keeps the one
+// muted red × (failure must stay visible). Verdict nuance lives in the sublabel
+// text, not the marker.
+function StepDot({ status }: { status: StepStatus; verdict?: Verdict }) {
+  if (status === "running") {
+    return (
+      <span className="relative flex h-3.5 w-3.5 items-center justify-center shrink-0">
+        <span className="relative inline-flex rounded-[var(--r-pill)] h-2 w-2 bg-zinc-400 aug-pulse-dot" />
+      </span>
+    );
+  }
+  if (status === "error") {
+    return (
+      <span className="flex h-3.5 w-3.5 items-center justify-center text-red-400/80 shrink-0">
+        <Icon name="close" size={11} stroke={3} />
+      </span>
+    );
+  }
+  if (status === "done") {
+    return (
+      <span className="flex h-3.5 w-3.5 items-center justify-center shrink-0">
+        <span className="inline-flex rounded-[var(--r-pill)] h-1.5 w-1.5 bg-zinc-500" />
+      </span>
+    );
+  }
+  return (
+    <span className="flex h-3.5 w-3.5 items-center justify-center shrink-0">
+      <span className="inline-flex rounded-[var(--r-pill)] h-1.5 w-1.5 border border-zinc-600/70" />
+    </span>
+  );
+}
+
+/** The label the closed trace shows while a turn runs: the step in hand, replaced as the
+ *  next one starts. Null before any step exists. */
+export function latestThought(state: InvestigationState): string | null {
+  const steps = deriveSteps(state);
+  // Which line is "the latest" takes three preferences, because two of the steps are not
+  // news. The route is settled in the first second, and the trailing "Analysing the
+  // data…" is running for the whole turn — a row that showed it would never change. So:
+  // the step being worked on; else the conclusion that landed last; else whichever of
+  // those two placeholders is all there is so far.
+  const placeholder = (id: string) => id === "route" || id.startsWith("synthesize");
+  const landed = (s: Step) => s.status === "done" || s.status === "error";
+  const step = steps.find(s => s.status === "running" && !placeholder(s.id))
+    ?? [...steps].reverse().find(s => landed(s) && !placeholder(s.id))
+    ?? steps.find(s => s.status === "running")
+    ?? [...steps].reverse().find(landed);
+  return step?.label ?? null;
+}
+
+export interface SourceOpen {
+  columns: string[];
+  rows: unknown[][];
+  sql: string | null;
+  title: string;
+}
+
+interface Props {
+  state: InvestigationState;
+  /** Open a query node's result (SQL + rows) in the source panel — makes the
+   *  dataset/code nodes clickable. */
+  onShowSource?: (data: SourceOpen) => void;
+}
+
+export function ThinkingTrace({ state, onShowSource }: Props) {
+  const steps = deriveSteps(state);
+  // Type only while the turn is live; a restored/finished trace renders whole.
+  const live = state.status === "running";
+
+  return (
+    <div className="py-1">
+      {/* R16 P3 — no dashboard chrome: the tree itself is the progress display.
+          (The wrapper's label carries running/complete; a step counter and a
+          gradient bar read as status theater, not thinking.) */}
+      {/* Stepper rail */}
+      <div>
+        {steps.map((step, i) => {
+          const isLast = i === steps.length - 1;
+          return (
+            <div key={`${step.id}-${i}`} className="flex items-stretch gap-3 aug-step-in"
+              style={{ animationDelay: `${Math.min(i, 10) * 35}ms` }}>
+              {/* Rail: dot + connector segment to the next step */}
+              <div className="flex flex-col items-center w-3.5 shrink-0 pt-0.5">
+                <StepDot status={step.status} verdict={step.verdict} />
+                {!isLast && (
+                  <span className="flex-1 w-px my-0.5 min-h-[16px] bg-zinc-700/60" />
+                )}
+              </div>
+              {/* Content */}
+              <div className="min-w-0 pb-3 flex-1">
+                <p className={`text-xs leading-snug transition-colors duration-300 flex items-start gap-1.5 ${
+                  step.status === "pending" ? "text-zinc-500"
+                  : step.status === "running" ? "text-zinc-100 font-medium"
+                  : step.status === "error" ? "text-red-300"
+                  : "text-zinc-300"
+                }`}>
+                  {/* Icon inherits the label's colour so pending/running/done tones carry through. */}
+                  {step.icon && <span className="shrink-0 mt-px" aria-hidden>{step.icon}</span>}
+                  <span className="min-w-0">
+                    <TypeLine text={step.label} active={live && step.status === "running"} />
+                  </span>
+                </p>
+                {step.sublabel && (
+                  <p className={`aug-fs-xs mt-0.5 leading-snug aug-anim-fade ${
+                    step.verdict ? VERDICT_COLOR[step.verdict] : "text-[var(--t3)]"
+                  }`}>
+                    {step.sublabel}
+                  </p>
+                )}
+                {/* Nested named query steps — indented rail of what was asked of the data.
+                    Wrapped in .aug-disclose so the region grows smoothly when the first
+                    finding streams in mid-run; restored turns mount already-open (no
+                    transition fires on initial render), so history doesn't animate. */}
+                <div className="aug-disclose" data-open={!!step.substeps}>
+                  <div>
+                    {step.substeps && (
+                      <div className="mt-1.5 ml-0.5 border-l border-zinc-700/60 pl-2.5 space-y-0.5">
+                        {step.substeps.map((s, j) => {
+                          const clickable = !!onShowSource && (!!s.sql || !!(s.rows && s.rows.length));
+                          const title = s.title.length > 76 ? s.title.slice(0, 76) + "…" : s.title;
+                          const body = (
+                            <>
+                              <span className="text-zinc-500 shrink-0 mt-px" aria-hidden><Icon name="db" size={16} /></span>
+                              <span className="min-w-0 truncate">{title}</span>
+                            </>
+                          );
+                          return clickable ? (
+                            <button
+                              key={j}
+                              type="button"
+                              onClick={() => onShowSource!({
+                                columns: s.columns ?? [], rows: (s.rows as unknown[][]) ?? [],
+                                sql: s.sql ?? null, title: s.title,
+                              })}
+                              className="group/q w-full text-left aug-fs-xs leading-snug text-zinc-400 hover:text-zinc-200 flex items-center gap-1.5 aug-anim-fade rounded-[var(--r1)] -ml-1 px-1 py-0.5 hover:bg-zinc-500/10 transition-colors"
+                            >
+                              {body}
+                            </button>
+                          ) : (
+                            <p key={j} className="aug-fs-xs leading-snug text-zinc-400 flex items-start gap-1.5 aug-anim-fade py-0.5">
+                              {body}
+                            </p>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

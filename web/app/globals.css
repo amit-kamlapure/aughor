@@ -1,0 +1,1139 @@
+@layer theme, base, radix, components, utilities;
+@import "tailwindcss";
+@import "@radix-ui/themes/styles.css" layer(radix);
+@import "tw-animate-css";
+@import "../styles/tokens.css";
+@import "../aughor-v2/theme/tokens-v2.css";
+@import "../styles/type.css";
+@import "../styles/sql-tokens.css";
+@import "../styles/atlas.css";
+
+/* ── Instrument · the component layer ────────────────────────────────────────
+   The import order above is load-bearing: styles/tokens.css holds the Tailwind
+   palette bridge plus pre-theme values; aughor-v2/theme/tokens-v2.css is the active
+   Instrument token set and wins. Keep every @import bare and contiguous — Tailwind v4
+   silently drops an @import with a comment above or beside it, so comments live here.
+
+   The spec is web/aughor-v2/INSTRUMENT.md. Its thesis in one line: the product is a
+   claim about a number, so the interface is one warm monochrome plane where hairlines
+   carry the structure, colour is a data type, and only three things float — a popover,
+   a toast, a dialog. These rules are unlayered on purpose: they beat Tailwind's layered
+   utilities, which is what lets a class restyle a <Button> without touching its call site. */
+
+/* The app stamps [data-theme="dark"|"light"] on <html> (app/page.tsx theme effect);
+   before the effect runs there is NO attribute and the app renders its default DARK
+   look. `dark:` therefore matches explicit dark AND the un-stamped default, and turns
+   off only when light is stamped. */
+@custom-variant dark (&:is([data-theme="dark"] *, html:not([data-theme]) *));
+
+/* ── Font wiring (two families) ──────────────────────────────────────────────
+   Inter carries the UI; JetBrains Mono carries every figure, id, timestamp and
+   metric, and code. */
+@theme inline {
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), 'Consolas', monospace;
+  --font-code: var(--font-jetbrains-mono), 'Consolas', monospace;
+  /* The Briefing's paper: headlines only. System faces — nothing downloaded. */
+  --font-serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
+
+  /* ── Tailwind's size steps, pinned to OUR scale ───────────────────────────
+     Tailwind ships these in rem, and `html` below sets 1rem = 13px, so every
+     `text-xs` on the page was 0.75 × 13 = 9.75px — under the 11px floor. Pinned in px
+     they land on the scale by construction. The line heights are the spec's: 1.45 at
+     11 and 18, 1.55 at 12, 1.7 at 13, 1.5 at 15, 1.0 at 22. Keep in lockstep with
+     styles/type.css. */
+  --text-xs:   11px;
+  --text-xs--line-height: 1.45;
+  --text-sm:   12px;
+  --text-sm--line-height: 1.55;
+  --text-base: 13px;
+  --text-base--line-height: 1.7;
+  --text-lg:   15px;
+  --text-lg--line-height: 1.5;
+  --text-xl:   18px;
+  --text-xl--line-height: 1.45;
+  --text-2xl:  22px;
+  --text-2xl--line-height: 1;
+
+  /* Radius scale for harvested shadcn code (rounded-sm/md utilities and the
+     min(var(--radius-md),…) clamps in components/ui) — seated on 3 / 4 / 6.
+     rounded-lg/xl stay banned by lint:tokens; use rounded-[var(--r3)]. */
+  --radius-sm: var(--r1);
+  --radius-md: var(--r2);
+}
+
+/* ── Base ───────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+/* Focus is ONE ring everywhere: 2px --bfocus at 2px offset, never a border colour change
+   alone. :where() keeps it at zero specificity so a component that needs an inset ring
+   (a full-bleed row, a segmented item) can say so with a single class. */
+:where(a, button, input, select, textarea, summary, [tabindex], [contenteditable="true"]):focus-visible {
+  outline: 2px solid var(--bfocus);
+  outline-offset: 2px;
+}
+/* A field inside a framed control (the chat composer): the frame draws the ring. */
+.aug-focus-frame:focus-visible { outline: none; }
+
+html, body {
+  height: 100%;
+  font-family: var(--font-ui);
+  /* The reading size (2026-09-25); chrome stays 13. It follows the Theme's scaling — the one
+     knob for size since 2026-10-06 (90% reads as the old compact density did). */
+  font-size: calc(14px * var(--scaling));
+  background: var(--bg-0);
+  color: var(--t1);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+#__next, body > div:first-child { height: 100%; }
+
+/* Selected text: Radix's own rule — a tint of the accent, the text's colour left alone. */
+
+button { font-family: var(--font-ui); cursor: pointer; }
+/* Raw <button>s get the chrome-stripping reset. The shared <Button> (data-slot="button")
+   is EXEMPT so its variants render. :where() drops the reset to zero specificity, so an
+   .aug-* class on a raw button (a nav item, a tab, a segment) wins without a second class.
+   The tabs primitive's trigger (data-slot="tabs-trigger") is exempt for the same reason as
+   the Button: it is styled by utilities, and utilities sit in a layer, which an unlayered
+   rule beats whatever its specificity. With the reset on it, the active tab's underline and
+   colour never drew — unseen until the cockpit became the primitive's first user (Arc CT-4). */
+:where(button:not([data-slot="button"]):not([data-slot="tabs-trigger"])) { border: none; background: none; color: inherit; }
+input, textarea, select { font-family: var(--font-ui); font-size: 13px; color: var(--t1); }
+/* A form field's text is the field's own size (components/ui/field.ts). The rule above was
+   written for native fields and, unlayered, beat the size Radix gives a field's text: a 32px
+   field drew 13px beside a 14px select. A bespoke field carries no `data-field` and keeps it. */
+:is(input, textarea)[data-field="form"], [data-field="form"] :is(input, textarea) { font-size: revert-layer; }
+pre, code, kbd, samp {
+  font-family: var(--font-code);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+a { color: var(--blue3); text-decoration: none; }
+a:hover { color: var(--blue4); }
+
+/* Scroll area: a 3px --b3 thumb, no track. WebKit/Blink read the pseudo-elements; Blink
+   ignores them wherever scrollbar-width is set, so Firefox gets its own rule. */
+::-webkit-scrollbar { width: 3px; height: 3px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--b3); border-radius: var(--r1); }
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin; scrollbar-color: var(--b3) transparent; }
+}
+
+/* ── Layout ─────────────────────────────────────────────────────────────── */
+.aug-app { height: 100vh; overflow: hidden; display: flex; flex-direction: column; background: var(--bg-0); color: var(--t1); }
+.aug-body { flex: 1; display: flex; overflow: hidden; min-height: 0; }
+.aug-screen { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+
+/* ── Shell · topbar 48 ───────────────────────────────────────────────────── */
+.aug-topbar {
+  height: var(--topbar);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--b1);
+  /* Above the rail (z 60): the workspace switcher and the user menu open from here and
+     must float over it. The topbar is only 48px tall, so nothing below is covered. */
+  position: relative;
+  z-index: 70;
+}
+.aug-wordmark {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--t1);
+  white-space: nowrap;
+}
+.aug-workspace-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 260px;
+  padding: 3px 9px;
+  border-radius: var(--r2);
+  background: var(--bg-3);
+  border: 1px solid var(--b2);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--t1);
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out);
+}
+.aug-workspace-switcher:hover { border-color: var(--b3); }
+.aug-workspace-switcher[aria-expanded="true"] { background: var(--bg-4); border-color: var(--b3); }
+.aug-command {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 236px;
+  height: 26px;
+  padding: 0 9px;
+  background: var(--bg-3);
+  border: 1px solid var(--b2);
+  border-radius: var(--r2);
+  font-size: 12px;
+  color: var(--t3);
+  text-align: left;
+  cursor: text;
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+.aug-command:hover { border-color: var(--b3); }
+.aug-command kbd { margin-left: auto; font-size: 11px; color: var(--t3); }
+.aug-user-menu {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 7px 2px 3px;
+  border-radius: var(--r2);
+  border: 1px solid var(--b2);
+  font-size: 12px;
+  color: var(--t2);
+}
+.aug-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--b2);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--t1);
+}
+
+/* ── Shell · rail 248 ───────────────────────────────────────────────────── */
+.aug-sidebar {
+  width: var(--sidebar);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-nav);
+  border-right: 1px solid var(--b1);
+  /* Above any fixed content-area overlay (history backdrop z-40, etc.) so the rail
+     stays clickable whatever a panel is doing. */
+  position: relative;
+  z-index: 60;
+}
+/* Groups and their headings are as tight as every row in view at 1440×900 needs (design-mockups/rail-fit.html):
+   the rows keep their 28px on a 30px pitch, only the space around each group and its heading gave way. */
+/* The rail open, as labelled groups (the user, 2026-11-10, with a reference rail): each destination's name a small
+   muted label, its sections under it, each with its own icon — no fold, no rule between groups, only space. */
+/* Tighter (the user, 2026-11-11: "extra distance vertically between all the entries"): rows 26px with 1px between,
+   and less under each group. */
+.aug-nav-section { display: flex; flex-direction: column; gap: 1px; padding: 0 0 6px; }
+.aug-nav-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 3px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--t3);
+}
+/* Collapsed, the labels go (see the collapsed rules below) and the destinations are ruled off from one another. */
+:root[data-nav="collapsed"] .aug-sidebar .aug-nav-section { padding: 4px 0; }
+:root[data-nav="collapsed"] .aug-sidebar .aug-nav-section + .aug-nav-section { border-top: 1px solid var(--b0); }
+.aug-nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  /* A twentieth larger than it was (the user, 2026-11-11 — half as large again, then a tenth, were each too much):
+     the words 13 → 13.65px, the glyph 14 → 14.7px (app/page.tsx), the row 28 → 29px — then drawn closer, 26px. */
+  height: 26px;
+  flex-shrink: 0;
+  padding: 0 14px;
+  font-size: 13.65px;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--t2);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+/* Hover is a fill and nothing else — no bar, no weight — so it is never mistaken for active. */
+.aug-nav-item:hover { background: var(--bg-hover); color: var(--t1); }
+/* Active: one item in the whole rail — --bg-sel, weight 500, a 2px --accent bar at the edge. */
+.aug-nav-item[aria-current="page"],
+.aug-nav-item.active { background: var(--bg-sel); color: var(--t1); font-weight: 500; }
+.aug-nav-item[aria-current="page"]::before,
+.aug-nav-item.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+}
+/* A full-bleed row clips an outset ring against the rail's edge. */
+.aug-nav-item:focus-visible { outline-offset: -2px; }
+/* SQL editor folder tabs (2026-11-09): an unopened tab lifts on hover; the open one is the editor's own surface. */
+.aug-folder-tab:not([aria-selected="true"]):hover { background: var(--bg-2); color: var(--t2); }
+.aug-folder-tab:focus-visible { outline-offset: -2px; }
+.aug-nav-badge {
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: var(--r1);
+  background: var(--bg-3);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--t3);
+  font-variant-numeric: tabular-nums;
+}
+.aug-nav-badge-waiting { background: var(--amb1); color: var(--amb4); }
+/* The rail's own toggle, at its head. Left-aligned with every other icon rather than
+   pushed to the edge: the rail is a column of icons and the control that governs it
+   belongs in that column. (An earlier `justify-content: flex-end` here did nothing —
+   `.aug-nav-item` is full-width, so there was no free space to push into.) */
+.aug-nav-head { display: flex; padding: 8px 0 8px; border-bottom: 1px solid var(--b0); }
+/* Icon only: this is the one row whose meaning IS the rail, so a word for it is a
+   word about the furniture. The button keeps its aria-label and its tooltip. */
+.aug-nav-head .aug-nav-label { display: none; }
+.aug-nav-foot { margin-top: auto; display: flex; flex-direction: column; gap: 2px; padding: 8px 0 10px; border-top: 1px solid var(--b1); }
+/* Settings and the version on one line — the version said beside the row, not under it. */
+.aug-nav-foot-row { display: flex; align-items: center; }
+.aug-nav-foot-row .aug-nav-item { flex: 1; width: auto; min-width: 0; }
+
+/* The seven destinations (2026-11-10, lib/navDestinations.ts). A destination is a row like any other; the one that
+   holds the open page shows its sections under it, indented to the labels — 14px padding + a 14px icon + the 9px gap —
+   with no icon of their own, so the destination's icon stands for them. Rows keep their 28px on a 30px pitch. */
+.aug-nav-dests { display: flex; flex-direction: column; gap: 1px; padding: 6px 0; }
+.aug-nav-dest-row[aria-expanded="true"] { color: var(--t1); font-weight: 500; }
+.aug-nav-chev { margin-left: auto; display: inline-flex; color: var(--t3); transition: transform var(--dur-1) var(--ease-out); }
+.aug-nav-badge + .aug-nav-chev { margin-left: 6px; }
+.aug-nav-dest-row[aria-expanded="true"] .aug-nav-chev { transform: rotate(180deg); }
+.aug-nav-subs { display: flex; flex-direction: column; gap: 2px; padding: 2px 0 6px; }
+.aug-nav-item.aug-nav-sub { padding-left: 37px; }
+/* Open, a section is its words, indented under its destination's icon. Collapsed, it is its own glyph — the one its
+   row or tab had, which the rail draws only then (app/page.tsx) — ruled off under the destination, so the open destination's sections stay one click away, as every
+   row was when the rail had 22 (nothing the rail did is lost: the user, 2026-11-10). */
+:root[data-nav="collapsed"] .aug-sidebar .aug-nav-subs { border-top: 1px solid var(--b0); border-bottom: 1px solid var(--b0); padding: 2px 0; margin: 2px 0; }
+
+/* Collapsed — the toggle at the rail's foot, or ⌘\ (lib/navCollapse.ts): a column of icons. The state
+   is an attribute on <html>, set before the first paint, so the rail never renders open and snaps shut.
+   Labels, group names, the shortcut and the version line go; a count becomes a dot on its icon; a hover
+   names the row. No animation: the rail and the content snap to their widths together. */
+:root[data-nav="collapsed"] .aug-sidebar { width: var(--sidebar-collapsed); }
+:root[data-nav="collapsed"] .aug-sidebar .aug-nav-item { justify-content: center; gap: 0; padding: 0; }
+:root[data-nav="collapsed"] .aug-sidebar .aug-nav-label,
+:root[data-nav="collapsed"] .aug-sidebar .aug-nav-meta,
+:root[data-nav="collapsed"] .aug-sidebar .aug-nav-group,
+:root[data-nav="collapsed"] .aug-sidebar .aug-nav-chev { display: none; }   /* the sections stay: see .aug-nav-subs above */
+:root[data-nav="collapsed"] .aug-sidebar .aug-nav-badge {
+  position: absolute; top: 6px; left: calc(50% + 4px);
+  width: 6px; height: 6px; padding: 0; border-radius: var(--r-pill);
+  font-size: 0; background: var(--t3);
+}
+:root[data-nav="collapsed"] .aug-sidebar .aug-nav-badge-waiting { background: var(--amb3); }
+
+/* ── Shell · the LIVE activity strip ─────────────────────────────────────────
+   The only always-on motion in the app: ticks of the same feed the Agent Ops activity tail
+   reads, so the warehouse is visibly thinking from every screen. A tick's height is a count;
+   its hue, when it has one, is the series colour of the agent that dominated that bucket. */
+.aug-activity-strip {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  margin-left: 6px;
+  padding-left: 12px;
+  border-left: 1px solid var(--b1);
+}
+.aug-activity-label { font-size: 12px; font-weight: 600; color: var(--t3); }
+.aug-activity-ticks { display: flex; align-items: flex-end; gap: 3px; height: 16px; flex: none; }
+.aug-activity-tick { width: 3px; min-height: 2px; background: var(--b3); }
+.aug-activity-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--t2);
+}
+
+/* A group header's count: amber when something inside is waiting on a human, neutral when it is
+   only a count. It resets the header's tracking and case — a figure is never letter-spaced. */
+.aug-nav-group-badge {
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: var(--r1);
+  border: 1px solid var(--b2);
+  background: var(--bg-3);
+  font-size: 11px;
+  line-height: 1.45;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--t3);
+  font-variant-numeric: tabular-nums;
+}
+.aug-nav-group-badge-waiting { background: var(--amb1); border-color: var(--amb2); color: var(--amb4); }
+
+/* ── Shell · content header 44 ──────────────────────────────────────────── */
+.aug-content-header {
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--b1);
+}
+.aug-content-title { font-size: 15px; font-weight: 600; color: var(--t1); white-space: nowrap; }
+
+/* ── Selection — tabs underline, segmented fills; never both in one header ── */
+/* Tabs and segmented controls are Radix Themes' own since 2026-10-06 (components/ui/tab-strip.tsx,
+   components/ui/segmented.tsx). */
+
+/* ── Badge — 11px mono rectangles at 3px, tint 1 · border 2 · text 4 ─────── */
+
+.aug-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: var(--r1);
+  border: 1px solid var(--b2);
+  background: var(--bg-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.45;
+  white-space: nowrap;
+  color: var(--t2);
+}
+   .aug-tag-blue   { background: var(--blue1); border-color: var(--blue2); color: var(--blue4); }
+  .aug-tag-green  { background: var(--grn1);  border-color: var(--grn2);  color: var(--grn4); }
+  .aug-tag-amber  { background: var(--amb1);  border-color: var(--amb2);  color: var(--amb4); }
+    .aug-tag-red    { background: var(--red1);  border-color: var(--red2);  color: var(--red4); }
+ .aug-tag-violet { background: var(--vio1);  border-color: var(--vio2);  color: var(--vio4); }
+
+ .aug-tag-gray  { background: var(--bg-3);  border-color: var(--b2);    color: var(--t2); }
+
+/* ── Buttons — height 26 (small 22), radius 3, label 12/600 ────────────────
+   One primary per view. A press steps the background and the label holds still — except on
+   the primary, which also scales to 0.96 (.aug-press, below). Loading is the rest state plus ◐
+   at .8 opacity. */
+.aug-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 11px;
+  border-radius: var(--r1);
+  border: 1px solid var(--b2);
+  background: var(--bg-3);
+  color: var(--t1);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.aug-btn:hover, .aug-btn:active { background: var(--bg-4); border-color: var(--b3); }
+.aug-btn-primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.aug-btn-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+.aug-btn-primary:active {
+  background: color-mix(in srgb, var(--primary) 86%, black);
+  border-color: color-mix(in srgb, var(--primary) 86%, black);
+}
+
+.aug-btn-sm { height: 22px; padding: 0 8px; font-size: 11px; }
+.aug-btn:disabled, .aug-btn[aria-disabled="true"] {
+  background: var(--bg-1);
+  border-color: var(--b1);
+  color: var(--t3);
+  opacity: .6;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.aug-btn-primary:disabled, .aug-btn-primary[aria-disabled="true"] { background: var(--bg-4); border-color: var(--b2); opacity: .55; }
+
+.aug-btn[aria-busy="true"] { opacity: .8; }
+.aug-btn[aria-busy="true"]::before { content: "◐"; font-family: var(--font-mono); font-weight: 400; }
+
+/* ── Fields — height 28, radius 4, --bg-3 fill, --b2 border ───────────────── */
+.aug-input,
+.aug-select,
+.aug-textarea {
+  width: 100%;
+  padding: 0 9px;
+  background: var(--bg-3);
+  border: 1px solid var(--b2);
+  border-radius: var(--r2);
+  color: var(--t1);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+input.aug-input, select.aug-input, .aug-select { height: 28px; }
+textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-height: 1.55; }
+.aug-input:hover, .aug-select:hover, .aug-textarea:hover { border-color: var(--b3); }
+.aug-input::placeholder, .aug-textarea::placeholder { color: var(--t3); font-style: normal; }
+.aug-input[aria-invalid="true"], .aug-select[aria-invalid="true"], .aug-textarea[aria-invalid="true"] { border-color: var(--red2); }
+.aug-input:disabled, .aug-select:disabled, .aug-textarea:disabled {
+  background: var(--bg-1);
+  border-color: var(--b1);
+  color: var(--t3);
+  opacity: .6;
+  cursor: not-allowed;
+}
+/* A value that is a figure is set in mono. */
+.aug-input-figure { font-variant-numeric: tabular-nums; }
+.aug-field-error { font-size: 11px; line-height: 1.45; color: var(--red4); }
+
+/* ── Table — 32px rows, 13px cells, sticky sentence-case header on --bg-1 ───── */
+/* The dense table is Radix Themes' own since 2026-10-06 (components/ui/table.tsx). */
+
+/* ── Code — on --code-bg, one step below the canvas, never in a tinted box ── */
+.aug-code {
+  font-family: var(--font-code);
+  font-size: 11px;
+  line-height: 1.75;
+  background: var(--code-bg);
+  border: 1px solid var(--b1);
+  border-radius: var(--r2);
+  padding: 9px 11px;
+  overflow-x: auto;
+  white-space: pre;
+  color: var(--t2);
+}
+
+/* ── Panel — one plane: a hairline frame, never a shadow ─────────────────── */
+.aug-panel {
+  background: var(--bg-2);
+  border: 1px solid var(--b1);
+  border-radius: var(--r3);
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+.aug-panel-interactive:hover { border-color: var(--b3); }
+
+/* ── Callout — tint 1, border 2, a 3px left rule in hue 3 ─────────────────── */
+/* A callout is Radix Themes' own since 2026-10-06 (components/ui/callout.tsx). */
+
+/* ── Status dot — 7px, the only round chrome ─────────────────────────────── */
+.aug-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--t4); }
+.aug-dot-live{ background: var(--grn3); }
+
+.aug-dot-idle{ background: var(--t4); }
+.aug-dot-live{ animation: aug-pulse 1.05s var(--ease-inout) infinite; }
+
+/* ── Progress — a 3px rule, never a ring; the figure is printed beside it ─── */
+.aug-progress{ height: 3px; background: var(--bg-4); border-radius: var(--r1); overflow: hidden; }
+
+/* ── Overlay — the only three things allowed to float ────────────────────── */
+.aug-popover,
+.aug-tooltip {
+  background: var(--bg-3);
+  border: 1px solid var(--b2);
+  border-radius: var(--r2);
+  box-shadow: var(--shadow-sm);
+  color: var(--t1);
+}
+.aug-tooltip { padding: 7px 9px; font-size: 11px; line-height: 1.45; }
+/* A toast is a Themes callout since 2026-10-06 (components/ui/toast.tsx). */
+.aug-dialog {
+  background: var(--bg-1);
+  border: 1px solid var(--b2);
+  border-radius: var(--r3);
+  box-shadow: var(--shadow-md);
+  color: var(--t1);
+}
+
+/* ── Separator — --b1 between blocks, --b0 between rows ──────────────────── */
+
+/* ── Utilities ───────────────────────────────────────────────────────────── */
+.aug-mono { font-family: var(--font-mono); }
+/* The pending mark: a control that is working keeps its rest state and gains ◐.
+   Static on purpose — there are no spinners anywhere in the product. */
+.aug-pending { display: inline-block; flex-shrink: 0; font-family: var(--font-mono); font-weight: 400; line-height: 1; opacity: .8; }
+
+/* ── Four universal states · empty ───────────────────────────────────────── */
+.aug-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 560px;
+  padding: 16px;
+}
+/* The ONE place the seventh size lives: an icon rendered at 28px in an empty state. */
+.aug-empty-glyph { display: inline-flex; color: var(--b3); }
+.aug-empty-title { font-size: 13px; font-weight: 600; color: var(--t1); }
+.aug-empty-body { font-size: 12px; line-height: 1.6; color: var(--t2); }
+.aug-empty-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 2px; }
+.aug-empty-inline { max-width: none; gap: 8px; padding: 12px 0; color: var(--t3); }
+
+/* ── Four universal states · error, partial — and the refusal ────────────────
+   Error: three sentences in order — what failed, what it means, what to do — carrying the run
+   id and the exact object so it pastes into a ticket; Retry is never the only door offered.
+   Partial: Aughor's most important state. A real answer with a named hole, the hole stated in
+   the same breath as the figure. Refusal: the proudest state — confident, specific, and
+   offering the nearest answerable question; never an apology, never a dead end. */
+/* The boxed states are Themes callouts since 2026-10-06 (components/ui/states.tsx); the type inside is still theirs. */
+.aug-state { gap: 6px; }
+.aug-state-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.aug-state-kind {
+  font-size: 12px;
+  font-weight: 600;
+  color: inherit;   /* the callout's own hue: red for an error or a refusal, amber for a partial */
+}
+.aug-state-meta { margin-left: auto; font-size: 12px; color: var(--t3); white-space: nowrap; }
+.aug-state-claim { font-size: calc(14px * var(--scaling)); line-height: 1.6; color: var(--t1); }
+.aug-state-what { font-size: 12px; line-height: 1.6; color: var(--t1); }
+.aug-state-detail { font-size: 12px; line-height: 1.6; color: var(--t2); }
+.aug-state-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 2px; }
+.aug-state-ticket { font-size: 11px; line-height: 1.6; color: var(--t3); }
+.aug-state-ticket-id { font-family: var(--font-mono); color: var(--t2); }
+
+/* Beside a partial answer: one bar per attributed driver, the unattributed remainder hatched. */
+.aug-partial-bars { display: flex; flex-direction: column; gap: 5px; }
+.aug-partial-bar { display: flex; align-items: center; gap: 8px; }
+.aug-partial-bar-label { width: 64px; flex: none; font-size: 12px; color: var(--t2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aug-partial-bar-fill { height: 7px; flex: none; background: var(--chart-deemph); }
+.aug-partial-bar-value { margin-left: auto; font-size: 12px; color: var(--t3); font-variant-numeric: tabular-nums; }
+.aug-partial-bar-unknown .aug-partial-bar-value { color: var(--amb4); }
+/* Unknown-not-zero: the hatch is the one grammar for a magnitude nobody could attribute. */
+.aug-hatch { background: repeating-linear-gradient(90deg, var(--amb3) 0 4px, transparent 4px 8px); }
+
+/* ── The trust system — Aughor's signature ───────────────────────────────────
+   Readable at 11px, never shouting, instantly told apart from ordinary chrome. */
+
+/* Guard verdict: three outcomes only — passed ✓, warned ◈, refused ✕. A 1px border and no fill,
+   so it reads as an instrument reading rather than a badge. */
+/* A guard chip and a receipt link are Themes badges since 2026-10-06 (components/ui/trust.tsx). */
+
+/* Receipt chain: query → guard → guard → figure, one horizontal run drawn identically wherever
+   it appears. A broken link is a red segment with the chain intact — never a missing chain. */
+.aug-receipt-chain { display: inline-flex; flex-wrap: wrap; align-items: center; row-gap: 4px; }
+.aug-receipt-arrow { padding: 0 5px; font-family: var(--font-mono); font-size: 11px; color: var(--b3); }
+
+/* Confidence: a computed number, never a mood. The rule fills left to right and the figure is
+   always printed beside it, because a bar alone cannot be cited. At or above 0.86 green, from
+   0.5 amber, below 0.5 red — and below 0.5 Aughor does not lead with it. */
+.aug-confidence { display: inline-flex; align-items: center; gap: 9px; }
+.aug-confidence-value { min-width: 30px; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.aug-confidence-note { font-size: 11px; color: var(--t2); }
+.aug-confidence-high .aug-confidence-value { color: var(--grn3); }
+.aug-confidence-mid  .aug-confidence-value { color: var(--amb3); }
+.aug-confidence-mid  .aug-confidence-fill  { background: var(--amb3); }
+.aug-confidence-low  .aug-confidence-value { color: var(--red3); }
+.aug-confidence-low  .aug-confidence-fill  { background: var(--red3); }
+
+/* Citation marker, inline in prose: the dashed underline says the figure is checkable, the
+   superscript says where. An amber superscript is a note that argues with the sentence. */
+/* A drawn result — an exhibit, a chart or table under an answer — is framed while the pointer is on it,
+   so a reader always sees which component they are on (the user, 2026-11-06). The whole component, at
+   half the accent; an outline, so nothing moves, offset so the frame clears the content. */
+.aug-hover-frame {
+  outline: 1px solid transparent;
+  outline-offset: 6px;
+  border-radius: var(--r3);
+  transition: outline-color 120ms ease-out;
+}
+.aug-hover-frame:hover, .aug-hover-frame:focus-within {
+  outline-color: color-mix(in srgb, var(--blue4) 50%, transparent);
+}
+
+/* Every dialog's scrim blurs what is behind it a little, so the dialog's own words are the ones a reader reads
+   (the user, 2026-11-07: "let the background blur a bit when pop ups appear"). On the scrim, never the page:
+   nothing behind it reflows, and closing the dialog restores it at once. Written once, unprefixed: the CSS
+   pipeline adds the prefix itself, and given both it kept only `-webkit-`, which Chrome ignores. */
+.rt-BaseDialogOverlay { backdrop-filter: blur(6px); }
+
+.aug-cite { font-family: var(--font-mono); border-bottom: 1px dashed color-mix(in srgb, currentColor 50%, transparent); cursor: help; }
+.aug-cite-ref { font-family: var(--font-mono); font-size: 11px; line-height: 0; vertical-align: super; color: var(--blue4); }
+.aug-cite-ref-dissent { color: var(--amb4); }
+
+/* Why this number: every figure answers it in one click, and the affordance IS the dashed
+   underline — no icon, no button, nothing added to the layout. The popover lists claim, matched
+   cell, snapshot, rows read and cost, then the doors: open in SQL · drill · dispute. */
+.aug-why { border-bottom: 1px dashed var(--b3); cursor: help; font-variant-numeric: tabular-nums; }
+.aug-why-card { display: flex; flex-direction: column; gap: 5px; min-width: 220px; padding: 9px 11px; }
+.aug-why-row { display: flex; justify-content: space-between; gap: 12px; font-family: var(--font-mono); font-size: 11px; line-height: 1.45; }
+.aug-why-key { color: var(--t3); }
+.aug-why-value { color: var(--t1); text-align: right; font-variant-numeric: tabular-nums; }
+.aug-why-actions { display: flex; gap: 12px; margin-top: 1px; padding-top: 6px; border-top: 1px solid var(--b1); }
+.aug-why-action { padding: 0; border: none; background: none; font-size: 12px; color: var(--blue3); cursor: pointer; }
+.aug-why-action:hover { color: var(--blue4); }
+
+/* ── Motion ────────────────────────────────────────────────────────────────
+   Every animation in the app, each explaining a state change. Durations are the three
+   tokens (--dur-1 90ms flip · --dur-2 160ms entrance · --dur-3 260ms layout); nothing
+   over 260ms, no spring, no overshoot. Scale and translate use the individual
+   properties so they compose with an element's own transform (CommandPalette centres
+   itself with translateX(-50%)). */
+@keyframes aug-fade-in   { from { opacity: 0 } to { opacity: 1 } }
+@keyframes aug-step-in   { from { opacity: 0; translate: 0 4px } to { opacity: 1; translate: 0 0 } }
+@keyframes aug-modal-pop { from { opacity: 0; scale: .98 } to { opacity: 1; scale: 1 } }
+@keyframes aug-check-pop { 0% { scale: 1 } 50% { scale: 1.04 } 100% { scale: 1 } }
+@keyframes aug-pulse     { 0%, 100% { opacity: .55 } 50% { opacity: 1 } }   /* brightness only: the dot is already coloured */
+@keyframes aug-caret     { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
+@keyframes aug-shimmer   { 0% { background-position: -180px 0 } 100% { background-position: 180px 0 } }
+@keyframes aug-shimmer-text { 0% { color: var(--t3) } 100% { color: var(--t1) } }
+
+/* step-in: a trace step, tool call or evidence row arrived — opacity and 4px up. */
+.aug-anim-up, .aug-step-in, .aug-stream-in { animation: aug-step-in var(--dur-2) var(--ease-out) both; }
+.aug-anim-fade { animation: aug-fade-in var(--dur-2) var(--ease-out) both; }
+/* modal-pop: a dialog is taking focus — 0.98 to 1 from its own centre. */
+.aug-anim-pop { animation: aug-modal-pop var(--dur-2) var(--ease-out) both; }
+/* check-pop: a guard just passed — the only scale change in the product, and it settles. */
+.aug-check-pop { animation: aug-check-pop var(--dur-1) var(--ease-out); }
+/* pulse: something is running right now. */
+.aug-pulse-dot { animation: aug-pulse 1.05s var(--ease-inout) infinite; }
+/* streaming-caret: the agent is still writing — a block caret at the last glyph. */
+.aug-caret {
+  display: inline-block;
+  width: .5em;
+  height: 1em;
+  margin-left: .15em;
+  vertical-align: text-bottom;
+  background: var(--blue3);
+  animation: aug-caret 1s steps(1) infinite;
+}
+/* shimmer: a skeleton is waiting on real data. */
+.aug-skeleton,
+.aug-shimmer {
+  background: linear-gradient(90deg, var(--bg-3) 0%, var(--bg-4) 50%, var(--bg-3) 100%);
+  background-size: 360px 100%;
+  animation: aug-shimmer 1.1s linear infinite;
+}
+/* The text form of the same cue: a readable label while something streams. Solid text that
+   breathes between the muted step and the text's own — not a gradient clipped to the glyphs,
+   which decorated the label and painted over any colour it carried; and not --t3 to --t2,
+   which are one Radix step (gray-11) since 2026-10-06, so that sweep had stopped moving. */
+.aug-shimmer-text {
+  color: var(--t3);
+  animation: aug-shimmer-text 1.1s ease-in-out infinite alternate;
+}
+/* press: the element's own :active background does the work; the label never moves. */
+.aug-pressable { transition: background-color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out); }
+
+/* press, the Primary only (decided 2026-09-14): the one main action per view also scales to 0.96 —
+   150ms ease-out, the colours keep --dur-1 — so a click on it is felt. Every other control keeps the
+   background step: in a dense row, a label that moves under the cursor reads as a misclick.
+   <Button static> keeps a Primary still. */
+.aug-press, .aug-btn-primary {
+  transition-property: background-color, border-color, color, scale;
+  transition-duration: var(--dur-1), var(--dur-1), var(--dur-1), 150ms;
+  transition-timing-function: var(--ease-out);
+}
+.aug-press:active:not(:disabled), .aug-btn-primary:active:not([aria-disabled="true"]) { scale: .96; }
+
+/* disclosure: a trace, row group or methodology block opening. The grid-template-rows
+   0fr→1fr trick: a transition, not an animation, so mounting open paints instantly and
+   only a live data-open flip moves. --dur-2, a row entering: rows open many times a session and
+   reflow the layout on every frame of the opening, so it stays short. */
+.aug-disclose {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur-2) var(--ease-out);
+}
+.aug-disclose[data-open="true"] { grid-template-rows: 1fr; }
+.aug-disclose > * { min-height: 0; overflow: hidden; }
+
+/* The Briefing's first open of a session (components/brief/firstOpen.ts): the verdict, then the
+   numbers that moved, then everything below the hero, 60ms apart — the order says what to read
+   first. BriefingPanel sets .aug-brief-entering for that one entrance and drops it after. */
+.aug-brief-entering [data-brief-hero] > div > * { animation: aug-step-in var(--dur-2) var(--ease-out) both; }
+.aug-brief-entering [data-brief-hero] > div > [data-brief-movers] { animation-delay: 60ms; }
+.aug-brief-entering [data-brief-hero] ~ * { animation: aug-step-in var(--dur-2) var(--ease-out) 120ms both; }
+
+/* ── Ontology canvas edge animations ─────────────────────────────────────── */
+@keyframes edge-flow         { to { stroke-dashoffset: -12; } }
+@keyframes edge-flow-verified { to { stroke-dashoffset: -33; } }
+
+/* A stroke icon standing in for a FILLED state (a favourited star, a pinned item): the
+   shape stays put and only its weight changes, so the eye reads state, not a new icon. */
+.aug-icon-filled { fill: currentColor; }
+
+/* ── Reduced motion — gentler, not none ────────────────────────────────────────────────────────
+   Nothing travels, grows or loops: a transform, a row growing open, a dash running along an edge.
+   A fade or a colour change still shows what changed, so transitions keep those — at each element's
+   own duration — and an entrance that moved arrives as a fade. Every other fallback is the FINISHED
+   frame, never the empty one. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-property: color, background-color, border-color, outline-color, text-decoration-color,
+      fill, stroke, opacity, box-shadow !important;
+  }
+  .aug-anim-fade, .aug-anim-up, .aug-step-in, .aug-stream-in, .aug-anim-pop,
+  .aug-brief-entering [data-brief-hero] > div > *, .aug-brief-entering [data-brief-hero] ~ * {
+    animation-name: aug-fade-in !important;
+    animation-duration: var(--dur-2) !important;
+  }
+  /* The caret is solid, the pulse is its lit colour, the skeleton a flat fill. */
+  .aug-caret { animation: none; opacity: 1; }
+  .aug-pulse-dot, .aug-dot-live { animation: none; opacity: 1; }
+  .aug-skeleton, .aug-shimmer { animation: none; background: var(--bg-4); }
+  .aug-shimmer-text { animation: none; background: none; color: var(--t2); }
+  .aug-check-pop { animation: none; }
+  .aug-press:active:not(:disabled), .aug-btn-primary:active:not([aria-disabled="true"]) { scale: none; }
+}
+
+/* ── Intelligence layer sections (Profile · Actions · Memory) ─────────────────────────────────
+   A section is set off by a rule, not a number: the numbered 44px gutter came out on 2026-09-14
+   (the user: it was not helping), when the Briefing went back to its verdict-first layout. */
+.aug-cite-ref-open { padding: 0 1px; cursor: pointer; }
+.aug-cite-ref-open:hover { text-decoration: underline; }
+
+/* ── The claim ledger (Aughor Intelligence · 05 Evidence) ─────────────────────────────────────
+   A claim is a row, not a card; the selected claim opens in the inspector beside the ledger. */
+.aug-fb-door[aria-pressed="true"] { font-weight: 600; }
+.aug-fb-door-validated[aria-pressed="true"] { background: var(--grn1); border-color: var(--grn2); color: var(--grn4); }
+.aug-fb-door-disputed[aria-pressed="true"] { background: var(--red1); border-color: var(--red2); color: var(--red4); }
+.aug-fb-door-needs_context[aria-pressed="true"] { background: var(--amb1); border-color: var(--amb2); color: var(--amb4); }
+
+/* ── Graph (Aughor Intelligence · 04 Graph) — the picture, and beside it what needs a person or the chosen node ── */
+/* One card on the ground (CLARITY §3): the canvas and its side panel share it, split by a row rule. */
+.aug-graph-map { flex: 1; display: flex; min-width: 0; min-height: 560px; overflow: hidden; background: var(--bg-1); border: 1px solid var(--card-edge); border-radius: var(--r3); }
+.aug-graph-canvas { flex: 1; min-width: 0; }
+.aug-graph-rail { width: 320px; flex: none; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; border-left: 1px solid var(--b0); }
+@media (max-width: 900px) {
+  .aug-graph-map { flex-direction: column; }
+  .aug-graph-rail { width: auto; border-left: 0; border-top: 1px solid var(--b0); }
+}
+
+/* ── Ontology (Aughor Intelligence · 03) — the card's physical table beside its business name ── */
+.aug-entity-card-table { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 11px; color: var(--t3); }
+
+/* ── Two skins (2026-09-25) — the rules that differ between them beyond the tokens ──
+   Dark follows Du Bois, light is a spreadsheet grid (INSTRUMENT.md §4 item 5, the study §9.3).
+   1 · Light draws gridlines both ways, like a sheet; dark keeps hairline rows. */
+/* 2 · Light's selection is a tint of the accent (green #107C41 until 2026-10-06; the accent a
+       person chose since): the active segment is the tint with accent text (dark keeps the
+       pressed fill), and the rail's active item reads in the accent over the same tint. The
+       active tab's underline and the rail's bar read --accent in both skins. */
+[data-theme="light"] .aug-nav-item[aria-current="page"],
+[data-theme="light"] .aug-nav-item.active { color: var(--accent-text); }
+/* 3 · State on a value: a bordered pill in dark (a Du Bois tag), a cell fill in light (a
+       Good / Bad / Neutral fill): the border goes and the corner squares. */
+[data-theme="light"] .aug-chip { border-color: transparent; border-radius: 2px; }
+/* 4 · The selected tile: a 2px green outline on the green tint in light (a selected cell),
+       a blue edge on the navy tint in dark. */
+[data-theme="light"] .aug-tile[data-open="true"] { box-shadow: inset 0 0 0 2px var(--accent); }
+
+/* ── Toolbar · 36 — the row under a workspace's header for what SCOPES the view: a range,
+   a filter, a search. One row, never beside the layer switcher (the study §2.3: the Agent
+   Ops range drew UNDER its tabs at 1024 when it lived in the header). */
+.aug-toolbar {
+  height: var(--shell-toolbar);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--b0);
+  background: var(--bg-0);
+  font-size: 12px;
+  color: var(--t2);
+}
+
+/* ── Page header · 44 — a detail page's own header inside a workspace layer: the breadcrumb
+   back to its index, the title, its chips, and its actions. Tabs (.aug-tabs) sit under it. */
+.aug-page-header {
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--b1);
+  background: var(--bg-0);
+}
+.aug-page-header .aug-content-title { overflow: hidden; text-overflow: ellipsis; }
+
+/* ── Rail · 360 — a detail page's own details, beside its body, on chrome. */
+.aug-rail {
+  width: 360px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding: 8px 16px 16px;
+  border-left: 1px solid var(--b1);
+  background: var(--bg-1);
+}
+.aug-rail-head { display: flex; align-items: center; gap: 8px; height: 36px; margin-bottom: 2px; }
+.aug-rail-row {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--b0);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--t1);
+}
+.aug-rail-row > span:first-child { font-size: 12px; color: var(--t3); }
+
+/* ── Layer tabs · 36 — the workspace's perspectives in their own row under the header (and
+   under the context bar when there is one): underlined tabs that scroll rather than clip, so
+   the header keeps its title and its one action. Light draws them as sheet tabs on chrome. */
+.aug-layer-tabs {
+  flex-shrink: 0;
+  padding: 0 16px;
+  background: var(--bg-0);
+  overflow-x: auto;
+  scrollbar-width: none;
+  white-space: nowrap;
+}
+.aug-layer-tabs::-webkit-scrollbar { display: none; }
+/* The context bar is a toolbar that holds SCOPE (a connection, a schema), not filters: its
+   controls sit left, spaced wider, on the page. */
+.aug-context-bar { gap: 16px; }
+
+/* ── The 2027 screens (docs/PLATFORM_2027_STUDY_2026-10-04.md §V) — a destination's page at
+   reading width, its numbered sections, and a claim cited as one line. Sizes come from the
+   type classes in the markup; nothing here sets one. */
+.aug-page { max-width: 920px; margin: 0 auto; padding: 20px 28px 48px; }
+.aug-page-wide { max-width: 1240px; }
+.aug-section { padding: 0 0 24px; }
+.aug-section + .aug-section { border-top: 1px solid var(--b0); padding-top: 20px; }
+.aug-section-head { display: flex; align-items: baseline; gap: 10px; min-height: 28px; margin-bottom: 8px; }
+/* A section's name never shrinks or breaks: a long note beside it takes the room left and wraps there instead
+   ("The inquiry" broke onto two lines in a narrow pane, 2026-10-27). */
+.aug-section-head > .aug-label { flex-shrink: 0; white-space: nowrap; }
+.aug-section-head > .aug-fs-sm { min-width: 0; }
+.aug-absent { margin: 0; padding: 6px 0; color: var(--t3); line-height: 1.55; max-width: 68ch; }
+.aug-claim-line { display: grid; gap: 4px; padding: 10px 0; border-bottom: 1px solid var(--b0); }
+.aug-claim-line:last-child { border-bottom: none; }
+.aug-ledger-open { height: auto; padding: 0; white-space: normal; text-align: left; justify-content: flex-start; line-height: 1.45; }
+.aug-lede { margin: 0 0 4px; color: var(--t1); line-height: 1.4; max-width: 60ch; text-wrap: balance; }
+.aug-item { display: grid; gap: 4px; padding: 12px 0; border-bottom: 1px solid var(--b0); }
+.aug-item:last-child { border-bottom: none; }
+.aug-item-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--t3); }
+.aug-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.aug-option { border: 1px solid var(--b1); border-radius: var(--r2); padding: 12px 14px; background: var(--bg-1); display: grid; gap: 6px; align-content: start; }
+.aug-option[data-chosen="true"] { border-color: var(--accent); background: var(--bg-sel); }
+.aug-form-grid { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 10px 16px; align-items: center; max-width: 720px; }
+.aug-form-grid > label { color: var(--t2); }
+
+/* ── The inspector · a cited record read beside the page that cites it. It sits over the page's
+   own right-hand column, inside the workspace, so the rail and the tabs never move. Each thing it
+   cites is a box of its own with its label above: a reader sees where one ends and the next
+   begins without a rule to count. */
+.aug-beside {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border-left: 1px solid var(--b2);
+  z-index: 5;
+}
+.aug-beside-head { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px 0 16px; border-bottom: 1px solid var(--b0); flex-shrink: 0; }
+.aug-beside-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px 16px; display: grid; gap: 16px; align-content: start; }
+.aug-beside-foot { display: grid; gap: 6px; padding: 12px 16px 14px; border-top: 1px solid var(--b0); flex-shrink: 0; }
+.aug-beside-title { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.4; color: var(--t1); text-wrap: balance; }
+.aug-beside-part { display: grid; gap: 6px; }
+.aug-beside-box {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--b1);
+  border-radius: var(--r3);
+  background: var(--bg-0);
+  text-align: left;
+  line-height: 1.45;
+}
+.aug-beside-box[data-chosen] { border-color: var(--accent); background: var(--bg-sel); }
+.aug-beside-link { height: auto; white-space: normal; justify-content: stretch; justify-items: start; font-weight: 400; cursor: pointer; }
+.aug-beside-link:hover { border-color: var(--b3); background: var(--bg-hover); }
+
+/* ── Radix Themes underneath (ROADMAP §6 item 44) ───────────────────────────────────────────
+   <html> is the Theme's element (app/theme-root.tsx). It keeps OUR typography: the browser's
+   16px at the root (so a rem is what it was, whatever the panel's scaling says), Inter, and the
+   figure face for code. Themes' components size themselves from its own scale. A Theme nested
+   under it — a dialog's or a menu's content, portalled into <body> — reads as the page does. */
+.radix-themes {
+  --default-font-family: var(--font-sans);
+  --code-font-family: var(--font-mono);
+  --cursor-button: pointer;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+}
+/* The page, as one layer under everything Radix portals into <body> (app/layout.tsx). */
+.aug-root { isolation: isolate; display: flex; flex-direction: column; flex: 1 1 0%; min-height: 100%; }
+/* A Themes ghost button bleeds into its neighbours by design (negative margins, to line its
+   label up with text). In a toolbar or a table cell that eats the gap, so ours sit still. */
+.rt-BaseButton:where(.rt-variant-ghost) { margin: 0; }
+/* The zoom buttons on every map: xyflow's own are near-white on either skin. */
+.react-flow {
+  --xy-controls-button-background-color: var(--bg-2);
+  --xy-controls-button-background-color-hover: var(--bg-hover);
+  --xy-controls-button-color: var(--t2);
+  --xy-controls-button-color-hover: var(--t1);
+  --xy-controls-button-border-color: var(--b1);
+  --xy-controls-box-shadow: 0 0 0 1px var(--b1);
+}
+/* A table's rows: Themes draws the table, the page says which row is hovered and which is open.
+   Both the record ledger and the shared table (components/ui/table.tsx) are Themes' size-1 table. */
+:is([data-ledger], [data-slot="table"]) .rt-TableRow:where(:hover) { background-color: var(--gray-a3); }
+:is([data-ledger], [data-slot="table"]) .rt-TableRow:is([aria-selected="true"], [data-state="selected"]) { background-color: var(--accent-a4); }
+:is([data-ledger], [data-slot="table"]) :is(.rt-TableCell, .rt-TableColumnHeaderCell).num { text-align: right; font-variant-numeric: tabular-nums; }
+/* A header row is not a row to pick. */
+:is([data-ledger], [data-slot="table"]) .rt-TableHeader .rt-TableRow:hover { background-color: transparent; }
+/* Columns are sized and their cells are short: a date or a chip broken over two lines doubles the
+   row for nothing. In a ledger the first column is the statement, and it alone wraps. */
+[data-ledger] .rt-TableCell:not(:first-child), [data-ledger] .rt-TableColumnHeaderCell,
+[data-slot="table"] :is(.rt-TableCell, .rt-TableColumnHeaderCell) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── Seams (2026-10-25, the user: "fine grey lines at the right places") ─────────────────────────────────
+   Stacked blocks read as sections when a hairline stands between them; a tab panel's first section does not
+   draw its own top rule under the strip's underline, or two lines stand where one belongs. */
+.aug-stack-rules > * { padding: 14px 0; }
+.aug-stack-rules > :first-child { padding-top: 0; }
+.aug-stack-rules > :last-child { padding-bottom: 0; }
+.aug-stack-rules > * + * { border-top: 1px solid var(--b0); }
+.aug-sections > section:first-child { border-top: 0; }
+
+/* ── The dense table's row (2026-10-25, the user's call): Radix's size-1 table sets a 36px
+   minimum on every cell; the compact row an operations console reads at is 30px, and our
+   cells already pad 4px around a 20px line. One variable, scaled with the Theme; a cell holding two lines keeps its
+   own height. Applies to the dense table and the ledger alike, never to a Radix table a page uses raw.
+   2026-11-10: the row is the look's Rows knob — 36px by default, 32 compact, 44 comfortable (the Evidence → Action
+   mockups; ROADMAP §6 item 64) — one variable here and in `lib/look.ts`'s ROW_PX for the virtualised grids. */
+:root { --row-h: 36px; }
+:root[data-rows="compact"] { --row-h: 32px; }
+:root[data-rows="comfortable"] { --row-h: 44px; }
+:is([data-ledger], [data-slot="table"]) { --table-cell-min-height: calc(var(--row-h) * var(--scaling)); }
+
+/* A slider on a dashboard's scenario: the app's own track and thumb, in either skin (a browser's is white on a dark page). */
+.aug-range { appearance: none; -webkit-appearance: none; height: 6px; border-radius: 3px; cursor: pointer; outline-offset: 4px; }
+.aug-range::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg-2); }
+.aug-range::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg-2); }
+
+/* ── Shell · the page's chrome (2026-11-10, ROADMAP §6 item 64; the Evidence → Action mockups) ──────────────────────
+   Every page: a title row when it has something to say (no breadcrumb row — the user, 2026-11-10: "I think we should
+   not have breadcrumbs at all"; the rail says where the reader is), one toolbar row when the page has filters or
+   pickers, a status strip at the app's foot, and one inspector at the right that opens on selection
+   (components/shell/). A page's own top rows fold into these — its actions into the title row, its filters and
+   pickers into the toolbar — and nothing is lost. */
+.aug-page-chrome { flex-shrink: 0; background: var(--bg-2); }
+/* The title row WRAPS rather than clips: a page's facts that do not fit beside its title take a second line under it,
+   whole, so nothing a page says is cut off at a narrow width. */
+.aug-titlebar { min-height: 44px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; padding: 6px 16px;
+  border-bottom: 1px solid var(--b0); }
+.aug-page-title { margin: 0; font-size: 18px; font-weight: 600; line-height: 1.25; color: var(--t1); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+.aug-title-facts { font-size: 12px; color: var(--t3); min-width: 0; flex: 0 1 auto; display: flex; align-items: center;
+  flex-wrap: wrap; gap: 6px 12px; }
+.aug-title-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.aug-page-toolbar { min-height: 44px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 4px 16px;
+  border-bottom: 1px solid var(--b0); font-size: 12px; color: var(--t2); }
+/* A title that is a control (a name renamed in place) stands in for the title's words. */
+.aug-title-slot { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; }
+.aug-title-slot:empty { display: none; }
+.aug-title-slot:not(:empty) + .aug-title-text { display: none; }
+/* A row a page put nothing in is not drawn: the portals fill these, and an empty one takes no height. */
+.aug-page-toolbar:empty, .aug-title-facts:empty, .aug-title-actions:empty { display: none; }
+.aug-page-toolbar > * { flex-shrink: 0; }
+.aug-page-toolbar .aug-toolbar-fill { flex: 1 1 auto; min-width: 8px; }
+
+.aug-status-strip { height: 28px; flex-shrink: 0; display: flex; align-items: center; gap: 0; padding: 0 12px;
+  background: var(--bg-1); border-top: 1px solid var(--b1); font-size: 12px; color: var(--t2); white-space: nowrap; overflow: hidden; }
+.aug-status-item { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.aug-status-sep { color: var(--b2); margin: 0 10px; }
+.aug-status-dot { display: inline-block; width: 7px; height: 7px; border-radius: var(--r-pill); background: var(--grn3); margin-right: 6px; }
+.aug-status-quiet { color: var(--t3); }
+.aug-status-page { display: inline-flex; align-items: center; min-width: 0; }
+.aug-status-page > * { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.aug-status-page > *::before { content: "│"; color: var(--b2); margin: 0 10px; }
+
+.aug-inspector { position: relative; flex-shrink: 0; display: flex; flex-direction: column; min-height: 0; background: var(--bg-2);
+  border-left: 1px solid var(--b1); }
+.aug-inspector-grip { position: absolute; left: -3px; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 2; }
+.aug-inspector-grip::after { content: ""; position: absolute; left: 2px; top: 50%; width: 2px; height: 28px; margin-top: -14px;
+  border-radius: var(--r1); background: var(--b2); }
+.aug-inspector-grip:focus-visible { outline-offset: 0; }
+.aug-inspector-head { padding: 10px 12px 8px 14px; border-bottom: 1px solid var(--b0); }
+.aug-inspector-row1 { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.aug-inspector-glyph { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: var(--r2);
+  background: var(--bg-sel); color: var(--accent-text); flex-shrink: 0; }
+.aug-inspector-title { font-size: 15px; font-weight: 600; color: var(--t1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.aug-inspector-kind { font-size: 11px; color: var(--t2); border: 1px solid var(--b1); border-radius: var(--r1); padding: 0 6px;
+  line-height: 18px; white-space: nowrap; flex-shrink: 0; }
+.aug-inspector-meta { margin-top: 6px; font-size: 12px; color: var(--t3); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.aug-inspector-tabs { flex-shrink: 0; padding: 0 8px; }
+.aug-inspector-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 12px 14px 20px; display: grid; gap: 14px; align-content: start;
+  font-size: 13px; color: var(--t1); }
+.aug-inspector-facts { margin: 0; display: grid; border-top: 1px solid var(--b0); }
+.aug-inspector-fact { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--b0); }
+.aug-inspector-fact dt { font-size: 12px; color: var(--t3); }
+.aug-inspector-fact dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.aug-inspector-note { font-size: 11px; color: var(--t3); margin-top: 2px; }
+
+.aug-freshness { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.aug-freshness-receipt { font-size: 11px; color: var(--accent-text); }
+/* A workspace's three rows, folded into the page's one toolbar row: its scope pickers, its tabs, its filters and action. */
+/* Order is set, not left to which portal mounted first: scope left, tabs, then the tools at the right end. */
+.aug-page-toolbar .aug-toolbar-scope { display: flex; align-items: center; gap: 12px; order: -1; }
+/* In the toolbar row the tabs sit on the row's own ground — no band of their own, no inset of their own. */
+.aug-page-toolbar .aug-layer-tabs { min-width: 0; background: transparent; padding: 0; }
+.aug-page-toolbar .aug-toolbar-tools { display: flex; align-items: center; gap: 8px; margin-left: auto; order: 1; }
+
+/* ── The SQL Editor as its mockup draws it (2026-11-10, design-mockups/evidence-to-action/sql-editor.html) ── */
+/* A key's name on a control: Run ⌘↵. */
+.aug-kbd { font-family: var(--font-mono); font-size: 11px; line-height: 16px; padding: 0 4px; margin-left: 4px;
+  border: 1px solid currentColor; border-radius: var(--r1); opacity: .7; }
+/* The editor's foot: the cursor, the dialect, the statements, what ⌘↵ runs, the problems. */
+.aug-editor-foot { display: flex; align-items: center; gap: 14px; padding: 3px 12px; min-height: 24px; flex-shrink: 0;
+  border-top: 1px solid var(--b0); background: var(--bg-1); color: var(--t3); white-space: nowrap; overflow: hidden; }
+/* The results' views: Results · Chart · Profile · Execution · Logs, underlined when open. */
+.aug-rtabs { display: flex; align-items: center; gap: 4px; padding: 0 10px; min-height: 36px; flex-shrink: 0;
+  border-bottom: 1px solid var(--b0); flex-wrap: wrap; }
+/* Tabs, not buttons: no edge at rest (the outline every other action wears), an underline under the open one. */
+.aug-rtabs .rt-BaseButton.aug-rtab { box-shadow: none; background: transparent; border-radius: 0; height: 36px; color: var(--t2); }
+.aug-rtabs .rt-BaseButton.aug-rtab:hover { color: var(--t1); background: transparent; }
+.aug-rtabs .rt-BaseButton.aug-rtab[aria-pressed="true"] { color: var(--t1); box-shadow: inset 0 -2px 0 var(--accent); }
+.aug-rview { flex: 1; min-height: 0; overflow: auto; padding: 12px 14px; }
+.aug-rview table { width: 100%; border-collapse: collapse; }
+.aug-rview th { text-align: left; font-weight: 500; color: var(--t3); padding: 4px 12px 6px 0; border-bottom: 1px solid var(--b1);
+  white-space: nowrap; }
+.aug-rview td { padding: 6px 12px 6px 0; border-bottom: 1px solid var(--b0); vertical-align: top; color: var(--t2); }
+.aug-rview td.num, .aug-rview th.num { text-align: right; font-variant-numeric: tabular-nums; }
+/* The rail's toggle in the top bar, left of the wordmark (moved from the rail's head): an icon on the bar's own
+   ground, no edge. */
+.aug-topbar .rt-BaseButton.aug-nav-toggle { box-shadow: none; background: transparent; color: var(--t2); margin-right: 2px; }
+.aug-topbar .rt-BaseButton.aug-nav-toggle:hover { background: var(--bg-hover); color: var(--t1); }
+/* A work surface's chrome (bare): no title row — only the toolbar row, and only when something is
+   in it, the page's actions at its right end. */
+.aug-bare-row { display: flex; align-items: center; border-bottom: 1px solid var(--b0); }
+.aug-bare-row > .aug-page-toolbar { flex: 1 1 auto; border-bottom: none; }
+.aug-bare-row > .aug-title-actions { padding-right: 16px; }
+.aug-bare-row:has(> .aug-page-toolbar:empty):has(> .aug-title-actions:empty) { display: none; }
+/* The way back, before the title (there is no breadcrumb): "‹ Data Canvas". */
+.aug-titlebar .rt-BaseButton.aug-title-back { box-shadow: none; color: var(--t2); padding-left: 2px; margin-left: -4px; }
+.aug-titlebar .rt-BaseButton.aug-title-back:hover { color: var(--t1); background: var(--bg-hover); }
+/* A title row with nothing to say but the section's own name is not drawn; a fact, an action or a title control (a name
+   renamed in place) arriving in it draws it. */
+.aug-titlebar[data-plain="true"]:has(> .aug-title-facts:empty):has(> .aug-title-actions:empty):has(> .aug-page-title > .aug-title-slot:empty) {
+  display: none; }

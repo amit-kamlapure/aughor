@@ -1,0 +1,229 @@
+"""Persisted entity bindings (P1 — the 'pin' step of the resolver).
+
+After the resolver proposes a role→table/column mapping and the deployer confirms it, the
+binding is stored as a first-class, org-scoped, versioned record so a re-deploy is
+reproducible and auditable (DOMAIN_EXPERTISE_PACKS.md §5.4). A pack is "bound" on a
+connection iff a binding row exists. Mirrors the SQLite idiom of aughor/feedback/verdicts.py.
+"""
+from __future__ import annotations
+
+import json
+import sqlite3
+from pathlib import Path
+from typing import Optional
+
+from aughor.org.context import current_org_id
+from aughor.util.time import now_iso as _now
+from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
+from aughor.db.sqlite_util import resolve_db_path
+from aughor.db.backend import connect_store
+from aughor.db.store_pool import ensure_once
+
+_DB_PATH = resolve_db_path("AUGHOR_PACK_BINDINGS_DB", Path(__file__).parent.parent.parent / "data" / "pack_bindings.db")
+
+# Schema evolution (DATA-05). The `pack_bindings` base table is v1; changes are Migration(v>=2).
+# NOTE: schema_name is part of the PK on fresh tables; on a pre-existing 3-key table it can
+# only be added as a plain column (SQLite can't alter a PK) — the historical best-effort behaviour.
+_MIGRATIONS = [
+    Migration(2, "schema_name on pack_bindings (3-key → 4-key)",
+              lambda c: add_column_if_missing(c, "pack_bindings", "schema_name", "TEXT NOT NULL DEFAULT ''")),
+    # Arc FA, FA-6: who bound the pack, and what it offered when it was bound — the snapshot an upgrade is diffed
+    # against. '' on every row bound before it (or without it — a script's save).
+    Migration(3, "bound_by and offered_json on pack_bindings (installed versions)", lambda c: _add_install_columns(c)),
+]
+
+
+def _add_install_columns(c: sqlite3.Connection) -> None:
+    add_column_if_missing(c, "pack_bindings", "bound_by", "TEXT NOT NULL DEFAULT ''")
+    add_column_if_missing(c, "pack_bindings", "offered_json", "TEXT NOT NULL DEFAULT ''")
+
+
+def _conn() -> sqlite3.Connection:
+    c = connect_store(_DB_PATH)
+    c.row_factory = sqlite3.Row
+    ensure_once(c, _ensure_schema)
+    return c
+
+
+def _ensure_schema(c: sqlite3.Connection) -> None:
+    # schema_name is part of the key: a connection can expose several schemas (missimi,
+    # swiss_air, …) and each needs its own binding — otherwise pinning one overwrites another.
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS pack_bindings (
+            org_id        TEXT NOT NULL,
+            pack_id       TEXT NOT NULL,
+            connection_id TEXT NOT NULL,
+            schema_name   TEXT NOT NULL DEFAULT '',
+            version       INTEGER NOT NULL DEFAULT 1,
+            bindings_json TEXT NOT NULL,
+            verified      INTEGER NOT NULL DEFAULT 0,
+            updated_at    TEXT NOT NULL,
+            PRIMARY KEY (org_id, pack_id, connection_id, schema_name)
+        )
+    """)
+    run_migrations(c, _MIGRATIONS, store="pack_bindings")
+    c.commit()
+
+
+def save_binding(
+    pack_id: str,
+    connection_id: str,
+    bindings: dict,
+    version: int = 1,
+    verified: bool = False,
+    schema: str = "",
+    *,
+    installed: Optional[dict] = None,
+) -> dict:
+    """Pin (or replace) the resolved binding for (org, pack, connection, schema). `bindings` is
+    a role→{table,column,value,confidence,evidence} map. `verified` flags that every recipe
+    dry-ran successfully. `schema` distinguishes datasets on a multi-schema connection.
+
+    ``installed`` (Arc FA, FA-6) is ``{"bound_by", "offered"}``: who bound it and the
+    snapshot of what the pack offered at ``version``. Without it the row is written exactly as it always was, and the
+    two columns are left as they stand."""
+    org = current_org_id()
+    now = _now()
+    payload = json.dumps(bindings)
+    c = _conn()
+    try:
+        if installed is None:
+            c.execute(
+                "INSERT INTO pack_bindings (org_id, pack_id, connection_id, schema_name, version, "
+                "bindings_json, verified, updated_at) VALUES (?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(org_id, pack_id, connection_id, schema_name) DO UPDATE SET "
+                "version=excluded.version, bindings_json=excluded.bindings_json, "
+                "verified=excluded.verified, updated_at=excluded.updated_at",
+                (org, pack_id, connection_id, schema or "", version, payload, 1 if verified else 0, now),
+            )
+        else:
+            c.execute(
+                "INSERT INTO pack_bindings (org_id, pack_id, connection_id, schema_name, version, "
+                "bindings_json, verified, updated_at, bound_by, offered_json) VALUES (?,?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(org_id, pack_id, connection_id, schema_name) DO UPDATE SET "
+                "version=excluded.version, bindings_json=excluded.bindings_json, "
+                "verified=excluded.verified, updated_at=excluded.updated_at, "
+                "bound_by=excluded.bound_by, offered_json=excluded.offered_json",
+                (org, pack_id, connection_id, schema or "", version, payload, 1 if verified else 0, now,
+                 str(installed.get("bound_by") or ""), json.dumps(installed.get("offered") or {}, sort_keys=True)),
+            )
+        c.commit()
+    finally:
+        c.close()
+    return {"org_id": org, "pack_id": pack_id, "connection_id": connection_id, "schema": schema or "",
+            "version": version, "bindings": bindings, "verified": verified, "updated_at": now}
+
+
+def load_binding(pack_id: str, connection_id: str, schema: str = "") -> Optional[dict]:
+    """The pinned binding for (current org, pack, connection, schema), or None if unbound."""
+    org = current_org_id()
+    c = _conn()
+    try:
+        row = c.execute(
+            "SELECT * FROM pack_bindings WHERE org_id=? AND pack_id=? AND connection_id=? AND schema_name=?",
+            (org, pack_id, connection_id, schema or ""),
+        ).fetchone()
+    finally:
+        c.close()
+    if not row:
+        return None
+    return {
+        "org_id": row["org_id"], "pack_id": row["pack_id"], "connection_id": row["connection_id"],
+        "schema": row["schema_name"], "version": row["version"], "bindings": json.loads(row["bindings_json"]),
+        "verified": bool(row["verified"]), "updated_at": row["updated_at"],
+    }
+
+
+def _install_of(row) -> dict:
+    try:
+        offered = json.loads(row["offered_json"] or "{}") if row["offered_json"] else {}
+    except (TypeError, ValueError):
+        offered = {}
+    return {
+        "pack_id": row["pack_id"], "connection_id": row["connection_id"], "schema": row["schema_name"],
+        "version": row["version"], "verified": bool(row["verified"]), "updated_at": row["updated_at"],
+        "bound_by": row["bound_by"] or "", "offered": offered if isinstance(offered, dict) else {},
+    }
+
+
+def load_install(pack_id: str, connection_id: str, schema: str = "") -> Optional[dict]:
+    """Arc FA, FA-6 — the binding as an install: its version, who bound it and the snapshot of what the pack offered
+    (``{}`` for a row bound before installed versions were recorded). None when the pack is not bound here."""
+    c = _conn()
+    try:
+        row = c.execute(
+            "SELECT * FROM pack_bindings WHERE org_id=? AND pack_id=? AND connection_id=? AND schema_name=?",
+            (current_org_id(), pack_id, connection_id, schema or ""),
+        ).fetchone()
+    finally:
+        c.close()
+    return _install_of(row) if row else None
+
+
+def installs_of(pack_id: str) -> list[dict]:
+    """Arc FA, FA-6 — every connection and schema this pack is bound on in the current org, as installs."""
+    c = _conn()
+    try:
+        rows = c.execute(
+            "SELECT * FROM pack_bindings WHERE org_id=? AND pack_id=? ORDER BY connection_id, schema_name",
+            (current_org_id(), pack_id),
+        ).fetchall()
+    finally:
+        c.close()
+    return [_install_of(r) for r in rows]
+
+
+def packs_bound_on(connection_id: str, schema: str = "") -> list[str]:
+    """The ids of the packs bound on (current org, connection, schema), read from this store alone — no pack is
+    loaded, so a caller on a hot path (the birth rite) pays one indexed read when nothing is bound."""
+    c = _conn()
+    try:
+        rows = c.execute(
+            "SELECT pack_id FROM pack_bindings WHERE org_id=? AND connection_id=? AND schema_name=? ORDER BY pack_id",
+            (current_org_id(), connection_id, schema or ""),
+        ).fetchall()
+    finally:
+        c.close()
+    return [r["pack_id"] for r in rows]
+
+
+def purge_connection(connection_id: str) -> int:
+    """Delete every pack binding for a connection in the current org (catalog
+    delete cascade). Returns the number of bindings removed."""
+    org = current_org_id()
+    c = _conn()
+    try:
+        n = c.execute(
+            "DELETE FROM pack_bindings WHERE org_id=? AND connection_id=?",
+            (org, connection_id),
+        ).rowcount
+        c.commit()
+        return n
+    finally:
+        c.close()
+
+
+def purge_schema(connection_id: str, schema: str) -> int:
+    """Delete pack bindings for one (connection, schema) in the current org — schema is
+    part of the binding PK, so a removed schema's bindings go without touching siblings.
+    Returns the number removed."""
+    org = current_org_id()
+    c = _conn()
+    try:
+        n = c.execute(
+            "DELETE FROM pack_bindings WHERE org_id=? AND connection_id=? AND schema_name=?",
+            (org, connection_id, schema or ""),
+        ).rowcount
+        c.commit()
+        return n
+    finally:
+        c.close()
+
+
+def is_bound(pack_id: str, connection_id: str, schema: str = "", *, require_verified: bool = False) -> bool:
+    """Is the pack bound on this connection+schema? `require_verified` additionally insists the
+    recipes dry-ran (the gate a pack must pass before it can answer)."""
+    b = load_binding(pack_id, connection_id, schema)
+    if not b:
+        return False
+    return bool(b["verified"]) if require_verified else True

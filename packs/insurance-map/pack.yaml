@@ -1,0 +1,18 @@
+id: insurance-map
+name: Insurance carriers and brokers, the industry map
+version: 1
+persona: >
+  What an insurer or broker usually records — distribution, underwriting, products and coverage,
+  policies, premiums, claims, recovery and the risk portfolio — each read as a thing or as a
+  part of one. Expectations, measured against the data.
+owner_team: Platform
+default_temporal_grain: period
+domains:
+  - insurance
+  - underwriting
+  - claims
+  - billing
+extends: []
+scope:
+  connections: ["*"]
+status: draft

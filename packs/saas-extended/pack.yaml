@@ -1,0 +1,19 @@
+id: saas-extended
+name: B2B SaaS, the wider vocabulary
+version: 1
+persona: >
+  B2B SaaS with the rest of what a software business usually records — pipeline, onboarding, product
+  adoption, pricing, usage metering, billing and collections, support and reliability, renewal and
+  expansion — each read as a thing or as a part of one. Still expectations, still measured.
+owner_team: Platform
+default_temporal_grain: period
+domains:
+  - saas
+  - subscription
+  - product analytics
+  - billing
+  - customer success
+extends: [b2b-saas]
+scope:
+  connections: ["*"]
+status: draft

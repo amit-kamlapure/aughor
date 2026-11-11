@@ -1,0 +1,282 @@
+diff --git a/web/lib/atlas/compose.test.ts b/web/lib/atlas/compose.test.ts
+index b23a4b35..d0a96dd7 100644
+--- a/web/lib/atlas/compose.test.ts
++++ b/web/lib/atlas/compose.test.ts
+@@ -146,6 +146,51 @@ describe("the Business Atlas composer", () => {
+     expect(twice.links).toHaveLength(commerce.links.length);                    // a link said twice is one line
+   });
+ 
++  describe("with more entities than can each carry a label", () => {
++    const id = (i: number) => `E${String(i).padStart(2, "0")}`;
++    const DOMAINS = ["North", "South", "East", "West", "Centre", "Edge"];
++    const many: AtlasModel = {
++      title: "A large business", measured: true,
++      entities: Array.from({ length: 33 }, (_, i) => ({ id: id(i), name: `Thing ${i}`, roles: i % 4 === 0 ? ["event"] : i % 4 === 1 ? ["party"] : [], domain: DOMAINS[i % 6], count: i * 10 })),
++      links: Array.from({ length: 32 }, (_, i) => ({ a: id(i), b: id(i + 1), verb: "next" })),
++      processes: [],
++    };
++    const inside = (s: { u: number; v: number; w: number; d: number }, d: typeof s) => s.u >= d.u && s.v >= d.v && s.u + s.w <= d.u + d.w + 1e-9 && s.v + s.d <= d.v + d.d + 1e-9;
++
++    it("stands them domain by domain: every entity inside its district, no district on another, all on the ground", () => {
++      const scene = compose(many);
++      expect(scene.mode).toBe("districts");
++      expect(scene.districts.map((d) => [d.name, d.entities]).sort()).toEqual(DOMAINS.map((n) => [n, n === "North" || n === "South" || n === "East" ? 6 : 5]).sort());
++      expect(scene.structures).toHaveLength(33);
++      for (const s of scene.structures) expect(inside(s, scene.districts.find((d) => d.name === s.district)!), s.name).toBe(true);
++      scene.structures.forEach((p, i) => scene.structures.slice(i + 1).forEach((q) => expect(overlap(p, q), `${p.name} on ${q.name}`).toBe(false)));
++      scene.districts.forEach((p, i) => scene.districts.slice(i + 1).forEach((q) => expect(overlap(p, q), `${p.name} on ${q.name}`).toBe(false)));
++      for (const d of scene.districts) { expect(d.u).toBeGreaterThanOrEqual(0); expect(d.v).toBeGreaterThanOrEqual(0); expect(d.u + d.w).toBeLessThanOrEqual(scene.extent.u); expect(d.v + d.d).toBeLessThanOrEqual(scene.extent.v); }
++      expect(scene.structures.find((s) => s.entity === id(0))!.why).toContain("It stands in North, the domain the ontology files it under.");
++    });
++
++    it("draws every link that crosses two districts as one line that says how many", () => {
++      const scene = compose(many);
++      expect(scene.links.every((l) => l.a.startsWith("domain:") && l.b.startsWith("domain:") && l.a !== l.b)).toBe(true);
++      expect(scene.links.reduce((sum, l) => sum + l.count, 0)).toBe(32);          // each neighbour is filed elsewhere
++      expect(new Set(scene.links.map((l) => `${l.a}|${l.b}`)).size).toBe(scene.links.length);
++    });
++
++    it("reads one district on its own: its entities alone, each a labelled structure, and no empty route", () => {
++      const scene = compose(many, { focus: "North" });
++      expect([scene.mode, scene.focus, scene.districts, scene.lanes]).toEqual(["entities", "North", [], []]);
++      expect(scene.structures.map((s) => s.entity).sort()).toEqual([0, 6, 12, 18, 24, 30].map(id));
++    });
++
++    it("files an entity the ontology gave no domain under its own district, and leaves a small model as it was", () => {
++      const unfiled = compose({ ...many, entities: many.entities.map((e, i) => (i < 4 ? { ...e, domain: undefined } : e)) });
++      expect(unfiled.districts.find((d) => d.name === "No domain")!.entities).toBe(4);
++      expect([compose(commerce).mode, compose(commerce).districts]).toEqual(["entities", []]);
++      const oneDomain = compose({ ...many, entities: many.entities.map((e) => ({ ...e, domain: "All" })) });
++      expect(oneDomain.mode).toBe("entities");                                    // one district would say nothing
++    });
++  });
++
+   it("copes with one entity and with none", () => {
+     expect(compose({ title: "", measured: true, entities: [{ id: "A", name: "A", roles: [] }], links: [], processes: [] }).structures).toHaveLength(1);
+     expect(compose({ title: "", measured: true, entities: [], links: [], processes: [] }).structures).toEqual([]);
+diff --git a/web/lib/atlas/compose.ts b/web/lib/atlas/compose.ts
+index 5615c781..ad99e28b 100644
+--- a/web/lib/atlas/compose.ts
++++ b/web/lib/atlas/compose.ts
+@@ -51,6 +51,8 @@ export interface AtlasEntity {
+   count?: number | null;
+   /** Who says what it does: the package and its own name for the entity. */
+   said_by?: string;
++  /** The domain the ontology files the entity under. Many entities are drawn domain by domain. */
++  domain?: string;
+ }
+ export interface AtlasStage {
+   key: string;
+@@ -88,8 +90,12 @@ export interface SceneStructure {
+   u: number; v: number; w: number; d: number; h: number;
+   count: number | null;
+   measured: boolean;
++  /** The district it stands in, when the scene is drawn domain by domain. */
++  district: string | null;
+   why: string;
+ }
++/** A domain's ground: the entities filed under it stand together on it. */
++export interface SceneDistrict { key: string; name: string; u: number; v: number; w: number; d: number; entities: number }
+ export interface SceneStage {
+   key: string;
+   label: string;
+@@ -110,13 +116,20 @@ export interface SceneLane {
+   moves: { from: string; to: string; key: string; count: number | null; u0: number; u1: number }[];
+   exit: { key: string; count: number | null; label: string; u: number; v: number } | null;
+ }
+-export interface SceneLink { a: string; b: string; verb: string; from: [number, number]; to: [number, number] }
++/** A link between two structures — or, between two districts, every link that crosses from one to the other. */
++export interface SceneLink { a: string; b: string; verb: string; count: number; from: [number, number]; to: [number, number] }
+ export interface AtlasScene {
+   title: string;
+   measured: boolean;
++  /** `entities`: each entity is a labelled structure. `districts`: too many for that, so they stand domain by domain
++   *  and one district at a time is read on its own. */
++  mode: "entities" | "districts";
++  /** The one domain this scene is of, when one district is read on its own. */
++  focus: string | null;
+   /** The ground: `u` runs along the routes, `v` across them. */
+   extent: { u: number; v: number };
+   structures: SceneStructure[];
++  districts: SceneDistrict[];
+   lanes: SceneLane[];
+   links: SceneLink[];
+ }
+@@ -125,6 +138,9 @@ const GAP = 1.3;          // between two structures of a row
+ const ROW_BUDGET = 27;    // how much of a row the back may hold before the rest stands in front
+ const STAGE_PAD = 2.2;    // a stage's platform, square
+ const STAGE_PITCH = 5.6;  // the least room a stage needs along its lane
++/** More structures than this cannot each carry a readable label: the scene is drawn domain by domain instead. */
++export const READABLE = 12;
++const UNFILED = "No domain";
+ 
+ const a = (word: string) => `${/^[aeiou]/.test(word) ? "an" : "a"} ${word}`;
+ 
+@@ -139,7 +155,17 @@ export function shapeOf(entity: Pick<AtlasEntity, "roles" | "drawn_as">): Shape
+   return role ? ROLE_SHAPE[role] : "plinth";
+ }
+ 
+-export function compose(model: AtlasModel): AtlasScene {
++interface Item { key: string; rank: number; w: number; d: number; u: number; v: number; e?: AtlasEntity; shape?: Shape; members?: Item[]; name?: string; du?: number; dv?: number }
++
++/** `focus` names one domain: the scene is then of its entities alone, each labelled. */
++export function compose(whole: AtlasModel, opts: { focus?: string | null } = {}): AtlasScene {
++  const filed = (e: AtlasEntity) => e.domain || UNFILED;
++  const focus = opts.focus ?? null;
++  const kept = focus === null ? null : new Set(whole.entities.filter((e) => filed(e) === focus).map((e) => e.id));
++  const model: AtlasModel = kept === null ? whole : {
++    ...whole, entities: whole.entities.filter((e) => kept.has(e.id)),
++    links: whole.links.filter((l) => kept.has(l.a) && kept.has(l.b)), processes: whole.processes.filter((p) => kept.has(p.entity)),
++  };
+   const through = new Set(model.processes.map((p) => p.entity));
+   const byId = new Map(model.entities.map((e) => [e.id, e]));
+   const near = new Map<string, Set<string>>(model.entities.map((e) => [e.id, new Set<string>()]));
+@@ -169,36 +195,59 @@ export function compose(model: AtlasModel): AtlasScene {
+   const rank = new Map(sequence.map((id, i) => [id, i]));
+ 
+   // 2 · shape: from the role. What goes through a process is drawn as its route, not as a structure.
+-  const items = model.entities.filter((e) => !through.has(e.id)).map((e) => {
++  const singles: Item[] = model.entities.filter((e) => !through.has(e.id)).map((e) => {
+     const shape = shapeOf(e);
+-    return { e, shape, w: SHAPES[shape].w as number, d: SHAPES[shape].d as number, u: 0, v: 0 };
++    return { key: e.id, rank: rank.get(e.id)!, e, shape, w: SHAPES[shape].w, d: SHAPES[shape].d, u: 0, v: 0 };
++  });
++
++  // 3 · too many to label each: stand them domain by domain. A district packs its own in rows, in sequence.
++  const byDistrict = singles.length > READABLE && new Set(singles.map((it) => filed(it.e!))).size > 1;
++  const items: Item[] = !byDistrict ? singles : [...new Set(singles.map((it) => filed(it.e!)))].sort().map((name) => {
++    const members = singles.filter((it) => filed(it.e!) === name).sort((x, y) => x.rank - y.rank);
++    const PAD = 0.9, IN = 0.8, limit = Math.max(8, Math.sqrt(members.reduce((sum, m) => sum + m.w * m.d, 0)) * 1.45);
++    let x = PAD, y = PAD, tall = 0, widest = 0;
++    const rows: Item[][] = [[]];
++    for (const m of members) {
++      if (x > PAD && x + m.w > limit + PAD) { for (const r of rows[rows.length - 1]) r.dv = y + tall - r.d; y += tall + IN; x = PAD; tall = 0; rows.push([]); }
++      m.du = x; rows[rows.length - 1].push(m); x += m.w + IN; tall = Math.max(tall, m.d); widest = Math.max(widest, x - IN);
++    }
++    for (const r of rows[rows.length - 1]) r.dv = y + tall - r.d;
++    return { key: `domain:${name}`, name, rank: Math.min(...members.map((m) => m.rank)), members, w: widest + PAD, d: y + tall + PAD, u: 0, v: 0 };
+   });
+ 
+-  // 3 · rows: the largest footprints stand behind the lanes, the rest in front; each row in sequence.
+-  const back: typeof items = [], front: typeof items = [];
++  // 4 · rows: the largest footprints stand behind the lanes, the rest in front; each row in sequence.
++  const gap = byDistrict ? 2.0 : GAP, budget = byDistrict ? 46 : ROW_BUDGET;
++  const back: Item[] = [], front: Item[] = [];
+   let used = 0;
+-  for (const it of [...items].sort((x, y) => y.w * y.d - x.w * x.d || rank.get(x.e.id)! - rank.get(y.e.id)!)) {
+-    if (used + it.w + GAP <= ROW_BUDGET) { back.push(it); used += it.w + GAP; } else front.push(it);
++  for (const it of [...items].sort((x, y) => y.w * y.d - x.w * x.d || x.rank - y.rank)) {
++    if (used + it.w + gap <= budget || !back.length) { back.push(it); used += it.w + gap; } else front.push(it);
+   }
+-  for (const row of [back, front]) row.sort((x, y) => rank.get(x.e.id)! - rank.get(y.e.id)!);
+-  const length = (row: typeof items) => row.reduce((sum, it) => sum + it.w + GAP, -GAP);
+-  const lanesIn: (AtlasProcess | null)[] = model.processes.length ? model.processes : [null];
++  for (const row of [back, front]) row.sort((x, y) => x.rank - y.rank);
++  const length = (row: Item[]) => row.reduce((sum, it) => sum + it.w + gap, -gap);
++  // A domain read on its own has no route to leave room for unless one of its entities goes through a process.
++  const lanesIn: (AtlasProcess | null)[] = model.processes.length ? model.processes : focus === null ? [null] : [];
+   const most = Math.max(0, ...model.processes.map((p) => p.stages.length));
+   const U = Math.max(length(back), front.length ? length(front) : 0, most ? most * STAGE_PITCH : 12) + 2.6;
+   const edge = 1.2 + Math.max(0, ...back.map((it) => it.d));
+   const laneV = (k: number) => edge + (model.processes.length ? 4.4 : 2.3) + k * 5.2;
+   const leaves = model.processes.some((p) => p.exit);
+-  const lastLane = laneV(lanesIn.length - 1);
+-  const frontV = lastLane + STAGE_PAD / 2 + (leaves ? 3.7 : 1.9);
+-  const V = (front.length ? frontV + Math.max(...front.map((it) => it.d)) : lastLane + STAGE_PAD / 2 + (leaves ? 3.5 : 1.3)) + 1.2;
+-  const lay = (row: typeof items, at: number, toEdge: boolean) => {
++  const lastLane = lanesIn.length ? laneV(lanesIn.length - 1) + STAGE_PAD / 2 : edge - 0.9;
++  const frontV = lastLane + (leaves ? 3.7 : 1.9) + (byDistrict ? 1.0 : 0);
++  const V = (front.length ? frontV + Math.max(...front.map((it) => it.d)) : lastLane + (leaves ? 3.5 : 1.3)) + 1.2 + (byDistrict ? 1.2 : 0);
++  const lay = (row: Item[], at: number, toEdge: boolean) => {
+     let u = (U - length(row)) / 2;
+-    for (const it of row) { it.u = u; it.v = toEdge ? at - it.d : at; u += it.w + GAP; }
++    for (const it of row) { it.u = u; it.v = toEdge ? at - it.d : at; u += it.w + gap; }
+   };
+   lay(back, edge, true);
+   lay(front, frontV, false);
++  for (const it of items) for (const m of it.members ?? []) { m.u = it.u + m.du!; m.v = it.v + m.dv!; }
+ 
+-  const centre = new Map<string, [number, number]>(items.map((it) => [it.e.id, [it.u + it.w / 2, it.v + it.d / 2]]));
++  // where a link ends: at the structure — or, domain by domain, at the district it stands in
++  const home = new Map<string, string>(), centre = new Map<string, [number, number]>();
++  for (const it of items) {
++    centre.set(it.key, [it.u + it.w / 2, it.v + it.d / 2]);
++    if (it.members) for (const m of it.members) home.set(m.key, it.key); else home.set(it.key, it.key);
++  }
+   const seedName = seeds.length ? byId.get(seeds[0])!.name : "";
+ 
+   const lanes: SceneLane[] = lanesIn.map((p, k) => {
+@@ -206,7 +255,7 @@ export function compose(model: AtlasModel): AtlasScene {
+     if (!p) return { process: null, name: "", measured: false, v, from: 1.3, to: U - 1.3, stages: [], moves: [], exit: null };
+     const n = p.stages.length;
+     const at = (i: number) => (n > 1 ? 3.3 + (i * (U - 6.6)) / (n - 1) : U / 2);
+-    if (!centre.has(p.entity)) centre.set(p.entity, [at(0), v]);
++    if (!home.has(p.entity)) { home.set(p.entity, p.entity); centre.set(p.entity, [at(0), v]); }
+     const stages: SceneStage[] = p.stages.map((s, i) => ({
+       key: s.key, label: s.label, index: i, shape: i === 0 ? "first" : i === n - 1 ? "last" : "mid", u: at(i), v,
+       reached: s.reached ?? null, past: s.past ?? null,
+@@ -220,28 +269,36 @@ export function compose(model: AtlasModel): AtlasScene {
+     return { process: p.id, name: p.name, measured: p.measured, v, from: 1.3, to: U - 1.3, stages, moves, exit };
+   });
+ 
+-  const structures: SceneStructure[] = [...back, ...front].map((it) => {
+-    const role = roleOf(it.e.roles), n = steps.get(it.e.id) ?? null, count = it.e.count ?? null;
+-    const bays = (it.shape === "site" || it.shape === "depot") && count !== null && count > 0 && count <= 12;
+-    const where = n === null ? "It links to no other entity, so it stands last."
++  const standing = (row: Item[]) => row.flatMap((it) => (it.members ? it.members.map((m) => ({ m, district: it.name! })) : [{ m: it, district: null as string | null }]));
++  const structures: SceneStructure[] = [...standing(back), ...standing(front)].map(({ m, district }) => {
++    const e = m.e!, shape = m.shape!, role = roleOf(e.roles), n = steps.get(e.id) ?? null, count = e.count ?? null;
++    const bays = (shape === "site" || shape === "depot") && count !== null && count > 0 && count <= 12;
++    const where = district !== null ? `It stands in ${district}, the domain the ontology files it under.`
++      : n === null ? "It links to no other entity, so it stands last."
+       : n === 0 ? "It is the most linked entity, so the others are sequenced from it."
+       : `It stands ${n} link${n === 1 ? "" : "s"} from ${seedName}; position is sequence, not geography.`;
+     return {
+-      key: `entity:${it.e.id}`, entity: it.e.id, name: it.e.name, role, shape: it.shape,
+-      u: it.u, v: it.v, w: it.w, d: it.d, h: SHAPES[it.shape].h, count, measured: model.measured,
+-      why: `Drawn as ${SHAPES[it.shape].says} because ${!role ? "no deployed package says what it is"
+-        : it.e.said_by ? `it matches ${it.e.said_by}, ${a(role)}` : `it is ${a(role)}`}${bays ? "; one bay each" : ""}. ${where}`,
++      key: `entity:${e.id}`, entity: e.id, name: e.name, role, shape,
++      u: m.u, v: m.v, w: m.w, d: m.d, h: SHAPES[shape].h, count, measured: model.measured, district,
++      why: `Drawn as ${SHAPES[shape].says} because ${!role ? "no deployed package says what it is"
++        : e.said_by ? `it matches ${e.said_by}, ${a(role)}` : `it is ${a(role)}`}${bays ? "; one bay each" : ""}. ${where}`,
+     };
+   });
++  const districts: SceneDistrict[] = [...back, ...front].filter((it) => it.members).map((it) => (
++    { key: it.key, name: it.name!, u: it.u, v: it.v, w: it.w, d: it.d, entities: it.members!.length }));
+ 
+-  // A link said twice in the model (found by the builder, then named by a person) is one line.
+-  const links: SceneLink[] = [], drawn = new Set<string>();
++  // A link said twice in the model (found by the builder, then named by a person) is one line; between two districts,
++  // every link that crosses is one line that says how many.
++  const drawn = new Map<string, SceneLink>(), said = new Set<string>();
+   for (const l of model.links) {
+-    const from = centre.get(l.a), to = centre.get(l.b), id = `${l.a}>${l.b}:${l.verb}`;
+-    if (!from || !to || l.a === l.b || drawn.has(id)) continue;
+-    drawn.add(id);
+-    links.push({ a: l.a, b: l.b, verb: l.verb, from, to });
++    const ha = home.get(l.a), hb = home.get(l.b), once = `${l.a}>${l.b}:${l.verb}`;
++    if (!ha || !hb || ha === hb || said.has(once)) continue;
++    said.add(once);
++    const id = byDistrict ? [ha, hb].sort().join("|") : once, was = drawn.get(id);
++    if (was) was.count += 1;
++    else drawn.set(id, byDistrict ? { a: [ha, hb].sort()[0], b: [ha, hb].sort()[1], verb: "", count: 1, from: centre.get([ha, hb].sort()[0])!, to: centre.get([ha, hb].sort()[1])! }
++      : { a: l.a, b: l.b, verb: l.verb, count: 1, from: centre.get(ha)!, to: centre.get(hb)! });
+   }
+-  links.sort((x, y) => x.a.localeCompare(y.a) || x.b.localeCompare(y.b) || x.verb.localeCompare(y.verb));
+-  return { title: model.title, measured: model.measured, extent: { u: U, v: V }, structures, lanes, links };
++  const links = [...drawn.values()].sort((x, y) => x.a.localeCompare(y.a) || x.b.localeCompare(y.b) || x.verb.localeCompare(y.verb));
++  return { title: model.title, measured: model.measured, mode: byDistrict ? "districts" : "entities", focus, extent: { u: U, v: V }, structures, districts, lanes, links };
+ }
+diff --git a/web/lib/atlas/model.ts b/web/lib/atlas/model.ts
+index 3a4af91c..eda358f4 100644
+--- a/web/lib/atlas/model.ts
++++ b/web/lib/atlas/model.ts
+@@ -18,6 +18,7 @@ export function modelOf(title: string, map: TypeMap, declared: ProcessesAndRules
+       // The package's word where one is deployed and matched; else only what the builder measured of the table.
+       roles: t.pack_roles?.length ? t.pack_roles : t.role === "event" ? ["event"] : [],
+       drawn_as: t.pack_drawn_as || undefined,
++      domain: t.domain || undefined,
+       count: t.rows ?? null,
+       said_by: t.pack && t.pack_object ? `the ${t.pack} package's ${t.pack_object}` : undefined,
+     })),

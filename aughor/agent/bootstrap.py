@@ -1,0 +1,507 @@
+"""Agent plugin registration — the plug-and-play manifest.
+
+The Platform exposes registries (purge hooks, and — later — schema annotators,
+ingestion sinks, post-execute hooks) but never imports the Agent. The Agent plugs
+*in* by registering its contributions here. ``register_agent_plugins()`` is called
+once at every host entry point — the API lifespan, the CLI, and the test-session
+conftest — so the agent's intelligence is live on the platform's seams.
+
+Idempotent: a module-level guard makes a second call a no-op, so the API lifespan
+re-registering after the conftest already did is safe (double-registration would
+double-run the hooks and corrupt the cascade counts — the guard prevents that).
+"""
+from __future__ import annotations
+
+_REGISTERED = False
+
+
+def register_agent_plugins() -> None:
+    """Wire every Agent contribution into the Platform's registries. Idempotent."""
+    global _REGISTERED
+    if _REGISTERED:
+        return
+    _register_purge_hooks()
+    _register_ingest_sinks()
+    _register_schema_annotators()
+    _register_authz_resolvers()
+    _register_value_sample_loader()
+    _register_column_facts_source()
+    _register_readings_loader()
+    _register_guard_receipt_forwarder()
+    _register_exclusions()
+    _register_object_policies()
+    _register_governed_metrics()
+    _REGISTERED = True
+
+
+def _register_governed_metrics() -> None:
+    """2026-11-06 — the governed metrics a chart's axis may be named by (`answer/series_names.py`), readable by the
+    platform through the registry seam (no Platform→Agent import). Unregistered, axes are named by their columns."""
+    from aughor.kernel.registries.governed_metrics import register_metric_reader
+
+    def _reader(connection_id):
+        from aughor.semantic.metrics import list_metrics
+        return list_metrics(connection_id=connection_id)
+
+    register_metric_reader(_reader)
+
+
+def _register_column_facts_source() -> None:
+    """Arc NV-6 — where the SQL trust checks read a column's profiled facts (a text date's notation, the value range,
+    what the values mean) for the checks that say the notation, a truncating division and a scale mismatch at the
+    comparison. The profile cache registers itself when imported; importing it here means a fresh process has the
+    source before the first statement is checked, not after the first profile build happens to load it."""
+    import aughor.tools.profile_cache  # noqa: F401 — the import is the registration
+
+
+def _register_exclusions() -> None:
+    """The exploration principles §6 — what a person turned off, readable by the platform's SQL door and schema text
+    through the registry seam (no Platform→Agent import). Unregistered, nothing is turned off."""
+    from aughor.kernel.registries.exclusions import register_exclusions
+
+    def _refusal(connection_id, sql, dialect, default_schema):
+        from aughor.ontology.visibility import refusal_for
+        return refusal_for(connection_id, sql, dialect, default_schema=default_schema)
+
+    def _schema_text(connection_id, schema_text, default_schema):
+        from aughor.ontology.visibility import without_excluded
+        return without_excluded(connection_id, schema_text, default_schema=default_schema)
+
+    def _table_off(connection_id, schema, table):
+        from aughor.ontology.visibility import is_table_off
+        return is_table_off(connection_id, schema, table)
+
+    register_exclusions(refusal=_refusal, schema_text=_schema_text, table_off=_table_off)
+
+
+def _register_object_policies() -> None:
+    """Arc ED, ED-1 — the ontology's row policies and sensitive properties, applied at a connection's door through the
+    registry seam (no Platform→Agent import). Unregistered with the flags on, a request's statement is refused."""
+    from aughor.kernel.registries.object_policies import register_object_policies
+
+    def _applies() -> bool:
+        from aughor.ontology.security_sql import applies
+        return applies()
+
+    def _apply(connection_id: str, sql: str, dialect: str) -> str:
+        from aughor.ontology.security_sql import apply
+        return apply(connection_id, sql, dialect)
+
+    def _tenancy():
+        from aughor.ontology.security_sql import tenancy_words
+        return tenancy_words()
+
+    register_object_policies(applies=_applies, apply=_apply, tenancy=_tenancy)
+
+
+def _register_readings_loader() -> None:
+    """PENDING item 27 — the ontology's declared readings at a moment (a stock, a balance), readable by the
+    platform's trust checks through the registry seam (no Platform→Agent import)."""
+    from aughor.kernel.registries.readings import register_readings_loader
+
+    def _load(connection_id: str) -> dict:
+        from aughor.ontology.semiadditive import connection_declared_columns
+        return connection_declared_columns(connection_id)
+
+    register_readings_loader(_load)
+
+
+def _register_guard_receipt_forwarder() -> None:
+    """A4 — forward platform-side guard receipts (de-fan, preflight repair) to the
+    live progress sink, where the SSE stream turns them into ``guard_receipt``
+    frames. The kernel seam is a no-op until this registration, so a bare platform
+    stays agent-free."""
+    from aughor.agent.progress import emit_guard_receipt as _to_sink
+    from aughor.kernel.registries.execution_hooks import register_guard_receipt_hook
+
+    def _forward(guard, action, detail, before, after):
+        _to_sink(guard, action, detail=detail, before=before, after=after)
+
+    register_guard_receipt_hook("sse_sink", _forward)
+
+
+def _register_value_sample_loader() -> None:
+    """R5 — the profiler's persisted entity-value samples, readable by the platform's
+    filter guard through the registry seam (no Platform→Agent import)."""
+    from aughor.kernel.registries.value_samples import register_value_sample_loader
+
+    def _load(connection_id: str) -> dict:
+        from aughor.tools.profile_cache import load_value_samples
+        return load_value_samples(connection_id)
+
+    register_value_sample_loader(_load)
+
+
+# ── Authz resolvers (Pattern C) — invert security/authz's reach into agent stores ─
+
+def _register_authz_resolvers() -> None:
+    """Map an agent resource id → its connection id, so object-level authz can resolve
+    its tenant (conn→org) without the platform importing the agent's stores."""
+    from aughor.kernel.registries import resource_org as rreg
+
+    def _monitor_conn(monitor_id: str):
+        from aughor.monitors.store import get_monitor
+        m = get_monitor(monitor_id)
+        return m.conn_id if m else None
+
+    def _alert_conn(alert_id: str):
+        from aughor.monitors.store import get_alert
+        a = get_alert(alert_id)
+        return a.conn_id if a else None
+
+    def _brief_conn(sub_id: str):
+        from aughor.briefing.store import get_subscription
+        sub = get_subscription(sub_id)
+        return sub.conn_id if sub else None
+
+    rreg.register_resource_conn_resolver("monitor", _monitor_conn)
+    rreg.register_resource_conn_resolver("alert", _alert_conn)
+    rreg.register_resource_conn_resolver("brief", _brief_conn)
+
+    def _document_org(doc_id):
+        # A document carries its own owner (PENDING item 16) — resolved to the org directly.
+        from aughor.knowledge.indexer import document_org
+        return document_org(doc_id)
+    rreg.register_resource_org_resolver("document", _document_org)
+
+
+# ── Schema annotators (Pattern B) — invert db/connection.py's schema enrichment ─
+
+def _register_schema_annotators() -> None:
+    from aughor.agent import schema_annotators
+    schema_annotators.register()
+
+
+# ── Ingestion sinks (Pattern D) — invert connector → knowledge.indexer ─────────
+
+def _register_ingest_sinks() -> None:
+    from aughor.kernel.registries import ingestion
+
+    def _knowledge_sink(**doc):
+        from aughor.knowledge.indexer import index_text
+        return index_text(**doc)
+
+    def _investigation_index_sink(*, inv_id, question, headline, key_findings,
+                                  connection_id, query_history, hypotheses=None, cache=True):
+        from aughor.tools.prior_analyses import index_investigation, index_sql_examples
+        # `cache` False (a direct-mode run): its SQL still teaches the few-shot memory, but it is not an
+        # investigation and must not short-circuit one (PENDING item 24)
+        if cache:
+            index_investigation(inv_id, question=question, headline=headline,
+                                key_findings=key_findings, connection_id=connection_id)
+        if question and query_history:
+            index_sql_examples(inv_id, question=question, query_history=query_history,
+                               connection_id=connection_id, hypotheses=hypotheses)
+        return {}
+
+    def _connection_invalidated_sink(*, conn_id):
+        from aughor.tools.profile_cache import invalidate
+        invalidate(conn_id)
+        return {}
+
+    ingestion.register_ingest_sink("knowledge", _knowledge_sink)
+    ingestion.register_ingest_sink("investigation_index", _investigation_index_sink)
+    ingestion.register_ingest_sink("connection_invalidated", _connection_invalidated_sink)
+
+
+# ── Purge hooks (Pattern C) — invert db/purge.py's agent-store cascade ─────────
+
+def _register_purge_hooks() -> None:
+    from aughor.kernel.registries import purge_hooks as ph
+
+    # connection-keyed
+    ph.register_purge_hook("exploration", _exploration_conn)
+    ph.register_purge_hook("ontology", _ontology_conn)
+    ph.register_purge_hook("profile", _profile_conn)
+    ph.register_purge_hook("profile_cache", _profile_cache_conn)
+    ph.register_purge_hook("briefs", _briefs_conn)
+    ph.register_purge_hook("knowledge_cache", _knowledge_cache_conn)
+    ph.register_purge_hook("monitors", _monitors_conn)
+    ph.register_purge_hook("automations", _automations_conn)
+    ph.register_purge_hook("connection_kb", _connection_kb_conn)
+    ph.register_purge_hook("packs", _packs_conn)
+    ph.register_purge_hook("evidence", _evidence_conn)
+    ph.register_purge_hook("ambiguity_ledger", _ambiguity_conn)
+    ph.register_purge_hook("overlay_ledger", _overlay_conn)
+    ph.register_purge_hook("kinetic_inbox", _kinetic_inbox_conn)
+    ph.register_purge_hook("action_outbox", _action_outbox_conn)
+    ph.register_purge_hook("kinetic_grants", _kinetic_grants_conn)
+    ph.register_purge_hook("qdrant", _qdrant_conn)
+    # Idea 1 (2026-10-04) — three stores a deleted connection outlived, measured on the live
+    # install: its column-config and doc trees, its indexed schema documents, its watermarks.
+    ph.register_purge_hook("ontology_files", _ontology_files_conn)
+    ph.register_purge_hook("explore_watermark", _watermark_conn)
+    # 2026-10-11, the user: "Removing a connection means also removing its ontology, its metrics and related
+    # documents.. make that default" — every ontology tree from its own root (the people's accepted overrides
+    # live in the checkout, where no sweep of the state directory reaches), and every metric it owns.
+    ph.register_purge_hook("ontology_trees", _ontology_trees_conn)
+    ph.register_purge_hook("metrics", _metrics_conn)
+
+    # schema-keyed
+    ph.register_schema_purge_hook("explorer_files", _exploration_schema)
+    ph.register_schema_purge_hook("profile_bare", _profile_bare_schema)
+    ph.register_schema_purge_hook("profile", _profile_schema)
+    ph.register_schema_purge_hook("ontology", _ontology_schema)
+    ph.register_schema_purge_hook("knowledge_cache", _knowledge_schema)
+    ph.register_schema_purge_hook("watermark", _watermark_schema)
+    ph.register_schema_purge_hook("packs", _packs_schema)
+    ph.register_schema_purge_hook("profile_cache", _profile_cache_schema)
+    ph.register_schema_purge_hook("monitors", _monitors_schema)
+    # …and a removed dataset takes its own: its ontology trees, its indexed documentation, its metrics.
+    ph.register_schema_purge_hook("ontology_trees", _ontology_trees_schema)
+    ph.register_schema_purge_hook("metrics", _metrics_schema)
+    # …and its trusted queries: a connection's store, each read only by the tables it names (2026-10-12)
+    ph.register_schema_purge_hook("trusted_queries", _trusted_queries_schema)
+    # …and its findings' receipts: their ids carry the schema (`explorer.store.scoped_finding_id`), so the ledger rows
+    # under that prefix are the dataset's own. A hook, not a line in `db/purge`: the platform does not import the explorer.
+    ph.register_schema_purge_hook("finding_receipts", _finding_receipts_schema)
+
+    # investigation-keyed
+    ph.register_investigations_purge_hook("evidence", _evidence_inv)
+    ph.register_investigations_purge_hook("qdrant", _qdrant_inv)
+
+
+# connection-keyed hooks ------------------------------------------------------
+
+def _exploration_conn(conn_id, org_id):
+    """Exploration state (family store: rows + legacy files) for a whole connection.
+    Covers the sanitized-id variant too — ancient writes could carry either form."""
+    import re as _re
+    from aughor.explorer import store as explorer_store
+    n = explorer_store.purge_connection_state(conn_id)
+    safe = _re.sub(r"[^A-Za-z0-9._-]", "_", conn_id)
+    if safe != conn_id:
+        n += explorer_store.purge_connection_state(safe)
+    return {"exploration": n}
+
+
+def _ontology_conn(conn_id, org_id):
+    from aughor.ontology import store as ontology_store
+    ontology_store.invalidate(conn_id)
+    return {"ontology": 1}
+
+
+def _ontology_files_conn(conn_id, org_id):
+    """The column-config tree, the compiled doc tree, and the doc tree's INDEXED copy (the
+    `doctree::<id>::<schema>` documents, registry row and vectors) — a deleted connection's
+    schema documentation stayed searchable before this."""
+    from aughor.knowledge import indexer
+    from aughor.ontology import column_config, doctree
+    return {"column_config": column_config.purge_connection(conn_id),
+            "doc_tree": doctree.purge_connection(conn_id),
+            "schema_documents": indexer.purge_connection_doctrees(conn_id)}
+
+
+def _ontology_trees_conn(conn_id, org_id):
+    from aughor.ontology.removal import purge
+    return purge(conn_id)
+
+
+def _metrics_conn(conn_id, org_id):
+    from aughor.semantic.metrics import purge_scope
+    return {"metrics": purge_scope(conn_id)}
+
+
+def _ontology_trees_schema(conn_id, schema):
+    from aughor.ontology.removal import purge
+    return purge(conn_id, schema)
+
+
+def _metrics_schema(conn_id, schema):
+    from aughor.semantic.metrics import purge_scope
+    return {"metrics": purge_scope(conn_id, schema)}
+
+
+def _finding_receipts_schema(conn_id, schema):
+    from aughor.explorer.dossier import receipt_key
+    from aughor.kernel.ledger import Ledger
+    return {"finding_receipts": Ledger.default().purge_key_prefix(receipt_key(conn_id, f"{schema}:")).get("kernel_artifacts", 0)}
+
+
+def _trusted_queries_schema(conn_id, schema):
+    from aughor.semantic.trusted_queries import purge_scope
+    return {"trusted_queries": purge_scope(conn_id, schema)}
+
+
+def _watermark_conn(conn_id, org_id):
+    from aughor.explorer import watermark
+    had = watermark.has_connection(conn_id)
+    watermark.clear_watermark(conn_id)
+    return {"explore_watermark": 1 if had else 0}
+
+
+def _profile_conn(conn_id, org_id):
+    from aughor.business_profile import store as profile_store
+    profile_store.invalidate(conn_id)
+    return {"profile": 1}
+
+
+def _profile_cache_conn(conn_id, org_id):
+    from aughor.tools import profile_cache
+    profile_cache.invalidate(conn_id)
+    return {"profile_cache": 1}
+
+
+def _briefs_conn(conn_id, org_id):
+    from aughor.briefing import store as brief_store
+    return {"brief_subscriptions": brief_store.delete_for_connection(conn_id)}
+
+
+def _knowledge_cache_conn(conn_id, org_id):
+    from aughor.knowledge import briefing, patterns
+    return {"briefing_cache": briefing.invalidate(conn_id),
+            "patterns_cache": patterns.invalidate(conn_id)}
+
+
+def _monitors_conn(conn_id, org_id):
+    from aughor.monitors import store as monitor_store
+    return {"monitors": monitor_store.purge_connection(conn_id)}
+
+
+def _automations_conn(conn_id, org_id):
+    # Wave A1: an automation and its tick history are bound to one connection — a condition
+    # probes it and every effect targets it — so both die with the connection.
+    from aughor.automations import store as automation_store
+    return {"automations": automation_store.purge_connection(conn_id)}
+
+
+def _connection_kb_conn(conn_id, org_id):
+    from aughor.semantic import connection_kb
+    return {"knowledge": connection_kb.purge_connection(conn_id)}
+
+
+def _packs_conn(conn_id, org_id):
+    from aughor.packs import bindings, deltastore
+    return {"pack_bindings": bindings.purge_connection(conn_id),
+            "pack_deltas": deltastore.purge_connection(conn_id)}
+
+
+def _evidence_conn(conn_id, org_id):
+    # Reads the live investigation ids (history is platform) and drops their evidence
+    # BEFORE the platform deletes the history rows — same ordering db/purge.py had.
+    from aughor.db import history
+    from aughor.evidence import store as evidence_store
+    inv_ids = history.list_investigation_ids(conn_id, limit=100000)
+    return {"evidence_claims": evidence_store.purge_investigations(inv_ids)}
+
+
+def _ambiguity_conn(conn_id, org_id):
+    # Drop every crystallized ambiguity resolution for the deleted connection (I1 burn-down
+    # state is per-connection, so it dies with the connection).
+    from aughor.semantic import ambiguity_ledger
+    return {"ambiguity_resolutions": ambiguity_ledger.purge_connections([conn_id], org_id=org_id)}
+
+
+def _overlay_conn(conn_id, org_id):
+    # Wave K3: human overlay edits are per-connection annotations over that connection's data,
+    # so they die with the connection.
+    from aughor.actions import overlay
+    return {"overlay_edits": overlay.purge_connections([conn_id], org_id=org_id)}
+
+
+def _action_outbox_conn(conn_id, org_id):
+    # Arc OC-6: a declared action's calls on this connection, delivered or waiting — they die with it.
+    from aughor.actions import outbox
+    return {"action_outbox": outbox.purge_connections([conn_id])}
+
+
+def _kinetic_inbox_conn(conn_id, org_id):
+    # Wave A4: staged proposals name an action on this connection — they die with it.
+    from aughor.actions import inbox
+    return {"staged_proposals": inbox.purge_connection(conn_id)}
+
+
+def _kinetic_grants_conn(conn_id, org_id):
+    # Wave A4: a standing grant pre-authorizes a target on this connection — dies with it.
+    from aughor.actions import grants
+    return {"standing_grants": grants.purge_connection(conn_id)}
+
+
+def _qdrant_conn(conn_id, org_id):
+    # The connection's cached investigations + SQL examples (vector points keyed by
+    # connection_id). The connection-KB collection is handled by connection_kb.
+    from aughor.semantic.vector_store import available
+    if not available():
+        return {"qdrant_points": 0}      # nothing indexed, so nothing to purge
+    from aughor.semantic.vector_store import delete_by_filter, match_filter
+    from aughor.tools.prior_analyses import (
+        INVESTIGATIONS_COLLECTION,
+        SQL_EXAMPLES_COLLECTION,
+    )
+    filt = match_filter("connection_id", conn_id)
+    total = 0
+    for coll in (INVESTIGATIONS_COLLECTION, SQL_EXAMPLES_COLLECTION):
+        total += delete_by_filter(coll, filt) or 0
+    return {"qdrant_points": total}
+
+
+# schema-keyed hooks ----------------------------------------------------------
+
+def _exploration_schema(conn_id, schema):
+    """ONE schema's exploration run. Siblings stay, and so does the connection's own bare
+    run — it is a record of work (and, on a multi-schema connection, the siblings' work),
+    not a summary that goes stale; it goes with the connection."""
+    from aughor.explorer import store as explorer_store
+    return {"explorer_files": explorer_store.purge_schema_state(conn_id, schema)}
+
+
+def _profile_bare_schema(conn_id, schema):
+    """ONLY the connection-level 'All schemas' profile — stale once any schema goes.
+    Sibling schemas keep their own profiles (those are _profile_schema's job when
+    THEIR schema is removed)."""
+    from aughor.business_profile import store as profile_store
+    return {"profile_bare": profile_store.invalidate_bare(conn_id)}
+
+
+def _profile_schema(conn_id, schema):
+    from aughor.business_profile import store as profile_store
+    profile_store.invalidate(conn_id, schema)
+    return {"profile": 1}
+
+
+def _ontology_schema(conn_id, schema):
+    from aughor.ontology import store as ontology_store
+    ontology_store.invalidate(conn_id, schema)
+    return {"ontology": 1}
+
+
+def _knowledge_schema(conn_id, schema):
+    # briefing is schema-scoped; patterns is connection-level (stale once any schema goes).
+    from aughor.knowledge import briefing, patterns
+    return {"briefing_cache": briefing.invalidate(conn_id, schema),
+            "patterns_cache": patterns.invalidate(conn_id)}
+
+
+def _watermark_schema(conn_id, schema):
+    from aughor.explorer import watermark
+    return {"watermark": watermark.clear_schema(conn_id, schema)}
+
+
+def _packs_schema(conn_id, schema):
+    from aughor.packs import bindings
+    return {"pack_bindings": bindings.purge_schema(conn_id, schema)}
+
+
+def _profile_cache_schema(conn_id, schema):
+    from aughor.tools import profile_cache
+    profile_cache.invalidate(conn_id)
+    return {"profile_cache": 1}
+
+
+def _monitors_schema(conn_id, schema):
+    from aughor.monitors import store as monitor_store
+    return {"monitors": monitor_store.purge_schema(conn_id, schema)}
+
+
+# investigation-keyed hooks ---------------------------------------------------
+
+def _evidence_inv(inv_ids):
+    from aughor.evidence import store as evidence_store
+    return {"evidence_claims": evidence_store.purge_investigations(inv_ids)}
+
+
+def _qdrant_inv(inv_ids):
+    # Both collections (PENDING item 24): the investigation's entry AND every SQL example it taught — deleting an
+    # investigation used to leave its SQL steering the next answer's few-shot block.
+    from aughor.tools.prior_analyses import forget_answer
+    return {"qdrant_points": sum(forget_answer(inv_id) for inv_id in inv_ids)}

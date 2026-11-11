@@ -1,0 +1,93 @@
+#!/usr/bin/env node
+/**
+ * Raw-element ratchet (REC-U2).
+ *
+ * The app has a token-based primitive layer (components/ui/*), but 204 raw
+ * `<button>` elements were hand-styled before it existed. Retro-fitting all of them
+ * to <Button> is a per-button design job (variant inference; a blind codemod would
+ * add the default `bg-primary` and break custom styling — the review's own failure
+ * mode), so instead this gate FREEZES the drift: it fails if the raw-`<button>` count
+ * grows past the baseline. Convert buttons to <Button> opportunistically and lower
+ * BASELINE — a one-way ratchet, exactly like the backend ruff/silent-swallow ratchets.
+ *
+ * Not a boolean gate (like the token/format gates) — a monotone-decreasing budget.
+ */
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const WEB = join(fileURLToPath(new URL(".", import.meta.url)), "..");
+const ROOTS = ["components", "app"];
+const EXTS = [".tsx", ".ts"];
+
+// One-way ratchet. LOWER this as raw <button>s become <Button>; never raise it.
+// Until 2026-10-06 the pattern was `<button[ >]`, blind to a <button whose first attribute sits
+// on the next line: it counted 9 while 105 stood. The 32 that remain are raw on purpose — the
+// rail's rows, the home tiles, the ⌘K field, list and menu rows, full-width
+// disclosure headers, chips and inline tokens — each a layout a Themes button would centre and
+// size (the rail showed it). A plain action is never one of them. 32 → 31 (2026-10-12): the Inbox's
+// hand-rolled status menu became Radix Themes' own DropdownMenu. 31 → 29 (2026-10-12): Settings ▸ Appearance's theme
+// cards and the Organization playbook's disclosure header became <Button>s. (The Data Canvas list's filter chip, a
+// chip and raw on purpose, stays: the list was kept as it was — the user, 2026-10-12.)
+const BASELINE = 29;
+
+// `\s`, not a space: a <button whose first attribute sits on the next line is a raw button too
+// (three such went uncounted until 2026-10-06).
+const RAW_BUTTON = /<button[\s>]/g;
+
+// The same one-way ratchet for a <Button> with no edge. An action looks like a button before the pointer reaches it (the
+// user, 2026-11-03), so `plain` is only for a whole row, a bare icon, a name that opens what it names, or a button that
+// draws its own edge (components/ui/button.tsx). A new one is a decision: never raise this for an action, give it its edge.
+const PLAIN_BASELINE = 219;  // 230 → 224 (2026-11-10): the SQL Editor's catalog rows became the Catalog's `TreeRow`; 224 → 222: Agent runs' rows became register rows; 222 → 221: Evidence's claims; 221 → 219: Security & Audit's statement and error cells became the log's rows.
+const PLAIN_BUTTON = /variant="plain"/g;
+
+function* walk(dir) {
+  for (const name of readdirSync(dir)) {
+    if (name === "node_modules") continue;
+    const p = join(dir, name);
+    const st = statSync(p);
+    if (st.isDirectory()) yield* walk(p);
+    else if (EXTS.some((e) => p.endsWith(e))) yield p;
+  }
+}
+
+let count = 0;
+let plain = 0;
+const perFile = [];
+for (const root of ROOTS) {
+  for (const file of walk(join(WEB, root))) {
+    const text = readFileSync(file, "utf8");
+    if (!file.includes(".test.")) plain += (text.match(PLAIN_BUTTON) || []).length;
+    const n = (text.match(RAW_BUTTON) || []).length;
+    if (n) {
+      count += n;
+      perFile.push({ file: relative(WEB, file), n });
+    }
+  }
+}
+
+if (plain > PLAIN_BASELINE) {
+  console.error(
+    `✗ raw-element ratchet: ${plain} <Button variant="plain"> exceeds baseline ${PLAIN_BASELINE}. ` +
+      `An action needs its edge: use variant="ghost". Plain is for a row, a bare icon or a name.`,
+  );
+  process.exit(1);
+}
+
+if (count <= BASELINE) {
+  const slack = BASELINE - count;
+  console.log(
+    `✓ raw-element ratchet: ${count} raw <button> (baseline ${BASELINE}` +
+      (slack ? `; ${slack} under — lower BASELINE to ${count}` : "") +
+      `). ${plain} plain <Button> (baseline ${PLAIN_BASELINE}). Prefer <Button> from components/ui/button.`,
+  );
+  process.exit(0);
+}
+
+console.error(
+  `✗ raw-element ratchet: ${count} raw <button> exceeds baseline ${BASELINE} ` +
+    `(+${count - BASELINE}). New buttons must use <Button> (components/ui/button), not a raw <button>.`,
+);
+perFile.sort((a, b) => b.n - a.n);
+for (const { file, n } of perFile.slice(0, 15)) console.error(`  ${n.toString().padStart(3)}  ${file}`);
+process.exit(1);

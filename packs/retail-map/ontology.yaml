@@ -1,0 +1,219 @@
+# The omnichannel retail-chain industry vocabulary (AUGHOR_ATLAS_INDUSTRY_VOCABULARY_v1, 2026-11-11: industry `retail`,
+# 60 reference types) as an industry map: 58 objects. Two types are folded into a near-identical object rather than
+# named twice — Sales Associate into StoreEmployee (one staff table in nearly every chain), Cycle Count Event into
+# InventoryCount (a cycle count is a count of part of the stock).
+#
+# Two readings were made, and both are this package's, not the vocabulary's:
+#   * its classes are read onto the eight roles a map has, by meaning — the vocabulary's own class is not followed
+#     where it reads a document as a party (Supplier Invoice), a person or a period as a place (Store Employee,
+#     Operating Calendar) or reference data as an asset (SKU);
+#   * a record of activity is a PART of the thing it happened to (a till transaction's lines, tenders and receipt, a
+#     loyalty account's point movements, a purchase order's lines and receipts), never a thing beside it.
+# The vocabulary names no table spellings; every alias below is a guess the data confirms or leaves unmatched. An
+# industry map states EXPECTATIONS, never facts: nothing here creates an object, and one the data has no table for is
+# never proposed and never mentioned.
+objects:
+  # Enterprise & store operations.
+  - name: LegalEntity
+    roles: [party]
+    aliases: [legal_entities, legal_entity, company_codes, operating_companies]
+  - name: Region
+    roles: [place]
+    drawn_as: territory
+    aliases: [regions, region, sales_regions, districts, territories]
+  - name: Store
+    roles: [place]
+    drawn_as: storefront
+    aliases: [stores, store, shops, outlets, branches, store_locations]
+  - name: Department
+    roles: [place]
+    aliases: [departments, department, store_departments]
+    description: a section of a store, and the level sales are usually reported at
+  - name: StoreEmployee
+    roles: [party]
+    aliases: [store_employees, employees, staff, sales_associates, associates, cashiers]
+  - name: StoreShift
+    roles: [event]
+    aliases: [store_shifts, shifts, shift_schedules, rosters, staff_schedules]
+    description: a rostered or worked shift of an employee at a store
+  - name: OperatingCalendar
+    roles: [calendar]
+    aliases: [operating_calendars, operating_calendar, retail_calendar, fiscal_calendar, trading_calendar, store_hours]
+  # Merchandising & assortment.
+  - name: SKU
+    roles: [catalog]
+    aliases: [skus, sku, products, product, articles, product_variants]
+  - name: Category
+    roles: [catalog]
+    aliases: [categories, category, product_categories, merchandise_categories]
+  - name: Brand
+    roles: [catalog]
+    aliases: [brands, brand, product_brands]
+  - name: Assortment
+    roles: [catalog]
+    aliases: [assortments, assortment, store_assortments, assortment_plans, ranges]
+    description: which products a store or cluster of stores is meant to carry
+  - name: Planogram
+    roles: [catalog]
+    aliases: [planograms, planogram, shelf_plans]
+  - name: ShelfLocation
+    roles: [place]
+    aliases: [shelf_locations, shelf_positions, shelves, bays, fixtures]
+  - name: PriceList
+    roles: [catalog]
+    aliases: [price_lists, price_list, prices, retail_prices, price_books]
+  - name: Promotion
+    roles: [catalog]
+    aliases: [promotions, promotion, promos, offers, markdowns]
+  # Supplier & purchasing.
+  - name: Supplier
+    roles: [party]
+    aliases: [suppliers, supplier, vendors, vendor]
+  - name: TradeAgreement
+    roles: [asset]
+    drawn_as: contract
+    aliases: [trade_agreements, supplier_agreements, supplier_contracts, vendor_contracts, trading_terms]
+  - name: PurchaseRequisition
+    roles: [transaction]
+    aliases: [purchase_requisitions, purchase_requisition, requisitions, purchase_requests]
+  - name: PurchaseOrder
+    roles: [transaction]
+    aliases: [purchase_orders, purchase_order, supplier_orders, po_headers]
+    parts: [PurchaseOrderLine, GoodsReceipt]
+  - name: PurchaseOrderLine
+    roles: [event]
+    aliases: [purchase_order_lines, purchase_order_items, po_lines, po_items]
+  - name: GoodsReceipt
+    roles: [event]
+    aliases: [goods_receipts, goods_receipt, inbound_receipts, receiving]
+  - name: SupplierInvoice
+    roles: [transaction]
+    aliases: [supplier_invoices, vendor_invoices, ap_invoices, vendor_bills]
+  # Distribution & replenishment.
+  - name: DistributionCenter
+    roles: [place]
+    drawn_as: depot
+    aliases: [distribution_centers, distribution_centres, distribution_center, warehouses, warehouse, fulfilment_centers]
+  - name: BackroomLocation
+    roles: [place]
+    aliases: [backroom_locations, backrooms, stockrooms, stockroom_locations]
+  - name: StockPosition
+    roles: [stock]
+    aliases: [stock_positions, inventory_positions, stock_levels, inventory_levels, stock_on_hand, inventory]
+    description: stock on hand at a moment, per product and place
+  - name: InventoryCount
+    roles: [event]
+    aliases: [inventory_counts, stock_counts, stocktakes, physical_inventory, cycle_counts, cycle_count_events]
+    description: stock counted by hand, whole or in cycles
+  - name: ReorderPoint
+    roles: [catalog]
+    aliases: [reorder_points, reorder_rules, replenishment_rules, min_max_levels]
+  - name: ReplenishmentOrder
+    roles: [transaction]
+    aliases: [replenishment_orders, replenishment_order, store_orders, replenishment_requests]
+    description: a store's order on its distribution centre
+  - name: StoreAllocation
+    roles: [event]
+    aliases: [store_allocations, allocations, stock_allocations, merchandise_allocations]
+    description: stock assigned to a store ahead of its being sent
+  - name: StockTransfer
+    roles: [event]
+    aliases: [stock_transfers, stock_transfer, inventory_transfers, transfer_orders, store_transfers]
+  - name: RoutePlan
+    roles: [catalog]
+    aliases: [route_plans, route_plan, delivery_routes, routes]
+  # Point of sale.
+  - name: Register
+    roles: [asset]
+    aliases: [registers, register, tills, pos_terminals, pos_devices]
+  - name: POSTransaction
+    roles: [transaction]
+    aliases: [pos_transactions, pos_transaction, sales_transactions, store_sales, baskets, pos_sales]
+    parts: [POSLine, Tender, Receipt]
+    description: one sale at a till, read with its lines, how it was paid and its receipt
+  - name: POSLine
+    roles: [event]
+    aliases: [pos_lines, pos_line_items, sales_lines, transaction_lines, basket_lines, pos_transaction_lines]
+  - name: Tender
+    roles: [transaction]
+    aliases: [tenders, tender, pos_tenders, tender_lines, pos_payments]
+    description: one means of payment used on a sale
+  - name: Receipt
+    roles: [event]
+    aliases: [receipts, receipt, sales_receipts, pos_receipts, digital_receipts]
+  - name: ReturnTransaction
+    roles: [transaction]
+    aliases: [return_transactions, returns, pos_returns, store_returns, refunds]
+  # Customer & loyalty.
+  - name: Customer
+    roles: [party]
+    aliases: [customers, customer, shoppers, members, clients]
+    parts: [CustomerConsent]
+  - name: CustomerConsent
+    roles: [event]
+    aliases: [customer_consents, consents, consent, marketing_consent, opt_ins]
+  - name: CustomerSegment
+    roles: [catalog]
+    aliases: [customer_segments, segments, cohorts]
+  - name: LoyaltyAccount
+    roles: [asset]
+    aliases: [loyalty_accounts, loyalty_account, loyalty_members, rewards_accounts, loyalty_cards]
+    parts: [LoyaltyTransaction]
+  - name: LoyaltyTransaction
+    roles: [event]
+    aliases: [loyalty_transactions, points_transactions, loyalty_points_ledger, points_ledger]
+    description: points earned or spent on a loyalty account
+  - name: Voucher
+    roles: [asset]
+    aliases: [vouchers, voucher, gift_vouchers, gift_cards, coupons]
+  - name: CampaignResponse
+    roles: [event]
+    aliases: [campaign_responses, campaign_response, promotion_responses, offer_responses]
+  # Omnichannel fulfilment.
+  - name: OnlineOrder
+    roles: [transaction]
+    aliases: [online_orders, online_order, orders, web_orders, ecommerce_orders]
+  - name: ClickAndCollectOrder
+    roles: [transaction]
+    aliases: [click_and_collect_orders, click_collect_orders, bopis_orders, pickup_orders, collect_orders]
+    parts: [PickupAppointment]
+  - name: PickupAppointment
+    roles: [event]
+    aliases: [pickup_appointments, pickup_slots, collection_slots, collection_appointments]
+  - name: Reservation
+    roles: [transaction]
+    aliases: [reservations, reservation, stock_reservations, inventory_reservations, item_reservations]
+    description: stock held for a customer or an order
+  - name: PickingTask
+    roles: [event]
+    aliases: [picking_tasks, pick_tasks, picks, pick_lists]
+  - name: OrderHandoff
+    roles: [event]
+    aliases: [order_handoffs, handoffs, order_handovers, order_collections]
+    description: an order handed to the customer or to a carrier
+  - name: Delivery
+    roles: [event]
+    aliases: [deliveries, delivery, home_deliveries, shipments, shipment]
+  - name: Carrier
+    roles: [party]
+    aliases: [carriers, carrier, shipping_carriers, couriers]
+  # Store execution & loss.
+  - name: WorkTask
+    roles: [event]
+    aliases: [work_tasks, store_tasks, tasks, task_assignments]
+  - name: Audit
+    roles: [event]
+    aliases: [audits, audit, store_audits, compliance_audits]
+  - name: ComplianceFinding
+    roles: [event]
+    aliases: [compliance_findings, audit_findings, findings]
+  - name: SafetyInspection
+    roles: [event]
+    aliases: [safety_inspections, safety_inspection, store_inspections, inspections]
+  - name: ShrinkageEvent
+    roles: [event]
+    aliases: [shrinkage_events, shrinkage, shrink, stock_adjustments, inventory_adjustments]
+    description: stock lost between the books and the shelf
+  - name: LossIncident
+    roles: [event]
+    aliases: [loss_incidents, loss_incident, theft_incidents, loss_prevention_incidents, security_incidents]

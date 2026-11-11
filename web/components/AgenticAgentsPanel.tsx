@@ -1,0 +1,1976 @@
+"use client";
+import { ErrorState, Loading, ReadFailed } from "@/components/ui/states";
+
+/**
+ * Agentic Ops · Agents — ONE kind-labelled roster over both agent kinds. Since 2026-09-25
+ * (the user: "the click on the agent must go to that particular Agent") the roster is an
+ * INDEX and an agent is a PAGE: a breadcrumb back to the index, the name with its chips
+ * and actions, tabs (Overview · Runs · Map · Quality · Setup), and on Overview a details
+ * rail beside the body. Nothing opens inside the Overview layer; it opens here. The
+ * master–detail split it replaced kept a 268px list beside every agent and squeezed the
+ * agent's header into what was left. Consolidates three surfaces that each held a slice
+ * of the same question (AgentOverviewPanel, AgentsAdminPanel, page.tsx's AgentsPanel):
+ *
+ * - charter (built-in, job-metering spend): detail = identity read-out +
+ *   GOVERNANCE (enabled / budget / model pin — the real knobs; there are no
+ *   per-agent temperature or tool toggles because those mechanisms do not
+ *   exist here, and rendering them would be describing a fiction).
+ * - persona (user-defined, session-log spend): detail = OVERVIEW (H3's honest
+ *   run view: everything it did, spend or the flag that would measure it,
+ *   trace drill-ins) + CONFIGURE (instructions, bindings, goldens — the agent's
+ *   own regression suite) + hire-from-pack.
+ *
+ * Charter ≠ persona stays labelled on every row — the collision Wave H dodged
+ * twice does not come back in the merge.
+ */
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { CreateAgentFlow } from "@/components/agentops/CreateAgentFlow";
+import { AgentMap } from "@/components/agentops/AgentMap";
+import { RunTimeline, type TimelineRun } from "@/components/agentops/RunTimeline";
+import { rangeLabel, rangeParams, type TimeRange } from "@/components/agentops/useTimeRange";
+import { AgentAlertRulesPanel } from "@/components/agentops/AgentAlertRulesPanel";
+import { AgentDoors } from "@/components/agentops/AgentDoors";
+import { Term } from "@/components/agentops/Term";
+import { Button } from "@/components/ui/button";
+import { ChromeActions, ChromeFacts, useChromeBack, useInShell, usePageChrome } from "@/components/shell/PageChrome";
+import { FormDialog } from "@/components/ui/dialog";
+import { askSpotlight } from "@/lib/commandRegistry";
+import { StatusChip } from "@/components/brief/StatusChip";
+import {
+  certifyAgentGolden, createAgentGolden, createUserAgent,
+  createUserAgentFromTemplate, deleteAgentGolden, deleteUserAgent, describeAgentDeleteReceipt,
+  draftAgentGoldens, evaluateUserAgent, getAgentGuardrails, getAgentLearning, getAgentObservability, getAgents,
+  getConnections, getJobs,
+  getActionRoster,
+  getLlmConfig, getPacks, listAgentAlertRules, listAgentGoldens, listAgentRevisions,
+  listAgentTemplates, listDocuments, listUserAgents, patchAgent, patchUserAgent,
+  restoreAgentRevision, setAgentGuardrails,
+  type AgentAlertRule, type AgentDeleteReceipt, type AgentGovernance,
+  type AgentEvalResult, type AgentGolden, type AgentGuardrails, type AgentKnob, type AgentLearning, type AgentObservability,
+  type AgentRevision, type AgentRosterEntry, type AgentTemplate, type Connection,
+  type DocumentEntry, type LlmConfig, type PackSummary, type UserAgent,
+} from "@/lib/api";
+import { evalChip } from "@/lib/agentEval";
+import { compactNumber, countNoun, formatCost, formatCount, formatDateTime, formatTimestamp, pct } from "@/lib/format";
+import { fmtMs } from "@/lib/cost";
+import { getFleetOverview } from "@/lib/api";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { BACKEND_LABEL } from "@/lib/llmMeta";
+import { TabStrip } from "@/components/ui/tab-strip";
+import { SelectField } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+
+type Selection =
+  | { kind: "charter"; id: string }
+  | { kind: "persona"; id: string }
+  | null;
+
+const STATUS_HUE: Record<string, "positive" | "info" | "caution" | "negative" | "muted"> = {
+  complete: "positive", running: "info", paused: "caution",
+  failed: "negative", timed_out: "negative",
+};
+
+function fmtBudget(n: number | null): string {
+  return n == null ? "role default" : compactNumber(n);
+}
+
+export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, focusAgent,
+  range, createSignal, onOpenConnection, onOpenAutomations, onOpenIntegrations,
+  onChatWithAgent }: {
+  workspaceId?: string;
+  workspaceName?: string;
+  /** CR1 drill-in: open a run's trace in the Overview's "Every trace" fold. */
+  onOpenTrace?: (investigationId: string) => void;
+  /** DS-5 drill-in: where a node on the agent's Map leads. Each is optional, and an
+   *  absent one renders no Open control rather than a button that goes nowhere. */
+  onOpenConnection?: (connectionId: string) => void;
+  onOpenAutomations?: (automationId: string) => void;
+  onOpenIntegrations?: () => void;
+  /** PX-5 — the agent surface's Chat door: open the chat already talking to it. */
+  onChatWithAgent?: (agentId: string) => void;
+  /** An agent opened from the Overview table — selected on arrival. */
+  focusAgent?: { id: string; kind: "charter" | "persona" } | null;
+  /** The surface's shared window — the agent page's own figures scope to it. */
+  range?: TimeRange;
+  /** Bumped by the workspace's "+ Create agent" control, from any layer. A counter, not a
+   *  flag: pressing Create while already here must re-open the flow. */
+  createSignal?: number;
+}) {
+  const [charters, setCharters] = useState<AgentRosterEntry[]>([]);
+  const [personas, setPersonas] = useState<UserAgent[]>([]);
+  const [selected, setSelected] = useState<Selection>(null);
+  const [error, setError] = useState<string | null>(null);
+  // AO-1e — what a delete moved besides the row. Shown once, where the agent used to be,
+  // because the detail that would have shown it has just closed.
+  const [notice, setNotice] = useState<string | null>(null);
+
+  // True once both lists have answered (either way), so a focused agent that has not
+  // arrived yet reads as loading rather than as the index for a moment.
+  const [loaded, setLoaded] = useState(false);
+  // AO-3 — a roster read that REJECTS is said, with a Retry; it used to become `[]`, and
+  // an empty list reads as "there are no agents".
+  const [rosterError, setRosterError] = useState<string | null>(null);
+  const rosterRangeKey = range ? `${range.key}|${range.since ?? ""}|${range.until ?? ""}` : "";
+  const reload = useCallback(() => {
+    setRosterError(null);
+    const said = (e: unknown) => setRosterError(String((e as Error)?.message || e));
+    Promise.allSettled([
+      getAgents(workspaceId, range ? rangeParams(range) : undefined).then(setCharters).catch(said),
+      listUserAgents().then(setPersonas).catch(said),
+    ]).then(() => setLoaded(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId, rosterRangeKey]);
+
+  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    if (focusAgent) setSelected({ kind: focusAgent.kind, id: focusAgent.id });
+  }, [focusAgent]);
+  // Creating an agent happens in a dialog over the page (the user, 2026-11-07: "a pop-up overlay where I enter the
+  // details — at the moment everything is adjusted on the same plane"), opened only by a Create button or the
+  // workspace's signal, never by selecting a row. What is behind it stays where it was.
+  const [creatingAgent, setCreatingAgent] = useState(false);
+  // Set once the flow has SAVED the agent (its Reach step): from then on, dismissing the dialog any way —
+  // Escape, the close button, the scrim — opens the new agent, exactly as the flow's own Close does outside a
+  // dialog; before it, dismissing is a cancel.
+  const savedAgent = useRef<UserAgent | null>(null);
+  const startCreate = () => { savedAgent.current = null; setCreatingAgent(true); };
+  const openCreated = (a: UserAgent) => {
+    savedAgent.current = null; setCreatingAgent(false); reload(); setSelected({ kind: "persona", id: a.id });
+  };
+  const dismissCreate = () => {
+    if (savedAgent.current) openCreated(savedAgent.current);
+    else setCreatingAgent(false);
+  };
+  useEffect(() => {
+    if (createSignal) { savedAgent.current = null; setCreatingAgent(true); }
+  }, [createSignal]);
+
+  const charter = selected?.kind === "charter"
+    ? charters.find(c => c.id === selected.id) : undefined;
+  const persona = selected?.kind === "persona"
+    ? personas.find(p => p.id === selected.id) : undefined;
+
+  const back = () => setSelected(null);
+  return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+      {error && (
+        <ErrorState kind="Agent action failed" what={error} style={{ margin: "12px 20px 0" }} />
+      )}
+      {notice && (
+        <div className="aug-fs-sm" role="status" style={{ margin: "12px 20px 0", padding: "8px 10px",
+          border: "1px solid var(--b1)", borderRadius: "var(--r2)", color: "var(--t2)",
+          display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ flex: 1 }}>{notice}</span>
+          <Button variant="ghost" size="xs" onClick={() => setNotice(null)}>Dismiss</Button>
+        </div>
+      )}
+      {rosterError && (
+        <ReadFailed what="the agent roster" error={rosterError} onRetry={reload}
+          style={{ margin: "12px 20px 0" }} />
+      )}
+      {selected == null ? (
+        <AgentIndex personas={personas} charters={charters} workspaceName={workspaceName} loaded={loaded} range={range}
+          onOpen={setSelected} onCreate={startCreate} />
+      ) : persona ? (
+        <AgentDetail key={persona.id} agent={persona} onBack={back} onChanged={reload} range={range}
+          onDeleted={r => { setSelected(null); setNotice(describeAgentDeleteReceipt(r)); reload(); }}
+          onError={setError} onOpenTrace={onOpenTrace}
+          onOpenConnection={onOpenConnection}
+          onOpenAutomations={onOpenAutomations}
+          onOpenIntegrations={onOpenIntegrations}
+          onChatWithAgent={onChatWithAgent} />
+      ) : charter ? (
+        <CharterDetail key={charter.id} charter={charter} workspaceId={workspaceId} range={range}
+          onBack={back} onChanged={reload} onError={setError} />
+      ) : !loaded ? (
+        <Loading what="the agent" style={{ padding: 24 }} />
+      ) : (
+        // The selection names an agent the lists no longer hold (deleted elsewhere): the index.
+        <AgentIndex personas={personas} charters={charters} workspaceName={workspaceName} loaded={loaded} range={range}
+          onOpen={setSelected} onCreate={startCreate} />
+      )}
+      <FormDialog open={creatingAgent} onOpenChange={o => { if (!o) dismissCreate(); }} title="Create an agent"
+        testId="agent-create" width={900}>
+        <CreateAgentFlow inDialog onSaved={a => { savedAgent.current = a; }}
+          onCreated={openCreated} onCancel={dismissCreate} />
+      </FormDialog>
+    </div>
+  );
+}
+
+/** The index — every agent, one row each, kind-labelled. A row opens the agent's page. */
+/** One agent's figures for the range — a row of the fold the Overview reads, by the same id. */
+type Figures = Awaited<ReturnType<typeof getFleetOverview>>["rows"][number];
+
+function AgentIndex({ personas, charters, workspaceName, loaded, range, onOpen, onCreate }: {
+  personas: UserAgent[]; charters: AgentRosterEntry[]; workspaceName?: string;
+  /** False until both lists have answered: the "no custom agents yet" copy is an EMPTY state,
+   *  and a cold load used to show it while two agents existed (the study §2.1, fig. 7). */
+  loaded: boolean;
+  /** The surface's shared window — every figure on a row follows it. */
+  range?: TimeRange;
+  onOpen: (s: Selection) => void; onCreate: () => void;
+}) {
+  // The row figures (asked for 2026-09-25: runs, success rate, mean run time, tokens, last
+  // run) come from the fold the Overview already reads — ONE read, keyed by the same ids,
+  // over the same range. Null until it answers, so a row shows "…" and never a 0 it has not
+  // measured; {} after a failure, so every figure reads "—".
+  const [fold, setFold] = useState<Record<string, Figures> | null>(null);
+  // AO-3 — a fold that could not be read is said above the table, with a Retry; every
+  // cell still reads "—", which alone taught the reader the figures were zero-ish.
+  const [foldError, setFoldError] = useState<string | null>(null);
+  const [foldTick, setFoldTick] = useState(0);
+  const rangeKey = range ? `${range.key}|${range.since ?? ""}|${range.until ?? ""}` : "24h||";
+  useEffect(() => {
+    let alive = true;
+    setFold(null); setFoldError(null);
+    getFleetOverview(range ? rangeParams(range) : { range: "24h" })
+      .then(d => { if (alive) setFold(Object.fromEntries(d.rows.map(r => [r.id, r]))); })
+      .catch(e => { if (alive) { setFold({}); setFoldError(String((e as Error)?.message || e)); } });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rangeKey, foldTick]);
+  const figuresFor = (id: string) => (fold === null ? undefined : (fold[id] ?? null));
+  // ONE table for both sections, so the columns sit on the same lines down the page and
+  // size to their content; each section is a group row inside it.
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: "8px 20px 16px" }}>
+      {foldError && (
+        <ReadFailed what="the roster's run figures" error={foldError}
+          onRetry={() => setFoldTick(t => t + 1)} style={{ marginBottom: 8 }} />
+      )}
+      <Table style={{ maxWidth: 1280 }}>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Agent</TableHead>
+            <TableHead>Kind</TableHead>
+            <TableHead>Role</TableHead>
+            <TableHead className="num">Runs</TableHead>
+            <TableHead className="num">Success</TableHead>
+            <TableHead className="num">Avg run</TableHead>
+            <TableHead className="num">Tokens</TableHead>
+            <TableHead>Last run</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          <GroupRow label="Custom agents" first
+            action={<Button variant="secondary" size="xs" onClick={onCreate}>+ Create agent</Button>} />
+          {!loaded && personas.length === 0 && <NoteRow><Loading what="agents" inline /></NoteRow>}
+          {loaded && personas.length === 0 && (
+            <NoteRow>
+              <p className="aug-fs-sm" style={{ color: "var(--t2)", margin: "0 0 6px" }}>
+                No custom agents yet. An agent is a scope and a stance — where it may look,
+                and how it should think.
+              </p>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <Button variant="secondary" size="xs" onClick={onCreate}>Create your first agent</Button>
+                {/* SP-2 — the in-context summon: the question is met where it arises.
+                    The draft stages in the inbox; nothing is created until accepted. */}
+                <Button variant="ghost" size="xs"
+                  onClick={() => askSpotlight(
+                    "Help me create my first agent: walk me through it, then draft it "
+                    + "and stage it for my approval.")}>Ask Spotlight to draft one</Button>
+              </div>
+            </NoteRow>
+          )}
+          {personas.map(p => (
+            <RosterRow key={p.id} name={p.name} kind="persona" enabled={p.enabled}
+              role={p.purpose || (p.schema_scope ? `Scoped to ${p.schema_scope}` : "Any schema")}
+              sub={evalChip(p.last_eval, p.eval_basis)?.label}
+              figures={figuresFor(p.id)}
+              onClick={() => onOpen({ kind: "persona", id: p.id })} />
+          ))}
+          <GroupRow label={`Built-in agents ${workspaceName ? `· ${workspaceName}` : "· Org"}`} />
+          {!loaded && charters.length === 0 && <NoteRow><Loading what="built-in agents" inline /></NoteRow>}
+          {charters.map(c => (
+            <RosterRow key={c.id} name={c.name} kind="charter"
+              enabled={c.governance.enabled} role={c.role} reserved={c.reserved}
+              figures={figuresFor(c.id)}
+              onClick={() => onOpen({ kind: "charter", id: c.id })} />
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+const ROSTER_COLUMNS = 8;
+
+/** A section's heading inside the Roster's one table: the label, and the section's action. */
+function GroupRow({ label, action, first }: { label: string; action?: React.ReactNode; first?: boolean }) {
+  return (
+    <TableRow>
+      <TableCell colSpan={ROSTER_COLUMNS}
+        style={{ background: "transparent", height: "auto", borderBottom: "none",
+          padding: first ? "12px 12px 4px" : "24px 12px 4px" }}>
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <span className="aug-label">{label}</span>
+          <span style={{ flex: 1 }} />
+          {action}
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+/** A section's loading or empty copy, as one full-width row — never a 0 in a figure cell. */
+function NoteRow({ children }: { children: React.ReactNode }) {
+  return (
+    <TableRow>
+      <TableCell colSpan={ROSTER_COLUMNS} className="aug-fs-sm"
+        style={{ background: "transparent", height: "auto", color: "var(--t3)", padding: "6px 12px 10px" }}>
+        {children}
+      </TableCell>
+    </TableRow>
+  );
+}
+
+/** A detail page's own header: the breadcrumb back to the index, the name, its chips, and
+ *  its actions on one 44px row. Tabs sit under it (`.aug-tabs`), never inside it. */
+function PageHeader({ onBack, title, chips, actions }: {
+  onBack: () => void; title: string; chips?: React.ReactNode; actions?: React.ReactNode;
+}) {
+  // Inside the app an agent's page FOLDS into the shell's rows (2026-11-10, ROADMAP §6 item 64): its name is the title
+  // and the breadcrumb's last crumb, "Agents" before it takes the reader back to every agent (as "Agents /" did), its
+  // chips stand beside the title and its actions join the page's. The agent's own tabs stay under it.
+  const inShell = useInShell();
+  usePageChrome(inShell ? { title, trail: ["Agents", title] } : {});
+  useChromeBack(inShell ? onBack : null);
+  if (inShell) {
+    return (
+      <>
+        {chips && <ChromeFacts>{chips}</ChromeFacts>}
+        {actions && <ChromeActions>{actions}</ChromeActions>}
+      </>
+    );
+  }
+  return (
+    <div className="aug-page-header">
+      <Button variant="link" size="xs" onClick={onBack} style={{ padding: 0 }}
+        title="Back to every agent">Agents</Button>
+      <span aria-hidden style={{ color: "var(--t3)" }}>/</span>
+      <h1 className="aug-content-title" style={{ margin: 0 }}>{title}</h1>
+      {chips}
+      <span style={{ flex: 1 }} />
+      {actions}
+    </div>
+  );
+}
+
+function RosterRow({ name, kind, enabled, role, sub, reserved, figures, onClick }: {
+  name: string; kind: "charter" | "persona"; enabled: boolean;
+  /** What the agent is for — a charter's role, a custom agent's purpose or scope. */
+  role: string;
+  /** A second line under the name — a custom agent's goldens, when it has any. */
+  sub?: string; reserved?: boolean;
+  /** undefined = the fold has not answered yet; null = it answered and holds no row for this id. */
+  figures: Figures | null | undefined;
+  onClick: () => void;
+}) {
+  const f = figures;
+  const waiting = f === undefined;
+  const dash = <span style={{ color: "var(--t3)" }}>—</span>;
+  const dots = <span style={{ color: "var(--t3)" }} title="Loading this range…">…</span>;
+  // A custom agent's work is CALLS in the session log (`spend_source`); a charter's is jobs.
+  // Success = the runs the agent finished well, over the runs the agent finished: a charter's
+  // succeeded + failed jobs — an orphaned run was interrupted by a restart, an infrastructure
+  // fact the tiles also keep out of the error rate — or a custom agent's traces. Runs that
+  // ended another way are named in the tooltip, never folded into either side.
+  const fromCalls = f?.spend_source === "session_log";
+  const done = f ? (fromCalls ? f.runs : (f.succeeded ?? 0) + f.failed) : 0;
+  const interrupted = f && !fromCalls ? f.orphaned : 0;
+  const cell = (render: (row: Figures) => React.ReactNode) => (waiting ? dots : f ? render(f) : dash);
+  return (
+    <TableRow onClick={onClick} tabIndex={0} role="link" title={`Open ${name}`}
+      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } }}
+      style={{ cursor: "pointer", opacity: reserved ? 0.55 : 1 }}>
+      <TableCell>
+        <div className="aug-text-ui" style={{ fontWeight: 500, overflow: "hidden",
+          textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
+        {sub && (
+          <div className="aug-fs-xs" style={{ color: "var(--t2)", marginTop: 2,
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</div>
+        )}
+      </TableCell>
+      <TableCell>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <StatusChip hue={kind === "charter" ? "info" : "accent"} strength="soft">
+            {/* "built-in" on screen: `charter` is the wire's name for the kind, not the reader's. */}
+            {kind === "persona" ? "custom" : <Term id="built-in">built-in</Term>}
+          </StatusChip>
+          {!enabled && <StatusChip hue="caution" strength="soft">paused</StatusChip>}
+        </span>
+      </TableCell>
+      <TableCell><span style={{ color: "var(--t2)" }}>{role}</span></TableCell>
+      <TableCell className="num">{cell(r => (r.runs ? formatCount(r.runs) : dash))}</TableCell>
+      <TableCell className="num">{cell(r => (done ? (
+        <span title={(fromCalls
+          ? `${r.succeeded ?? 0} of ${done} answers had no failed call`
+          : `${r.succeeded ?? 0} of ${done} finished runs succeeded`)
+          + (interrupted ? ` · ${interrupted} interrupted by a restart` : "")}>{pct((r.succeeded ?? 0) / done, 0)}</span>
+      ) : r.runs ? (
+        <span style={{ color: "var(--t3)" }}
+          title={`${r.runs} runs, none finished on its own`
+            + (interrupted ? ` · ${interrupted} interrupted by a restart` : "")}>—</span>
+      ) : dash))}</TableCell>
+      <TableCell className="num">{cell(r => (r.avg_duration_ms != null ? (
+        <span title={fromCalls
+          ? "Model time across the answer's calls — SQL and tools add to it"
+          : "Mean of each run's own start to finish"}>{fmtMs(r.avg_duration_ms)}</span>
+      ) : dash))}</TableCell>
+      <TableCell className="num">{cell(r => (r.tokens > 0 ? (
+        <span title={`${formatCount(r.tokens)} tokens in the range`}>{compactNumber(r.tokens)}</span>
+      ) : dash))}</TableCell>
+      <TableCell>{cell(r => (r.last_run_at ? (
+        <span className="aug-num" title={r.last_run_at} style={{ whiteSpace: "nowrap" }}>{formatDateTime(r.last_run_at)}</span>
+      ) : dash))}</TableCell>
+    </TableRow>
+  );
+}
+
+// ── custom-agent detail ───────────────────────────────────────────────────────────────
+
+function AgentDetail({ agent, onBack, onChanged, onDeleted, onError, onOpenTrace,
+  onOpenConnection, onOpenAutomations, onOpenIntegrations, onChatWithAgent, range }: {
+  agent: UserAgent; onBack: () => void; onChanged: () => void;
+  onDeleted: (receipt: AgentDeleteReceipt) => void;
+  onError: (e: string | null) => void;
+  /** AO-3 — the surface's shared window; the Overview and Runs tabs read it and say so. */
+  range?: TimeRange;
+  onOpenTrace?: (investigationId: string) => void;
+  /** DS-5 — where the map's nodes lead. Optional: a destination this shell does not
+   *  offer simply renders no Open control, rather than a button that goes nowhere. */
+  onOpenConnection?: (connectionId: string) => void;
+  onOpenAutomations?: (automationId: string) => void;
+  onOpenIntegrations?: () => void;
+  onChatWithAgent?: (agentId: string) => void;
+}) {
+  // AO-4 — Doors, Alerts and Spend join the page: the whole agent on its own page, not
+  // three other layers to visit for it. Map stays (DS-5, user-approved); Doors is its list.
+  type Tab = "overview" | "runs" | "doors" | "map" | "alerts" | "quality" | "spend" | "setup";
+  const [tab, setTab] = useState<Tab>("overview");
+  const [busy, setBusy] = useState(false);
+  // PX-5 — grounding is NAMED, in the reader's words: the connection's NAME (an id like
+  // `baef6c3e` tells a reader nothing), the documents, the packs, the grants. One line,
+  // composed only of what this agent actually holds; the rail spells each one out.
+  const [connName, setConnName] = useState<string>("");
+  useEffect(() => {
+    if (!agent.connection_id) { setConnName(""); return; }
+    let alive = true;
+    getConnections()
+      .then(cs => { if (alive) setConnName(cs.find(c => c.id === agent.connection_id)?.name ?? agent.connection_id); })
+      .catch(() => { if (alive) setConnName(agent.connection_id); });
+    return () => { alive = false; };
+  }, [agent.connection_id]);
+  const grounding = [
+    connName ? `answers on ${connName}` : "answers on any connection",
+    agent.schema_scope ? `schema ${agent.schema_scope}` : "",
+    agent.doc_ids.length ? countNoun(agent.doc_ids.length, "document") : "",
+    agent.pack_ids.length ? countNoun(agent.pack_ids.length, "skill pack") : "",
+    agent.tool_grants.length ? `${countNoun(agent.tool_grants.length, "action grant")} (propose-only)` : "",
+  ].filter(Boolean).join(" · ");
+
+  const togglePause = async () => {
+    setBusy(true);
+    try { await patchUserAgent(agent.id, { enabled: !agent.enabled }); onChanged(); }
+    catch (e) { onError(String((e as Error)?.message || e)); }
+    finally { setBusy(false); }
+  };
+
+  const chip = evalChip(agent.last_eval, agent.eval_basis);
+  // Overview · Runs · Map · Quality · Setup — "Quality", because the golden suite measures
+  // the agent against its own reference SQL (never a judge); "Setup", because that tab is
+  // where a person sets what the agent is. Both names are the mockup's (boards 6–11).
+  const TABS: { id: Tab; label: string }[] = [
+    { id: "overview", label: "Overview" }, { id: "runs", label: "Runs" },
+    { id: "doors", label: "Doors" }, { id: "map", label: "Map" }, { id: "alerts", label: "Alerts" },
+    { id: "quality", label: "Quality" }, { id: "spend", label: "Spend" }, { id: "setup", label: "Setup" },
+  ];
+
+  return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <PageHeader onBack={onBack} title={agent.name}
+        chips={<>
+          <StatusChip hue="accent" strength="soft">custom agent</StatusChip>
+          {chip && (
+            <span title={chip.detail}>
+              <StatusChip hue={chip.hue} strength="soft">{chip.label}</StatusChip>
+            </span>
+          )}
+          <StatusChip hue={agent.enabled ? "positive" : "caution"} strength="soft">
+            {agent.enabled ? "active" : "paused"}
+          </StatusChip>
+        </>}
+        actions={<>
+          {/* PX-5 — the agent surface completed: this page could monitor and
+              benchmark the agent but not TALK to it. Chat leads. */}
+          {onChatWithAgent && (
+            <Button variant="default" size="xs" data-testid="agent-chat"
+              onClick={() => onChatWithAgent(agent.id)}>Chat</Button>
+          )}
+          <Button variant="ghost" size="xs" disabled={busy} onClick={togglePause}>
+            {agent.enabled ? "Pause" : "Resume"}
+          </Button>
+        </>} />
+      <TabStrip label="Agent views" value={tab} onChange={setTab} tabs={TABS}
+        style={{ padding: "0 20px", flexShrink: 0 }} />
+      <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
+        <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: 20 }}>
+          {tab === "overview" ? (
+            <CustomAgentOverview agent={agent} onOpenTrace={onOpenTrace} range={range} />
+          ) : tab === "runs" ? (
+            <AgentRuns agent={agent} onOpenTrace={onOpenTrace} range={range} />
+          ) : tab === "doors" ? (
+            <AgentDoors agent={agent} onChat={onChatWithAgent}
+              onOpenAutomation={onOpenAutomations} onOpenIntegrations={onOpenIntegrations} />
+          ) : tab === "alerts" ? (
+            <AgentAlertRulesPanel agentId={agent.id} agentName={agent.name} />
+          ) : tab === "spend" ? (
+            <AgentSpend agent={agent} range={range} />
+          ) : tab === "quality" ? (
+            <AgentBenchmark agent={agent} onChanged={onChanged} onError={onError} />
+          ) : tab === "map" ? (
+            /* DS-5 — "Map", not "Design": that word is the automation card's button and the
+               automation canvas's own mode label, and this surface edits nothing. */
+            <AgentMap agent={agent}
+              onOpenConnection={onOpenConnection}
+              onOpenAutomations={onOpenAutomations}
+              onOpenIntegrations={onOpenIntegrations} />
+          ) : (
+            <PersonaConfigure agent={agent} onChanged={onChanged}
+              onDeleted={onDeleted} onError={onError} />
+          )}
+        </div>
+        {tab === "overview" && (
+          <AgentRail agent={agent} grounding={grounding} connName={connName}
+            onSetup={() => setTab("setup")} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The page's details rail — what the agent IS, named (never an id where a name exists),
+ *  beside what it did. Setup edits it; this reads it. */
+function AgentRail({ agent, grounding, connName, onSetup }: {
+  agent: UserAgent; grounding: string; connName: string; onSetup: () => void;
+}) {
+  const [documents, setDocuments] = useState<DocumentEntry[]>([]);
+  const [packs, setPacks] = useState<PackSummary[]>([]);
+  useEffect(() => {
+    let alive = true;
+    listDocuments().then(d => { if (alive) setDocuments(d); }).catch(() => {});
+    getPacks().then(r => { if (alive) setPacks(r.packs || []); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  const docName = (id: string) => {
+    const d = documents.find(x => x.doc_id === id);
+    return d ? (d.title || d.filename) : null;
+  };
+  const packName = (id: string) => packs.find(x => x.id === id)?.name ?? null;
+  // A bound thing whose name has not loaded yet reads as a count, never as its id.
+  const named = (ids: string[], name: (id: string) => string | null, noun: string) => {
+    if (ids.length === 0) return "none";
+    const names = ids.map(name);
+    return names.every(Boolean) ? names.join(", ") : countNoun(ids.length, noun);
+  };
+  const Row = ({ k, v }: { k: string; v: React.ReactNode }) => (
+    <div className="aug-rail-row"><span>{k}</span><span>{v}</span></div>
+  );
+  return (
+    <aside aria-label="Agent details" className="aug-rail">
+      <div className="aug-rail-head">
+        <span className="aug-text-h3">Details</span>
+        <span style={{ flex: 1 }} />
+        <Button variant="link" size="xs" onClick={onSetup} style={{ padding: 0 }}>Open Setup</Button>
+      </div>
+      <div className="aug-fs-sm" data-testid="agent-grounding"
+        style={{ color: "var(--t2)", marginBottom: 6, lineHeight: 1.5 }}>{grounding}</div>
+      <Row k="Connection" v={connName || <span style={{ color: "var(--t2)" }}>any — the asker&rsquo;s connection</span>} />
+      <Row k="Schema scope" v={agent.schema_scope || <span style={{ color: "var(--t2)" }}>all schemas</span>} />
+      <Row k="Documents" v={named(agent.doc_ids, docName, "document")} />
+      <Row k="Packs" v={named(agent.pack_ids, packName, "pack")} />
+      <Row k="May propose" v={agent.tool_grants.length ? (
+        <>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>{agent.tool_grants.join(", ")}</span>
+          <span style={{ color: "var(--t3)" }}> · proposes, never executes</span>
+        </>
+      ) : <span style={{ color: "var(--t2)" }}>nothing — no grants</span>} />
+      <Row k="State" v={agent.enabled ? "enabled" : "paused — keeps its history, answers nothing"} />
+      <Row k="Owner" v={agent.owner || <span style={{ color: "var(--t2)" }}>unowned</span>} />
+      <Row k="History" v={`created ${formatTimestamp(agent.created_at, "short")} · updated ${formatTimestamp(agent.updated_at, "short")}`} />
+      <div className="aug-label" style={{ margin: "14px 0 6px" }}>Instructions</div>
+      {agent.instructions ? (
+        <div style={{ padding: "10px 12px", background: "var(--code-bg)", border: "1px solid var(--b1)",
+          borderRadius: "var(--r2)", fontSize: 13, color: "var(--t2)", lineHeight: 1.5,
+          whiteSpace: "pre-wrap" }}>
+          {agent.instructions}
+        </div>
+      ) : (
+        <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>No instructions — the agent answers on the platform&rsquo;s defaults.</div>
+      )}
+    </aside>
+  );
+}
+
+/** The Runs tab — every run this agent made, as a ledger. Each question is a door to
+ *  its trace; nothing opens inside the ledger. */
+/** The window the agent page's figures are read over, named for a caption (AO-3). */
+function windowLabel(range?: TimeRange): string {
+  return range ? rangeLabel(range) : "the last 24 hours";
+}
+
+/** The agent's observability read: ONE window, a failure said rather than emptied (AO-3). */
+function useAgentObservability(agentId: string, range?: TimeRange) {
+  const [obs, setObs] = useState<AgentObservability | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+  const rangeKey = range ? `${range.key}|${range.since ?? ""}|${range.until ?? ""}` : "";
+  useEffect(() => {
+    let alive = true;
+    setLoading(true); setError(null);
+    getAgentObservability(agentId, range ? rangeParams(range) : undefined)
+      .then(o => { if (alive) setObs(o); })
+      .catch(e => { if (alive) { setObs(null); setError(String((e as Error)?.message || e)); } })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentId, rangeKey, tick]);
+  return { obs, loading, error, retry: () => setTick(t => t + 1) };
+}
+
+export function AgentRuns({ agent, onOpenTrace, range }: {
+  agent: UserAgent; onOpenTrace?: (invId: string) => void; range?: TimeRange;
+}) {
+  const { obs, loading, error, retry } = useAgentObservability(agent.id, range);
+  if (loading) return <Loading what="this agent's runs" />;
+  if (error) return <ReadFailed what="this agent's runs" error={error} onRetry={retry} />;
+  const runs = obs?.runs ?? [];
+  if (runs.length === 0) {
+    return (
+      <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>
+        No runs in {windowLabel(range)}.
+      </div>
+    );
+  }
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Started</TableHead><TableHead>Question</TableHead><TableHead>Kind</TableHead><TableHead>Status</TableHead>
+          <TableHead className="num">Queries</TableHead><TableHead aria-label="Open"></TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {runs.map(r => (
+          <TableRow key={r.id}>
+            <TableCell style={{ color: "var(--t2)" }}>{formatTimestamp(r.started_at, "short")}</TableCell>
+            <TableCell style={{ whiteSpace: "normal", maxWidth: 560 }}>{r.headline || r.question}</TableCell>
+            <TableCell><StatusChip hue="muted" strength="soft">{r.kind === "chat" ? "quick" : "deep"}</StatusChip></TableCell>
+            <TableCell><StatusChip hue={STATUS_HUE[r.status] ?? "muted"}>{r.status}</StatusChip></TableCell>
+            <TableCell className="num">{formatCount(r.query_count)}</TableCell>
+            <TableCell>
+              {onOpenTrace && r.kind !== "chat" && (
+                <Button variant="link" size="xs" onClick={() => onOpenTrace(r.id)}
+                  title="Open this run's trace" style={{ padding: 0 }}>Trace</Button>
+              )}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+/** H3's honest run view, unchanged in spirit: everything the agent did, spend
+ *  or the flag that would measure it — never a confident zero. */
+/** AO-4 — a built-in agent's Map: one block, three rows — where it answers, what it runs,
+ *  who watches it. Reads the alert rules once; a failed read is said, never "no alerts". */
+function BuiltInMap({ charter }: { charter: AgentRosterEntry }) {
+  const [rules, setRules] = useState<AgentAlertRule[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    setError(null);
+    listAgentAlertRules()
+      .then(all => { if (alive) setRules(all.filter(r => r.charter_id === charter.id)); })
+      .catch(e => { if (alive) setError(String((e as Error)?.message || e)); });
+    return () => { alive = false; };
+  }, [charter.id, tick]);
+  const Row = ({ label, children }: { label: string; children: React.ReactNode }) => (
+    <div style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
+      <span className="aug-fs-xs" style={{ color: "var(--t3)", width: 72, flexShrink: 0,
+        textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</span>
+      <span className="aug-fs-sm" style={{ color: "var(--t2)" }}>{children}</span>
+    </div>
+  );
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div className="aug-label" style={{ color: "var(--t2)", marginBottom: 6 }}>Map</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "10px 12px",
+        border: "1px solid var(--b1)", borderRadius: "var(--r2)", background: "var(--bg-1)" }}>
+        <Row label="door">
+          {charter.lane === "interactive"
+            ? "answers inline, inside the conversation that asks — no socket, no schedule"
+            : "runs on the platform's schedule; nobody talks to it directly"}
+        </Row>
+        <Row label="runs">
+          {charter.job_kinds.length
+            ? `job kinds ${charter.job_kinds.join(", ")}`
+            : "no job kind of its own"}
+          {charter.tools.length ? ` · tools ${charter.tools.join(", ")}` : ""}
+        </Row>
+        <Row label="watched by">
+          {error ? (
+            <ReadFailed what="the alert rules" error={error} onRetry={() => setTick(t => t + 1)} />
+          ) : rules === null ? "…"
+            : rules.length === 0
+              ? "no alert rule names this agent — Attention → Alert rules adds one"
+              : rules.map(r => `${r.name} (${r.enabled ? "on" : "off"})`).join(" · ")}
+        </Row>
+      </div>
+    </div>
+  );
+}
+
+/** AO-4 — the agent's Spend tab: what it cost over the shared window, every figure captioned,
+ *  and the two counts that make a cost a floor rather than a total. */
+export function AgentSpend({ agent, range }: { agent: UserAgent; range?: TimeRange }) {
+  const { obs, loading, error, retry } = useAgentObservability(agent.id, range);
+  if (loading) return <Loading what="this agent's spend" />;
+  if (error || !obs) return <ReadFailed what="this agent's spend" error={error} onRetry={retry} />;
+  const s = obs.spend;
+  const inWindow = `in ${windowLabel(range)}`;
+  return (
+    <div style={{ maxWidth: 760 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+        <Tile label="Model calls" value={compactNumber(s.calls)} sub={inWindow} />
+        <Tile label="Tokens" value={compactNumber(s.total_tokens)} sub={inWindow} />
+        <Tile label="Cost" value={formatCost(s.cost_usd, s.calls, s.unpriced_calls)}
+          sub={s.calls > 0 && s.unpriced_calls >= s.calls
+            ? "no price is declared for the model it ran on"
+            : s.unpriced_calls > 0 ? "a floor — some calls unpriced" : inWindow} />
+        <Tile label="Unpriced calls" value={formatCount(s.unpriced_calls)}
+          sub="each contributes nothing to the cost" />
+        <Tile label="Calls without usage" value={formatCount(s.calls_without_usage)}
+          sub="the backend reported no token count" />
+        <Tile label="Failure rate" value={s.failure_rate == null ? "—" : pct(s.failure_rate)}
+          sub={inWindow} />
+        <Tile label="Runs" value={String(obs.run_count)} sub={inWindow} />
+      </div>
+      <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>
+        Priced from each provider&apos;s published catalogue, or a rate the operator declared
+        (<code>AUGHOR_MODEL_PRICES</code>). A model nothing prices counts as unpriced, never as
+        free. Spend by model, role and call site, across every agent, is on the Overview.
+      </div>
+    </div>
+  );
+}
+
+/** The wall-clock length of a run the history store recorded both ends of; null otherwise. */
+function runDurationMs(startedAt: string, completedAt: string | null): number | null {
+  if (!completedAt) return null;
+  const ms = Date.parse(completedAt) - Date.parse(startedAt);
+  return Number.isFinite(ms) && ms >= 0 ? ms : null;
+}
+
+export function CustomAgentOverview({ agent, onOpenTrace, range }: {
+  agent: UserAgent; onOpenTrace?: (invId: string) => void; range?: TimeRange;
+}) {
+  const { obs, loading, error, retry } = useAgentObservability(agent.id, range);
+
+  if (loading) return <Loading what="this agent's figures" />;
+  if (error || !obs) {
+    return <ReadFailed what="this agent's figures" error={error} onRetry={retry} />;
+  }
+
+  const spend = obs.spend;
+  const runs = obs.runs || [];
+  const deep = runs.filter(r => r.kind !== "chat").length;
+  const quick = runs.length - deep;
+  // AO-3 — every tile names the window it counts; the same agent read 76.7K tokens on the
+  // roster row and 3.5M here, one windowed and one all-time, and neither screen said which.
+  const inWindow = `in ${windowLabel(range)}`;
+  const costSub = !spend?.measured ? undefined
+    : spend.calls > 0 && spend.unpriced_calls >= spend.calls
+      ? "no price is declared for the model it ran on"
+      : spend.unpriced_calls > 0
+        ? `${formatCount(spend.unpriced_calls)} calls unpriced — a floor, not a total`
+        : inWindow;
+
+  return (
+    <>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
+        <Tile label="Runs" value={String(obs.run_count)}
+          sub={runs.length ? `${deep} deep · ${quick} quick · ${inWindow}` : `none ${inWindow}`} />
+        {spend?.measured ? (
+          <>
+            <Tile label="Model calls" value={compactNumber(spend.calls)} sub={inWindow} />
+            <Tile label="Tokens" value={compactNumber(spend.total_tokens)} sub={inWindow} />
+            <Tile label="Cost" value={formatCost(spend.cost_usd, spend.calls, spend.unpriced_calls)}
+              sub={costSub} />
+          </>
+        ) : null}
+        {obs.trace_stats?.latency_p90_ms != null && (
+          <Tile label="p90 latency" value={`${(obs.trace_stats.latency_p90_ms / 1000).toFixed(1)}s`} />
+        )}
+      </div>
+      <div className="aug-label" style={{ color: "var(--t2)", marginBottom: 6 }}>Run history</div>
+      <div style={{ marginBottom: 16 }}>
+        <RunTimeline emptyNote={`No runs ${inWindow}.`}
+          onOpen={onOpenTrace}
+          runs={runs.slice(0, 20).map(r => ({
+            id: r.id, state: r.status, at: r.started_at,
+            durationMs: runDurationMs(r.started_at, r.completed_at),
+            label: r.headline || r.question,
+          }))} />
+      </div>
+      <div className="aug-label" style={{ color: "var(--t2)", marginBottom: 6 }}>Recent runs</div>
+      {runs.length === 0 ? (
+        <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>No runs {inWindow}.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+          {runs.map(r => (
+            <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10,
+              padding: "8px 10px", background: "var(--bg-1)",
+              border: "1px solid var(--b1)", borderRadius: "var(--r2)" }}>
+              <span style={{ flex: 1, fontSize: 12, color: "var(--t1)", overflow: "hidden",
+                textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {r.headline || r.question}
+              </span>
+              <StatusChip hue="muted" strength="soft">
+                {r.kind === "chat" ? `quick${r.query_count > 1 ? ` ·${r.query_count}` : ""}` : "deep"}
+              </StatusChip>
+              <StatusChip hue={STATUS_HUE[r.status] ?? "muted"} strength="soft">{r.status}</StatusChip>
+              <span style={{ fontSize: 11, color: "var(--t3)", flexShrink: 0, width: 110,
+                textAlign: "right" }}>{formatTimestamp(r.started_at, "short")}</span>
+              {onOpenTrace && r.kind !== "chat" && (
+                <Button variant="ghost" size="xs" onClick={() => onOpenTrace(r.id)}
+                  title="Open this run's trace">trace</Button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** The agent's editable surface — fields, bindings and the golden suite
+ *  (ported from AgentsAdminPanel, which this panel replaces). */
+/** Benchmark — the agent's own regression suite, as a PEER of using it and watching it.
+ *
+ *  It lived inside Configure, three scrolls below the instructions box, which said the
+ *  quiet part: measuring the agent was a setting. It is not. An agent has three questions
+ *  about it — what does it say, what has it been doing, and is it right — and the third
+ *  is the only one with an answer you can defend. So it gets a tab.
+ *
+ *  Nothing about the suite's rules changed: `reference_sql` is still a human's to write
+ *  (a suite the model writes for itself measures itself), and evaluation is still the
+ *  same synchronous call.
+ */
+function AgentBenchmark({ agent, onChanged, onError }: {
+  agent: UserAgent; onChanged: () => void; onError: (e: string | null) => void;
+}) {
+  const [all, setAll] = useState<AgentGolden[]>([]);
+  const [goldenDraft, setGoldenDraft] = useState({ question: "", reference_sql: "" });
+  const [evaluating, setEvaluating] = useState(false);
+  const [evalResult, setEvalResult] = useState<AgentEvalResult | null>(null);
+  // AO-6/AO-7 — candidates wait above the suite for a person's SQL; the learning receipt
+  // says what the loop did; "Draft questions" is refused with its reason while off.
+  const [certifying, setCertifying] = useState<{ id: string; sql: string } | null>(null);
+  const [drafting, setDrafting] = useState(false);
+  const [learning, setLearning] = useState<AgentLearning | null>(null);
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    listAgentGoldens(agent.id).then(setAll).catch(() => {});
+    getAgentLearning(agent.id).then(setLearning).catch(() => setLearning(null));
+  }, [agent.id, tick]);
+  // Every golden written before AO-6 is certified: the field is absent on an older API.
+  const goldens = all.filter(g => (g.status ?? "certified") === "certified");
+  const candidates = all.filter(g => g.status === "candidate");
+
+  const addGolden = async () => {
+    if (!goldenDraft.question.trim() || !goldenDraft.reference_sql.trim()) return;
+    try {
+      const g = await createAgentGolden(agent.id, goldenDraft);
+      setAll(gs => [...gs, g]);
+      setGoldenDraft({ question: "", reference_sql: "" });
+    } catch (e) { onError(e instanceof Error ? e.message : "Add golden failed."); }
+  };
+
+  const certify = async () => {
+    if (!certifying || !certifying.sql.trim()) return;
+    try {
+      await certifyAgentGolden(agent.id, certifying.id, certifying.sql);
+      setCertifying(null);
+      setTick(t => t + 1);
+    } catch (e) { onError(e instanceof Error ? e.message : "Certify failed."); }
+  };
+
+  const draft = async () => {
+    setDrafting(true);
+    onError(null);
+    try { await draftAgentGoldens(agent.id); setTick(t => t + 1); }
+    catch (e) { onError(e instanceof Error ? e.message : "Draft failed."); }
+    finally { setDrafting(false); }
+  };
+
+  const runEvaluation = async () => {
+    setEvaluating(true);
+    onError(null);
+    try { setEvalResult(await evaluateUserAgent(agent.id)); onChanged(); setTick(t => t + 1); }
+    catch (e) { onError(e instanceof Error ? e.message : "Evaluation failed."); }
+    finally { setEvaluating(false); }
+  };
+
+  const questionOf = (id: string) => all.find(g => g.id === id)?.question ?? id;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {learning && (
+        <div className="aug-fs-sm" style={{ color: "var(--t2)", padding: "8px 11px",
+          background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: "var(--r2)" }}>
+          {learning.loop_on ? (
+            <>
+              Learned <strong>{formatCount(learning.corrections)}</strong> correction{learning.corrections === 1 ? "" : "s"}
+              {" · "}<strong>{formatCount(learning.certified_from_use)}</strong> golden{learning.certified_from_use === 1 ? "" : "s"} certified from use
+              {learning.before && learning.after ? (
+                <>{" · "}pass {learning.before.passed}/{learning.before.total} → <strong>{learning.after.passed}/{learning.after.total}</strong></>
+              ) : learning.after ? (
+                <>{" · "}pass <strong>{learning.after.passed}/{learning.after.total}</strong> (no earlier stamp)</>
+              ) : " · not yet evaluated"}
+            </>
+          ) : (
+            <>The learning loop is off (Settings ▸ Organization ▸ What Aughor may do): verdicts on this
+            agent&apos;s answers are recorded but teach it nothing as itself — {formatCount(learning.verdicts)} so far.</>
+          )}
+        </div>
+      )}
+
+      {candidates.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "12px 14px",
+          border: "1px dashed var(--b1)", borderRadius: "var(--r2)" }}>
+          <span className="aug-label">Candidates — waiting for a person&apos;s SQL</span>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+            A candidate counts for nothing until you certify it with the SQL you say is right.
+            An answer you accepted in use brings the SQL that answered as a starting point; a
+            drafted question brings none.
+          </span>
+          {candidates.map(c => (
+            <div key={c.id} className="aug-fs-sm" style={{ display: "flex", flexDirection: "column", gap: 4,
+              color: "var(--t2)", paddingTop: 6, borderTop: "1px solid var(--b1)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <StatusChip hue={c.source === "use" ? "accent" : "muted"} strength="soft">
+                  {c.source === "use" ? "from use" : "drafted"}
+                </StatusChip>
+                <span style={{ flex: 1 }}>{c.question}</span>
+                <Button variant="secondary" size="xs"
+                  onClick={() => setCertifying({ id: c.id, sql: c.reference_sql || "" })}>Certify</Button>
+                <Button variant="ghost" size="xs" onClick={async () => {
+                  await deleteAgentGolden(agent.id, c.id);
+                  setAll(gs => gs.filter(x => x.id !== c.id));
+                }}>Dismiss</Button>
+              </div>
+              {c.headline && (
+                <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+                  {c.source === "use" ? `the answer said: ${c.headline}` : c.headline}
+                </span>
+              )}
+              {certifying?.id === c.id && (
+                <>
+                  <Textarea rows={3} value={certifying.sql}
+                    placeholder="The reference SQL you certify (read-only)"
+                    onChange={e => setCertifying({ id: c.id, sql: e.target.value })} />
+                  <span style={{ display: "flex", gap: 6 }}>
+                    <Button size="xs" variant="default" onClick={certify}
+                      disabled={!certifying.sql.trim()}>Certify with this SQL</Button>
+                    <Button size="xs" variant="ghost" onClick={() => setCertifying(null)}>Cancel</Button>
+                  </span>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {goldens.length === 0 && (
+        <p className="aug-fs-sm" style={{
+          color: "var(--t2)", margin: 0, padding: "8px 11px", background: "var(--bg-1)",
+          border: "1px solid var(--b1)", borderRadius: "var(--r2)",
+        }}>
+          This agent has no golden questions, so it ships unmeasured — every answer it
+          gives is unfalsifiable. Add the questions where being wrong would matter.
+        </p>
+      )}
+      {/* the agent's own regression suite */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "12px 14px",
+        border: "1px solid var(--b1)", borderRadius: "var(--r2)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className="aug-label"><Term id="goldens">Golden questions</Term></span>
+          <span style={{ fontSize: 11, color: "var(--t3)" }}>
+            re-run after editing instructions or documents
+          </span>
+          <span style={{ marginLeft: "auto", display: "inline-flex", gap: 6 }}>
+            <Button size="xs" variant="ghost" onClick={draft} disabled={drafting}
+              title={learning && !learning.centre_on
+                ? "Refused while the organisation has not let Aughor run model work on its own schedule (Settings ▸ Organization)"
+                : "One model call: up to six questions from the governed metrics and this agent's purpose, as candidates"}>
+              {drafting ? "Drafting…" : "Draft questions"}
+            </Button>
+            <Button size="xs" variant="outline" onClick={runEvaluation}
+              disabled={evaluating || goldens.length === 0}>
+              {evaluating ? "Evaluating…" : "Run evaluation"}
+            </Button>
+          </span>
+        </div>
+        {evalResult && (
+          <div style={{ fontSize: 12, color: evalResult.passed === evalResult.total
+            ? "var(--grn5)" : "var(--amb5)" }}>
+            {evalResult.passed}/{evalResult.total} passing
+            {evalResult.diff?.before && (
+              <span style={{ color: "var(--t3)" }}>
+                {" "}(was {evalResult.diff.before.passed}/{evalResult.diff.before.total})
+              </span>
+            )}
+            {evalResult.per_question.filter(p => !p.passed).slice(0, 3).map(p => (
+              <div key={p.golden_id} className="aug-fs-sm" style={{ color: "var(--t3)" }}>
+                ✗ {p.question} — {p.error}
+                {/* Receipt 2026-10-03: a mismatch with no SQL sent the reader to guess; the
+                    statement the path framed, and both row sets, ride the result. */}
+                {p.generated_sql && (
+                  <div className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--t3)",
+                    whiteSpace: "pre-wrap", marginTop: 2 }}>
+                    {p.generated_sql}
+                    {p.reference_rows && p.generated_rows && (
+                      <div>expected {JSON.stringify(p.reference_rows)} · got {JSON.stringify(p.generated_rows)}</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+            {(evalResult.diff?.newly_failing?.length ?? 0) > 0 && (
+              <div className="aug-fs-sm" style={{ color: "var(--red4)" }}>
+                newly failing: {evalResult.diff!.newly_failing.map(questionOf).join(" · ")}
+              </div>
+            )}
+            {(evalResult.diff?.newly_passing?.length ?? 0) > 0 && (
+              <div className="aug-fs-sm" style={{ color: "var(--grn5)" }}>
+                newly passing: {evalResult.diff!.newly_passing.map(questionOf).join(" · ")}
+              </div>
+            )}
+          </div>
+        )}
+        {goldens.map(g => (
+          <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 8,
+            fontSize: 12, color: "var(--t2)" }}>
+            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis",
+              whiteSpace: "nowrap" }} title={g.reference_sql}>{g.question}</span>
+            {g.source && g.source !== "person" && (
+              <StatusChip hue="muted" strength="soft">{g.source === "use" ? "from use" : "drafted"}</StatusChip>
+            )}
+            <Button variant="ghost" size="xs" onClick={async () => {
+              await deleteAgentGolden(agent.id, g.id);
+              setAll(gs => gs.filter(x => x.id !== g.id));
+            }}>Remove</Button>
+          </div>
+        ))}
+        <Input placeholder="Golden question — e.g. How many active customers?"
+          value={goldenDraft.question}
+          onChange={e => setGoldenDraft(d => ({ ...d, question: e.target.value }))} />
+        <Textarea rows={2}
+          placeholder="Reference SQL (the known-correct answer; read-only)"
+          value={goldenDraft.reference_sql}
+          onChange={e => setGoldenDraft(d => ({ ...d, reference_sql: e.target.value }))} />
+        <span>
+          <Button size="xs" variant="secondary" onClick={addGolden}
+            disabled={!goldenDraft.question.trim() || !goldenDraft.reference_sql.trim()}>
+            Add golden
+          </Button>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
+  agent: UserAgent; onChanged: () => void;
+  onDeleted: (receipt: AgentDeleteReceipt) => void;
+  onError: (e: string | null) => void;
+}) {
+  const [form, setForm] = useState({
+    name: agent.name, instructions: agent.instructions, purpose: agent.purpose ?? "",
+    connection_id: agent.connection_id, schema_scope: agent.schema_scope,
+    doc_ids: agent.doc_ids, pack_ids: agent.pack_ids,
+    tool_grants: agent.tool_grants,
+  });
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [documents, setDocuments] = useState<DocumentEntry[]>([]);
+  const [packs, setPacks] = useState<PackSummary[]>([]);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    getConnections().then(setConnections).catch(() => {});
+    listDocuments().then(setDocuments).catch(() => {});
+    getPacks().then(r => setPacks((r.packs || []).filter(p => p.ok))).catch(() => {});
+  }, [agent.id]);
+
+  // VA-9c — the declared-action roster grants pick from, keyed to the CONNECTION the
+  // form currently shows (not the saved one): picking a connection immediately offers
+  // that connection's actions, the same read the runtime's propose tool will do.
+  const [roster, setRoster] = useState<Record<string, { title?: string }>>({});
+  useEffect(() => {
+    if (!form.connection_id) { setRoster({}); return; }
+    let live = true;
+    getActionRoster(form.connection_id, form.schema_scope || undefined)
+      .then(r => { if (live) setRoster(r); });
+    return () => { live = false; };
+  }, [form.connection_id, form.schema_scope]);
+
+  // Re-seed the form when the SAVED configuration moves under it — which happens on a
+  // restore. Without this the fields keep showing the configuration that was just replaced,
+  // and the next "Save changes" quietly undoes the restore the user asked for. Keyed on
+  // config_rev, so typing is never interrupted: it only fires when what is stored changed.
+  useEffect(() => {
+    setForm({
+      name: agent.name, instructions: agent.instructions, purpose: agent.purpose ?? "",
+      connection_id: agent.connection_id, schema_scope: agent.schema_scope,
+      doc_ids: agent.doc_ids, pack_ids: agent.pack_ids,
+      tool_grants: agent.tool_grants,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agent.config_rev]);
+
+  const save = async () => {
+    if (!form.name.trim()) { onError("Name is required."); return; }
+    setSaving(true);
+    onError(null);
+    try { await patchUserAgent(agent.id, form); onChanged(); }
+    catch (e) { onError(e instanceof Error ? e.message : "Save failed."); }
+    finally { setSaving(false); }
+  };
+
+  const remove = async () => {
+    if (!window.confirm(`Delete agent “${agent.name}”? Its Slack bots are switched off, its `
+      + "automations keep running as nobody, its configuration history is kept; documents stay.")) return;
+    // AO-1e — the receipt is read, not discarded: a delete that did not happen used to
+    // close the page exactly like one that did.
+    try { onDeleted(await deleteUserAgent(agent.id)); }
+    catch (e) { onError(e instanceof Error ? e.message : "Delete failed."); }
+  };
+
+  const toggleIn = (key: "doc_ids" | "pack_ids" | "tool_grants", id: string) =>
+    setForm(f => ({ ...f, [key]: f[key].includes(id)
+      ? f[key].filter(x => x !== id) : [...f[key], id] }));
+
+  return (
+    <div style={{ maxWidth: 640, display: "flex", flexDirection: "column", gap: 14 }}>
+      <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        <span className="aug-label">Name</span>
+        <Input value={form.name} maxLength={120}
+          onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+      </label>
+      <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        <span className="aug-label">What it is for</span>
+        <Input value={form.purpose} maxLength={240}
+          placeholder="One line other agents read when deciding whether to hand this agent a question — never the instructions."
+          onChange={e => setForm(f => ({ ...f, purpose: e.target.value }))} />
+      </label>
+      <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        <span className="aug-label">Instructions</span>
+        <Textarea rows={6} value={form.instructions} maxLength={8000}
+          placeholder="Standing guidance this agent applies to every answer — domain focus, definitions to prefer, tone. It refines, never overrides, safety and grounding rules."
+          onChange={e => setForm(f => ({ ...f, instructions: e.target.value }))} />
+      </label>
+      <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        <span className="aug-label">Connection</span>
+        <SelectField value={form.connection_id}
+          onChange={e => setForm(f => ({ ...f, connection_id: e.target.value }))}>
+          <option value="">Any (use the ask&rsquo;s connection)</option>
+          {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </SelectField>
+      </label>
+      <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        <span className="aug-label">Schema scope</span>
+        <Input value={form.schema_scope} maxLength={120}
+          placeholder="e.g. finance — leave empty for all schemas"
+          onChange={e => setForm(f => ({ ...f, schema_scope: e.target.value }))} />
+        <span style={{ fontSize: 11, color: "var(--t3)" }}>
+          When set, the agent answers within this schema; asking it about another schema is rejected.
+        </span>
+      </label>
+      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        <span className="aug-label">Documents</span>
+        {documents.length === 0 ? (
+          <span style={{ fontSize: 12, color: "var(--t3)" }}>
+            No uploaded documents yet — an agent only sees the documents attached to it.
+          </span>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 160,
+            overflowY: "auto", padding: "8px 10px", border: "1px solid var(--b1)",
+            borderRadius: "var(--r2)" }}>
+            {documents.map(d => (
+              <label key={d.doc_id} style={{ display: "flex", alignItems: "center", gap: 8,
+                fontSize: 12, color: "var(--t2)", cursor: "pointer" }}>
+                <Checkbox checked={form.doc_ids.includes(d.doc_id)}
+                  onChange={() => toggleIn("doc_ids", d.doc_id)} />
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis",
+                  whiteSpace: "nowrap" }}>{d.title || d.filename}</span>
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
+      {packs.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          <span className="aug-label">Packs</span>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 130,
+            overflowY: "auto", padding: "8px 10px", border: "1px solid var(--b1)",
+            borderRadius: "var(--r2)" }}>
+            {packs.map(p => (
+              <label key={p.id} style={{ display: "flex", alignItems: "center", gap: 8,
+                fontSize: 12, color: "var(--t2)", cursor: "pointer" }}>
+                <Checkbox checked={form.pack_ids.includes(p.id)}
+                  onChange={() => toggleIn("pack_ids", p.id)} />
+                <span>{p.name || p.id}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* VA-9c — grants: which declared actions this agent may PROPOSE. The copy says
+          propose-never-execute in place, because the difference is the entire approvals
+          plane and a checkbox is exactly where someone decides without reading a spec. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        <span className="aug-label">Actions this agent may propose (each a <Term id="grant" />)</span>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+          A grant lets the agent PROPOSE the action — every proposal still waits in the
+          inbox for a human to accept. Nothing here lets it execute.
+        </span>
+        {!form.connection_id ? (
+          <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
+            Bind a connection first — grants name that connection&rsquo;s declared actions.
+          </span>
+        ) : (() => {
+          // Union with current grants, so an action UNdeclared since it was granted
+          // stays visible (and removable) instead of silently vanishing from the form
+          // while still governing the agent.
+          const ids = [...new Set([...Object.keys(roster), ...form.tool_grants])].sort();
+          return ids.length === 0 ? (
+            <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
+              No declared actions on this connection yet — declare one in the ontology
+              (Actions), then grant it here.
+            </span>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 130,
+              overflowY: "auto", padding: "8px 10px", border: "1px solid var(--b1)",
+              borderRadius: "var(--r2)" }}
+              data-testid="agent-grants">
+              {ids.map(id => (
+                <label key={id} className="aug-fs-sm"
+                  style={{ display: "flex", alignItems: "center", gap: 8,
+                  color: "var(--t2)", cursor: "pointer" }}>
+                  <Checkbox checked={form.tool_grants.includes(id)}
+                    onChange={() => toggleIn("tool_grants", id)} />
+                  <span style={{ fontFamily: "var(--font-mono)" }}>{id}</span>
+                  {roster[id]?.title ? (
+                    <span style={{ color: "var(--t3)", overflow: "hidden",
+                      textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{roster[id].title}</span>
+                  ) : !(id in roster) && (
+                    <span style={{ color: "var(--amb4)" }}>no longer declared</span>
+                  )}
+                </label>
+              ))}
+            </div>
+          );
+        })()}
+      </div>
+
+
+      <AgentGuardrailsSection agent={agent} onError={onError} />
+
+      <AgentConfigHistory agent={agent} onChanged={onChanged} onError={onError} />
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save changes"}</Button>
+        <Button variant="destructive" size="sm" onClick={remove}>Delete agent</Button>
+      </div>
+    </div>
+  );
+}
+
+/** H6 + VA-7 — the configuration history, next to the fields that write it.
+ *
+ *  Only the settings that change how the agent answers are versioned, so a rename never
+ *  shows up here. Restoring writes the old configuration forward as a new revision rather
+ *  than rewinding: what was tried in between stays on the record.
+ *
+ *  VA-7: a row now says what the edit MOVED, and opens to show it. Before this it showed
+ *  a truncated copy of the instructions, which meant two revisions differing only in
+ *  schema scope looked identical, and two differing by one sentence of a long prompt
+ *  looked identical too — a history that could be counted but not read. */
+
+const FIELD_LABEL: Record<string, string> = {
+  instructions: "Instructions",
+  connection_id: "Connection",
+  schema_scope: "Schema scope",
+  doc_ids: "Documents",
+  pack_ids: "Packs",
+};
+
+/** One governing value as text. Lists read as a count plus their members, because
+ *  "3 documents" answers the question a reader actually has and the names answer the
+ *  next one. An empty scope is the RESTRICTIVE case here — say so rather than showing a
+ *  blank, which reads as "unset" and means the opposite. */
+export function valueText(field: string, value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.length ? `${value.length}: ${value.join(", ")}` : "none";
+  }
+  const text = String(value ?? "").trim();
+  if (text) return text;
+  return field === "instructions" ? "no instructions" : "not set";
+}
+
+function FieldDiff({ field, before, after }: {
+  field: string; before: unknown; after: unknown;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3, paddingTop: 6 }}>
+      <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+        {FIELD_LABEL[field] ?? field}
+      </span>
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+        <div className="aug-fs-xs"
+             style={{ flex: 1, minWidth: 0, color: "var(--t3)",
+                      background: "var(--bg-1)", border: "1px solid var(--b1)",
+                      borderRadius: "var(--r-chip)", padding: "4px 6px",
+                      whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+          {valueText(field, before)}
+        </div>
+        <div className="aug-fs-xs"
+             style={{ flex: 1, minWidth: 0, color: "var(--t2)",
+                      background: "var(--bg-1)", border: "1px solid var(--b1)",
+                      borderRadius: "var(--r-chip)", padding: "4px 6px",
+                      whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+          {valueText(field, after)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** VA-8 — the guardrails an operator has set on one agent.
+ *
+ *  Deliberately NOT part of the agent's governing configuration: a guardrail is a
+ *  decision ABOUT an agent, not part of what the revision plane versions, and folding it
+ *  in would mark every eval chip stale the moment somebody tightened a cap. So this saves
+ *  on its own rather than riding the agent's Save button. */
+
+const PII_COPY: Record<string, { label: string; hint: string }> = {
+  off: { label: "Off", hint: "Results are shown exactly as the warehouse returned them." },
+  redact: { label: "Redact", hint: "Sensitive values are masked; the rest of the row is shown. This is the platform default." },
+  block: { label: "Block", hint: "A result containing sensitive values is withheld entirely — not shown with holes in it." },
+};
+
+export function AgentGuardrailsSection({ agent, onError }: {
+  agent: UserAgent; onError: (e: string | null) => void;
+}) {
+  const [policy, setPolicy] = useState<AgentGuardrails | null>(null);
+  const [modes, setModes] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    getAgentGuardrails(agent.id)
+      .then(r => {
+        if (!alive || !r) return;
+        setPolicy(r.guardrails);
+        // The vocabulary comes from the API, which reads it off the code. A mode this
+        // build cannot enforce must never be offerable here.
+        setModes(r.modes?.pii ?? []);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [agent.id]);
+
+  const save = async (next: AgentGuardrails) => {
+    setPolicy(next);
+    setSaving(true);
+    setSaved(false);
+    onError(null);
+    try {
+      await setAgentGuardrails(agent.id, next);
+      setSaved(true);
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Could not save guardrails.");
+    } finally { setSaving(false); }
+  };
+
+  if (!policy) return null;
+
+  const capValue = policy.max_tokens_per_run;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <span className="aug-label">Guardrails</span>
+      <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+        Applied while this agent is answering, and saved on their own — tightening a
+        guardrail does not change the agent&apos;s configuration or its evaluation.
+      </span>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span className="aug-fs-sm" style={{ color: "var(--t2)", minWidth: 96 }}>
+          Sensitive data
+        </span>
+        <SelectField style={{ maxWidth: 140 }} value={policy.pii}
+          onChange={e => save({ ...policy, pii: e.target.value as AgentGuardrails["pii"] })}>
+          {modes.map(m => (
+            <option key={m} value={m}>{PII_COPY[m]?.label ?? m}</option>
+          ))}
+        </SelectField>
+        <span className="aug-fs-xs" style={{ flex: 1, minWidth: 0, color: "var(--t3)" }}>
+          {PII_COPY[policy.pii]?.hint ?? ""}
+        </span>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span className="aug-fs-sm" style={{ color: "var(--t2)", minWidth: 96 }}>
+          Tokens per run
+        </span>
+        <Input style={{ maxWidth: 140 }} type="number" min={1}
+          placeholder="no cap"
+          value={capValue ?? ""}
+          onChange={e => {
+            const raw = e.target.value.trim();
+            const n = raw === "" ? null : Number(raw);
+            // An empty field means "no cap". A zero would arm a budget breached by the
+            // first token, which is an outage rather than a guardrail — the API refuses
+            // it, and offering it here would only produce a 422.
+            save({ ...policy, max_tokens_per_run: n && n > 0 ? Math.floor(n) : null });
+          }} />
+        <span className="aug-fs-xs" style={{ flex: 1, minWidth: 0, color: "var(--t3)" }}>
+          {capValue
+            ? `This agent stops once a run has spent ${compactNumber(capValue)} tokens.`
+            : "No ceiling beyond whatever the run itself carries."}
+        </span>
+      </div>
+
+      <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+        {saving ? "Saving…" : saved ? "Saved." : "\u00a0"}
+      </span>
+    </div>
+  );
+}
+
+export function AgentConfigHistory({ agent, onChanged, onError }: {
+  agent: UserAgent; onChanged: () => void; onError: (e: string | null) => void;
+}) {
+  const [revisions, setRevisions] = useState<AgentRevision[]>([]);
+  const [busy, setBusy] = useState<number | null>(null);
+  const [open, setOpen] = useState<number | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    listAgentRevisions(agent.id)
+      .then(r => { if (alive) setRevisions(r.revisions); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [agent.id, agent.config_rev]);
+
+  const restore = async (version: number) => {
+    setBusy(version);
+    onError(null);
+    try {
+      await restoreAgentRevision(agent.id, version);
+      onChanged();
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Restore failed.");
+    } finally { setBusy(null); }
+  };
+
+  // Shown from the FIRST revision, not the second. An agent with one entry has a real
+  // thing to say — this is the configuration it was born with — and hiding until two
+  // meant every agent that predated revision tracking showed nothing at all.
+  if (!revisions.length) return null;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <span className="aug-label">Configuration history</span>
+      <span style={{ fontSize: 11, color: "var(--t3)" }}>
+        Instructions, connection, schema scope and bindings. Restoring adds a new revision —
+        nothing in between is erased.
+      </span>
+      {revisions.map((r, i) => {
+        // Only the newest revision is "current". An older one can carry the SAME
+        // configuration (edit away, edit back) — saying "current" on both would claim two
+        // heads; saying "Restore" would offer a button that changes nothing.
+        const isHead = i === 0;
+        const sameAsHead = !isHead && r.config_rev === agent.config_rev;
+        const previous = revisions[i + 1];
+        const changed = r.changed ?? [];
+        const expandable = changed.length > 0 && previous !== undefined;
+        const isOpen = open === r.version;
+        return (
+          <div key={r.version} style={{
+            display: "flex", flexDirection: "column",
+            padding: "5px 0", borderTop: "1px solid var(--b1)",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+              <span style={{ color: "var(--t3)", minWidth: 28 }}>v{r.version}</span>
+              <span style={{ color: "var(--t2)", minWidth: 118 }}>{formatTimestamp(r.at)}</span>
+              <span style={{ flex: 1, minWidth: 0, display: "flex", gap: 4,
+                             flexWrap: "wrap", alignItems: "center" }}>
+                {r.changed === null ? (
+                  <span style={{ color: "var(--t3)" }}>earlier history not loaded</span>
+                ) : changed.length === 0 ? (
+                  <span style={{ color: "var(--t3)" }}>
+                    {r.version === 1 ? "the configuration it started with" : "no governing change"}
+                  </span>
+                ) : (
+                  changed.map(f => (
+                    <StatusChip key={f} hue="muted" strength="soft">
+                      {FIELD_LABEL[f] ?? f}
+                    </StatusChip>
+                  ))
+                )}
+              </span>
+              {expandable && (
+                <Button size="xs" variant="ghost"
+                  onClick={() => setOpen(isOpen ? null : r.version)}>
+                  {isOpen ? "Hide" : "What changed"}
+                </Button>
+              )}
+              {isHead && <StatusChip hue="info" strength="soft">current</StatusChip>}
+              {sameAsHead && (
+                <span title="This configuration is the one running now — restoring it would change nothing.">
+                  <StatusChip hue="muted" strength="soft">same as current</StatusChip>
+                </span>
+              )}
+              {!isHead && !sameAsHead && (
+                <Button size="xs" variant="ghost" disabled={busy !== null}
+                  onClick={() => restore(r.version)}>
+                  {busy === r.version ? "Restoring…" : "Restore"}
+                </Button>
+              )}
+            </div>
+            {isOpen && expandable && (
+              <div style={{ paddingLeft: 36, paddingBottom: 4 }}>
+                <div className="aug-fs-xs"
+                     style={{ display: "flex", gap: 8,
+                              color: "var(--t3)", paddingTop: 4 }}>
+                  <span style={{ flex: 1 }}>before (v{previous.version})</span>
+                  <span style={{ flex: 1 }}>after (v{r.version})</span>
+                </div>
+                {changed.map(f => (
+                  <FieldDiff key={f} field={f}
+                    before={previous.config[f]} after={r.config[f]} />
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── charter detail ───────────────────────────────────────────────────────────────
+
+/** The built-in agent's real knobs, and only the real ones: enabled, per-run
+ *  budgets, model pin. Temperature/topP/tool toggles are deliberately absent —
+ *  the transport pins temperature platform-wide and capabilities are
+ *  governance, not UI switches. */
+function CharterDetail({ charter, workspaceId, onBack, onChanged, onError, range }: {
+  charter: AgentRosterEntry; workspaceId?: string; onBack: () => void;
+  onChanged: () => void; onError: (e: string | null) => void;
+  range?: TimeRange;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [charterRuns, setCharterRuns] = useState<TimelineRun[]>([]);
+  const [charterRunsError, setCharterRunsError] = useState<string | null>(null);
+  const [charterRunsReload, setCharterRunsReload] = useState(0);
+
+  // A charter's runs are the JOBS of the kinds it owns — one fetch per kind, because
+  // /jobs filters on a single kind. A charter that owns none skips the fetch entirely
+  // rather than asking for everything and rendering somebody else's work.
+  useEffect(() => {
+    let alive = true;
+    if (charter.job_kinds.length === 0) { setCharterRuns([]); setCharterRunsError(null); return; }
+    // AO-3 — the jobs of the window this page captions, not the newest 20 of any age.
+    const window = range ? rangeParams(range) : { range: "24h" };
+    // A kind whose read failed used to count as no runs; the timeline then said "no runs".
+    let failedRead: string | null = null;
+    Promise.all(charter.job_kinds.map(k => getJobs({ kind: k, limit: 20, ...window })
+      .catch(e => { failedRead = String(e?.message || e); return []; })))
+      .then(lists => {
+        if (!alive) return;
+        setCharterRunsError(failedRead);
+        const rows = lists.flat()
+          .sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")))
+          .slice(0, 20)
+          .map(j => ({
+            id: j.id, state: j.state, at: j.created_at,
+            durationMs: j.duration_ms, label: j.title || j.kind,
+          }));
+        setCharterRuns(rows);
+      });
+    return () => { alive = false; };
+  }, [charter.id, charter.job_kinds, range, charterRunsReload]);
+
+  const patch = async (body: Parameters<typeof patchAgent>[1]) => {
+    setBusy(true);
+    try { await patchAgent(charter.id, { ...body, workspace_id: workspaceId }); onChanged(); }
+    catch (e) { onError(String((e as Error)?.message || e)); }
+    finally { setBusy(false); }
+  };
+
+  const gov = charter.governance;
+  return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+      <PageHeader onBack={onBack} title={charter.name}
+        chips={<>
+          <StatusChip hue="info" strength="soft">built-in</StatusChip>
+          {charter.reserved ? (
+            <StatusChip hue="muted" strength="soft">reserved — wiring soon</StatusChip>
+          ) : charter.lane === "background" ? (
+            <StatusChip hue={gov.enabled ? "positive" : "caution"} strength="soft">
+              {gov.enabled ? "active" : "paused"}
+            </StatusChip>
+          ) : (
+            <StatusChip hue="muted" strength="soft">always on — user-initiated</StatusChip>
+          )}
+        </>}
+        actions={!charter.reserved && charter.lane === "background" ? (
+          <Button variant="ghost" size="xs" disabled={busy}
+            onClick={() => patch({ enabled: !gov.enabled })}>
+            {gov.enabled ? "Pause" : "Resume"}
+          </Button>
+        ) : null} />
+    <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+    <div style={{ maxWidth: 720 }}>
+      <div className="aug-fs-sm" style={{ color: "var(--t2)", marginBottom: 4 }}>{charter.lane} · {charter.role}</div>
+      <div style={{ fontSize: 13, color: "var(--t2)", marginBottom: 12 }}>{charter.goal}</div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
+        {charter.job_kinds.map(k => <span key={k} className="aug-tag aug-tag-blue">{k}</span>)}
+        {charter.tools.map(t => <span key={t} className="aug-tag">{t}</span>)}
+      </div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 18 }}>
+        {/* AO-3 — "Runs (recent)" was the newest 500 jobs of any age; the roster row beside
+            it was windowed. Both now read the shared window, and the tiles say which. */}
+        <Tile label="Runs" value={String(charter.spend.runs)} sub={`in ${windowLabel(range)}`} />
+        <Tile label="Tokens" value={compactNumber(charter.spend.total_tokens)} sub={`in ${windowLabel(range)}`} />
+        <Tile label="Queries" value={String(charter.spend.query_count)} sub={`in ${windowLabel(range)}`} />
+        <Tile label="Token budget / run" value={fmtBudget(gov.token_budget)}
+          sub="enforced live — an over-budget run is cancelled" />
+      </div>
+
+      {/* The run history a charter page never had. A charter's work is JOBS, so this reads
+          the jobs of its own kinds — the same rows the Overview counts, at one-agent zoom. */}
+      <div style={{ marginBottom: 18 }}>
+        <div className="aug-label" style={{ color: "var(--t2)", marginBottom: 6 }}>Run history</div>
+        {charterRunsError !== null ? (
+          <ReadFailed what="this agent's runs" error={charterRunsError}
+            onRetry={() => setCharterRunsReload(n => n + 1)} />
+        ) : (
+          <RunTimeline runs={charterRuns} emptyNote={charter.job_kinds.length === 0
+            ? "This built-in agent owns no job kind, so it can never show runs here — its work is answered inline, not submitted as a run."
+            : `No runs in ${windowLabel(range)}.`} />
+        )}
+      </div>
+
+      {/* AO-4 — the Map a built-in agent never had: where it answers, what it runs, and
+          which alert rules watch it. The custom agent's Map draws doors and automations;
+          a built-in has no doors of its own — its work is the platform's jobs. */}
+      <BuiltInMap charter={charter} />
+
+      {!charter.reserved && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "12px 14px",
+          border: "1px solid var(--b1)", borderRadius: "var(--r3)", background: "var(--bg-2)" }}>
+          <span className="aug-label">
+            Governance {workspaceId ? "· this workspace" : "· Org (all workspaces)"}
+          </span>
+          <AgentModelPin pinned={gov.model ?? null} busy={busy}
+            onPin={(model, allowPaid) =>
+              patch(allowPaid ? { model, allow_paid: true } : { model })} />
+          {/* The Responder's budget is what stops a chat answer; its refusal links here, so
+              the budget is raised on this page rather than through the API alone. */}
+          <AgentBudget gov={gov} busy={busy} onSet={patch} />
+          {(charter.knobs ?? []).length > 0 && (
+            <AgentLimits knobs={charter.knobs ?? []} limits={gov.limits ?? {}} busy={busy}
+              onSet={(id, value) => patch({ limits: { [id]: value } })} />
+          )}
+          {/* No "use recommended" / "apply to all": the charters carried a hardcoded
+              model id per agent, and those were removed with every other model list
+              (2026-08-15). An agent runs on the operator's pin, or inherits the role
+              binding — there is nothing left for this product to recommend. */}
+          <div style={{ fontSize: 11, color: "var(--t2)", lineHeight: 1.5 }}>
+            These are the charter&rsquo;s REAL knobs. There is no per-agent temperature,
+            topP or tool toggle here: the transport pins temperature platform-wide
+            (13% run-to-run flip measured at default temp), and capability changes are
+            governance actions, not switches.
+          </div>
+        </div>
+      )}
+    </div>
+    </div>
+    </div>
+  );
+}
+
+
+/** The per-run budget — tokens and seconds — that cancels a run past it. Empty reads as
+ *  the role default; a saved number replaces it for this scope. */
+function AgentBudget({ gov, busy, onSet }: {
+  gov: AgentGovernance; busy: boolean;
+  onSet: (body: { token_budget?: number; time_budget_s?: number }) => void;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <span className="aug-label">Budget per run</span>
+      <BudgetRow label="Tokens" unit="tokens" value={gov.token_budget} busy={busy}
+        onSave={n => onSet({ token_budget: n })} />
+      <BudgetRow label="Time" unit="seconds" value={gov.time_budget_s} busy={busy}
+        onSave={n => onSet({ time_budget_s: n })} />
+      <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
+        A run that goes past either number is stopped and says so. Raising it lets the next
+        run go further; a run already stopped is not resumed.
+      </div>
+    </div>
+  );
+}
+
+function BudgetRow({ label, unit, value, busy, onSave }: {
+  label: string; unit: string; value: number | null; busy: boolean; onSave: (n: number) => void;
+}) {
+  const [draft, setDraft] = useState(value == null ? "" : String(value));
+  useEffect(() => { setDraft(value == null ? "" : String(value)); }, [value]);
+  const n = Number(draft.trim());
+  const valid = draft.trim() !== "" && Number.isInteger(n) && n > 0;
+  const dirty = valid && n !== value;
+  return (
+    <label className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <span style={{ width: 110, color: "var(--t3)", flexShrink: 0 }}>{label}</span>
+      <Input type="number" value={draft} disabled={busy} min={1} step={1} inputMode="numeric"
+        aria-label={`${label} budget per run`} placeholder="role default"
+        style={{ width: 120, fontVariantNumeric: "tabular-nums" }}
+        onChange={e => setDraft(e.target.value)} />
+      <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{unit}</span>
+      {dirty && (
+        <Button size="xs" variant="secondary" disabled={busy} onClick={() => onSave(n)}>Save</Button>
+      )}
+      {draft.trim() !== "" && !valid && (
+        <span className="aug-fs-xs" style={{ color: "var(--amb5)" }}>a whole number above 0</span>
+      )}
+    </label>
+  );
+}
+
+
+/** The charter's declared LIMITS — the Curator's warehouse-sized caps (2026-09-22).
+ *
+ *  These are knobs the charter DECLARES (id, label, range, where it bites), served by
+ *  /agents and read by the enforcement sites through one resolver — so this block, the
+ *  Spotlight read (`platform_limits`) and the Spotlight act (`set_agent_limit`) all show
+ *  the same registry. A number input per knob; save writes governance, and the next run
+ *  that reads the limit honours it. "Default" resets one knob back to inherit.
+ */
+export function AgentLimits({ knobs, limits, busy, onSet }: {
+  knobs: AgentKnob[];
+  limits: Record<string, number>;
+  busy: boolean;
+  /** Persist one knob. `null` clears it back to the charter default. */
+  onSet: (id: string, value: number | null) => void;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <span className="aug-label">Limits</span>
+      {knobs.map(k => (
+        <AgentLimitRow key={k.id} knob={k} value={limits[k.id] ?? k.default} busy={busy}
+          onSet={v => onSet(k.id, v)} />
+      ))}
+      <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
+        A limit bounds how much of a warehouse one act may touch; the token budget above
+        bounds one run. Spotlight reads these and can stage a change for approval.
+      </div>
+    </div>
+  );
+}
+
+function AgentLimitRow({ knob, value, busy, onSet }: {
+  knob: AgentKnob; value: number; busy: boolean; onSet: (v: number | null) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  // Re-seed when the SAVED value moves under the field — same rule as the model pin.
+  useEffect(() => { setDraft(String(value)); }, [value]);
+  const n = Number(draft.trim());
+  const valid = draft.trim() !== "" && Number.isInteger(n) && n >= knob.min && n <= knob.max;
+  const dirty = valid && n !== value;
+  const isDefault = value === knob.default;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      <label className="aug-fs-sm" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ width: 110, color: "var(--t3)", flexShrink: 0 }}>{knob.label}</span>
+        <Input type="number" value={draft} disabled={busy}
+          min={knob.min} max={knob.max} step={1} inputMode="numeric"
+          aria-label={knob.label}
+          style={{ width: 120, fontVariantNumeric: "tabular-nums" }}
+          onChange={e => setDraft(e.target.value)} />
+        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{knob.unit}</span>
+        {dirty && (
+          <Button size="xs" variant="secondary" disabled={busy} onClick={() => onSet(n)}>
+            Save
+          </Button>
+        )}
+        {!dirty && !isDefault && (
+          <Button size="xs" variant="ghost" disabled={busy}
+            title={`Back to the charter default (${formatCount(knob.default)} ${knob.unit})`}
+            onClick={() => onSet(null)}>
+            Default
+          </Button>
+        )}
+        {draft.trim() !== "" && !valid && (
+          <span className="aug-fs-xs" style={{ color: "var(--amb5)" }}>
+            {formatCount(knob.min)}–{formatCount(knob.max)}
+          </span>
+        )}
+      </label>
+      <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5, paddingLeft: 118 }}>
+        {knob.description} Default {formatCount(knob.default)} {knob.unit}.
+        {" "}Applies to {knob.applies_to}.
+      </div>
+    </div>
+  );
+}
+
+
+/** The charter's model pin — a paste field, not a picker (2026-08-25).
+ *
+ *  Settings → Models is the ONE surface where models are chosen: the provider is
+ *  selected there and each role (coder / narrator / fast) is bound there, as free text
+ *  with the provider's catalogue as suggestions. This panel used to render a second,
+ *  closed dropdown over the same catalogue — two routes to the same decision, and the
+ *  roster's copy could gate a model the Models tab accepts. So the list is gone:
+ *  unpinned, an agent runs on the Models-tab bindings (shown here, so the default is
+ *  never a mystery); to override, paste a model id from that same provider. Free text
+ *  for the Models tab's own reason — a stale list must never gate the model you pay for.
+ */
+export function AgentModelPin({ pinned, busy, onPin }: {
+  pinned: string | null;
+  busy: boolean;
+  /** Persist the pin. `""` clears it back to the Models-tab bindings. */
+  onPin: (model: string, allowPaid: boolean) => void;
+}) {
+  const [cfg, setCfg] = useState<LlmConfig | null>(null);
+  const [draft, setDraft] = useState(pinned ?? "");
+
+  useEffect(() => {
+    getLlmConfig().then(setCfg).catch(() => setCfg(null));
+  }, []);
+  // Re-seed when the SAVED pin moves under the field (a save landed, or a reload) —
+  // otherwise the input keeps showing a draft the server never accepted.
+  useEffect(() => { setDraft(pinned ?? ""); }, [pinned]);
+
+  const backend = cfg?.backend ?? "";
+  const provider = BACKEND_LABEL[backend] ?? backend;
+  const roleModels = cfg?.models ?? {};
+  const fb = cfg?.fallback;
+  const defaultsLine = (["coder", "narrator", "fast"] as const)
+    .filter(r => roleModels[r])
+    .map(r => `${r} → ${roleModels[r]}`)
+    .join(" · ");
+
+  const trimmed = draft.trim();
+  const dirty = trimmed !== (pinned ?? "");
+
+  const save = () => {
+    // Free-by-default: pinning a paid OpenRouter model is a deliberate act — the
+    // server refuses it without allow_paid; this confirm is how the user grants it.
+    const paid = backend === "openrouter" && !!trimmed && !trimmed.endsWith(":free");
+    if (paid && !window.confirm(
+      `${trimmed} is a PAID OpenRouter model — free (:free) models are the default, ` +
+      "and every call with this pin bills your OpenRouter credit. Pin it anyway?")) {
+      return;
+    }
+    onPin(trimmed, paid);
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+        <span style={{ width: 110, color: "var(--t3)", flexShrink: 0 }}>Model pin</span>
+        <Input value={draft} disabled={busy}
+          spellCheck={false} autoComplete="off"
+          placeholder={provider ? `paste a model id from ${provider}` : "paste a model id"}
+          style={{ maxWidth: 260 }}
+          onChange={e => setDraft(e.target.value)} />
+        {dirty && (
+          <Button size="xs" variant="secondary" disabled={busy} onClick={save}>
+            {trimmed ? "Pin" : "Clear pin"}
+          </Button>
+        )}
+        {!dirty && pinned && (
+          <Button size="xs" variant="ghost" disabled={busy}
+            title="Remove the pin — this agent goes back to the models bound in Settings → Models"
+            onClick={() => onPin("", false)}>
+            Use Models default
+          </Button>
+        )}
+      </label>
+      <div style={{ fontSize: 11, color: "var(--t2)", lineHeight: 1.5 }}>
+        {pinned ? (
+          <>Pinned — this agent&rsquo;s coder and narrator calls run on the pinned model;
+            its cheap &ldquo;fast&rdquo; calls stay on the Settings → Models binding. </>
+        ) : defaultsLine ? (
+          <>No pin — this agent runs on the models chosen in Settings → Models
+            ({defaultsLine}). </>
+        ) : (
+          <>No pin — this agent runs on the models chosen in Settings → Models. </>
+        )}
+        Paste any model id {provider ? `${provider} serves` : "your provider serves"} to
+        pin this agent — there is no list here to go stale, and the provider itself is
+        chosen in Settings → Models.
+      </div>
+      {/* Where this agent's calls land when the primary refuses. The binding is chosen in
+          Settings → Models and applies to every agent that is not pinned — shown here
+          because a run that fails over answers on a DIFFERENT model, and the roster was
+          the one place an operator could not tell that had happened. */}
+      <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
+        {fb?.active && (
+          <span style={{ color: "var(--amb5)", fontWeight: 600 }}>
+            Failing over now —{" "}
+          </span>
+        )}
+        {fb?.backend === "none"
+          ? <>No fallback: a failing call fails this agent&rsquo;s run.</>
+          : fb?.model
+            ? <>Fallback: <code style={{ fontFamily: "var(--font-mono)" }}>{fb.model}</code>{" "}
+              on {BACKEND_LABEL[fb.backend] ?? fb.backend}.</>
+            : fb?.chain?.length
+              ? <>Fallback: the built-in order ({fb.chain.join(" → ")}) — each link needs a
+                model bound for it, or it is skipped.</>
+              : <>No fallback configured.</>}
+      </div>
+    </div>
+  );
+}
+
+
+function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div style={{ flex: "1 1 130px", minWidth: 130, background: "var(--bg-2)",
+      border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "10px 14px" }}>
+      <div style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{value}</div>
+      <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 3 }}>{label}</div>
+      {sub && <div style={{ fontSize: 11, color: "var(--t2)", marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
+}

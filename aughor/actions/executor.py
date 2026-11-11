@@ -1,0 +1,968 @@
+"""Wave K2 — the ONE governed executor for declared KineticActions.
+
+Every declared action runs through :func:`execute_kinetic_action`, and only through it. The
+pipeline is deterministic and side-effect-free until the very last step:
+
+    coerce params → evaluate submission criteria → graduated-approval gate → dispatch → audit
+
+Ordering is load-bearing. Submission criteria run BEFORE the approval gate: a criterion failure
+means "this action is invalid as requested", which is more fundamental than "needs approval", and
+its AUTHORED message is the product — shown verbatim to the human and (in K4) the model, never
+paraphrased. No side effect happens on any rejection: dispatch is the last step and runs only when
+every gate passed. Approval reuses the existing graduated dial (`govern.actions.guard`), passing the
+action's DECLARED risk (a dynamic action isn't in the static `_RISK` registry).
+
+Dispatch is injectable. The default handler fully wires ``notify``/``webhook`` (a self-contained,
+SSRF-guarded POST), ``annotate`` (the K3 overlay ledger) and ``trigger_investigation`` (H5 — via
+:mod:`aughor.runners.investigation`, the runner an automation's scheduled ``investigate`` effect
+also uses, so neither package has to import the other); ``query`` (read-query wiring) is still a
+clean seam that raises until its PR lands. A caller (a test, the K4 agent) may inject its own
+dispatcher.
+
+RBAC is enforced at the HTTP boundary (the route's policy permission via ``enforce_rbac``), not here,
+so the executor stays callable headlessly by the agent inside an already-authorised request.
+"""
+from __future__ import annotations
+
+import ast
+import operator
+from dataclasses import dataclass, field
+from typing import Callable, Optional
+
+from aughor.actions.overlay import EditConflict
+from urllib.parse import quote
+
+from aughor.ontology.models import KineticAction, SideEffect
+from aughor.ontology.object_refs import same_type, split_ref
+
+# ── result + errors ──────────────────────────────────────────────────────────────
+
+_Status = str  # "executed" | "criterion_failed" | "approval_required" | "invalid_params"
+#              | "dispatch_error" | "not_found" | "disabled" | "expired"
+
+
+@dataclass
+class KineticResult:
+    status: _Status
+    ok: bool
+    action_id: str = ""
+    message: str = ""                       # authored criterion message / approval hint / error
+    outcome: dict = field(default_factory=dict)   # dispatch result, when executed
+    detail: dict = field(default_factory=dict)    # structured extras (e.g. the 428 body)
+    granted_by: str = ""                    # A4: the standing-grant id that auto-allowed this run ('' otherwise)
+    #: Phase 4 of the 2027 study — what the declared verification read found after dispatch
+    #: ({"status": passed|failed|unavailable|not_declared, "why", …}) and the Action ledger entry.
+    verification: dict = field(default_factory=dict)
+    action_entry: str = ""
+
+    def http_status(self) -> int:
+        return {
+            "executed": 200, "criterion_failed": 422, "invalid_params": 422,
+            "approval_required": 428, "not_found": 404, "disabled": 404,
+            # Arc OC-6 — the action was changed after it was proposed: propose it again, against what will run.
+            "action_changed": 409,
+            # Arc OC-6 — the person read an older version of what the action sets: read it again.
+            "edit_conflict": 409,
+            # Arc OC-6 (D4) — the action's authority is below "execute with approval" here: a refusal, not a gate.
+            "authority_capped": 403,
+            # Both mean "the far end refused", so both are 502 rather than the 400
+            # fallthrough — a 400 blames the caller for a counterparty's answer, and
+            # `failed` is a status the proposal inbox has always written.
+            "dispatch_error": 502, "failed": 502,
+            # 202, not 200 or 502 (DS-11's completion): an accepted integration write
+            # whose transport broke MAY have landed. 200 would assert it did and 502 that
+            # it did not; "accepted, outcome not yet known" is the one true thing to say,
+            # and it is what stops a caller from retrying a maybe-delivered write.
+            "uncertain": 202,
+            # 410, not 400 (RC-3): the request was well-formed and the proposal was real —
+            # its acceptance window closed. 400 would blame the caller for the clock, and a
+            # client cannot tell "you sent nonsense" apart from "you were too late".
+            "expired": 410,
+        }.get(self.status, 400)
+
+
+class ParamError(ValueError):
+    """A parameter is missing or cannot be coerced to its declared type."""
+
+
+class CriterionError(ValueError):
+    """A submission criterion expression is not a safe, evaluable predicate."""
+
+
+class KineticDispatchError(RuntimeError):
+    """A dispatch handler is not available (a seam not yet wired) or failed. ``cause`` (Arc OC-6) says what is known of
+    a call's fate, which is what an outbox retries by: ``not_delivered`` (it never left — safe to send again),
+    ``unknown`` (it left and no answer came back — it may have landed), ``refused`` (the far end, or a setting, said no
+    — sending it again changes nothing). "" when nothing was attempted."""
+
+    def __init__(self, message: str = "", cause: str = ""):
+        super().__init__(message)
+        self.cause = cause
+
+
+# ── safe submission-criterion evaluator ──────────────────────────────────────────
+# A restricted predicate language over the action's parameters — comparisons, boolean
+# logic, membership, and literals only. NEVER `eval`: the expr comes from an authored
+# YAML file, so arbitrary code (calls, attribute access, subscripts, comprehensions)
+# must be structurally impossible, not merely discouraged.
+
+_CMP = {
+    ast.Lt: operator.lt, ast.LtE: operator.le, ast.Gt: operator.gt, ast.GtE: operator.ge,
+    ast.Eq: operator.eq, ast.NotEq: operator.ne,
+    ast.In: lambda a, b: a in b, ast.NotIn: lambda a, b: a not in b,
+}
+
+
+def _eval(node: ast.AST, params: dict, objects: Optional[dict] = None):
+    objects = objects or {}
+    if isinstance(node, ast.Expression):
+        return _eval(node.body, params, objects)
+    if isinstance(node, ast.BoolOp):
+        vals = [_eval(v, params, objects) for v in node.values]
+        return all(vals) if isinstance(node.op, ast.And) else any(vals)
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+        return not _eval(node.operand, params, objects)
+    if isinstance(node, ast.Compare):
+        left = _eval(node.left, params, objects)
+        for op, comp in zip(node.ops, node.comparators):
+            right = _eval(comp, params, objects)
+            fn = _CMP.get(type(op))
+            if fn is None:
+                raise CriterionError(f"operator not allowed: {type(op).__name__}")
+            try:
+                held = fn(left, right)
+            except TypeError as e:
+                # A date property against a string literal, say: unevaluable, so it fails closed.
+                raise CriterionError(f"cannot compare {type(left).__name__} with {type(right).__name__}") from e
+            if not held:
+                return False
+            left = right
+        return True
+    if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id in objects:
+        # ON-4 — `entity.status`: a property of an object parameter's object, read live. Only a name
+        # bound to a resolved object may be dotted, and only into that object's property values.
+        target = objects[node.value.id]
+        props = target.get("properties") or {}
+        hit = next((k for k in props if k.lower() == node.attr.lower()), None)
+        if node.attr.startswith("_") or hit is None:
+            raise CriterionError(f"{target.get('object_type') or node.value.id} has no property "
+                                 f"'{node.attr}' (in a criterion)")
+        return props[hit]
+    if isinstance(node, ast.Name):
+        if node.id in params:
+            return params[node.id]
+        raise CriterionError(f"unknown parameter in criterion: '{node.id}'")
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        return [_eval(e, params, objects) for e in node.elts]
+    raise CriterionError(f"expression not allowed in a criterion: {type(node).__name__}")
+
+
+def evaluate_predicate(expr: str, params: dict, objects: Optional[dict] = None) -> bool:
+    """True/False for a submission-criterion predicate over ``params`` — and, for an action that takes
+    objects, over their properties (``objects``, from :func:`resolve_objects`). Raises
+    :class:`CriterionError` on anything outside the restricted grammar (fail-closed)."""
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except SyntaxError as e:
+        raise CriterionError(f"criterion is not a valid expression: {e}") from e
+    return bool(_eval(tree, params, objects))
+
+
+# ── parameter coercion ───────────────────────────────────────────────────────────
+
+def _cast(value, data_type: str):
+    d = (data_type or "VARCHAR").upper()
+    try:
+        if d in ("INTEGER", "INT", "BIGINT", "SMALLINT"):
+            return int(value)
+        if d in ("NUMERIC", "DECIMAL", "FLOAT", "DOUBLE", "REAL"):
+            return float(value)
+        if d in ("BOOLEAN", "BOOL"):
+            if isinstance(value, bool):
+                return value
+            return str(value).strip().lower() in ("1", "true", "yes", "on")
+    except (ValueError, TypeError) as e:
+        raise ParamError(f"parameter cannot be cast to {d}: {value!r}") from e
+    return str(value)
+
+
+def coerce_params(action: KineticAction, raw: dict) -> dict:
+    """Coerce raw params (strings from HTTP/agent) to each param's declared type, filling
+    declared defaults and rejecting a missing required param. Extra keys are ignored — an
+    action only ever sees its declared parameters."""
+    raw = raw or {}
+    out: dict = {}
+    for p in action.params:
+        present = p.name in raw and raw[p.name] not in (None, "")
+        if not present:
+            if p.required and p.default_value is None:
+                raise ParamError(f"missing required parameter '{p.name}'")
+            if p.default_value is None:
+                continue
+            value = p.default_value
+        else:
+            value = raw[p.name]
+        out[p.name] = object_ref(value, p) if p.kind == "object" else _cast(value, p.data_type)
+    return out
+
+
+def object_ref(value, param) -> str:
+    """ON-4 — the canonical ``"<type>:<key>"`` for a value passed to an object parameter:
+    ``"Thing:123"``, ``{"object_type": "Thing", "pk": "123"}``, or a bare key the parameter's own type
+    names. A reference to another object type is invalid, however plausible its key. Read by the one parser a
+    reference has (`ontology.object_refs`)."""
+    want = param.object_type
+    typ, key = split_ref(value, want)
+    if not key:
+        raise ParamError(f"parameter '{param.name}' needs an object key: '{want}:<key>'")
+    if not same_type(typ, want):
+        raise ParamError(f"parameter '{param.name}' takes an object of type {want}, not {typ}")
+    return f"{want}:{key}"
+
+
+#: ``(object_type, key) -> {object_type, type_id, pk, key, table, title, properties}`` — reads ONE
+#: object live and raises LookupError when none has that key (``semantic.object_instances``).
+ObjectResolver = Callable[[str, str], dict]
+
+
+def default_object_resolver(action: KineticAction, scope: str, schema_name: str = "") -> Optional[ObjectResolver]:
+    """The live resolver for ``scope`` — built only when the action takes objects."""
+    if not scope or not any(p.kind == "object" for p in action.params):
+        return None
+    from aughor.semantic.object_instances import object_resolver
+    return object_resolver(scope, schema_name)
+
+
+def resolve_objects(action: KineticAction, coerced: dict, resolver: Optional[ObjectResolver]) -> dict:
+    """ON-4 — every object parameter's object, read live: ``{param: resolved}``, plus ``object`` for
+    the one the action is about (its ``object_type``'s parameter, or its only object parameter). An
+    object that does not exist is a :class:`ParamError` — an action never runs against nothing."""
+    taken = [p for p in action.params if p.kind == "object" and p.name in coerced]
+    if not taken:
+        return {}
+    if resolver is None:
+        raise ParamError("this action takes objects, and there is no connection to read them from")
+    out: dict = {}
+    for p in taken:
+        key = str(coerced[p.name]).split(":", 1)[1]
+        try:
+            out[p.name] = resolver(p.object_type, key)
+        except (LookupError, ValueError) as e:
+            raise ParamError(str(getattr(e, "reason", "") or e)) from e
+    about = [p.name for p in taken
+             if action.object_type and same_type(p.object_type, action.object_type)]
+    subject = about[0] if about else (taken[0].name if len(taken) == 1 else "")
+    if subject and "object" not in out:
+        out["object"] = out[subject]
+    return out
+
+
+# ── dispatch (injectable; the default wires webhook/notify, seams the rest) ───────
+
+Dispatch = Callable[[KineticAction, dict, str], dict]   # (action, coerced_params, scope/conn_id) -> outcome
+
+
+def _undelivered(what: str, exc: Exception) -> KineticDispatchError:
+    """A call that got no answer, said as what is known about it. Refused before it left — a usage cap, a
+    connection never opened — it was not delivered. Anything after the request went out may have landed,
+    and a retry could do the thing twice, so that is said rather than called a failure."""
+    import httpx
+    from aughor.govern.outbound import OutboundBlocked
+    detail = f"{type(exc).__name__}: {str(exc)[:200]}"
+    if isinstance(exc, (OutboundBlocked, httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout,
+                        httpx.UnsupportedProtocol)):
+        return KineticDispatchError(f"the {what} was not delivered — {detail}", cause="not_delivered")
+    return KineticDispatchError(f"the {what} may have been delivered — no answer came back ({detail}); "
+                                "check the receiving system before running it again", cause="unknown")
+
+
+def _dispatch_webhook(se: SideEffect, action: KineticAction, params: dict) -> dict:
+    """A self-contained, SSRF-guarded POST — reuses the ActionHub URL guard so a declared
+    webhook can never reach a private/internal target.
+
+    DS-13 — now through ``govern.outbound`` as well. VA-9a's own note named the three
+    senders that emitted no span and consulted no cap (`slackbots/post.py`,
+    `slackbots/verify.py`, `notifications/executor.py`) and fixed them; this one was the
+    fourth and was missed, so a declared action's webhook fired unbudgeted, absent from
+    the waterfall, and invisible to `observed_usage` — which reads session events, not
+    spans. Measured 2026-09-01: every other outbound sender in the tree imports
+    `external_call` and this file did not.
+    """
+    url = (se.config or {}).get("url", "")
+    from aughor.govern.outbound import OutboundBlocked, external_call
+    from aughor.util.url_guard import is_safe_webhook_url
+    if not url or not is_safe_webhook_url(url):
+        raise KineticDispatchError("webhook url missing or blocked by the SSRF guard")
+    import httpx
+    body = {"action": action.id, "kind": se.kind, "params": params,
+            "config": {k: v for k, v in (se.config or {}).items() if k != "url"}}
+    try:
+        with external_call("webhook", action.id) as extra:
+            resp = httpx.post(url, json=body, timeout=10.0,
+                              headers=(se.config or {}).get("headers") or {})
+            extra["ok"] = resp.is_success
+            extra["status"] = resp.status_code
+    except (httpx.HTTPError, OutboundBlocked) as exc:
+        raise _undelivered("webhook", exc) from exc
+    return {"kind": se.kind, "http_status": resp.status_code, "ok": resp.is_success}
+
+
+# ── DS-13: the declarative custom component ──────────────────────────────────────
+#
+# When a person needs a component the platform did not ship, the answer is not a code editor. It is
+# this: an `http` side effect that DESCRIBES a call — method, url, headers, an encrypted
+# auth header, a body template — and is filled, never evaluated. The no-code-injection law
+# holds by construction, because there is no code anywhere in the record to run.
+#
+# It rides the plane that already exists rather than a new one. A declared action carries
+# typed params, submission criteria, a risk tier and the graduated approval gate; adding a
+# fourth side-effect kind inherits every one of those, so a custom component's writes are
+# governed the same day it is authored. Building a parallel "custom component" object with
+# its own store and its own gate would have been the second policy authority §3.4 refuses.
+
+#: The response body a call may publish back into the chain. A vendor that answers with a
+#: megabyte of JSON must not put a megabyte into a run record that a canvas then renders.
+MAX_RESPONSE_CHARS = 4000
+
+#: Methods a declared component may use. A closed set, not a passthrough: TRACE and CONNECT
+#: have no business here, and an unknown verb is an authoring error worth failing at.
+_HTTP_METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
+
+
+def fill_template(value, params: dict, *, quote_for_url: bool = False):
+    """Substitute declared params into a template — strings, dicts and lists alike.
+
+    TOTAL and deterministic, the same rule `_fill_question` states one function down: only
+    DECLARED parameters can appear, and an unknown placeholder is an authoring error rather
+    than a stray brace shipped to a vendor's API. Non-string leaves pass through untouched,
+    so a template may carry real numbers and booleans instead of stringifying everything.
+
+    ``quote_for_url`` percent-encodes each substituted value. It is used for the URL and
+    nowhere else: a parameter carrying ``/`` or ``?`` must not be able to reshape the path
+    it lands in, and one carrying a host must not be able to move the request.
+    """
+    if isinstance(value, str):
+        if "{" not in value:
+            return value
+        safe = ({k: quote(str(v), safe="") for k, v in params.items()}
+                if quote_for_url else params)
+        try:
+            return value.format_map(safe)
+        except (KeyError, IndexError, ValueError) as e:
+            raise KineticDispatchError(
+                f"http side effect references something the action does not declare: {e}"
+            ) from e
+    if isinstance(value, dict):
+        return {k: fill_template(v, params, quote_for_url=quote_for_url) for k, v in value.items()}
+    if isinstance(value, list):
+        return [fill_template(v, params, quote_for_url=quote_for_url) for v in value]
+    return value
+
+
+def _dispatch_http(se: SideEffect, action: KineticAction, params: dict) -> dict:
+    """One described call to a vendor's own API, governed like everything else that leaves.
+
+    The order matters and is the same order `govern.outbound` uses one layer down: refuse
+    what needs no network first, then let the seam check the cap, open the span and record
+    the EXTERNAL_CALL event.
+
+    The SSRF guard runs on the FILLED url, not the template. A guard that checked the
+    template would approve `https://api.vendor.com/{path}` and then send the request
+    wherever `path` said to — which is not a guard, it is a guard-shaped comment.
+    """
+    from aughor.govern.outbound import OutboundBlocked, external_call
+    from aughor.secretvault import decrypt_secret
+    from aughor.util.url_guard import is_safe_webhook_url
+
+    cfg = se.config or {}
+    method = str(cfg.get("method", "POST")).upper()
+    if method not in _HTTP_METHODS:
+        raise KineticDispatchError(
+            f"http side effect method '{method}' is not one of {', '.join(_HTTP_METHODS)}")
+
+    url = fill_template(str(cfg.get("url", "")), params, quote_for_url=True)
+    if not url or not is_safe_webhook_url(url):
+        raise KineticDispatchError("http url missing or blocked by the SSRF guard")
+
+    headers = {str(k): str(v) for k, v in (fill_template(cfg.get("headers") or {}, params)).items()}
+    # The credential is decrypted HERE and nowhere else — it is never returned, never
+    # logged, and never part of the result this function publishes. At rest it is Fernet
+    # under AUGHOR_SECRET_KEY like every other secret this platform holds, which is what
+    # makes an override file safe to keep in git.
+    auth_header = str(cfg.get("auth_header", "") or "")
+    if auth_header:
+        secret = decrypt_secret(str(cfg.get("auth_secret", "") or "")) or ""
+        if not secret:
+            raise KineticDispatchError(
+                f"'{action.id}' declares the {auth_header} header but holds no secret for "
+                f"it — re-enter the credential")
+        headers[auth_header] = secret
+
+    body = fill_template(cfg.get("body"), params) if cfg.get("body") is not None else None
+
+    import httpx
+    try:
+        with external_call("http_component", action.id,
+                           attributes={"method": method}) as extra:
+            resp = httpx.request(method, url, headers=headers,
+                                 json=body if body is not None else None, timeout=20.0)
+            extra["ok"] = resp.is_success
+            extra["status"] = resp.status_code
+    except (httpx.HTTPError, OutboundBlocked) as exc:
+        raise _undelivered(f"{method} call", exc) from exc
+
+    # The response is DATA, and it is capped. A vendor answering with a megabyte of JSON
+    # must not put a megabyte into a run record a canvas will render.
+    text = resp.text or ""
+    truncated = len(text) > MAX_RESPONSE_CHARS
+    out: dict = {"kind": se.kind, "http_status": resp.status_code, "ok": resp.is_success}
+    try:
+        parsed = resp.json()
+        out["response"] = parsed if not truncated else {"_truncated": True}
+    except Exception:
+        out["response_text"] = text[:MAX_RESPONSE_CHARS]
+    if truncated:
+        out["truncated"] = True
+    return out
+
+
+def _fill_question(template: str, params: dict) -> str:
+    """Substitute the action's coerced parameters into the configured question.
+
+    Total and deterministic: only DECLARED parameters can appear, and an unknown placeholder is
+    an authored error rather than a literal brace left in the question for a model to interpret.
+    A declared action is a contract; a question it cannot actually build should fail at dispatch,
+    loudly, not become a subtly different investigation.
+    """
+    if not template:
+        return ""
+    try:
+        return template.format_map(params)
+    except (KeyError, IndexError, ValueError) as e:
+        raise KineticDispatchError(
+            f"trigger_investigation question references something the action does not declare: {e}"
+        ) from e
+
+
+def _dispatch_trigger_investigation(se: SideEffect, action: KineticAction, params: dict,
+                                    scope: str) -> dict:
+    """Wave H5 — start a governed investigation through the neutral runner.
+
+    The runner (:mod:`aughor.runners.investigation`) is the same one an automation's scheduled
+    ``investigate`` effect uses, and lives in a module neither package owns — pointing this branch
+    at ``automations`` instead would have inverted the dependency, since automations already routes
+    its ``kinetic_action`` effect through this executor.
+
+    A persona binding that cannot hold is a ``dispatch_error`` carrying the ask path's authored
+    sentence VERBATIM, not a quiet run as nobody: the K2 property that an action which could not do
+    what it declared says so. The investigation is submitted, never awaited — a deep run takes
+    minutes and this is called inside an HTTP request — so the outcome carries the job id plus
+    whichever ids are genuinely known (see ``basis``), never an invented receipt.
+    """
+    from aughor.runners import InvestigationRequest, run_investigation
+
+    cfg = se.config or {}
+    question = _fill_question(str(cfg.get("question", "")).strip(), params)
+    if not question:
+        raise KineticDispatchError(
+            "trigger_investigation requires a 'question' in its side-effect config")
+    connection_id = str(cfg.get("connection_id") or scope or "")
+    if not connection_id:
+        # Fail here rather than let the ask path fail deep inside a background job on a
+        # connection id of "" — the caller would see a submitted job that quietly never answered.
+        raise KineticDispatchError(
+            "trigger_investigation has no connection: declare 'connection_id' in the side-effect "
+            "config, or execute the action against one")
+    req = InvestigationRequest(
+        question=question,
+        connection_id=connection_id,
+        schema_name=str(cfg.get("schema_name") or "") or None,
+        agent_id=str(cfg.get("agent_id") or "") or None,
+    )
+    # Two runs of one action are the same work only when they ask the same question as the same
+    # persona — the parameters are already baked into `question`, so an investigation for
+    # object A must not deduplicate onto object B's.
+    import hashlib
+    digest = hashlib.sha256(f"{question}\x00{req.agent_id or ''}".encode()).hexdigest()[:12]
+    run = run_investigation(req, idempotency_key=f"kinetic:{action.id}:{digest}",
+                            caller=f"kinetic:{action.id}")
+    if not run.ok:
+        raise KineticDispatchError(run.message)
+    return {"kind": se.kind, "question": question, "connection_id": connection_id,
+            "basis": run.basis, "job_id": run.job_id,
+            "investigation_id": run.investigation_id, "receipt_id": run.receipt_id,
+            **({"agent_id": req.agent_id} if req.agent_id else {})}
+
+
+def readable_params(action, params: dict) -> dict:
+    """``params`` as a person reads them in a message: an object parameter's ``"<Type>:<key>"`` is its key alone — a
+    message names the type once, in its own words, never twice."""
+    objects = {p.name for p in action.params if p.kind == "object"}
+    return {k: (str(v).split(":", 1)[1] if k in objects and ":" in str(v) else v) for k, v in params.items()}
+
+
+def _not_sent(why: str, cause: str = "refused") -> Exception:
+    """The executor's dispatch error, for a message that did not land — said in words, with what is known of it."""
+    return KineticDispatchError(why, cause=cause)
+
+
+def _dispatch_destination(se: SideEffect, action, params: dict) -> dict:
+    """``notify`` to a destination a person saved in Notifications — a Slack channel's webhook, a Jira project, a
+    webhook — through `notifications.fire_action`, the send every other door already uses, whose delivery log is the
+    platform's own record of it (2026-10-09; the docstring on `SideEffect` said this for a year while ``notify`` went
+    to a bare URL). Nothing here is a URL a person typed into an action: the destination was set up, and its
+    credential stored, where destinations are.
+
+    A send that did not land is a ``dispatch_error`` in words: turned off (nothing was sent), refused, or no answer —
+    which may have landed, so it is said rather than called a failure a retry could double."""
+    from datetime import datetime, timezone
+
+    from aughor.notifications.executor import fire_action
+    from aughor.notifications.models import ActionPayload
+    from aughor.notifications.store import get_trigger
+
+    cfg = se.config or {}
+    destination = str(cfg.get("destination") or "")
+    trigger = get_trigger(destination)
+    if trigger is None:
+        raise _not_sent(f"no destination '{destination}' is saved in Notifications — it may have been removed")
+    template = str(cfg.get("message") or "").strip()
+    try:
+        message = template.format_map(readable_params(action, params)) if template else (action.display_name or action.id)
+    except (KeyError, IndexError, ValueError) as e:
+        raise _not_sent(f"the message references something the action does not declare: {e}") from e
+    log = fire_action(trigger, ActionPayload(
+        investigation_id="", rec_index=0, recommendation=message, metric_name="",
+        headline=action.display_name or action.id, trigger_id=trigger.id,
+        triggered_at=datetime.now(timezone.utc).isoformat(), context={"action": action.id}))
+    if log.status == "skipped":
+        raise _not_sent(f"the destination '{trigger.name}' is turned off in Notifications — nothing was sent")
+    if log.status == "timeout":
+        raise _not_sent(f"the message to '{trigger.name}' may have been delivered — no answer came back; "
+                        "check it before pressing again", cause="unknown")
+    if log.status != "ok":
+        raise _not_sent(f"the message to '{trigger.name}' was not delivered — {log.error or f'HTTP {log.http_status}'}",
+                        cause="not_delivered")
+    return {"kind": se.kind, "destination": trigger.id, "destination_name": trigger.name, "message": message,
+            "log_id": log.id, "status": log.status}
+
+
+def fill_edit(template: str, params: dict) -> str:
+    try:
+        return template.format_map(params) if "{" in template else template
+    except (KeyError, IndexError, ValueError) as e:
+        raise KineticDispatchError(f"an edit references something the action does not declare: {e}") from e
+
+
+def _expected(expected: Optional[dict], prop: str) -> Optional[int]:
+    """The version of ``prop`` the person read, when they said (0: they saw none set)."""
+    if not expected:
+        return None
+    hit = next((v for k, v in expected.items() if str(k).lower() == prop.lower()), None)
+    try:
+        return int(hit) if hit is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _move_problem(action: KineticAction, params: dict, objects: dict) -> str:
+    """Arc OC-6 — "" when every edit the action makes is a move its property declares (or the property declares none),
+    else the sentence a refusal says: where the object stands, where the edit would take it, what is allowed."""
+    for edit in action.edits or []:
+        target = objects.get(edit.object) or {}
+        spec = (target.get("state_machines") or {}).get(edit.property)
+        if not spec:
+            continue
+        from aughor.ontology.models import EditStateMachine
+        machine = EditStateMachine.model_validate(spec)
+        current = str(((target.get("edited") or {}).get(edit.property) or {}).get("value", machine.initial) or "")
+        new = fill_edit(edit.value, params)
+        if not machine.allows(current, new):
+            here = current or "unset"
+            nexts = machine.from_here(current)
+            return (f"{target.get('object_type', '')} {target.get('pk', '')} has {edit.property} {here}; this action "
+                    f"would set it to {new}, which is not a move {edit.property} allows — from {here} it may move to "
+                    f"{', '.join(nexts) if nexts else 'nothing'}")
+    return ""
+
+
+def _dispatch_object_edits(action: KineticAction, params: dict, scope: str, *, actor: str,
+                           objects: dict, expected: Optional[dict] = None) -> dict:
+    """ON-4 — an annotate action's declared edits. Each sets one overlay property on one object the
+    action takes, keyed ``(object_type, key, property)`` and stamped with who ran it; the source is
+    never written. A property the object already reads from its source is refused here as well, so a
+    declaration that slipped past authoring still cannot rewrite a source value."""
+    from aughor.actions.overlay import OverlayEdit, save_edit
+    written = []
+    for edit in action.edits:
+        target = objects.get(edit.object)
+        if not target:
+            raise KineticDispatchError(f"the edit setting '{edit.property}' needs the object in "
+                                       f"'{edit.object}', which was not read")
+        # Arc OC-6 (D5) — the object is read with its edits now, so "what it reads from its source" is the source's own
+        # names, when the reader says them; a property the edit layer already holds may be set again
+        source = target["source"] if "source" in target else (target.get("properties") or {})
+        if any(k.lower() == edit.property.lower() for k in source):
+            raise KineticDispatchError(f"'{edit.property}' is a column {target.get('object_type')} reads from "
+                                       "its source — an edit sets an overlay property, never a source value")
+        saved = save_edit(OverlayEdit(
+            connection_id=scope, table=str(target.get("table") or target.get("object_type") or ""),
+            column=edit.property, row_key=str(target["pk"]), key_column=str(target.get("key") or ""),
+            kind="property", body=fill_edit(edit.value, params), note=fill_edit(edit.note, params),
+            object_type=str(target.get("object_type") or ""), actor=actor, origin=f"action:{action.id}",
+            source="user"), expected_version=_expected(expected, edit.property))
+        written.append({"object": f"{saved.object_type}:{saved.row_key}", "property": saved.column,
+                        "value": saved.body, "id": saved.id, "provenance": saved.provenance()})
+    return {"edits": written}
+
+
+def _dispatch_annotate(action: KineticAction, params: dict, scope: str, *, actor: str = "",
+                       objects: Optional[dict] = None, expected: Optional[dict] = None) -> dict:
+    """Write a human overlay edit to the K3 ledger — an annotation/correction merged onto reads,
+    never a source mutation. The action's parameters carry the target + body. The row is named by
+    ``row_key`` or, when that is absent, by the parameter its ``key_column`` names — an action taking
+    ``row_id`` with ``key_column="row_id"`` annotates that object's row, which is how an object
+    page pre-fills the object's key."""
+    if action.edits:
+        return _dispatch_object_edits(action, params, scope, actor=actor, objects=objects or {}, expected=expected)
+    from aughor.actions.overlay import OverlayEdit, save_edit
+    if not params.get("table") or not params.get("body"):
+        raise KineticDispatchError("annotate requires 'table' and 'body' parameters")
+    key_column = str(params.get("key_column", ""))
+    row_key = params.get("row_key")
+    if row_key in (None, "") and key_column:
+        row_key = params.get(key_column)
+    edit = save_edit(OverlayEdit(
+        connection_id=scope, table=str(params["table"]),
+        column=str(params.get("column", "")), row_key="" if row_key is None else str(row_key),
+        key_column=key_column,
+        kind=str(params.get("kind", "annotation")), body=str(params["body"]), source="user"))
+    return {"annotation": edit.target(), "id": edit.id}
+
+
+def dispatch_effect(se: SideEffect, action: KineticAction, params: dict, scope: str = "") -> dict:
+    """ONE side effect, by its kind — what the writeback lane and the outbox both send."""
+    if se.kind == "notify" and (se.config or {}).get("destination"):
+        return _dispatch_destination(se, action, params)
+    if se.kind in ("notify", "webhook"):
+        return _dispatch_webhook(se, action, params)
+    if se.kind == "http":
+        return _dispatch_http(se, action, params)
+    if se.kind == "trigger_investigation":
+        return _dispatch_trigger_investigation(se, action, params, scope)
+    raise KineticDispatchError(f"unknown side effect kind: {se.kind}")
+
+
+def _dispatch_lanes(action: KineticAction, params: dict, scope: str, *, actor: str, objects: Optional[dict],
+                    expected: Optional[dict], schema_name: str) -> dict:
+    """Arc OC-6 — a side-effect action runs in two lanes. The writeback (at most one call) runs FIRST, and anything
+    short of a delivered answer leaves everything unwritten; then the edits; then every other call — through the
+    outbox (sent at once, finished by its worker)."""
+    from aughor.actions import outbox
+    results: list[dict] = []
+    for se in action.side_effects:
+        if getattr(se, "lane", "after") != "writeback":
+            continue
+        done = dispatch_effect(se, action, params, scope)
+        if isinstance(done, dict) and done.get("ok") is False:
+            raise KineticDispatchError(f"the writeback was refused (HTTP {done.get('http_status')}) — nothing else was "
+                                       "done", cause="refused")
+        results.append({**done, "lane": "writeback"})
+    out: dict = {}
+    if action.edits:
+        out.update(_dispatch_object_edits(action, params, scope, actor=actor, objects=objects or {}, expected=expected))
+    after = [(i, se) for i, se in enumerate(action.side_effects) if getattr(se, "lane", "after") != "writeback"]
+    if after:
+        sends = [outbox.send_now(outbox.enqueue(action, i, params, scope, schema_name).id) for i, _ in after]
+        out["outbox"] = [{"id": s.id, "status": s.status, "cause": s.cause, "attempts": s.attempts,
+                          "error": s.last_error} for s in sends if s is not None]
+        results += [s.outcome for s in sends if s is not None and s.status == "delivered"]
+    out["side_effects"] = results
+    return out
+
+
+def default_dispatch(action: KineticAction, params: dict, scope: str = "", *, actor: str = "",
+                     objects: Optional[dict] = None, expected: Optional[dict] = None, schema_name: str = "") -> dict:
+    """The wired-in dispatcher. ``notify``/``webhook`` and ``annotate`` fire now; the rest are
+    seams that raise with the PR that will wire them, so a caller sees a clear signal not a no-op."""
+    if action.kind == "side_effect":
+        return _dispatch_lanes(action, params, scope, actor=actor, objects=objects, expected=expected,
+                               schema_name=schema_name)
+    if action.kind == "annotate":
+        return _dispatch_annotate(action, params, scope, actor=actor, objects=objects, expected=expected)
+    if action.kind == "query":
+        raise KineticDispatchError("query dispatch requires read-query wiring (K2b)")
+    raise KineticDispatchError(f"unknown action kind: {action.kind}")
+
+
+# ── the executor ─────────────────────────────────────────────────────────────────
+
+_RISK = {"read_only": "READ_ONLY", "low": "LOW", "high": "HIGH"}
+
+
+def _risk_of(action: KineticAction):
+    """The tier the approval gate runs at — the declared one, with a floor.
+
+    ``read_only`` is a claim about consequence, and Wave H5 introduced an action that can spend
+    real money without mutating a single row: ``trigger_investigation`` starts a deep run, which
+    issues LLM calls against the workspace budget. Trusting the declaration there would let an
+    author mark a spending action as free of consequence, so the floor is LOW (metered) whatever
+    the overlay says. Declaring HIGH still holds — a floor only ever raises.
+    """
+    from aughor.govern.actions import ActionRisk
+    name = _RISK.get(action.risk, "HIGH")
+    if name == "READ_ONLY" and any(se.kind == "trigger_investigation" for se in action.side_effects):
+        name = "LOW"
+    return getattr(ActionRisk, name)
+
+
+def _created_target(action: KineticAction, scope: str, schema_name: str) -> dict:
+    """The new object of the platform-owned type ``action.creates``, as the object map holds one."""
+    from aughor.ontology.platform_objects import new_target
+    from aughor.ontology.store import load_latest_ontology
+    graph = load_latest_ontology(scope, schema_name or None) or (load_latest_ontology(scope, None) if schema_name else None)
+    if graph is None:
+        raise ValueError(f"no ontology is built for {scope}, so no {action.creates} can be made")
+    return new_target(graph, action.creates)
+
+
+def _authority_level(action, scope: str) -> Optional[dict]:
+    """The action's L0–L5 on ``scope`` (`authority.level_for`), or None when the record cannot be read — then the
+    approval gate alone decides, as it did before the level was consulted here, and the failure is counted."""
+    try:
+        from aughor.actions.authority import level_for
+        return level_for(action, scope)
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the action's authority level could not be read; the approval gate decides alone",
+                 counter="actions.authority_level", conn_id=scope or None)
+        return None
+
+
+def execute_kinetic_action(
+    action: KineticAction,
+    params: dict,
+    *,
+    actor: str = "",
+    scope: str = "",
+    dispatch: Optional[Dispatch] = None,
+    approved: bool = False,
+    schema_name: str = "",
+    resolver: Optional[ObjectResolver] = None,
+    require_approval: bool = False,
+    compensates: str = "",
+    expected_versions: Optional[dict] = None,
+) -> KineticResult:
+    """Run one declared action through the full governed pipeline. ``scope`` is the connection
+    id (the grain the approval allowlist is keyed on). Returns a :class:`KineticResult`; never
+    raises for an expected outcome (criterion failure, approval required, bad params) — those are
+    statuses, so the agent (K4) can read the authored message and revise.
+
+    ``approved`` (A4) marks that a human accepted this run (``inbox.accept_proposal``) — the accept
+    IS the graduated-approval act, so the approval gate is skipped. It is BYPASS-APPROVAL-ONLY: the
+    submission criteria at step 2 have already run, so an accepted proposal can never push a value the
+    criteria reject. A standing grant (``actions/grants.py``) does the same for an UNATTENDED run —
+    consulted only when ``automations.proposals`` is on, so this path is byte-identical otherwise.
+
+    ``require_approval`` (SP-7) makes the gate ask a person whatever the deployment's approval
+    switch says: a write a model drafted into a chain from a sentence is never unattended. A human
+    accept or a standing grant — a person's prior approval of that exact target — still satisfies
+    it; only the switch's silence no longer does."""
+    from aughor.govern import actions as govern
+
+    gov_action = f"kinetic.{action.id}"
+    risk = _risk_of(action)
+
+    # 1 — coerce params (side-effect-free)
+    try:
+        coerced = coerce_params(action, params)
+    except ParamError as e:
+        govern.audit(gov_action, scope, "invalid_params", actor=actor, detail=str(e), risk=risk)
+        return KineticResult("invalid_params", False, action.id, message=str(e))
+
+    # 1b — ON-4: the object each object parameter names, read live (side-effect-free). An object
+    #      that does not exist is invalid params: the action never runs against nothing.
+    try:
+        objects = resolve_objects(action, coerced,
+                                  resolver or default_object_resolver(action, scope, schema_name))
+    except ParamError as e:
+        govern.audit(gov_action, scope, "invalid_params", actor=actor, detail=str(e), risk=risk)
+        return KineticResult("invalid_params", False, action.id, message=str(e))
+    if action.creates:
+        # Arc OC-6 — the platform-owned object this press makes, with a fresh key and nothing set; its edits set it up
+        try:
+            objects["created"] = _created_target(action, scope, schema_name)
+        except ValueError as e:
+            govern.audit(gov_action, scope, "invalid_params", actor=actor, detail=str(e), risk=risk)
+            return KineticResult("invalid_params", False, action.id, message=str(e))
+
+    # 2 — submission criteria, BEFORE the approval gate. Authored message returned verbatim.
+    #     Neither a human accept nor a standing grant bypasses this: they pre-approve WHO may run,
+    #     never WHAT values pass.
+    for crit in action.submission_criteria:
+        try:
+            passed = evaluate_predicate(crit.expr, coerced, objects)
+        except CriterionError as e:
+            # An unevaluable criterion fails closed — the action does NOT run.
+            govern.audit(gov_action, scope, "criterion_error", actor=actor,
+                         detail=f"{crit.expr}: {e}", risk=risk)
+            return KineticResult("criterion_failed", False, action.id, message=crit.message,
+                                 detail={"reason": "criterion_error", "expr": crit.expr})
+        if not passed:
+            govern.audit(gov_action, scope, "criterion_failed", actor=actor,
+                         detail=crit.expr, risk=risk)
+            return KineticResult("criterion_failed", False, action.id, message=crit.message,
+                                 detail={"expr": crit.expr})
+
+    # 2b — Arc OC-6: an edit that would move a property the edit layer holds along a move its type does not declare is
+    #      refused like a criterion — before any approval is asked for, with the moves allowed from where it stands.
+    moved = _move_problem(action, coerced, objects)
+    if moved:
+        govern.audit(gov_action, scope, "criterion_failed", actor=actor, detail=moved[:500], risk=risk)
+        return KineticResult("criterion_failed", False, action.id, message=moved, detail={"reason": "move_not_declared"})
+
+    # 3a — authority (Arc OC-6, D4). The level the record earned and the ceilings a person or a mission set were read
+    #      only when widening and by autonomy, never here: a person capping an action at L2 ("prepare") left it as
+    #      runnable as before. A cap below L3 refuses the run, approved or not; a cap at L3 — approval every time, set
+    #      by a person, a mission, or irreversibility — runs nothing unattended on a standing grant. (An incomplete
+    #      declaration earns L1 too — the declare door refuses one, and a run of an older one is left to the approval
+    #      gate, as before.)
+    level = _authority_level(action, scope)
+    if level is not None and level.get("ceiling", 5) < 3:
+        why = "; ".join([level.get("why", ""), *level.get("notes", [])[:2]]).strip("; ")
+        govern.audit(gov_action, scope, "authority_capped", actor=actor, risk=risk,
+                     detail=f"L{level['level']} ({level['label']}): {why}"[:500])
+        return KineticResult("authority_capped", False, action.id, detail={"level": level["level"], "label": level["label"]},
+                             message=(f"{action.id} is capped at L{level['level']} ({level['label']}) on this scope, so "
+                                      f"it is not run — {why}"))
+
+    # 3 — approval. A human accept (approved) or a matching standing grant satisfies it; otherwise
+    #     the graduated-approval gate decides (and may 428). Every path is audited with WHY it ran.
+    from fastapi import HTTPException
+    from aughor.actions.grants import standing_grant_id
+    grant_id = "" if approved else standing_grant_id(action, coerced, scope)
+    if grant_id and level is not None and level.get("ceiling", 5) < 4:
+        govern.audit(gov_action, scope, "grant_not_honoured", actor=actor, risk=risk,
+                     detail=f"standing grant {grant_id} — the action is capped at L{level['ceiling']} (execute with "
+                            f"approval) here, so it runs only on a person's approval: {level.get('why', '')}"[:500])
+        grant_id = ""
+    if approved:
+        govern.audit(gov_action, scope, "approved", actor=actor, detail="human accept", risk=risk)
+    elif grant_id:
+        govern.audit(gov_action, scope, "auto", actor=actor,
+                     detail=f"standing grant {grant_id}", risk=risk)
+    else:
+        try:
+            if require_approval:
+                # SP-7 — the verdict the gate gives when the switch is on, audited the same way
+                # and returned through the one return below.
+                govern.audit(gov_action, scope, "blocked", actor=actor, risk=risk,
+                             detail="a drafted write waits for a person on every run")
+                raise HTTPException(status_code=428, detail={
+                    "error": "approval_required", "action": gov_action, "scope": scope,
+                    "risk": getattr(risk, "value", risk),
+                    "hint": ("this step waits for a person on every run — it was drafted "
+                             "from a sentence, and a drafted write is never unattended")})
+            govern.guard(gov_action, scope, actor=actor, risk=risk)
+        except HTTPException as e:
+            body = e.detail if isinstance(e.detail, dict) else {"hint": str(e.detail)}
+            return KineticResult("approval_required", False, action.id,
+                                 message=body.get("hint", "approval required"), detail=body)
+
+    # 3b — parallel safety (Wave R5). THE checkpoint, and it sits here rather than at each
+    #      fan-out on purpose: a helper every fan-out must remember to call is one the
+    #      fifth fan-out forgets. A concurrent region declares itself
+    #      (`parallel_safety.fanout`), and the dangerous operation asks. So a fan-out added
+    #      next year is covered without touching that module, and a new action defaults to
+    #      not-dispatchable. Outside a fan-out this is a no-op, so every existing path is
+    #      byte-identical.
+    #
+    #      Refused BEFORE step 4 — the only step that can cause a side effect — and after
+    #      the criteria and the approval gate, so a refusal can never be mistaken for
+    #      either of those verdicts.
+    from aughor.kernel.parallel_safety import ParallelSafetyError, assert_dispatchable
+    try:
+        assert_dispatchable(action, name=f"kinetic.{action.id}")
+    except ParallelSafetyError as e:
+        govern.audit(gov_action, scope, "parallel_refused", actor=actor, detail=str(e), risk=risk)
+        return KineticResult("parallel_refused", False, action.id, message=str(e))
+
+    # 4 — dispatch (the ONLY step that can cause a side effect; reached only after every gate)
+    try:
+        if dispatch is not None:
+            outcome = dispatch(action, coerced, scope)
+        elif action.edits or action.kind == "side_effect":
+            # ON-4 — only an action that sets object properties (or, Arc OC-6, a side-effect action, which runs in two
+            # lanes) needs who ran it, what it read and where; every other dispatch is called exactly as before.
+            outcome = default_dispatch(action, coerced, scope, actor=actor, objects=objects,
+                                       expected=expected_versions, schema_name=schema_name)
+        else:
+            outcome = default_dispatch(action, coerced, scope)
+    except KineticDispatchError as e:
+        govern.audit(gov_action, scope, "dispatch_error", actor=actor, detail=str(e), risk=risk)
+        return KineticResult("dispatch_error", False, action.id, message=str(e))
+    except EditConflict as e:
+        # Arc OC-6 — the person read an older version of what this action sets; nothing was written
+        govern.audit(gov_action, scope, "edit_conflict", actor=actor, detail=str(e), risk=risk)
+        return KineticResult("edit_conflict", False, action.id, message=str(e), detail={"current": e.current})
+
+    # 4b — the verification read (phase 4 of the 2027 study, §M): the statement the declaration
+    #      names, run through the ordinary query door AFTER the change. A read that cannot run is
+    #      `unavailable`, never `failed` — the tie-out's rule — and a failed one DEMOTES the
+    #      (action, scope) and withdraws its standing grants, as a ledger entry nobody has to notice.
+    from aughor.actions import authority
+    verification: dict = {"status": "not_declared", "why": "the action declares no verification statement"}
+    # Arc OC-6 — a call still in the outbox has not landed: its check waits for it, and never demotes the action first
+    waiting = [s for s in (outcome.get("outbox") or []) if s.get("status") != "delivered"] \
+        if isinstance(outcome, dict) else []
+    # A call the outbox gave up on is not on its way: it waits for a person, and says why (live, 2026-10-10: a call the
+    # SSRF guard refused was answered "1 call waits in the outbox; the action's check runs when it lands")
+    stuck = [s for s in waiting if s.get("status") == "dead"]
+    if stuck:
+        verification = {"status": "waits_for_a_person",
+                        "why": (f"{len(stuck)} call{'s' if len(stuck) != 1 else ''} it makes did not go out and "
+                                f"wait{'' if len(stuck) != 1 else 's'} for a person in Sends — "
+                                f"{stuck[0].get('error') or 'refused'}; its check runs if one is sent again")}
+    elif any(s.get("status") == "unknown" for s in waiting):
+        # no answer came back: it may have landed — the outbox reads the action's check before sending anything again
+        verification = {"status": "pending",
+                        "why": ("a call it makes got no answer and may have landed; the outbox reads the action's check "
+                                "before it sends anything again")}
+    elif waiting:
+        verification = {"status": "pending",
+                        "why": (f"{len(waiting)} call{'s wait' if len(waiting) != 1 else ' waits'} in the outbox; the "
+                                f"action's check runs when {'they land' if len(waiting) != 1 else 'it lands'}")}
+    else:
+        try:
+            verification = authority.verify(action, coerced, scope, outcome=outcome)
+        except Exception as exc:  # noqa: BLE001 — the change happened; a verifier that crashed is said
+            verification = {"status": "unavailable", "why": f"the verifier failed: {str(exc)[:160]}"}
+
+    # 5 — audit the completed run, and book it as an Action in the ledger with what it ran under
+    govern.audit(gov_action, scope, "executed", actor=actor,
+                 detail=f"{action.kind}; verification {verification.get('status')}", risk=risk)
+    entry = ""
+    try:
+        from aughor.actions.pins import action_pin
+        entry = authority.book_action(action=action, params=coerced, scope=scope, actor=actor, status="executed",
+                                      outcome=outcome if isinstance(outcome, dict) else {"result": outcome},
+                                      grant_id=grant_id, approved_by=("human accept" if approved else ""),
+                                      verification=verification, compensates=compensates,
+                                      pin=action_pin(action, scope, schema_name))
+        if verification.get("status") == "failed":
+            authority.demote(action.id, scope, why=f"verification failed after execution: {verification.get('why', '')}",
+                             evidence={"action_entry": entry, "verification": verification})
+        if waiting:
+            # the calls still out are told which entry their check is booked on — and one the worker finished between
+            # the dispatch and this line is checked now, so none is left pending for good
+            from aughor.actions import outbox
+            outbox.link_entry([s["id"] for s in outcome.get("outbox") or []], entry)
+            outbox.finish_entry(entry)
+    except Exception as exc:  # noqa: BLE001 — the execution stands; its record is best-effort and said
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the action ran; its ledger entry could not be booked", counter="actions.book_entry",
+                 conn_id=scope or None)
+    return KineticResult("executed", True, action.id, outcome=outcome, granted_by=grant_id,
+                         verification=verification, action_entry=entry)

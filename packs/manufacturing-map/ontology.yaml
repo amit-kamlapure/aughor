@@ -1,0 +1,218 @@
+# The manufacturing & industrial vocabulary (AUGHOR_ATLAS_INDUSTRY_VOCABULARY_v1, 2026-11-11: industry
+# `manufacturing`, 58 reference types) as an industry map: 58 objects, none folded into another.
+#
+# Three readings were made, and all are this package's, not the vocabulary's:
+#   * its classes are read onto the eight roles a map has, by meaning — the vocabulary's own class is not followed
+#     where it reads a list or a document as a party (Approved Vendor List, Supplier Claim, Supplier Qualification), a
+#     definition as a transaction (Bill of Materials) or reference data as an asset (Product, Spare Part);
+#   * a record of activity is a PART of the thing it happened to (a bill of materials' components, a production
+#     order's runs and step events, a machine's downtime, failures, readings and alerts, an inspection's test results),
+#     never a thing beside it;
+#   * a planning quantity (Demand Forecast, Production Plan, Capacity Plan, Material Requirement) is read as STOCK — a
+#     quantity for an item or a resource at a place and period, restated by each planning run. The eight roles have
+#     none for a plan; this is the nearest, and the one to change first if it draws wrongly.
+# Work Order is the vocabulary's MAINTENANCE order; the order to make something is ProductionOrder. A plant that calls
+# its production orders `work_orders` will match the wrong one, and the measurement is what says so.
+# The vocabulary names no table spellings; every alias below is a guess the data confirms or leaves unmatched. An
+# industry map states EXPECTATIONS, never facts: nothing here creates an object, and one the data has no table for is
+# never proposed and never mentioned.
+objects:
+  # Product & engineering.
+  - name: Product
+    roles: [catalog]
+    aliases: [products, product, item_master, material_master, materials, finished_goods]
+  - name: ProductRevision
+    roles: [catalog]
+    aliases: [product_revisions, product_revision, item_revisions, revisions, product_versions]
+  - name: BillOfMaterials
+    roles: [catalog]
+    aliases: [boms, bom, bill_of_materials, bills_of_material, bom_headers]
+    parts: [BOMComponent]
+    description: what a product is made of, read with its component lines
+  - name: BOMComponent
+    roles: [catalog]
+    aliases: [bom_components, bom_component, bom_lines, bom_items]
+  - name: Specification
+    roles: [catalog]
+    aliases: [specifications, specification, specs, product_specifications, quality_specs]
+  - name: EngineeringChange
+    roles: [event]
+    aliases: [engineering_changes, engineering_change_orders, ecos, ecns, change_orders]
+  - name: ApprovedVendorList
+    roles: [catalog]
+    aliases: [approved_vendor_list, approved_vendor_lists, approved_vendors, approved_suppliers, avl]
+    description: which suppliers may supply which material
+  # Demand & production planning.
+  - name: SalesOrder
+    roles: [transaction]
+    aliases: [sales_orders, sales_order, customer_orders, orders]
+  - name: DemandForecast
+    roles: [stock]
+    aliases: [demand_forecasts, demand_forecast, forecasts, sales_forecasts]
+  - name: ProductionPlan
+    roles: [stock]
+    aliases: [production_plans, production_plan, master_production_schedule, mps, production_schedules]
+  - name: CapacityPlan
+    roles: [stock]
+    aliases: [capacity_plans, capacity_plan, capacity_requirements, available_capacity]
+  - name: MaterialRequirement
+    roles: [stock]
+    aliases: [material_requirements, material_requirement, mrp_requirements, planned_requirements, mrp_output]
+  - name: ScheduleSlot
+    roles: [event]
+    aliases: [schedule_slots, schedule_slot, production_schedule_slots, scheduled_operations, machine_schedule]
+    description: a booked window on a work centre's schedule
+  - name: ProductionOrder
+    roles: [transaction]
+    aliases: [production_orders, production_order, manufacturing_orders, mfg_orders, job_orders]
+    parts: [ProductionRun, ProductionStepEvent]
+    description: an order to make a quantity of a product, read with its runs and what happened at each step
+  # Procurement & incoming.
+  - name: Supplier
+    roles: [party]
+    aliases: [suppliers, supplier, vendors, vendor]
+    parts: [SupplierQualification]
+  - name: SupplierQualification
+    roles: [event]
+    aliases: [supplier_qualifications, supplier_qualification, vendor_qualifications, supplier_audits, supplier_certifications]
+  - name: PurchaseOrder
+    roles: [transaction]
+    aliases: [purchase_orders, purchase_order, supplier_orders, po_headers]
+    parts: [GoodsReceipt]
+  - name: InboundShipment
+    roles: [event]
+    aliases: [inbound_shipments, inbound_shipment, inbound_deliveries, advance_ship_notices, asns, supplier_shipments]
+  - name: GoodsReceipt
+    roles: [event]
+    aliases: [goods_receipts, goods_receipt, inbound_receipts, receiving]
+  - name: IncomingInspection
+    roles: [event]
+    aliases: [incoming_inspections, incoming_inspection, receiving_inspections, iqc_inspections, inbound_quality_checks]
+  - name: MaterialLot
+    roles: [asset]
+    aliases: [material_lots, material_lot, raw_material_lots, lots, lot_master]
+  - name: SupplierClaim
+    roles: [transaction]
+    aliases: [supplier_claims, supplier_claim, vendor_claims, supplier_complaints, supplier_chargebacks]
+  # Execution & work centres.
+  - name: Plant
+    roles: [place]
+    drawn_as: factory
+    aliases: [plants, plant, factories, factory, sites, facilities]
+  - name: WorkCenter
+    roles: [place]
+    aliases: [work_centers, work_centres, work_center, workcenters, production_lines, work_cells]
+  - name: Machine
+    roles: [asset]
+    aliases: [machines, machine, equipment, equipment_master, assets]
+    parts: [DowntimeEvent, FailureEvent, SensorReading, ConditionAlert]
+  - name: Operator
+    roles: [party]
+    aliases: [operators, operator, workers, employees, production_staff]
+  - name: Shift
+    roles: [calendar]
+    aliases: [shifts, shift, shift_calendar, shift_patterns, work_shifts]
+  - name: Operation
+    roles: [catalog]
+    aliases: [operations, operation, routing_operations, routings, routing_steps]
+    description: one step of a product's routing — what is done, and at which work centre
+  - name: ProductionRun
+    roles: [event]
+    aliases: [production_runs, production_run, line_runs, batch_runs, production_batches]
+  - name: ProductionStepEvent
+    roles: [event]
+    aliases: [production_step_events, production_events, operation_confirmations, wip_events, step_events]
+  # Quality & traceability.
+  - name: InspectionPlan
+    roles: [catalog]
+    aliases: [inspection_plans, inspection_plan, control_plans, quality_plans, sampling_plans]
+  - name: QualityInspection
+    roles: [event]
+    aliases: [quality_inspections, quality_inspection, inspections, quality_checks, qc_inspections]
+    parts: [TestResult]
+  - name: TestResult
+    roles: [event]
+    aliases: [test_results, test_result, inspection_results, lab_results, measurements]
+  - name: Defect
+    roles: [event]
+    aliases: [defects, defect, defect_records, quality_defects]
+  - name: Nonconformance
+    roles: [event]
+    aliases: [nonconformances, non_conformances, nonconformance_reports, ncrs, deviations]
+  - name: CorrectiveAction
+    roles: [event]
+    aliases: [corrective_actions, corrective_action, capas, capa, corrective_preventive_actions]
+  - name: QualityHold
+    roles: [event]
+    aliases: [quality_holds, quality_hold, inventory_holds, quarantines, lot_holds]
+  - name: SerialNumber
+    roles: [asset]
+    aliases: [serial_numbers, serial_number, serials, serialized_units, unit_serials]
+    description: one made unit, followed by its serial
+  - name: TraceabilityEvent
+    roles: [event]
+    aliases: [traceability_events, lot_genealogy, genealogy, lot_traces, material_consumption]
+  # Maintenance & reliability.
+  - name: MaintenanceSchedule
+    roles: [catalog]
+    aliases: [maintenance_schedules, maintenance_schedule, maintenance_plans, pm_schedules, preventive_maintenance_plans]
+  - name: WorkOrder
+    roles: [event]
+    aliases: [work_orders, work_order, maintenance_work_orders, maintenance_orders, maintenance_tasks]
+    description: a maintenance job on a machine — not the order to make a product
+  - name: SparePart
+    roles: [catalog]
+    aliases: [spare_parts, spare_part, spares, mro_parts, maintenance_parts]
+  - name: SensorReading
+    roles: [event]
+    aliases: [sensor_readings, sensor_reading, sensor_data, telemetry, machine_telemetry, iot_readings]
+  - name: ConditionAlert
+    roles: [event]
+    aliases: [condition_alerts, condition_alert, machine_alerts, equipment_alerts, alarms]
+  - name: FailureEvent
+    roles: [event]
+    aliases: [failure_events, equipment_failures, machine_failures, breakdowns, failures]
+  - name: DowntimeEvent
+    roles: [event]
+    aliases: [downtime_events, downtime, downtimes, machine_downtime, stoppages]
+  # Inventory & distribution.
+  - name: WarehouseBin
+    roles: [place]
+    aliases: [warehouse_bins, bins, bin_locations, storage_bins, storage_locations]
+  - name: InventoryPosition
+    roles: [stock]
+    aliases: [inventory_positions, inventory_snapshots, stock_levels, inventory_levels, stock_on_hand, inventory]
+    description: stock on hand at a moment, per material and place
+  - name: FinishedGoodLot
+    roles: [asset]
+    aliases: [finished_good_lots, finished_goods_lots, fg_lots, production_lots, batches]
+  - name: Shipment
+    roles: [event]
+    aliases: [shipments, shipment, outbound_shipments, dispatches]
+  - name: Delivery
+    roles: [event]
+    aliases: [deliveries, delivery, outbound_deliveries, delivery_notes]
+    parts: [CustomerReceipt]
+  - name: CustomerReceipt
+    roles: [event]
+    aliases: [customer_receipts, customer_receipt, proof_of_delivery, delivery_confirmations, pods]
+    description: the customer's confirmation that a delivery arrived
+  # Finance & productivity.
+  - name: CostCenter
+    roles: [catalog]
+    aliases: [cost_centers, cost_centres, cost_center]
+  - name: StandardCost
+    roles: [catalog]
+    aliases: [standard_costs, standard_cost, item_costs, cost_rollups]
+  - name: VarianceAnalysis
+    roles: [event]
+    aliases: [variance_analysis, variance_analyses, cost_variances, production_variances, variances]
+  - name: ProductionYield
+    roles: [event]
+    aliases: [production_yields, production_yield, yields, yield_records, production_output]
+  - name: ScrapEvent
+    roles: [event]
+    aliases: [scrap_events, scrap, scrap_records, scrap_transactions, rejects]
+  - name: EnergyUseRecord
+    roles: [event]
+    aliases: [energy_use_records, energy_use, energy_consumption, energy_readings, utility_usage]

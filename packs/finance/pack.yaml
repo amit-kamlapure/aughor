@@ -1,0 +1,20 @@
+id: finance
+name: Finance
+version: 1
+description: >
+  The finance function, read by every industry: revenue recognition and waterfalls, unit economics, P&L, and the money measures every business reports.
+layer: function
+owner_team: Platform
+domains:
+  - finance
+  - revenue
+  - unit economics
+extends: []
+scope:
+  connections: ["*"]
+status: active
+source: aughor
+# IP-1 (2026-09-17): moved unchanged from data/kb. Reference knowledge — read by every
+# connection of its scope without a binding (§3.17 "reference is not steering").
+# IP-4 (2026-09-17): active. The agents read only active packages; a draft awaits a person's
+# review (§3.17 gate 6). This package was already read before that gate was enforced.

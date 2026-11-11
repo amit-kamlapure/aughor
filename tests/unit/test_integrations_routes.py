@@ -1,0 +1,309 @@
+"""VA-11 — the routes, through the real app: wiring, the two-button catalog, and the
+ownership boundary. The broker's own guards live in ``test_integrations_broker``;
+what these prove is that the API layer neither leaks nor invents."""
+from __future__ import annotations
+
+import pytest
+
+from aughor.integrations import broker, store
+from aughor.integrations.models import Connection
+
+
+@pytest.fixture(autouse=True)
+def _virgin_stores():
+    """The integration stores are SESSION-scoped tmp files, so a `google_app` saved by
+    one test file is still there when the next file's catalog asserts `configured is
+    False`. Found as an ordering-dependent failure: broker tests before route tests
+    turned Set up into Connect. Every test here starts from an empty store.
+
+    Symmetric since DS-11, and the second half was bought the same way the first was: a
+    grant this file left behind turned up as an extra row in the COMPONENT REGISTRY's
+    search assertion two files later. Cleaning only on the way in protects this file from
+    its neighbours and leaves its neighbours exposed to it."""
+    for s in (store._APPS, store._CONNS, store._PENDING):
+        for d in list(s.all()):
+            s.delete(d["id"])
+    yield
+    for s in (store._APPS, store._CONNS, store._PENDING):
+        for d in list(s.all()):
+            s.delete(d["id"])
+
+
+@pytest.fixture
+def no_provider_calls(monkeypatch):
+    monkeypatch.setattr(broker, "_post",
+                        lambda *a, **k: {"error": "network reached", "_status": 599})
+
+
+def test_the_catalog_flips_set_up_into_connect(client, no_provider_calls):
+    before = client.get("/integrations/catalog").json()
+    google = next(p for p in before["providers"] if p["id"] == "google")
+    assert google["configured"] is False
+    assert before["redirect_uri"].endswith("/oauth/callback")
+
+    r = client.put("/integrations/google/app",
+                   json={"client_id": "1111-cidone.apps.googleusercontent.com", "client_secret": "cs-1"})
+    assert r.status_code == 200
+    assert r.json()["app"]["client_secret"] != "cs-1", "the secret must come back masked"
+
+    after = client.get("/integrations/catalog").json()
+    assert next(p for p in after["providers"] if p["id"] == "google")["configured"] is True
+
+
+def test_connect_returns_the_authorize_url(client, no_provider_calls):
+    client.put("/integrations/google/app",
+               json={"client_id": "1111-cidone.apps.googleusercontent.com", "client_secret": "cs-1"})
+    r = client.post("/integrations/google/connect")
+    assert r.status_code == 200
+    assert r.json()["authorize_url"].startswith(
+        "https://accounts.google.com/o/oauth2/v2/auth?")
+
+
+def test_a_forged_callback_renders_not_connected_and_exchanges_nothing(
+        client, no_provider_calls):
+    r = client.get("/oauth/callback", params={"state": "forged", "code": "stolen"})
+    assert r.status_code == 200
+    assert "Not connected" in r.text
+
+
+def test_declined_consent_is_reported_as_a_choice(client):
+    r = client.get("/oauth/callback", params={"error": "access_denied"})
+    assert "Consent was declined" in r.text
+
+
+def test_someone_elses_connection_is_a_404_not_a_403(client, no_provider_calls):
+    """A 403 confirms the id exists; for another user's grant, existence itself is
+    the leak. Filed under RC-4's identity rules: the route filters on the CURRENT
+    user, and a foreign id must be indistinguishable from a nonexistent one."""
+    foreign = store.save_connection(Connection(
+        provider="google", user_id="somebody-else", access_token="at-x"))
+    r = client.post(f"/integrations/connections/{foreign.id}/revoke")
+    assert r.status_code == 404
+
+    mine = client.get("/integrations/connections").json()["connections"]
+    assert all(c["id"] != foreign.id for c in mine)
+
+
+# ── the Set-up form is an EDITOR, not a one-shot ──────────────────────────────────
+
+def test_the_catalog_shows_back_what_was_stored(client):
+    """An Edit form opening on two empty boxes reads as "nothing was ever saved" — the
+    user's own words when they hit it. The client id comes back whole (it travels in the
+    browser's address bar during the dance; it is not a secret), the secret only as a
+    masked preview: enough to say one EXISTS, never enough to read it."""
+    client.put("/integrations/google/app",
+               json={"client_id": "123-cidabc.apps.googleusercontent.com", "client_secret": "shh-super-secret"})
+
+    google = next(p for p in client.get("/integrations/catalog").json()["providers"]
+                  if p["id"] == "google")
+    assert google["client_id"] == "123-cidabc.apps.googleusercontent.com"
+    assert google["secret_preview"] and "shh-super-secret" not in google["secret_preview"]
+    assert "•" in google["secret_preview"]
+
+
+def test_a_blank_secret_keeps_the_stored_one(client):
+    """The secret is never readable, so requiring it back on every edit would force a
+    rotation to fix a typo in the client id."""
+    client.put("/integrations/google/app",
+               json={"client_id": "1111-cidone.apps.googleusercontent.com", "client_secret": "secret-1"})
+    fixed = client.put("/integrations/google/app", json={"client_id": "2222-cidtwo.apps.googleusercontent.com"})
+    assert fixed.status_code == 200, fixed.text
+
+    from aughor.integrations.store import get_app_decrypted
+    app = get_app_decrypted("google")
+    assert app.client_id == "2222-cidtwo.apps.googleusercontent.com"
+    assert app.client_secret == "secret-1"      # unchanged, not blanked
+
+
+def test_an_authored_callback_is_stored_and_used(client):
+    client.put("/integrations/google/app", json={
+        "client_id": "9-cid.apps.googleusercontent.com", "client_secret": "sec",
+        "redirect_uri": "https://tunnel.example.com/oauth/callback"})
+
+    google = next(p for p in client.get("/integrations/catalog").json()["providers"]
+                  if p["id"] == "google")
+    assert google["redirect_uri"] == "https://tunnel.example.com/oauth/callback"
+
+    url = client.post("/integrations/google/connect").json()["authorize_url"]
+    assert "tunnel.example.com%2Foauth%2Fcallback" in url or \
+           "tunnel.example.com/oauth/callback" in url
+
+
+def test_a_callback_that_cannot_complete_is_refused_at_save(client):
+    """Only one route can finish the exchange; a URI that does not end there is a flow
+    that breaks after the person has already consented."""
+    bad = client.put("/integrations/google/app", json={
+        "client_id": "1-c.apps.googleusercontent.com", "client_secret": "s", "redirect_uri": "https://example.com/hello"})
+    assert bad.status_code == 422
+    assert "/oauth/callback" in bad.json()["detail"]
+
+
+def test_slack_refuses_an_http_callback_at_save(client):
+    """Slack's own documented rule, enforced before the person walks into its error
+    page — which is how this was found."""
+    refused = client.put("/integrations/slack/app", json={
+        "client_id": "c", "client_secret": "s",
+        "redirect_uri": "http://localhost:8000/oauth/callback"})
+    assert refused.status_code == 422
+    assert "http://" in refused.json()["detail"]
+
+
+def test_the_providers_own_address_is_refused_as_a_callback(client):
+    """The mistake this field invites, found live: a person asked for "the Slack URL"
+    has their WORKSPACE url in hand, and it passes every other rule — https, ends in
+    /oauth/callback, not http. It then fails silently: consent succeeds, Slack redirects
+    to itself, and nothing reaches the exchange."""
+    refused = client.put("/integrations/slack/app", json={
+        "client_id": "c", "client_secret": "s",
+        "redirect_uri": "https://luxexperience-crew.slack.com/oauth/callback"})
+    assert refused.status_code == 422
+    detail = refused.json()["detail"]
+    assert "own address" in detail
+    assert "BACK to Aughor" in detail        # it says WHOSE address it should be
+
+
+def test_a_tunnel_to_this_api_is_accepted(client):
+    ok = client.put("/integrations/slack/app", json={
+        "client_id": "c", "client_secret": "s",
+        "redirect_uri": "https://calm-otter-1234.trycloudflare.com/oauth/callback"})
+    assert ok.status_code == 200, ok.text
+
+
+# ── the door a laptop can actually open ───────────────────────────────────────────
+
+def _slack(client):
+    return next(p for p in client.get("/integrations/catalog").json()["providers"]
+                if p["id"] == "slack")
+
+
+def test_slack_oauth_is_not_offered_when_the_callback_cannot_be_https(client):
+    """The whole point: a fresh install is reached over http://, Slack refuses http://,
+    so its OAuth button cannot work — and pointing a new user at it costs them an evening
+    on a tunnel to reach a token nothing consumes yet."""
+    assert _slack(client)["oauth_ready"] is False
+    assert _slack(client)["alt_door"] == "slack_app"
+
+
+def test_a_provider_that_takes_the_loopback_address_is_ready(client):
+    """Google and Microsoft accept `http://localhost`, so nothing changes for them."""
+    google = next(p for p in client.get("/integrations/catalog").json()["providers"]
+                  if p["id"] == "google")
+    assert google["oauth_ready"] is True
+    assert google["alt_door"] == ""
+
+
+def test_an_https_override_makes_slack_oauth_available_again(client):
+    """A tunnel (or a real deployment) is the case OAuth was written for — the readiness
+    reads the SAME callback `connect` will send, so the button and the dance agree."""
+    client.put("/integrations/slack/app", json={
+        "client_id": "c", "client_secret": "s",
+        "redirect_uri": "https://calm-otter-1234.trycloudflare.com/oauth/callback"})
+    assert _slack(client)["oauth_ready"] is True
+
+
+def test_a_stored_callback_that_cannot_work_is_not_readiness(client):
+    """The flaw the user's own screen exposed: their stored callback was
+    `https://<workspace>.slack.com/oauth/callback`, saved before the domain rule existed.
+    Readiness looked only at the scheme, saw `https://`, and would have gone on offering
+    the button that cannot open. It asks the validator now, so the two cannot disagree."""
+    from aughor.integrations.models import ProviderApp
+    from aughor.integrations.store import save_app
+
+    # Written directly: the route refuses this now, and the point is a record that
+    # PREDATES the rule.
+    save_app(ProviderApp(id="slack", client_id="c", client_secret="s",
+                         redirect_uri="https://luxexperience-crew.slack.com/oauth/callback"))
+
+    slack = _slack(client)
+    assert slack["oauth_ready"] is False
+    assert slack["alt_door"] == "slack_app"
+
+
+# ── DS-11 · what a grant may DO, served ───────────────────────────────────────
+
+def test_the_operation_roster_is_served_whole_when_no_grant_is_named(client):
+    """A reader asking "what could this platform do for me" wants the catalog, not
+    their catalog."""
+    rows = client.get("/integrations/operations").json()["operations"]
+    assert {r["provider"] for r in rows} == {"google", "slack", "microsoft"}
+    listing = next(r for r in rows if r["id"] == "gmail.messages.list")
+    assert listing["publishes"] == ["items", "count", "next_page_token"]
+    assert listing["list_keys"] == ["items"], (
+        "the half /automations/vocabulary cannot answer — which key a for_each may fan")
+    assert [p["name"] for p in listing["params"]] == ["q", "maxResults"]
+    assert next(p for p in listing["params"] if p["name"] == "maxResults")["bindable"] \
+        is False, "an edge onto a page size is dataflow nobody meant to draw"
+    assert next(r for r in rows if r["id"] == "slack.chat.postMessage")["writes"] is True
+
+
+def test_naming_a_grant_narrows_the_roster_to_what_it_could_run(client):
+    store.save_connection(Connection(id="ic_r", provider="slack", user_id="",
+                                     scopes="channels:read", status="active"))
+    rows = client.get("/integrations/operations?connection_id=ic_r").json()["operations"]
+    assert {r["provider"] for r in rows} == {"slack"}, "only this grant's provider"
+    assert next(r for r in rows
+                if r["id"] == "slack.conversations.list")["availability"] == "ready"
+    posting = next(r for r in rows if r["id"] == "slack.chat.postMessage")
+    assert posting["availability"] == "needs_setup"
+    assert "chat:write" in posting["reason"], "the sentence names the scope, not a code"
+
+
+def test_someone_elses_grant_is_a_404_not_a_403(client):
+    """A 403 confirms the row exists — the same rule `revoke` states one route up."""
+    store.save_connection(Connection(id="ic_theirs", provider="google",
+                                     user_id="somebody-else", status="active"))
+    assert client.get("/integrations/operations?connection_id=ic_theirs").status_code == 404
+    assert client.get("/integrations/operations?connection_id=nope").status_code == 404
+
+
+def test_a_grants_own_verdict_outranks_a_scope_sentence(client):
+    """The registry dims every row of a grant the provider will not refresh; this route
+    has to say the same thing. A scope sentence on a dead grant sends someone to
+    re-consent to a scope on an account that has to be reconnected first."""
+    store.save_connection(Connection(id="ic_stale", provider="slack", user_id="",
+                                     scopes="channels:read", status="needs_reconnect"))
+    rows = client.get("/integrations/operations?connection_id=ic_stale").json()["operations"]
+    assert {r["availability"] for r in rows} == {"needs_setup"}
+    assert all("reconnect it under Integrations" in r["reason"] for r in rows)
+
+    store.save_connection(Connection(id="ic_gone", provider="slack", user_id="",
+                                     scopes="chat:write channels:read", status="revoked"))
+    rows = client.get("/integrations/operations?connection_id=ic_gone").json()["operations"]
+    assert {r["availability"] for r in rows} == {"unavailable"}
+
+
+# ── a client id of the wrong shape (found 2026-10-27: Google answered `Error 401: invalid_client`) ─────────────────
+
+def test_a_google_client_id_of_the_wrong_shape_is_refused_by_name(client):
+    bad = client.put("/integrations/google/app", json={"client_id": "demo-client-id.apps.googleusercontent.com",
+                                                       "client_secret": "demo-secret"})
+    assert bad.status_code == 422 and "is not a Google client id" in bad.json()["detail"]
+    pasted_secret = client.put("/integrations/google/app", json={"client_id": "GOCSPX-abc123", "client_secret": "s"})
+    assert pasted_secret.status_code == 422
+
+
+def test_a_stored_placeholder_is_said_on_its_card_and_connect_never_reaches_google(client):
+    from aughor.integrations.models import ProviderApp
+    from aughor.integrations.store import save_app
+    save_app(ProviderApp(id="google", client_id="demo-client-id.apps.googleusercontent.com", client_secret="demo"))
+    google = next(p for p in client.get("/integrations/catalog").json()["providers"] if p["id"] == "google")
+    assert "is not a Google client id" in google["client_id_problem"] and google["oauth_ready"] is False
+    refused = client.post("/integrations/google/connect?product=comments")
+    assert refused.status_code == 422 and "Set up the Google app again" in refused.json()["detail"]
+    save_app(ProviderApp(id="google", client_id="123456789012-abc.apps.googleusercontent.com", client_secret="s"))
+    google = next(p for p in client.get("/integrations/catalog").json()["providers"] if p["id"] == "google")
+    assert google["client_id_problem"] == "" and google["oauth_ready"] is True
+
+
+def test_a_withheld_card_is_said_on_the_return_page_and_on_the_catalog(client, monkeypatch):
+    from aughor.integrations import broker
+    from aughor.integrations.models import Connection
+    from aughor.integrations.store import save_connection
+    drive = "https://www.googleapis.com/auth/drive.readonly"
+    conn = Connection(provider="google", user_id="", scopes="openid email", withheld=drive, status="active")
+    monkeypatch.setattr(broker, "complete", lambda state, code: conn)
+    page = client.get("/oauth/callback", params={"state": "s", "code": "c"})
+    assert "Connected, but not what was asked" in page.text and "did not grant Google Drive comments" in page.text
+    save_connection(conn)
+    google = next(p for p in client.get("/integrations/catalog").json()["providers"] if p["id"] == "google")
+    assert google["withheld_products"] == ["Google Drive comments"]

@@ -1,0 +1,582 @@
+"""Ground-first answer resolution — the single deterministic verdict computed
+before SQL generation. Fully hermetic: schema strings + a fake db, no LLM.
+"""
+from __future__ import annotations
+
+from aughor.semantic import answer_resolution as R
+
+# luxexperience: Mytheresa IS an annotated `platform` value; net sales are annual.
+# brand_collaborations is a DECOY — it ALSO has platform=Mytheresa and a daily
+# launch_date, but no net-sales measure (est_gmv is a different measure). The real
+# luxexperience data has exactly this shape and it broke the naive scan: the entity
+# bound to brand_collaborations and its launch_date was mistaken for a monthly-sales
+# path. Measure-first resolution must bind to financial_summary and read yearly.
+_LUX = """\
+TABLE: luxexperience.financial_summary  (25 rows)
+  net_sales_eur_m  DOUBLE
+  platform  VARCHAR  -- [NET-A-PORTER, Mytheresa, YOOX, THE OUTNET, MR PORTER]
+  fiscal_year  BIGINT
+  gmv_eur_m  BIGINT
+TABLE: luxexperience.brand_collaborations  (40 rows)
+  platform  VARCHAR  -- [MR PORTER, Mytheresa, NET-A-PORTER]
+  launch_date  DATE
+  est_gmv_eur  DOUBLE
+TABLE: luxexperience.dim_date  (1826 rows)
+  month  BIGINT
+  date  DATE
+  fiscal_year  BIGINT
+"""
+
+# franchise: high-card `name`, no value annotation — Mytheresa is simply absent.
+_FRANCHISE = """\
+TABLE: main.sales_franchises  (48 rows)
+  franchiseID  BIGINT
+  name  VARCHAR
+  city  VARCHAR
+TABLE: main.sales_transactions  (3333 rows)
+  dateTime  TIMESTAMP
+  product  VARCHAR
+  totalPrice  BIGINT
+"""
+
+_MONTHLY = _LUX + """\
+TABLE: luxexperience.monthly_sales  (60 rows)
+  order_month  VARCHAR
+  platform  VARCHAR  -- [Mytheresa, YOOX]
+  net_sales_eur_m  DOUBLE
+"""
+
+
+class _FakeDB:
+    """Minimal DatabaseConnection stand-in: .rows(sql,label) returns canned rows."""
+    def __init__(self, hits=None):
+        self.hits = hits or {}     # substring in sql -> rows
+        self.seen = []
+
+    def rows(self, sql, label=None, sql_dialect=None, internal=False):
+        self.seen.append(sql)
+        for needle, rows in self.hits.items():
+            if needle in sql:
+                return rows
+        return []
+
+    def execute(self, label, sql, sql_dialect=None, internal=False):
+        """The resolver's live probe reads `execute`, which tells an error from no match (GM-4)."""
+        from types import SimpleNamespace
+        return SimpleNamespace(rows=self.rows(sql, label, sql_dialect), error=None)
+
+
+# ── entity binding (found via annotation) ─────────────────────────────────────
+
+def test_binds_entity_to_the_measure_table_not_the_decoy():
+    # Both financial_summary and brand_collaborations carry platform=Mytheresa; the
+    # answer is about SALES, so it must bind to financial_summary (the sales table).
+    r = R.resolve("Show me month wise sales for mytheresa", schema=_LUX)
+    assert [b.value for b in r.entity_bindings] == ["Mytheresa"]
+    b = r.entity_bindings[0]
+    assert (b.table, b.column) == ("luxexperience.financial_summary", "platform")
+    assert "financial_summary.platform = 'Mytheresa'" in r.prompt_constraints
+    assert "brand_collaborations" not in r.prompt_constraints
+
+
+# ── time-grain gap (monthly asked, yearly available) ──────────────────────────
+
+def test_grain_gap_when_measure_is_annual_only():
+    # The decoy's daily launch_date must NOT be mistaken for a monthly-sales path.
+    r = R.resolve("Show me month wise sales for mytheresa", schema=_LUX)
+    assert r.requested_grain == "monthly" and r.available_grain == "yearly"
+    assert r.grain_feasible_via is None
+    assert r.feasibility == "answerable_with_caveat"
+    assert "only reported at yearly grain" in r.caveat
+    assert "answer at yearly" in r.prompt_constraints
+
+
+def test_grain_repair_path_when_finer_table_exists():
+    r = R.resolve("month wise sales for mytheresa", schema=_MONTHLY)
+    assert r.grain_feasible_via == "luxexperience.monthly_sales"
+    assert r.feasibility == "answerable"          # a finer path exists → not a caveat
+    assert "query `luxexperience.monthly_sales`" in r.prompt_constraints
+
+
+# ── not-answerable (entity confirmed absent via a bounded db probe) ────────────
+
+def test_not_found_when_db_probe_confirms_absence():
+    db = _FakeDB(hits={})          # every existence probe returns no rows
+    r = R.resolve("month wise sales for mytheresa", schema=_FRANCHISE, db=db)
+    assert r.not_found == ["mytheresa"]
+    assert r.feasibility == "not_answerable"
+    assert "not present in this data" in r.caveat
+    # it actually probed the string dimension columns
+    assert any("sales_franchises" in s for s in db.seen)
+
+
+def test_no_false_abstain_without_db():
+    # Same absent entity, but no db to confirm → must NOT abstain (high precision).
+    r = R.resolve("month wise sales for mytheresa", schema=_FRANCHISE, db=None)
+    assert r.not_found == []
+    assert r.feasibility in ("answerable", "answerable_with_caveat")
+
+
+def test_binds_entity_found_via_db_probe():
+    db = _FakeDB(hits={"sales_franchises": [["Mytheresa"]]})
+    r = R.resolve("sales for mytheresa", schema=_FRANCHISE, db=db)
+    assert r.not_found == []
+    assert any(b.value == "Mytheresa" and b.column == "name" for b in r.entity_bindings)
+
+
+# ── no over-firing ────────────────────────────────────────────────────────────
+
+def test_plain_question_is_answerable_with_no_constraints():
+    r = R.resolve("what were total sales", schema=_LUX)
+    assert r.feasibility == "answerable"
+    assert r.prompt_constraints == ""
+    assert r.caveat == ""
+
+
+def test_no_temporal_ask_has_no_grain_constraint():
+    r = R.resolve("sales for mytheresa", schema=_LUX)
+    assert r.requested_grain is None
+    # entity still binds
+    assert any(b.value == "Mytheresa" for b in r.entity_bindings)
+
+
+def test_never_raises_on_garbage():
+    assert R.resolve(None, schema=None).feasibility == "answerable"
+    assert R.resolve("monthly sales {{{", schema="not a schema").feasibility in (
+        "answerable", "answerable_with_caveat")
+
+
+# ── finer-grain fallback: the transactional fact path (order_date exists) ──────
+# The REAL luxexperience shape: governed net_sales is YEARLY (financial_summary), but
+# an `orders` fact carries gmv_eur at order_date (daily) on the same platform dim — so
+# "monthly sales" IS answerable from orders. brand_collaborations (est_gmv + launch_date)
+# and clienteling_interactions (gmv_influenced + interaction_date) are traps: an estimate
+# and an indirect proxy must never win over the orders fact.
+_LUX_TXN = """\
+TABLE: luxexperience.financial_summary  (25 rows)
+  net_sales_eur_m  DOUBLE
+  gmv_eur_m  BIGINT
+  platform  VARCHAR  -- [NET-A-PORTER, Mytheresa, YOOX]
+  fiscal_year  BIGINT
+TABLE: luxexperience.brand_collaborations  (40 rows)
+  platform  VARCHAR  -- [Mytheresa, NET-A-PORTER]
+  launch_date  DATE
+  est_gmv_eur  DOUBLE
+TABLE: luxexperience.clienteling_interactions  (900 rows)
+  platform  VARCHAR  -- [Mytheresa, YOOX]
+  interaction_date  DATE
+  gmv_influenced_eur  DOUBLE
+TABLE: luxexperience.orders  (120000 rows)
+  order_id  VARCHAR
+  platform  VARCHAR  -- [Mytheresa, YOOX, NET-A-PORTER]
+  order_date  DATE
+  fiscal_year  BIGINT
+  gmv_eur  DOUBLE
+"""
+
+
+def test_monthly_sales_uses_transactional_fact_when_summary_is_annual():
+    # net_sales is yearly-only, but orders.order_date exists → monthly IS answerable
+    # from the orders fact (NOT a false "monthly unavailable").
+    r = R.resolve("Show me month wise sales for mytheresa", schema=_LUX_TXN)
+    assert r.feasibility == "answerable"
+    assert r.grain_feasible_via == "luxexperience.orders"
+    # the entity FILTER is rebound onto the grain table so FILTER + GRAIN name ONE table
+    assert r.entity_bindings and r.entity_bindings[0].table == "luxexperience.orders"
+    assert "orders.platform = 'Mytheresa'" in r.prompt_constraints
+    assert "query `luxexperience.orders`" in r.prompt_constraints
+    # honest about the measure swap (gmv, not the governed net_sales)
+    assert "gmv_eur" in r.grain_note and "net_sales_eur_m" in r.grain_note
+    # the decoy + the indirect proxy are never chosen
+    assert "brand_collaborations" not in r.prompt_constraints
+    assert "clienteling" not in r.prompt_constraints
+
+
+def test_gmv_question_ignores_estimate_decoy_and_prefers_the_fact():
+    # est_gmv matches the "gmv" synonym literally, but an ESTIMATE must never anchor the
+    # entity or serve the grain — orders (actual gmv_eur, a fact table) wins over both
+    # the estimate decoy and the indirect clienteling proxy.
+    r = R.resolve("weekly gmv for mytheresa", schema=_LUX_TXN)
+    assert r.feasibility == "answerable"
+    assert r.grain_feasible_via == "luxexperience.orders"
+    assert r.entity_bindings[0].table == "luxexperience.orders"
+    assert "brand_collaborations" not in r.prompt_constraints
+    assert "clienteling" not in r.prompt_constraints
+
+
+def test_fallback_does_not_invent_a_path_when_none_exists():
+    # Regression: with NO fact table (only the annual summary + est decoy), the honest
+    # "monthly unavailable" caveat still stands — the fallback must not fabricate a path.
+    r = R.resolve("month wise sales for mytheresa", schema=_LUX)
+    assert r.grain_feasible_via is None
+    assert r.grain_note == ""
+    assert r.feasibility == "answerable_with_caveat"
+    assert "only reported at yearly grain" in r.caveat
+
+
+def test_non_revenue_measure_has_no_transactional_substitute():
+    # The fallback is scoped to revenue-type asks; a "customers" question does NOT get
+    # silently answered from a gmv fact (that would be a wrong-measure answer).
+    r = R.resolve("monthly customers for mytheresa", schema=_LUX_TXN)
+    assert r.grain_feasible_via is None  # no customers measure at a finer grain here
+
+
+# ── no false abstain: probe every candidate column, ranked by the question ────────
+# The reported regression: "contra-revenue categories … in womenswear" abstained
+# ("womenswear is not present in this data") even though womenswear IS a category value —
+# because the measure ('revenue') bound to a summary table and the probe stopped after a
+# fixed cap, never reaching the category column that holds the value.
+_CONTRA = """\
+TABLE: lux.financial_summary  (60 rows)
+  platform  VARCHAR
+  segment  VARCHAR
+  owner  VARCHAR
+  region  VARCHAR
+  country  VARCHAR
+  channel  VARCHAR
+  brand  VARCHAR
+  vendor  VARCHAR
+  revenue_eur  DOUBLE
+TABLE: lux.order_items  (100000 rows)
+  order_id  BIGINT
+  category  VARCHAR  -- [womenswear, menswear, shoes, accessories]
+  refund_eur  DOUBLE
+"""
+
+
+def test_category_value_resolves_not_falsely_absent():
+    # End-to-end: 8 summary dims sort ahead of order_items.category (the 9th), and the measure
+    # binds to the summary table — the exact shape that used to false-abstain. The question
+    # names "categories", so the category column floats up and womenswear resolves.
+    db = _FakeDB(hits={"category": [["womenswear"]]})
+    r = R.resolve("What contra-revenue categories are driving losses in womenswear?",
+                  schema=_CONTRA, db=db)
+    assert r.not_found == []                    # was ['womenswear'] before the fix
+    assert any(b.column == "category" and b.value == "womenswear" for b in r.entity_bindings)
+
+
+def test_sweeps_past_the_old_cap_before_binding():
+    # No dimension hint in the question: the value still binds because the probe sweeps EVERY
+    # candidate column (order_items.category is the 9th) instead of stopping at the old 8-cap.
+    db = _FakeDB(hits={"order_items": [["womenswear"]]})   # value lives only in order_items
+    out = R._db_find_value(db, _CONTRA, "womenswear")
+    assert out == ("lux.order_items", "category", "womenswear")
+
+
+def test_genuinely_absent_value_still_abstains():
+    # The contract cuts both ways: a value in NO column is still confirmed absent (after the
+    # full sweep), so ground-first honesty is preserved.
+    db = _FakeDB(hits={})                       # every probe returns no rows
+    assert R._db_find_value(db, _CONTRA, "blorpwear") == "absent"
+
+
+def test_question_named_column_is_probed_first():
+    # Ranking optimisation: a column the question names is probed before the summary dims, so
+    # the common filter-by-<dimension> case binds in the first probe, not after a full sweep.
+    db = _FakeDB(hits={"category": [["womenswear"]]})
+    out = R._db_find_value(db, _CONTRA, "womenswear", question="losses by category")
+    assert out == ("lux.order_items", "category", "womenswear")
+    assert "category" in db.seen[0]             # the named column went first
+
+
+# ── conversation carry-forward: a follow-up inherits the prior turn's entity ────
+# The cross-mode context work (flag ask.conversation_context): resolve() gains prior_context
+# (the previous turn's question). A deictic follow-up that names no entity of its own inherits
+# the earlier entity; one that introduces a new entity never does.
+
+def test_followup_inherits_prior_entity_on_deictic():
+    # "break THAT down by platform" refers back — it keeps the prior 'womenswear' filter.
+    db = _FakeDB(hits={"'womenswear'": [["womenswear"]]})
+    r = R.resolve("break that down by platform", schema=_CONTRA, db=db,
+                  prior_context="contra-revenue losses in womenswear")
+    assert any(b.value == "womenswear" for b in r.entity_bindings)
+    assert r.not_found == []
+
+
+def test_followup_naming_a_new_entity_is_not_overridden():
+    # "the same for menswear" names menswear (the extractor catches 'for X') — bind MENSWEAR,
+    # never inherit the prior womenswear.
+    db = _FakeDB(hits={"'menswear'": [["menswear"]], "'womenswear'": [["womenswear"]]})
+    r = R.resolve("the same for menswear", schema=_CONTRA, db=db,
+                  prior_context="contra-revenue losses in womenswear")
+    vals = [b.value for b in r.entity_bindings]
+    assert "menswear" in vals and "womenswear" not in vals
+
+
+def test_followup_without_a_deictic_does_not_inherit():
+    # "what about menswear?" has no deictic reference → it must NOT inherit the old entity
+    # (a wrong filter is worse than none; the history-aware generator handles the reference).
+    db = _FakeDB(hits={"'womenswear'": [["womenswear"]]})
+    r = R.resolve("what about menswear?", schema=_CONTRA, db=db,
+                  prior_context="contra-revenue losses in womenswear")
+    assert all(b.value != "womenswear" for b in r.entity_bindings)
+
+
+def test_no_prior_context_is_single_turn_unchanged():
+    # Omitting prior_context → byte-identical single-turn behaviour (no inheritance).
+    db = _FakeDB(hits={"'womenswear'": [["womenswear"]]})
+    r = R.resolve("break that down by platform", schema=_CONTRA, db=db)
+    assert r.entity_bindings == [] and r.not_found == []
+
+
+def test_inherited_entity_absent_in_scope_never_dead_ends():
+    # An inherited entity that's absent in the current scope is NOT a dead-end — the prior turn
+    # already grounded it, so it never abstains (never adds to not_found).
+    db = _FakeDB(hits={})               # every probe misses → womenswear "absent" here
+    r = R.resolve("break that down by platform", schema=_CONTRA, db=db,
+                  prior_context="losses in womenswear")
+    assert r.not_found == []
+
+
+# ── computation vocabulary is never a filter entity (2026-08-14) ──────────────
+# "What is the average number of days between order date and ship date?" abstained
+# with "'days between' is not present in this data" — the preposition rule swept up
+# grammar, the DB probe confirmed no such VALUE, and the resolver refused a perfectly
+# answerable question: the exact false abstain the module's contract forbids.
+
+def test_compute_vocabulary_is_never_an_entity_candidate():
+    from aughor.semantic.answer_resolution import _entity_candidates
+    for q in [
+        "What is the average number of days between order date and ship date?",
+        "Show total sales for orders that were NOT returned, by segment.",
+        "What is the return rate by region, as a share of distinct orders?",
+        "What is the total sales value of returned orders?",
+        "How many orders were placed in the last 30 days?",
+    ]:
+        assert _entity_candidates(q) == [], q
+
+
+def test_real_entities_still_bind_after_the_compute_filter():
+    from aughor.semantic.answer_resolution import _entity_candidates
+    assert _entity_candidates("What is the total quantity sold in the Technology category?") == ["Technology"]
+    assert _entity_candidates("monthly sales for Mytheresa") == ["Mytheresa"]
+    assert _entity_candidates("sales in France last month") == ["France"]
+    assert _entity_candidates("returns for the Consumer segment") == ["Consumer"]
+
+
+def test_derived_quantity_question_is_answerable_even_with_a_db_that_finds_nothing():
+    # A db whose probe says "absent" for everything must not turn a derived-quantity
+    # question into an abstain: there is no entity to be absent.
+    from aughor.semantic.answer_resolution import resolve
+
+    class _AbsentDB:
+        dialect = "duckdb"
+        def execute(self, *a, **k):
+            class _C:
+                def fetchall(self_inner): return []
+                def fetchone(self_inner): return None
+            return _C()
+
+    schema = ("TABLE: orders\n  order_id  VARCHAR\n  order_date  DATE\n  ship_date  DATE\n"
+              "  segment  VARCHAR\n  -- segment  [Consumer, Corporate]\n")
+    r = resolve("What is the average number of days between order date and ship date?",
+                schema=schema, db=_AbsentDB())
+    assert not r.not_found, r.not_found
+
+
+def test_typed_multiword_names_bind_whole():
+    # "First Class" / "Same Day" / "New York" are one value each. The old per-token rule
+    # yielded "Class" from "First Class" and the probe found no such value ⇒ a false
+    # "'Class' is not present in this data" on a question about a real ship_mode.
+    from aughor.semantic.answer_resolution import _entity_candidates
+    assert _entity_candidates("What is the total sales for orders shipped via First Class?") == ["First Class"]
+    assert _entity_candidates("What share of orders ship Same Day?") == ["Same Day"]
+    assert _entity_candidates("revenue for New York last month") == ["New York"]
+
+
+def test_trailing_glue_is_trimmed_from_a_lowercase_window():
+    # "Texas by" / "Nike in" — the two-word window swept a preposition into the value.
+    from aughor.semantic.answer_resolution import _entity_candidates
+    assert _entity_candidates("Show the top 3 cities in Texas by sales") == ["Texas"]
+    assert _entity_candidates("gmv of Nike in 2024") == ["Nike"]
+
+
+def test_parse_schema_reads_the_renderers_own_values_line():
+    # The live renderer (db/schema_render.py) puts value lists on their OWN line under
+    # the table — `  -- col  [a, b]` — not on the column line. The parser only read the
+    # inline form, so `domains` was always empty on real schemas and annotation-based
+    # binding (this module's purpose) was dead; every entity fell through to the DB
+    # probe and its "absent" produced false abstains (2026-08-15).
+    from aughor.semantic.answer_resolution import _parse_schema, resolve
+    schema = (
+        "TABLE: orders  (9,994 rows)\n"
+        "  order_id  VARCHAR  ~ e.g. 'CA-2017-152156'\n"
+        "  ship_mode  VARCHAR  ~ e.g. 'Second Class', 'Standard Class'\n"
+        "  state  VARCHAR  ~ e.g. 'Kentucky', 'California'\n"
+        "  sales  DOUBLE  ~ e.g. '261.96'\n"
+        "  -- ship_mode  [Standard Class, Second Class, First Class, Same Day]\n"
+        "  -- state  [California, Texas, Kentucky]\n"
+    )
+    tables, domains = _parse_schema(schema)
+    assert tables["orders"] == ["order_id", "ship_mode", "state", "sales"]
+    assert ("orders", "ship_mode", ["Standard Class", "Second Class", "First Class", "Same Day"]) in domains
+    assert ("orders", "state", ["California", "Texas", "Kentucky"]) in domains
+    # and the binding rides on it with no db at all
+    r = resolve("What is the total sales for orders shipped via First Class?", schema=schema)
+    assert not r.not_found
+    assert [(b.noun, b.column, b.value) for b in r.entity_bindings] == [("First Class", "ship_mode", "First Class")]
+
+
+def test_parse_schema_still_reads_the_inline_form():
+    from aughor.semantic.answer_resolution import _parse_schema
+    _t, domains = _parse_schema("TABLE: t\n  brand  VARCHAR  -- [Nike, Adidas]\n")
+    assert domains == [("t", "brand", ["Nike", "Adidas"])]
+
+
+# ── the question's SUBJECT is not a missing filter value ─────────────────────
+# Found live on an airline canvas: "Give me route wise number of flights" answered
+# `"flights" is not present in this data.` — a terminal abstention on a warehouse
+# whose first table is flights. The extractor takes the noun after "of" as a filter
+# candidate, the sweep asks every string dimension whether any ROW equals the literal
+# "flights", and an honest "absent" became a dead end. The schema already knows its
+# own nouns; a hand-maintained stopword list never could.
+
+_AIRLINE = """\
+TABLE: main.flights  (1981 rows)
+  flight_id  BIGINT
+  route  VARCHAR
+  carrier  VARCHAR
+  departure_time  TIMESTAMP
+TABLE: main.airports  (312 rows)
+  airport_code  VARCHAR
+  city  VARCHAR
+"""
+
+
+def test_a_noun_naming_a_table_is_the_subject_not_an_absent_filter():
+    db = _FakeDB(hits={})          # nothing in this warehouse equals the string "flights"
+    r = R.resolve("Give me route wise number of flights", schema=_AIRLINE, db=db)
+    assert r.not_found == []
+    assert r.feasibility == "answerable"
+    # And it never asked: probing a dimension for its own table's name is wasted work.
+    assert db.seen == []
+
+
+def test_a_noun_naming_a_column_is_a_breakdown_not_an_absent_filter():
+    r = R.resolve("number of flights for carrier", schema=_AIRLINE, db=_FakeDB(hits={}))
+    assert r.not_found == []
+    assert r.feasibility == "answerable"
+
+
+def test_the_schema_match_folds_plurals_and_separators():
+    """What a person types and what the warehouse calls it differ by a plural and an
+    underscore, and neither difference means anything."""
+    assert R._norm_name("flights") == R._norm_name("flight")
+    assert R._norm_name("Order Items") == R._norm_name("order_items")
+    names = R._relation_names({"main.flights": ["airport_code"]})
+    assert R._norm_name("flight") in names and R._norm_name("Airport Codes") in names
+
+
+def test_a_genuinely_absent_entity_still_abstains_beside_a_named_table():
+    """The guard must not swallow the case it sits next to: 'Mytheresa' names nothing
+    in this schema, so the honest abstention still fires."""
+    db = _FakeDB(hits={})
+    r = R.resolve("number of flights for Mytheresa", schema=_AIRLINE, db=db)
+    assert r.not_found == ["Mytheresa"]
+    assert r.feasibility == "not_answerable"
+
+
+# ── the two misses ROADMAP §3.38 left open (PENDING item 19, 2026-09-24) ──────
+# "the candidate extractor still misses lowercase values ('delivered') and names with an
+# ampersand ('Home & Garden')". Both dropped the question's ONLY real filter, so the
+# answer silently covered every row.
+
+_STATUS = """\
+TABLE: shop.orders  (5000 rows)
+  order_id  BIGINT
+  amount  DOUBLE
+  status  VARCHAR  -- [delivered, pending, cancelled]
+  category  VARCHAR  -- [Home & Garden, Electronics, Toys]
+  order_date  DATE
+"""
+
+
+def test_a_lowercase_status_binds_from_the_data():
+    r = R.resolve("how many orders were delivered", schema=_STATUS)
+    assert [(b.column, b.value) for b in r.entity_bindings] == [("status", "delivered")]
+
+
+def test_an_ampersand_name_binds_whole_not_as_two_halves():
+    # "Home" and "Garden" are each absent; only the joined name is a value any row holds.
+    r = R.resolve("revenue for Home & Garden", schema=_STATUS)
+    assert [b.value for b in r.entity_bindings] == ["Home & Garden"]
+
+
+def test_an_ampersand_name_binds_with_no_preposition_before_it():
+    # The preposition rule ("for Home & Garden") and the proper-noun rule are SEPARATE
+    # paths and the ampersand has to join in both: a comparison introduces the name with
+    # no preposition at all, and only the proper-noun rule sees it there.
+    r = R.resolve("compare Home & Garden with Electronics", schema=_STATUS)
+    assert sorted(b.value for b in r.entity_bindings) == ["Electronics", "Home & Garden"]
+
+
+def test_a_status_word_the_data_does_not_hold_never_abstains():
+    # "orders were PLACED" is true of every order — it is a verb of record, not a filter.
+    # Grammar cannot tell it from "delivered", so a miss must be silent: the alternative is
+    # `'placed' is not present in this data.` on a perfectly answerable question.
+    r = R.resolve("How many orders were placed in the last 30 days?", schema=_STATUS)
+    assert r.not_found == []
+    assert [b.value for b in r.entity_bindings] == []
+
+
+def test_a_status_word_costs_no_warehouse_round_trip():
+    # The status class binds OFFLINE or not at all — it must never reach the live sweep,
+    # which is a billed scan on BigQuery.
+    db = _FakeDB(hits={})
+    r = R.resolve("How many orders were placed in the last 30 days?", schema=_STATUS, db=db)
+    assert r.not_found == []
+    assert db.seen == [], f"status word issued a live probe: {db.seen}"
+
+
+# ── calendar names are time, not absent filters (2026-10-03) ──────────────────
+# "What was the total Revenue for the month of October 2023?" abstained with
+# `“October” is not present in this data.` on a table with an order_date: the capitalised
+# month was an entity candidate, the probe found no row holding the string, and the miss
+# was terminal. It failed a certified golden on a fresh install.
+
+def test_month_and_weekday_names_are_not_entity_candidates():
+    assert R._entity_candidates("What was the total Revenue for the month of October 2023?") == []
+    assert R._entity_candidates("orders placed on Monday") == []
+    assert R._entity_candidates("sales in march") == []                 # lowercase, after a preposition
+    assert R._entity_candidates("orders from Jan to Mar") == []         # abbreviations
+    assert R._entity_candidates("What were October Sales?") == []       # glue the capital swept in
+    assert R._calendar_candidates(
+        "How did the total Revenue compare between January 2023 and February 2023?") == ["January", "February"]
+
+
+def test_real_entities_beside_a_month_keep_their_place():
+    assert R._entity_candidates("revenue for Nike in October") == ["Nike"]
+    assert R._entity_candidates("sales for First Class in December") == ["First Class"]
+    # A typed name that merely STARTS with a month is a name.
+    assert R._entity_candidates("orders for June Carter") == ["June Carter"]
+    assert R._calendar_candidates("orders for June Carter") == []
+
+
+def test_a_month_name_never_abstains_and_costs_no_round_trip():
+    db = _FakeDB(hits={})          # the warehouse would say "absent" to anything it was asked
+    r = R.resolve("What was the total Revenue for the month of October 2023?", schema=_STATUS, db=db)
+    assert r.not_found == []
+    assert r.feasibility != "not_answerable"
+    assert db.seen == [], f"a month name issued a live probe: {db.seen}"
+
+
+def test_a_month_name_the_data_really_holds_still_binds():
+    schema = _STATUS + "  month_name  VARCHAR  -- [September, October, November]\n"
+    r = R.resolve("revenue in October", schema=schema)
+    assert [(b.column, b.value) for b in r.entity_bindings] == [("month_name", "October")]
+
+
+def test_an_absent_entity_beside_a_month_still_abstains():
+    db = _FakeDB(hits={})
+    r = R.resolve("revenue for Mytheresa in October", schema=_FRANCHISE, db=db)
+    assert r.not_found == ["Mytheresa"]
+
+
+def test_the_presence_signal_still_counts_a_month():
+    # The overview router asks "does anything narrow this ask?" — a month does, so
+    # "tell me about October" must not become an all-time overview of the dataset.
+    assert R.entity_candidates("tell me about October") == ["October"]
+    assert R._entity_candidates("tell me about October") == []          # the resolver's own view
+    from aughor.routers.investigations import _is_overview_question
+    assert _is_overview_question("tell me about October") is False
+    assert _is_overview_question("what's notable in this dataset") is True

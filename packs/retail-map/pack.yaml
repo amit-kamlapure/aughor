@@ -1,0 +1,18 @@
+id: retail-map
+name: Retail chains, the industry map
+version: 1
+persona: >
+  What an omnichannel retail chain usually records — stores and distribution centres, the assortment
+  and its prices, purchasing, replenishment, the till, loyalty, click & collect and store execution —
+  each read as a thing or as a part of one. Expectations, measured against the data.
+owner_team: Platform
+default_temporal_grain: period
+domains:
+  - retail
+  - merchandising
+  - store operations
+  - procurement
+extends: []
+scope:
+  connections: ["*"]
+status: draft

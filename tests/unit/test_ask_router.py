@@ -1,0 +1,399 @@
+"""The unified /ask door router (Phase 0 of the Insight+Deep merge).
+
+These exercise the pure decision function with the LLM intent classifier injected,
+so the deterministic spine, the borderline-only tiebreak, the explicit overrides,
+and the license-safe degrade are all covered without a live model.
+"""
+from __future__ import annotations
+
+import json as _json
+from dataclasses import dataclass
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+import aughor.routers.investigations as inv
+from aughor.agent.ask_router import decide_ask_route
+
+
+@dataclass
+class _Decision:
+    confidence: float = 0.9
+    reasoning: str = "test reasoning"
+
+
+class _RecordingClassifier:
+    """Stand-in for classify_question — records calls and returns a fixed mode."""
+
+    def __init__(self, mode: str = "investigate", confidence: float = 0.9):
+        self.mode = mode
+        self.confidence = confidence
+        self.calls: list[str] = []
+
+    def __call__(self, question: str):
+        self.calls.append(question)
+        return self.mode, _Decision(confidence=self.confidence)
+
+
+def _route(q, **kw):
+    # Default to a classifier that would explode if called — so "no classifier call"
+    # is enforced structurally on the deterministic paths.
+    kw.setdefault("classifier", _boom)
+    return decide_ask_route(q, **kw)
+
+
+def _boom(question):  # pragma: no cover - only called if a deterministic path leaks
+    raise AssertionError(f"classifier must not be consulted for: {question!r}")
+
+
+# ── Deterministic auto paths (no model call) ──────────────────────────────────
+
+def test_simple_lookup_routes_quick_without_classifier():
+    r = _route("What is total revenue?")
+    assert r.depth == "quick" and r.mode == "direct"
+    assert r.used_classifier is False and r.forced is None
+
+
+def test_ranking_lookup_routes_quick():
+    r = _route("Show top 10 customers by revenue")
+    assert r.depth == "quick" and r.used_classifier is False
+
+
+def test_causal_question_routes_deep_without_classifier():
+    r = _route("Why did revenue drop last week?")
+    assert r.depth == "deep" and r.mode == "investigate"
+    assert r.used_classifier is False
+
+
+def test_complex_question_routes_deep_without_classifier():
+    r = _route("Why did revenue drop 8% last week compared to the prior week?")
+    assert r.depth == "deep" and r.used_classifier is False
+
+
+# ── Borderline path consults the classifier ───────────────────────────────────
+# The borderline is a question whose words no shape rule reads (`question_shape(…, default=None)`
+# is None): here a bare noun phrase — no question word, no "compare", no "show". Until 2026-10-15
+# "Compare revenue by region …" stood here; code now reads it as a describe and routes it with
+# no model call (see the test below).
+
+BORDERLINE = "Revenue by region versus last quarter, broken down by channel"
+
+
+def test_moderate_noncausal_question_uses_classifier_investigate():
+    clf = _RecordingClassifier(mode="investigate", confidence=0.8)
+    r = decide_ask_route(BORDERLINE, classifier=clf)
+    assert r.depth == "deep" and r.used_classifier is True
+    assert r.confidence == 0.8 and len(clf.calls) == 1
+
+
+def test_moderate_noncausal_question_classifier_direct_routes_quick():
+    clf = _RecordingClassifier(mode="direct")
+    r = decide_ask_route(BORDERLINE, classifier=clf)
+    assert r.depth == "quick" and r.used_classifier is True
+
+
+def test_explore_mode_routes_deep():
+    clf = _RecordingClassifier(mode="explore")
+    r = decide_ask_route(BORDERLINE, classifier=clf)
+    assert r.depth == "deep"
+
+
+def test_a_moderate_describe_is_read_by_code_and_routes_quick_without_the_classifier():
+    """The shape decides first: "compare … by region" asks to SEE the data, and a moderate
+    complexity tier is a budget question, not a kind question — quick, no model asked."""
+    r = _route("Compare revenue by region versus last quarter, and break it down by channel")
+    assert r.depth == "quick" and r.mode == "direct" and r.shape == "describe"
+    assert r.used_classifier is False
+
+
+def test_the_route_carries_the_shape_the_body_is_handed():
+    """One decision per turn: the receipt names the shape, and the shape stays under a forced
+    depth — Agent versus Quick is depth only, the frame is the question's."""
+    check = _route("Do Event and Platform really join on these keys?")
+    assert (check.depth, check.mode, check.shape) == ("quick", "direct", "check")
+    assert check.to_event()["question_shape"] == "check"
+    forced = _route("Do Event and Platform really join on these keys?", depth_override="deep")
+    assert (forced.depth, forced.shape, forced.forced) == ("deep", "check", "deep")
+    why = _route("Why did revenue drop last week?")
+    assert (why.depth, why.shape) == ("deep", "diagnose")
+
+
+def test_the_classifier_s_shape_rides_the_route_on_the_borderline():
+    @dataclass
+    class _Said:
+        confidence: float = 0.9
+        reasoning: str = "a yes/no about the data"
+        shape: str = "check"
+
+    r = decide_ask_route(BORDERLINE, classifier=lambda q: ("direct", _Said()))
+    assert r.used_classifier and r.shape == "check" and r.depth == "quick"
+    # A classifier that knows no shape leaves the body to imply one.
+    r2 = decide_ask_route(BORDERLINE, classifier=_RecordingClassifier(mode="investigate"))
+    assert r2.shape == "diagnose"
+
+
+def test_ambiguous_simple_question_falls_through_to_classifier():
+    # simple tier but under-specified → not an obvious quick; the tiebreak runs.
+    clf = _RecordingClassifier(mode="direct")
+    r = decide_ask_route("How is performance lately?", classifier=clf)
+    assert r.ambiguous is True and r.used_classifier is True
+    assert len(clf.calls) == 1
+
+
+def test_classifier_failure_falls_back_to_deep():
+    def _raise(_q):
+        raise RuntimeError("llm down")
+
+    r = decide_ask_route(BORDERLINE, classifier=_raise)
+    assert r.depth == "deep" and r.used_classifier is False
+
+
+# ── Explicit overrides win, deterministically ─────────────────────────────────
+
+def test_depth_override_quick_forces_quick():
+    # even a causal question is forced quick when the user asked for it
+    r = _route("Why did revenue drop last week?", depth_override="quick")
+    assert r.depth == "quick" and r.forced == "quick"
+
+
+def test_depth_override_deep_forces_deep():
+    r = _route("What is total revenue?", depth_override="deep")
+    assert r.depth == "deep" and r.forced == "deep"
+
+
+def test_deep_flag_escalation_forces_deep():
+    r = _route("What is total revenue?", deep_flag=True)
+    assert r.depth == "deep" and r.forced == "deep_flag"
+
+
+def test_insight_id_is_a_dossier_drill():
+    r = _route("anything", insight_id="ins_123")
+    assert r.depth == "deep" and r.forced == "dossier"
+
+
+def test_insight_id_with_deep_flag_is_escalation_not_dossier():
+    r = _route("anything", insight_id="ins_123", deep_flag=True)
+    assert r.forced == "deep_flag"
+
+
+# ── License-safe degrade ──────────────────────────────────────────────────────
+
+def test_deep_route_degrades_to_quick_without_capability():
+    r = _route("Why did revenue drop last week?", has_deep=False)
+    assert r.depth == "quick" and r.downgraded_from == "deep"
+    assert r.mode == "direct"
+
+
+def test_forced_deep_also_degrades_without_capability():
+    r = _route("anything", depth_override="deep", has_deep=False)
+    assert r.depth == "quick" and r.downgraded_from == "deep"
+
+
+def test_quick_route_unaffected_by_capability():
+    r = _route("What is total revenue?", has_deep=False)
+    assert r.depth == "quick" and r.downgraded_from is None
+
+
+# ── The route event payload ───────────────────────────────────────────────────
+
+def test_to_event_shape_for_deep():
+    r = _route("Why did revenue drop last week?")
+    ev = r.to_event()
+    assert ev["depth"] == "deep" and ev["alternatives"] == ["quick"]
+    assert set(ev) >= {"depth", "mode", "tier", "score", "confidence", "ambiguous",
+                       "why", "alternatives", "forced", "downgraded_from", "question_shape"}
+
+
+def test_to_event_shape_for_quick():
+    ev = _route("What is total revenue?").to_event()
+    assert ev["depth"] == "quick" and ev["alternatives"] == ["deep"]
+    assert isinstance(ev["why"], str) and ev["why"]
+
+
+# ── Endpoint dispatch (the actual merge: route event → correct body) ──────────
+
+def _events(text: str) -> list[dict]:
+    out = []
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("data: "):
+            out.append(_json.loads(line[len("data: "):]))
+    return out
+
+
+@pytest.fixture
+def ask_client(monkeypatch):
+    # These tests are about the DOOR's quick/deep dispatch, so the tool-loop bodies are
+    # stepped out of explicitly: a coder binding that cannot make a tool call is the turn
+    # the conversation and the analyst never serve (PENDING item 17), and the quick body
+    # and the phase script answer it. Left to the environment, converse legitimately serves
+    # the eligible quick turn and neither marker is emitted.
+    # The converse side has its own coverage below (test_ask_converse_serves_the_quick_turn)
+    # and in test_converse_route_ineligible.py.
+    monkeypatch.setattr("aughor.agent.converse_tools.binding_calls_tools", lambda: False)
+
+    async def fake_chat(*a, **k):
+        yield inv._sse("quick_marker", {})
+
+    async def fake_deep(*a, **k):
+        yield inv._sse("deep_marker", {})
+
+    monkeypatch.setattr(inv, "_stream_chat", fake_chat)
+    monkeypatch.setattr(inv, "_investigation_job_streamed", fake_deep)
+    monkeypatch.setattr(inv, "_metered_stream", lambda gen, budget=None: gen)
+    # Keep the borderline routing tiebreak hermetic — no live LLM call for these
+    # endpoint tests (the decision matrix is covered by the pure-function tests above).
+    monkeypatch.setattr(
+        "aughor.agent.ask_router._default_classifier",
+        lambda q: ("direct", _Decision(confidence=1.0, reasoning="stub")),
+    )
+    app = FastAPI()
+    app.include_router(inv.router)
+    return TestClient(app)
+
+
+def _set_cap(monkeypatch, value: bool):
+    monkeypatch.setattr("aughor.licensing.has_capability", lambda *a, **k: value)
+
+
+def test_ask_simple_question_routes_to_quick_body(ask_client, monkeypatch):
+    _set_cap(monkeypatch, True)
+    r = ask_client.post("/ask", json={"question": "What is total revenue?",
+                                       "connection_id": "c1"})
+    assert r.status_code == 200
+    evs = _events(r.text)
+    assert evs[0]["type"] == "route" and evs[0]["depth"] == "quick"
+    assert any(e["type"] == "quick_marker" for e in evs)
+    assert not any(e["type"] == "deep_marker" for e in evs)
+
+
+def test_ask_converse_serves_the_quick_turn(ask_client, monkeypatch):
+    """The other side, at the DOOR rather than at the eligibility function.
+
+    `test_converse_route_ineligible.py` pins `_converse_eligible` both ways, but that is the
+    predicate; nothing asserted that the endpoint actually dispatches to the third body when
+    it says yes: the suite could say the quick body served the turn, and could say converse
+    was eligible, but never that converse SERVED it.
+
+    Note what stays true with converse serving — the `route` receipt still says quick.
+    Converse swaps the BODY, it does not take over the door, so a change to the depth verdict
+    would still be caught by the tests above.
+    """
+    monkeypatch.setattr("aughor.agent.converse_tools.binding_calls_tools", lambda: True)
+
+    async def fake_converse(*a, **k):
+        yield inv._sse("converse_marker", {})
+
+    monkeypatch.setattr(inv, "_stream_converse", fake_converse)
+    _set_cap(monkeypatch, True)
+
+    r = ask_client.post("/ask", json={"question": "What is total revenue?",
+                                      "connection_id": "c1"})
+    assert r.status_code == 200
+    evs = _events(r.text)
+    assert evs[0]["type"] == "route" and evs[0]["depth"] == "quick"
+    assert any(e["type"] == "converse_marker" for e in evs), (
+        "the turn is eligible, so the converse body should have served it")
+    assert not any(e["type"] == "quick_marker" for e in evs)
+
+
+def test_ask_causal_question_routes_to_deep_body(ask_client, monkeypatch):
+    _set_cap(monkeypatch, True)
+    r = ask_client.post("/ask", json={"question": "Why did revenue drop last week?",
+                                       "connection_id": "c1"})
+    evs = _events(r.text)
+    assert evs[0]["type"] == "route" and evs[0]["depth"] == "deep"
+    assert any(e["type"] == "deep_marker" for e in evs)
+
+
+def test_ask_with_clarify_reading_crystallizes_to_the_ledger(ask_client, monkeypatch):
+    """I4 end-to-end through the real router: a turn that ANSWERS a clarify (carries the chosen
+    reading) writes a user-source resolution to the Ambiguity Ledger before answering."""
+    from aughor.semantic.ambiguity_ledger import list_resolutions, purge_connections
+    _set_cap(monkeypatch, True)
+    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")   # the ledger write is gated with the read
+    purge_connections(["i4_conn"])
+    r = ask_client.post("/ask", json={
+        "question": "top products — by revenue", "connection_id": "i4_conn",
+        "skip_clarify": True, "clarify_reading": "by revenue",
+        "clarify_subject": "top products", "clarify_source": "structural"})
+    assert r.status_code == 200
+    rows = list_resolutions("i4_conn")
+    assert len(rows) == 1
+    assert rows[0].resolution_source == "user" and rows[0].resolved_reading == "by revenue"
+    assert rows[0].subject == "top products"
+
+
+def test_ask_without_clarify_reading_writes_nothing(ask_client, monkeypatch):
+    from aughor.semantic.ambiguity_ledger import list_resolutions, purge_connections
+    _set_cap(monkeypatch, True)
+    monkeypatch.setenv("AUGHOR_CLOSED_LOOP", "1")
+    purge_connections(["i4_none"])
+    ask_client.post("/ask", json={"question": "What is total revenue?", "connection_id": "i4_none"})
+    assert list_resolutions("i4_none") == []
+
+
+def test_ask_deep_route_degrades_to_quick_for_free_tier(ask_client, monkeypatch):
+    _set_cap(monkeypatch, False)
+    r = ask_client.post("/ask", json={"question": "Why did revenue drop last week?",
+                                       "connection_id": "c1"})
+    evs = _events(r.text)
+    assert evs[0]["depth"] == "quick" and evs[0]["downgraded_from"] == "deep"
+    assert any(e["type"] == "quick_marker" for e in evs)
+
+
+def test_ask_disabled_flag_returns_404(ask_client, monkeypatch):
+    monkeypatch.setenv("AUGHOR_UNIFIED_ASK", "0")
+    r = ask_client.post("/ask", json={"question": "anything", "connection_id": "c1"})
+    assert r.status_code == 404
+
+
+# ── Phase 3: the clarify gate (ask vs guess) ──────────────────────────────────
+
+def test_ask_ambiguous_question_emits_clarify_not_an_answer(ask_client, monkeypatch):
+    _set_cap(monkeypatch, True)
+    r = ask_client.post("/ask", json={"question": "How is performance lately?", "connection_id": "c1"})
+    evs = _events(r.text)
+    assert any(e["type"] == "clarify" for e in evs)
+    # it asked instead of answering — neither body ran
+    assert not any(e["type"] in ("quick_marker", "deep_marker") for e in evs)
+
+
+def test_ask_value_ambiguity_emits_clarify(ask_client, monkeypatch):
+    _set_cap(monkeypatch, True)
+    r = ask_client.post("/ask", json={"question": "total amount of urgent orders", "connection_id": "c1"})
+    evs = _events(r.text)
+    clar = next((e for e in evs if e["type"] == "clarify"), None)
+    assert clar and clar["source"] == "ambiguous_term" and "urgent" in clar["terms"]
+
+
+def test_ask_skip_clarify_bypasses_to_a_body(ask_client, monkeypatch):
+    _set_cap(monkeypatch, True)
+    r = ask_client.post("/ask", json={"question": "How is performance lately?", "connection_id": "c1",
+                                       "skip_clarify": True})
+    evs = _events(r.text)
+    assert not any(e["type"] == "clarify" for e in evs)
+    assert any(e["type"] in ("quick_marker", "deep_marker") for e in evs)
+
+
+def test_ask_explicit_depth_bypasses_clarify(ask_client, monkeypatch):
+    _set_cap(monkeypatch, True)
+    # an explicit depth override is a deliberate answer request — don't interrupt with a question
+    r = ask_client.post("/ask", json={"question": "How is performance lately?", "connection_id": "c1",
+                                       "depth": "quick"})
+    evs = _events(r.text)
+    assert not any(e["type"] == "clarify" for e in evs)
+    assert any(e["type"] == "quick_marker" for e in evs)
+
+
+def test_ask_skip_clarify_is_the_per_turn_bypass(ask_client, monkeypatch):
+    """`skip_clarify` is what actually turns the gate off for a turn, and it is what the
+    user's own answer to a clarification comes back carrying. Wave 2d removed the global
+    flag; this is the bypass that remains, so it is the one worth pinning."""
+    _set_cap(monkeypatch, True)
+    r = ask_client.post("/ask", json={"question": "How is performance lately?",
+                                      "connection_id": "c1", "skip_clarify": True})
+    evs = _events(r.text)
+    assert not any(e["type"] == "clarify" for e in evs)
+    assert any(e["type"] in ("quick_marker", "deep_marker") for e in evs)

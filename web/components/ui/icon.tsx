@@ -1,0 +1,272 @@
+"use client";
+
+/**
+ * icon.tsx — ONE icon set for the platform.
+ *
+ * Before this file there were three, and no register of what any of them drew:
+ * `lucide-react` in 4 files, `@atlaskit/icon` in 10, and 97 hand-written `<svg>`
+ * elements across 34 more — including four separate `ICONS` path maps that had each
+ * re-drawn the same glyph slightly differently. An icon is a word in the interface's
+ * vocabulary, and a word that is spelled three ways is three words.
+ *
+ * Tabler is the set (https://github.com/tabler/tabler-icons): one stroke weight, one
+ * 24px grid, drawn for interfaces at small sizes. It is imported HERE and nowhere else,
+ * so the platform has a single place that answers "which glyph means catalog".
+ *
+ * ── HOW TO USE ──────────────────────────────────────────────────────────────
+ *     <Icon name="catalog" />            // 14px, currentColor — the default
+ *     <Icon name="refresh" size={16} />
+ *
+ * Names are ROLES in this product's language ("catalog", "brief", "playbook"), not
+ * Tabler's file names, so the drawing can be re-chosen later without touching call
+ * sites. Adding one means adding a row to ICONS and nothing else.
+ *
+ * Sizes come from the type scale's small end: 14 default, 16 for a lone control.
+ *
+ * ── WHY STROKE IS COMPUTED, NOT CONSTANT ────────────────────────────────────
+ * Tabler draws on a 24-unit grid, so a FIXED stroke shrinks with the glyph: 1.6 units
+ * at 11px renders 1.6 x 11/24 = 0.73 device pixels. On a retina screen that rounds up
+ * and looks correct — which is exactly why it survives a 2x screenshot. On an ordinary
+ * 1x monitor it is sub-pixel, and the browser paints it as a soft grey smear rather
+ * than a line. Measured across the catalog screen, every size in use came in under one
+ * device pixel: 11px 0.73, 13px 0.87, 14px 0.93, 16px 1.07. The hand-drawn glyphs
+ * these replaced sat near 1.0-1.5, because each was drawn on its own small grid.
+ *
+ * So stroke is a function of size, holding the DEVICE stroke near 1.1px across the
+ * scale — optical sizing, the same reason a 9pt typeface is not the 72pt one scaled
+ * down. Clamped at both ends: 2.4 units so an 11px glyph never fills in, and 1.0 so a
+ * 48px empty-state mark stays an outline (which is also, exactly, the weight the 48px
+ * drawing it replaced was drawn at).
+ *
+ * Pass `stroke` explicitly to override; a few call sites carry a weight from the
+ * drawing they replaced.
+ */
+
+import {
+  IconActivity, IconAlertTriangle, IconArrowRight, IconBolt, IconBook,
+  IconArtboard, IconBrain, IconCoins, IconHeartRateMonitor, IconNews, IconRadar2, IconCategory, IconCheck, IconChevronDown, IconChevronRight, IconChevronsRight,
+  IconCircleCheck, IconClock, IconCode, IconDatabase, IconDeviceFloppy, IconDots,
+  IconFileText, IconFilter, IconHelp, IconHistory, IconHome, IconInbox, IconInfoCircle,
+  IconLayersIntersect, IconLayoutSidebar, IconMessage, IconMoon, IconPlayerPlay,
+  IconPlug, IconPlus, IconRefresh, IconSearch, IconSend2, IconSettings, IconShieldCheck,
+  IconSitemap, IconSparkles, IconStar, IconSun, IconTable, IconThumbDown, IconThumbUp, IconTrash, IconUpload, IconX,
+  IconAbc, IconAdjustmentsHorizontal, IconAlertCircle, IconArrowLeft, IconBell,
+  IconBookmark, IconCalendar, IconChartBar, IconChevronLeft, IconChevronUp, IconColumns,
+  IconCompass, IconCopy, IconDotsVertical, IconDownload, IconExternalLink, IconEye, IconEyeOff,
+  IconFolder, IconGripVertical, IconKey, IconLink, IconLock,
+  IconMaximize, IconMapPin, IconMessageCircle, IconMinus, IconPencil, IconPin, IconPoint,
+  IconPlayerStop, IconRobot, IconSchema, IconServer, IconTarget, IconTerminal2,
+  IconToggleLeft, IconTrendingDown, IconTrendingUp, IconUser, IconUsers, IconWand,
+  IconBulb, IconFlask, IconScale, IconZoomIn, IconArrowDownRight, IconArrowUpRight,
+  IconArrowsSort, IconArrowsSplit2, IconBinaryTree, IconChartDots3, IconGauge, IconHandStop, IconStack2,
+  IconList, IconPaperclip, IconNumber123, IconBraces, IconBinary, createReactComponent,
+} from "@tabler/icons-react";
+import { createContext, useContext, type ComponentType, type ReactNode } from "react";
+
+/* A sheet's sort, as the user drew it (2026-10-27): a down arrow, the bars beside it — widest first for highest first,
+   narrowest first for lowest first. Tabler has the mirror (the bars, then the arrow), so these two are drawn here in
+   its own way: its 24-unit grid, its stroke and round ends, through its own factory. */
+const SORT_ARROW = [["path", { d: "M6 4.5v15", key: "a" }], ["path", { d: "M3 16.5l3 3l3 -3", key: "b" }]] as const;
+const sortBars = (lengths: number[]) =>
+  lengths.map((w, i) => ["path", { d: `M11 ${4.5 + 5 * i}h${w}`, key: `bar${i}` }] as const);
+const IconSortDownWideNarrow = createReactComponent("outline", "sort-down-wide-narrow", "SortDownWideNarrow",
+  [...SORT_ARROW, ...sortBars([10, 7.5, 5, 2.5])].map(([tag, attrs]) => [tag, { ...attrs }]));
+const IconSortDownNarrowWide = createReactComponent("outline", "sort-down-narrow-wide", "SortDownNarrowWide",
+  [...SORT_ARROW, ...sortBars([2.5, 5, 7.5, 10])].map(([tag, attrs]) => [tag, { ...attrs }]));
+
+interface GlyphProps {
+  size?: number | string;
+  stroke?: number;
+  className?: string;
+  role?: string;
+  "aria-label"?: string;
+  "aria-hidden"?: boolean;
+}
+type Glyph = ComponentType<GlyphProps>;
+
+/** Role → glyph. The ONE place a drawing is chosen. */
+const ICONS = {
+  // navigation
+  home: IconHome,
+  inbox: IconInbox,
+  // Each row of the left rail has a glyph of its own (the user, 2026-11-11: "two items cannot have same icons by
+  // rule") — `lib/navDestinations.test.ts` fails two rows that draw the same one. A canvas is a board, a briefing a paper.
+  canvas: IconArtboard,
+  brief: IconNews,
+  playbook: IconBook,
+  health: IconHeartRateMonitor,
+  /** What is being watched — Monitors. Health is the platform's own pulse; `activity` stays the plain pulse line. */
+  monitor: IconRadar2,
+  activity: IconActivity,
+  catalog: IconDatabase,
+  db: IconDatabase,
+  table: IconTable,
+  builder: IconCategory,
+  sql: IconCode,
+  layers: IconLayersIntersect,
+  node: IconSitemap,
+  process: IconSitemap,
+  /** The agents at work. It was a vendor's logo, which names nobody here. */
+  agents: IconRobot,
+  spend: IconCoins,
+  brain: IconBrain,
+  shield: IconShieldCheck,
+  settings: IconSettings,
+  metric: IconActivity,
+  plug: IconPlug,
+  schema: IconSchema,
+  folder: IconFolder,
+  column: IconColumns,
+  key: IconKey,
+  server: IconServer,
+  terminal: IconTerminal2,
+  robot: IconRobot,
+  compass: IconCompass,
+  target: IconTarget,
+  chart: IconChartBar,
+  user: IconUser,
+  users: IconUsers,
+  lock: IconLock,
+  gauge: IconGauge,
+  hand: IconHandStop,
+  flow: IconArrowsSplit2,
+  kgraph: IconBinaryTree,
+  memory: IconStack2,
+  graph: IconChartDots3,
+
+  // column TYPES — the mark a column carries wherever it is listed. `components/icons/
+  // columnType.tsx` decides which of these a declared SQL type asks for; a `#` used to
+  // stand for a number and was replaced by `123`, the glyph a warehouse console draws
+  // and the only one that reads as a NUMBER rather than as a count of things. `time`
+  // draws the same clock as `clock` under a different role on purpose: a column of
+  // instants is not a deadline, and the two are free to diverge.
+  num: IconNumber123,
+  date: IconCalendar,
+  time: IconClock,
+  text: IconAbc,
+  bool: IconToggleLeft,
+  json: IconBraces,
+  geo: IconMapPin,
+  binary: IconBinary,
+
+  // actions
+  run: IconPlayerPlay,
+  save: IconDeviceFloppy,
+  refresh: IconRefresh,
+  search: IconSearch,
+  filter: IconFilter,
+  plus: IconPlus,
+  close: IconX,
+  trash: IconTrash,
+  thumbup: IconThumbUp,
+  thumbdown: IconThumbDown,
+  // IconSend2, not IconSend: the classic paper plane sits at 45° and reads as "share"
+  // beside a text field. The horizontal one points the way the text goes.
+  send: IconSend2,
+  upload: IconUpload,
+  more: IconDots,
+  history: IconHistory,
+  panel: IconLayoutSidebar,
+  next: IconArrowRight,
+  back: IconArrowLeft,
+  edit: IconPencil,
+  copy: IconCopy,
+  download: IconDownload,
+  external: IconExternalLink,
+  link: IconLink,        // a relationship between two things — a join, a hyperlink
+  attach: IconPaperclip, // a file carried alongside a message — NOT the same idea
+  list: IconList,
+  eye: IconEye,
+  eyeoff: IconEyeOff,    // on screen and not shown: withheld, or waiting on a condition
+  rises: IconArrowUpRight,   // a figure higher than what it is compared with — NOT trendup,
+  falls: IconArrowDownRight, // which is a series' direction over many points
+  minus: IconMinus,
+  sliders: IconAdjustmentsHorizontal,
+  expand: IconMaximize,
+  pin: IconPin,
+  bookmark: IconBookmark,
+  stop: IconPlayerStop,
+  wand: IconWand,
+  morev: IconDotsVertical,
+  grip: IconGripVertical,
+
+  // state & meaning
+  check: IconCheck,
+  ok: IconCircleCheck,
+  info: IconInfoCircle,
+  warning: IconAlertTriangle,
+  help: IconHelp,
+  clock: IconClock,
+  spark: IconSparkles,
+  bolt: IconBolt,
+  idea: IconBulb,
+  flask: IconFlask,
+  scales: IconScale,
+  zoom: IconZoomIn,
+  star: IconStar,
+  chat: IconMessage,
+  sun: IconSun,
+  moon: IconMoon,
+  alert: IconAlertCircle,
+  bell: IconBell,
+  message: IconMessageCircle,
+  trendup: IconTrendingUp,
+  trenddown: IconTrendingDown,
+  dot: IconPoint,
+
+  // disclosure
+  chevd: IconChevronDown,
+  chevr: IconChevronRight,
+  /** A table's `»` in the SQL editor's catalog: put it in the editor. */
+  insert: IconChevronsRight,
+  chevu: IconChevronUp,
+  chevl: IconChevronLeft,
+
+  // a column's sort: lowest first, highest first — and, where the pointer is, a column not sorted by
+  sort: IconArrowsSort,
+  sortasc: IconSortDownNarrowWide,
+  sortdesc: IconSortDownWideNarrow,
+} satisfies Record<string, Glyph>;
+
+/** The drawing a role is — for a check that two rows do not share one (`lib/navDestinations.test.ts`). */
+export function glyphOf(name: string): unknown {
+  return (ICONS as Record<string, unknown>)[name];
+}
+
+export type IconName = keyof typeof ICONS;
+
+/** Every role this set answers to — for the icon gate and for a picker. */
+export const ICON_NAMES = Object.keys(ICONS) as IconName[];
+
+/** The weight of the label an icon sits beside. better-ui matches the stroke to it — 1.5 beside
+ *  regular text, 2 beside medium or semibold, on a 24-unit grid: a 4/3 step. */
+export type LabelWeight = "regular" | "semibold";
+const LabelWeightContext = createContext<LabelWeight>("regular");
+
+/** Icons inside take the stroke for a label of this weight. <Button> sets it around a labelled
+ *  button's content (its labels are 500–600); an explicit `stroke` still wins. */
+export function IconsBeside({ weight, children }: { weight: LabelWeight; children: ReactNode }) {
+  return <LabelWeightContext.Provider value={weight}>{children}</LabelWeightContext.Provider>;
+}
+
+/** Stroke in Tabler's 24-unit grid that renders ~1.1 device pixels at `size` beside regular text,
+ *  and 4/3 of that beside semibold. The clamp still keeps a small glyph from filling in. */
+function opticalStroke(size: number, beside: LabelWeight = "regular"): number {
+  const perLabel = beside === "semibold" ? 4 / 3 : 1;
+  return Math.min(2.4, Math.max(1.0, Math.round((26 / size) * perLabel * 100) / 100));
+}
+
+export function Icon({
+  name, size = 14, stroke, className, label,
+}: { name: IconName; size?: number; stroke?: number; className?: string; label?: string }) {
+  const Glyph = ICONS[name] ?? ICONS.info;
+  const beside = useContext(LabelWeightContext);
+  const weight = stroke ?? opticalStroke(size, beside);
+  // An icon is either a picture that carries meaning or decoration beside a word that
+  // already carries it. Naming both is worse than naming neither: a screen reader then
+  // reads "Copy, Copy" on every button. `label` marks the first case; its absence marks
+  // the second and hides the glyph from the accessibility tree entirely.
+  return label
+    ? <Glyph size={size} stroke={weight} className={className} role="img" aria-label={label} />
+    : <Glyph size={size} stroke={weight} className={className} aria-hidden />;
+}

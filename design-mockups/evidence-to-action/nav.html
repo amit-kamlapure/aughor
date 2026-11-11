@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Seven destinations · Evidence → Action mockup</title>
+<!--
+  Mockup, 2026-11-10. Aughor's navigation redrawn as EVIDENCE_TO_ACTION_DESIGN_SYSTEM.md v2.0 §3 and §4 say:
+  seven destinations at most (Home · Ask · Data · Analyze · Model · Decide · Monitor), global chrome in the top bar
+  (workspace, environment, search, jobs, notifications, help, settings), a 224px nav that collapses to 56px.
+  Every page and tab reachable today is placed (web/app/page.tsx NAV_PRIMARY + NAV_SECTIONS, and each workspace's
+  layers); the inventory and the 1440×900 measurement of today's rail were taken 2026-11-10.
+  The doc says nothing about a second level; the breadcrumb (§10.1 "Analyze › SQL › …") shows one exists, so here a
+  destination's sections open under it in the nav. Page bodies are not redesigned — this mockup is about where things live.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* §18.4 tokens, verbatim */
+:root, [data-theme="light"] {
+  --font-ui: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-code: "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+  --surface-canvas: #f5f7f9; --surface-primary: #ffffff; --surface-secondary: #f0f3f6;
+  --surface-hover: #ebf2f5; --surface-selected: #e2eff4; --surface-overlay: #ffffff;
+  --text-primary: #1d2a33; --text-secondary: #4a5b6a; --text-muted: #556675; --text-disabled: #8d9ca8; --text-on-accent: #ffffff;
+  --border-subtle: #e4eaf0; --border-default: #d5dfe7; --border-control: #788a98; --border-strong: #abbdc9;
+  --accent: #1f6b8a; --accent-hover: #185670; --accent-subtle: #e2eff4; --focus-ring: #1f6b8a;
+  --status-success: #1c6e44; --status-warning: #8a5710; --status-danger: #b3363f;
+  --status-success-subtle: #e5f3eb; --status-warning-subtle: #fbf0e1; --status-danger-subtle: #fbe8ea; --status-info-subtle: #e2eff4;
+  --radius-badge: 3px; --radius-control: 4px; --radius-panel: 6px; --radius-overlay: 8px;
+  --shadow-popover: 0 6px 22px rgba(20, 33, 48, 0.13);
+  --h-topbar: 52px; --h-toolbar: 44px; --h-tab: 38px; --h-status: 28px; --h-control: 34px;
+  --w-nav: 224px; --w-nav-collapsed: 56px;
+}
+[data-theme="dark"] {
+  --surface-canvas: #131e26; --surface-primary: #1b2832; --surface-secondary: #22323d;
+  --surface-hover: #293e4b; --surface-selected: #21465a; --surface-overlay: #273642;
+  --text-primary: #f1f6f8; --text-secondary: #becdd6; --text-muted: #a4b6c2; --text-disabled: #6b7f8c; --text-on-accent: #12202a;
+  --border-subtle: #2c3f4b; --border-default: #3b4f5c; --border-control: #7f95a3; --border-strong: #5c7280;
+  --accent: #8bd2ee; --accent-hover: #b3e6f8; --accent-subtle: #1c3f50; --focus-ring: #a2e2fa;
+  --status-success: #72d1a0; --status-warning: #f1c47d; --status-danger: #fa9299;
+  --status-success-subtle: #173a2a; --status-warning-subtle: #3d2f16; --status-danger-subtle: #45232a; --status-info-subtle: #1c3f50;
+  --shadow-popover: 0 6px 22px rgba(0, 0, 0, 0.35);
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; }
+body { font: 14px/1.45 var(--font-ui); color: var(--text-primary); background: var(--surface-canvas); }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+svg.i { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+svg.i.sm { width: 14px; height: 14px; }
+[hidden] { display: none !important; }
+.muted { color: var(--text-muted); }
+
+.shell { height: 100vh; min-height: 640px; display: grid; grid-template-rows: var(--h-topbar) minmax(0, 1fr) var(--h-status); }
+.topbar { display: flex; align-items: center; gap: 12px; padding: 0 12px; background: var(--surface-primary); border-bottom: 1px solid var(--border-default); position: relative; z-index: 5; }
+.brand { display: flex; align-items: center; gap: 8px; width: calc(var(--w-nav) - 12px); font-weight: 600; }
+[data-nav="collapsed"] .brand { width: calc(var(--w-nav-collapsed) - 12px); }
+[data-nav="collapsed"] .brand span.word { display: none; }
+.brand-mark { width: 22px; height: 22px; border-radius: var(--radius-control); background: var(--accent); color: var(--text-on-accent); display: grid; place-items: center; font-size: 12px; }
+.search { flex: 1 1 auto; max-width: 560px; height: var(--h-control); display: flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid var(--border-control);
+  border-radius: var(--radius-control); background: var(--surface-primary); color: var(--text-muted); font-size: 13px; }
+kbd { font: 500 11px/1.3 var(--font-ui); color: var(--text-muted); border: 1px solid var(--border-default); border-radius: var(--radius-badge); padding: 3px 5px; margin-left: auto; }
+.spacer { flex: 1; }
+.select, .jobs { height: var(--h-control); display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid var(--border-control);
+  border-radius: var(--radius-control); background: var(--surface-primary); font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+.select .lbl { color: var(--text-muted); font-weight: 400; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-disabled); display: inline-block; }
+.iconbtn { width: var(--h-control); height: var(--h-control); display: inline-grid; place-items: center; border: 1px solid var(--border-control);
+  border-radius: var(--radius-control); background: var(--surface-primary); color: var(--text-secondary); cursor: pointer; position: relative; }
+.iconbtn:hover, .select:hover, .jobs:hover { background: var(--surface-hover); }
+.iconbtn[aria-expanded="true"] { background: var(--surface-selected); color: var(--text-primary); }
+.avatar { width: 30px; height: 30px; border-radius: 50%; background: var(--surface-secondary); border: 1px solid var(--border-default); display: grid; place-items: center;
+  font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.menu { position: absolute; top: 46px; right: 52px; width: 240px; background: var(--surface-overlay); border: 1px solid var(--border-default); border-radius: var(--radius-overlay);
+  box-shadow: var(--shadow-popover); padding: 6px; z-index: 10; }
+.menu .h { font-size: 12px; font-weight: 600; color: var(--text-secondary); padding: 6px 8px 4px; }
+.menu button { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 8px; border: 0; background: none; border-radius: var(--radius-control);
+  font-size: 13px; text-align: left; cursor: pointer; }
+.menu button:hover, .menu button[aria-current="page"] { background: var(--surface-hover); }
+.menu hr { border: 0; border-top: 1px solid var(--border-subtle); margin: 6px 0; }
+
+.middle { display: flex; min-height: 0; }
+.nav { flex: 0 0 var(--w-nav); width: var(--w-nav); overflow: auto; background: var(--surface-secondary); border-right: 1px solid var(--border-subtle);
+  display: flex; flex-direction: column; padding: 8px 0; }
+[data-nav="collapsed"] .nav { flex-basis: var(--w-nav-collapsed); width: var(--w-nav-collapsed); }
+.dest { display: flex; align-items: center; gap: 10px; height: 36px; margin: 1px 8px; padding: 0 10px; border-radius: var(--radius-control); border: 0; background: none;
+  color: var(--text-secondary); font-size: 13px; font-weight: 500; cursor: pointer; text-align: left; width: calc(100% - 16px); }
+.dest:hover { background: var(--surface-hover); color: var(--text-primary); }
+.dest[aria-expanded="true"] { color: var(--text-primary); font-weight: 600; }
+.dest .chev { margin-left: auto; color: var(--text-muted); transition: transform 120ms ease-out; }
+.dest[aria-expanded="true"] .chev { transform: rotate(180deg); }
+.count { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--status-warning); background: var(--status-warning-subtle); border-radius: var(--radius-badge); padding: 0 5px; line-height: 18px; }
+.count + .chev { margin-left: 6px; }
+.secs { list-style: none; margin: 2px 0 6px; padding: 0; }
+.sec { display: flex; align-items: center; gap: 8px; height: 30px; margin: 1px 8px; padding: 0 10px 0 36px; border-radius: var(--radius-control); border: 0; background: none;
+  color: var(--text-secondary); font-size: 13px; cursor: pointer; text-align: left; width: calc(100% - 16px); }
+.sec:hover { background: var(--surface-hover); color: var(--text-primary); }
+.sec[aria-current="page"] { background: var(--surface-selected); color: var(--text-primary); font-weight: 600; box-shadow: inset 2px 0 0 var(--accent); }
+[data-nav="collapsed"] .dest { justify-content: center; padding: 0; }
+[data-nav="collapsed"] .dest .l, [data-nav="collapsed"] .dest .chev, [data-nav="collapsed"] .secs { display: none; }
+[data-nav="collapsed"] .dest .count { position: absolute; margin: -18px 0 0 18px; font-size: 10px; padding: 0 3px; line-height: 14px; }
+[data-nav="collapsed"] .dest[aria-expanded="true"] { background: var(--surface-selected); box-shadow: inset 2px 0 0 var(--accent); }
+.nav-foot { margin-top: auto; border-top: 1px solid var(--border-subtle); padding-top: 8px; }
+
+.main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; background: var(--surface-primary); }
+.crumbs { height: var(--h-toolbar); flex: none; display: flex; align-items: center; gap: 8px; padding: 0 16px; border-bottom: 1px solid var(--border-subtle); font-size: 13px; color: var(--text-secondary); }
+.crumbs .chev { color: var(--text-muted); }
+.crumbs .here { color: var(--text-primary); font-weight: 500; }
+.titlebar { height: var(--h-toolbar); flex: none; display: flex; align-items: center; gap: 12px; padding: 0 16px; border-bottom: 1px solid var(--border-subtle); }
+.titlebar h1 { margin: 0; font-size: 20px; font-weight: 600; line-height: 1.25; white-space: nowrap; }
+.titlebar .facts { font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.badge { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 6px; border-radius: var(--radius-badge); font-size: 12px; font-weight: 500; white-space: nowrap; flex: none; }
+.badge.neutral { background: var(--surface-secondary); color: var(--text-secondary); border: 1px solid var(--border-default); }
+.badge.success { background: var(--status-success-subtle); color: var(--status-success); }
+.badge.warning { background: var(--status-warning-subtle); color: var(--status-warning); }
+.badge.info { background: var(--status-info-subtle); color: var(--accent); }
+.tabs { height: var(--h-tab); flex: none; display: flex; align-items: stretch; padding: 0 12px; border-bottom: 1px solid var(--border-default); background: var(--surface-secondary); overflow-x: auto; }
+.tab { display: flex; align-items: center; padding: 0 14px; font-size: 13px; color: var(--text-secondary); border: 0; background: none; cursor: pointer; border-right: 1px solid var(--border-subtle); position: relative; white-space: nowrap; }
+.tab[aria-selected="true"] { background: var(--surface-primary); color: var(--text-primary); font-weight: 600; }
+.tab[aria-selected="true"]::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--accent); }
+.content { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+.panel { border: 1px solid var(--border-default); border-radius: var(--radius-panel); background: var(--surface-primary); }
+.panel-h { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 14px; border-bottom: 1px solid var(--border-subtle); }
+.panel-h h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.panel-b { padding: 12px 14px; }
+.pg { display: grid; grid-template-columns: 160px 1fr; }
+.pg > div { padding: 8px 0; border-bottom: 1px solid var(--border-subtle); font-size: 13px; }
+.pg > .k { color: var(--text-muted); font-size: 12px; }
+.path { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.path .p { border: 1px solid var(--border-default); border-radius: var(--radius-badge); padding: 0 6px; line-height: 20px; font-size: 12px; background: var(--surface-secondary); color: var(--text-secondary); }
+.path .p.new { background: var(--accent-subtle); color: var(--text-primary); border-color: var(--border-strong); }
+.path .sep { color: var(--text-muted); font-size: 12px; }
+.placeholder { border: 1px dashed var(--border-default); border-radius: var(--radius-panel); padding: 28px 16px; color: var(--text-secondary); font-size: 13px; text-align: center; }
+table.grid { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+.grid th { height: 34px; background: var(--surface-secondary); font-size: 12px; font-weight: 600; text-align: left; padding: 0 12px; border-bottom: 1px solid var(--border-default); color: var(--text-secondary); }
+.grid td { height: 36px; padding: 0 12px; border-bottom: 1px solid var(--border-subtle); }
+.grid td.r, .grid th.r { text-align: right; font-variant-numeric: tabular-nums; }
+.status { display: flex; align-items: center; gap: 16px; padding: 0 12px; font-size: 12px; color: var(--text-secondary); background: var(--surface-secondary); border-top: 1px solid var(--border-subtle); white-space: nowrap; overflow: hidden; }
+.status .sep { color: var(--border-strong); }
+
+/* mockup-only */
+.mock-ctl { position: fixed; right: 12px; bottom: 40px; z-index: 50; display: flex; gap: 6px; align-items: center; font: 500 11px/1.3 Inter, system-ui, sans-serif;
+  background: #111; color: #eee; padding: 6px 8px; border-radius: 6px; opacity: .9; }
+.mock-ctl button { font: 500 11px/1.3 Inter, system-ui, sans-serif; background: #333; color: #eee; border: 1px solid #555; border-radius: 4px; padding: 4px 7px; cursor: pointer; }
+.mock-ctl button[aria-pressed="true"] { background: #eee; color: #111; }
+.notes { background: #fbfbfa; color: #1d2a33; padding: 32px 32px 48px; border-top: 4px solid #1d2a33; font: 14px/1.55 Inter, system-ui, sans-serif; }
+.notes h2 { font-size: 20px; margin: 0 0 4px; line-height: 1.3; }
+.notes h3 { font-size: 15px; margin: 24px 0 8px; }
+.notes .lede { color: #4a5b6a; margin: 0 0 16px; max-width: 1100px; }
+.notes .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+.notes ol, .notes ul { padding-left: 20px; margin: 0; display: grid; gap: 6px; }
+.notes table { border-collapse: collapse; font-size: 13px; width: 100%; }
+.notes td, .notes th { border-bottom: 1px solid #e4eaf0; padding: 5px 8px; text-align: left; vertical-align: top; }
+.notes th { font-size: 12px; color: #4a5b6a; background: #f0f3f6; position: sticky; top: 0; }
+.notes td.r, .notes th.r { text-align: right; font-variant-numeric: tabular-nums; }
+.notes .up { color: #b3363f; font-weight: 600; } .notes .down { color: #1c6e44; font-weight: 600; }
+.notes .figs { display: flex; gap: 32px; flex-wrap: wrap; margin: 8px 0 4px; }
+.notes .fig b { display: block; font-size: 22px; font-weight: 600; }
+.notes .fig span { font-size: 12px; color: #556675; }
+.notes .call { background: #fbf0e1; }
+@media (max-width: 1279px) { .nav { flex-basis: var(--w-nav-collapsed); width: var(--w-nav-collapsed); } .dest .l, .dest .chev, .secs { display: none; } .dest { justify-content: center; padding: 0; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></symbol>
+  <symbol id="i-ask" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-data" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></symbol>
+  <symbol id="i-analyze" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M8 17v-5"/><path d="M13 17V8"/><path d="M18 17v-3"/></symbol>
+  <symbol id="i-model" viewBox="0 0 24 24"><path d="m12 2 9 5-9 5-9-5 9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></symbol>
+  <symbol id="i-decide" viewBox="0 0 24 24"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-panel-l" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M9 4v16"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></symbol>
+</defs></svg>
+
+<div class="shell" id="shell" data-nav="expanded">
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">A</span><span class="word">Aughor</span></div>
+    <button class="select"><span class="lbl">Workspace</span> Default <svg class="i sm"><use href="#i-chev"/></svg></button>
+    <div class="search" role="search"><svg class="i sm"><use href="#i-search"/></svg>Search pages, assets &amp; commands<kbd>⌘K</kbd></div>
+    <div class="spacer"></div>
+    <button class="select"><span class="lbl">Environment</span> theLook · BigQuery <svg class="i sm"><use href="#i-chev"/></svg></button>
+    <button class="jobs"><span class="dot"></span>Jobs · 0 running</button>
+    <button class="iconbtn" aria-label="Notifications"><svg class="i"><use href="#i-bell"/></svg></button>
+    <button class="iconbtn" aria-label="Help"><svg class="i"><use href="#i-help"/></svg></button>
+    <button class="iconbtn" aria-label="Settings" aria-expanded="false" id="gear"><svg class="i"><use href="#i-gear"/></svg></button>
+    <span class="avatar" title="amitkamlapure">AU</span>
+    <div class="menu" id="settings-menu" hidden role="menu" aria-label="Settings"></div>
+  </header>
+
+  <div class="middle">
+    <nav class="nav" aria-label="Primary" id="nav"></nav>
+    <main class="main">
+      <div class="crumbs" id="crumbs"></div>
+      <div class="titlebar" id="titlebar"></div>
+      <div class="tabs" role="tablist" id="tabs"></div>
+      <div class="content" id="content"></div>
+    </main>
+  </div>
+
+  <footer class="status">
+    <span><span class="dot" style="background:var(--status-success)"></span> Connected · theLook · BigQuery</span><span class="sep">│</span>
+    <span id="st-where"></span><span class="sep">│</span>
+    <span>19 monitor alerts unacknowledged</span>
+  </footer>
+</div>
+
+<div class="mock-ctl" aria-label="Mockup controls (not part of the design)">
+  Names <button data-names="doc" aria-pressed="true">Doc</button><button data-names="safe" aria-pressed="false">Aughor-safe</button>
+  · <button data-theme-btn="light" aria-pressed="true">Light</button><button data-theme-btn="dark" aria-pressed="false">Dark</button>
+  · scroll for notes
+</div>
+
+<section class="notes" id="notes">
+  <h2>Seven destinations, as EVIDENCE → ACTION v2.0 §3–§4 draws them</h2>
+  <p class="lede">Every page and tab you can reach today has a place here: 22 nav rows, plus the tabs inside Briefing, Agent Ops, Record, Security, Evals, the Semantic Layer and Settings. Click any destination or section above; the page heading says where it lives today. Page bodies are unchanged on purpose. This mockup is about where things live, not what they look like.</p>
+  <div class="figs" id="figs"></div>
+
+  <div class="cols">
+    <div>
+      <h3>What the doc decides, and what it leaves open</h3>
+      <ul>
+        <li><b>Top level: at most seven</b> (§3). Notifications, help, settings and admin move to the top bar as global chrome.</li>
+        <li><b>The nav is 224px wide and collapses to 56px</b> (§4.2), with icon and label. Below 1280px it collapses by default (§4.4). The collapse control is at the nav's foot.</li>
+        <li><b>The doc says nothing about a second level.</b> Its own breadcrumb ("Analyze › SQL › …") shows one exists. Here a destination's sections open beneath it, one destination at a time, and clicking a destination opens its first section.</li>
+        <li><b>Labels match everywhere</b> (§3): the route, page title, breadcrumb and ⌘K all use the section's name.</li>
+        <li><b>Unsupported destinations are hidden, not dead links.</b> Notebooks aren't built, so Analyze doesn't list them.</li>
+      </ul>
+      <h3>What it costs</h3>
+      <ul>
+        <li><b>No page gets fewer clicks, and 31 of 55 get one more.</b> Today all 22 rows are always on screen, so every row is one click. Here only a destination's first section is one click.</li>
+        <li><b>What softens it:</b> a destination could reopen the section you last used there, and ⌘K reaches any page by name (it already reaches Playbook, which has no row). Neither changes the count for a page you haven't opened yet.</li>
+        <li><b>What it buys:</b> room. The tallest destination open (Monitor, 8 sections) ends at 524px, where today's rows run to 830 of 852 at 1440×900. A new page no longer pushes another below the fold.</li>
+        <li><b>With the Aughor-safe names, most of it is today's grouping folded up.</b> Operations is today's Operations plus Health and Brain map. The real moves are Briefing's ten tabs spreading across four destinations, and Inbox and Record joining under Decide.</li>
+      </ul>
+      <h3>Calls I made that need your yes</h3>
+      <ul>
+        <li class="call"><b>The doc has no destination for what Aughor knows</b> (today's whole "Intelligence" group). I placed those pages by best fit: Profile → Data, Org and Memory → Model, Evidence → Decide, Brain map → Monitor. This is the biggest gap the exercise found.</li>
+        <li><b>Record stays whole under Decide.</b> The doc would split it, with Inquiries under Ask and Decisions under Decide. You approved Record as one row with five views.</li>
+        <li><b>Agent Ops stays whole under Monitor</b> (your rule: its tabs stay as they are).</li>
+        <li><b>Spreadsheets → Analyze</b> rather than Data, since people work in sheets. <b>Documents → Data</b>, as material the agents read.</li>
+        <li><b>Briefing → Home</b>, which the doc defines as "briefings, recent, assigned". <b>Now</b> also moves to Home, and <b>Inbox</b> to Decide.</li>
+        <li><b>Integrations → the Settings menu</b> in the top bar, beside Organization, Access, Appearance, Models and System.</li>
+        <li><b>The Notifications page</b> (what the platform sends) → Monitor. The top-bar bell is new: it's for what's sent <i>to you</i>, and nothing feeds it yet.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Names: the doc's against the glossary</h3>
+      <table>
+        <tr><th>Doc</th><th>Clash in Aughor</th><th>Aughor-safe</th></tr>
+        <tr><td>Home · Ask · Data · Analyze · Decide</td><td>None found</td><td>Same</td></tr>
+        <tr><td><b>Model</b></td><td>In the glossary and the product, "model" is the AI model (model calls, Settings ▸ Models). A Model destination next to a Models setting would read as the LLM.</td><td><b>Define</b> (a verb, like Ask, Analyze and Decide)</td></tr>
+        <tr><td><b>Monitor</b></td><td>The glossary defines a Monitor as one watch-a-metric rule, and this destination holds a "Monitors" section: "Monitor › Monitors".</td><td><b>Operations</b> (today's group name)</td></tr>
+      </table>
+      <p class="muted" style="font-size:13px">The corner toggle swaps between them.</p>
+      <h3>Every page, today and here</h3>
+      <div style="max-height:520px;overflow:auto;border:1px solid #e4eaf0;border-radius:6px">
+        <table id="mapping"></table>
+      </div>
+      <p class="muted" style="font-size:12px;margin-top:6px">Clicks counted from any other page. Today: a nav row is 1 click and a tab inside it is 2. Here: a destination's first section is 1, its others are 2, and a tab inside a section adds 1.</p>
+    </div>
+  </div>
+</section>
+
+<script>
+/* Inventory read from web/app/page.tsx and each workspace's LAYERS, 2026-11-10. today = the path a person clicks now. */
+const DEST = [
+  { id: "home", doc: "Home", safe: "Home", icon: "home", sections: [
+    { id: "home", label: "Home", today: ["Home"], holds: "Your desk: what changed, what needs you, where to look first" },
+    { id: "briefing", label: "Briefing", today: ["Briefing"], holds: "The edition written for your range: cited figures and the decisions they raise" },
+    { id: "now", label: "Now", today: ["Now"], holds: "What needs you this week: slots used, what waits on a person, what was held" },
+  ]},
+  { id: "ask", doc: "Ask", safe: "Ask", icon: "ask", sections: [
+    { id: "canvas", label: "Data Canvas", today: ["Data Canvas"], holds: "Ask a question; each answer carries its SQL, sources and run" },
+    { id: "runs", label: "Agent runs", today: ["Agent runs"], holds: "Deep analyses and quick answers, running and done" },
+  ]},
+  { id: "data", doc: "Data", safe: "Data", icon: "data", sections: [
+    { id: "catalog", label: "Catalog", today: ["Catalog"], holds: "Tables, schemas & profiles" },
+    { id: "profile", label: "Profile", today: ["Briefing", "Profile"], holds: "What Aughor knows about this business, by the domains its findings are filed under", call: true },
+    { id: "documents", label: "Documents", today: ["Documents"], holds: "Authored material the agents reason with; global, not per connection" },
+  ]},
+  { id: "analyze", doc: "Analyze", safe: "Analyze", icon: "analyze", sections: [
+    { id: "sql", label: "SQL Editor", today: ["SQL Editor"], holds: "Write SQL, or compose visually" },
+    { id: "dashboards", label: "Dashboards", today: ["Briefing", "Dashboards"], holds: "Your own dashboards — the cards and pieces you keep watching" },
+    { id: "sheets", label: "Spreadsheets", today: ["Spreadsheets"], holds: "The sheets people make, edit, combine and chat with" },
+  ]},
+  { id: "model", doc: "Model", safe: "Define", icon: "model", sections: [
+    { id: "semantic", label: "Semantic Layer", today: ["Semantic Layer"], tabs: ["Metrics", "Annotations", "Knowledge", "Benchmarks", "Import"], holds: "Metrics, entities & glossary" },
+    { id: "ontology", label: "Ontology", today: ["Ontology"], holds: "Entities, processes and their promises, links" },
+    { id: "actions", label: "Actions", today: ["Briefing", "Actions"], holds: "Declared actions on objects: what each changes, its risk, who approves" },
+    { id: "graph", label: "Graph", today: ["Briefing", "Graph"], holds: "The connection's knowledge graph" },
+    { id: "memory", label: "Memory", today: ["Briefing", "Memory"], holds: "What the agents keep between runs", call: true },
+    { id: "org", label: "Organisation", today: ["Briefing", "Org"], holds: "Findings promoted to every connection of the organisation", call: true },
+  ]},
+  { id: "decide", doc: "Decide", safe: "Decide", icon: "decide", sections: [
+    { id: "inbox", label: "Inbox", today: ["Inbox"], holds: "Recommendations waiting on your call" },
+    { id: "record", label: "Record", today: ["Record"], tabs: ["Inquiries", "Decisions", "Missions", "Claims", "Corrections"], holds: "Inquiries, decisions, missions, claims and corrections" },
+    { id: "evidence", label: "Evidence", today: ["Briefing", "Evidence"], holds: "The claim ledger and the feedback on it", call: true },
+  ]},
+  { id: "monitor", doc: "Monitor", safe: "Operations", icon: "monitor", badge: 19, sections: [
+    { id: "health", label: "Health", today: ["Health"], holds: "How each declared process is keeping its promises" },
+    { id: "monitors", label: "Monitors", today: ["Monitors"], badge: 19, holds: "Watch-a-metric rules and their alerts" },
+    { id: "agentops", label: "Agent Ops", today: ["Agent Ops"], tabs: ["Overview", "Roster", "Attention", "Automations", "Hub", "Departures", "By duty"], holds: "The agents, their work, and what waits on a human" },
+    { id: "notifications", label: "Notifications", today: ["Notifications"], holds: "Triggers, what was sent, and whether it arrived" },
+    { id: "spend", label: "Spend", today: ["Spend"], holds: "Caps, usage, model health and the spend audit feed" },
+    { id: "security", label: "Security & Audit", today: ["Security & Audit"], tabs: ["Security", "Activity", "Approvals", "Gates", "Policies"], holds: "Access, PII, approvals and the audit trail" },
+    { id: "evals", label: "Evals", today: ["Evals"], tabs: ["Suites", "Runs", "Experiments"], holds: "How right the agents are, measured" },
+    { id: "brain", label: "Brain map", today: ["Briefing", "Brain map"], holds: "Every store behind what Aughor knows, with live counts", call: true },
+  ]},
+];
+const SETTINGS = [
+  { id: "organization", label: "Organization", today: ["Settings", "Organization"], opensFirst: true },
+  { id: "access", label: "Access", today: ["Settings", "Access"] },
+  { id: "appearance", label: "Appearance", today: ["Settings", "Appearance"] },
+  { id: "models", label: "Models", today: ["Settings", "Models"] },
+  { id: "system", label: "System", today: ["Settings", "System"] },
+  { id: "integrations", label: "Integrations", today: ["Integrations"], tabs: ["Providers", "MCP servers"] },
+];
+/* Today's rail (measured at 1440×900 on 2026-11-10): which group each row sat in. */
+const TODAY_GROUP = { "Home": "", "Inbox": "", "Now": "", "Data Canvas": "", "Briefing": "Intelligence", "Ontology": "Intelligence", "Agent runs": "Intelligence",
+  "Health": "Intelligence", "Documents": "Intelligence", "Record": "Intelligence", "Catalog": "Data", "SQL Editor": "Data", "Semantic Layer": "Data",
+  "Spreadsheets": "Data", "Agent Ops": "Operations", "Monitors": "Operations", "Notifications": "Operations", "Integrations": "Operations", "Spend": "Operations",
+  "Security & Audit": "Operations", "Evals": "Operations", "Settings": "" };
+
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const ico = (id, cls = "i") => `<svg class="${cls}"><use href="#i-${id}"/></svg>`;
+const state = { names: "doc", dest: "analyze", sec: "dashboards", tab: 0, settings: null, menu: false };
+const destName = d => state.names === "doc" ? d.doc : d.safe;
+const todayPath = s => { const g = TODAY_GROUP[s.today[0]]; return [g, ...s.today].filter(Boolean); };
+const clicksToday = s => s.opensFirst ? 1 : s.today.length;   // a row, then a tab inside it; a row opens on its first tab
+const clicksNew = (d, s) => d.sections ? (d.sections[0] === s ? 1 : 2) : (s === SETTINGS[0] ? 1 : 2);
+
+function renderNav() {
+  $("#nav").innerHTML = DEST.map(d => {
+    const open = d.id === state.dest && !state.settings;
+    return `<button class="dest" data-dest="${d.id}" aria-expanded="${open}" title="${destName(d)}">${ico(d.icon)}<span class="l">${destName(d)}</span>
+        ${d.badge ? `<span class="count" title="${d.badge} monitor alerts unacknowledged">${d.badge}</span>` : ""}<svg class="i sm chev"><use href="#i-chev"/></svg></button>
+      ${open ? `<ul class="secs">${d.sections.map(s => `<li><button class="sec" data-sec="${s.id}" aria-current="${s.id === state.sec ? "page" : "false"}">${s.label}
+        ${s.badge ? `<span class="count">${s.badge}</span>` : ""}</button></li>`).join("")}</ul>` : ""}`;
+  }).join("") + `<div class="nav-foot"><button class="dest" id="collapse" title="Collapse the nav (⌘\\)">${ico("panel-l")}<span class="l">Collapse</span></button></div>`;
+  $$("[data-dest]").forEach(b => b.addEventListener("click", () => {
+    const d = DEST.find(x => x.id === b.dataset.dest);
+    state.dest = d.id; state.sec = d.sections[0].id; state.tab = 0; state.settings = null; render();
+  }));
+  $$("[data-sec]").forEach(b => b.addEventListener("click", () => { state.sec = b.dataset.sec; state.tab = 0; state.settings = null; render(); }));
+  $("#collapse").addEventListener("click", () => { const s = $("#shell"); s.dataset.nav = s.dataset.nav === "collapsed" ? "expanded" : "collapsed"; });
+}
+
+function renderMain() {
+  let crumb, sec, dest;
+  if (state.settings) { sec = SETTINGS.find(s => s.id === state.settings); crumb = ["Settings", sec.label]; }
+  else { dest = DEST.find(d => d.id === state.dest); sec = dest.sections.find(s => s.id === state.sec); crumb = [destName(dest), sec.label]; }
+  const today = todayPath(sec);
+  const moved = today.join(" › ") !== crumb.join(" › ");
+  $("#crumbs").innerHTML = crumb.map((c, i) => i === crumb.length - 1 ? `<span class="here">${c}</span>` : `<span>${c}</span><span class="chev">›</span>`).join("");
+  $("#titlebar").innerHTML = `<h1>${sec.label}</h1>${moved ? `<span class="badge info">Moved</span>` : `<span class="badge neutral">Same place</span>`}
+    <span class="facts">Today: ${today.join(" › ")}${sec.holds ? " · " + sec.holds : ""}</span>`;
+  const tabs = sec.tabs || [];
+  $("#tabs").hidden = tabs.length === 0;
+  $("#tabs").innerHTML = tabs.map((t, i) => `<button class="tab" role="tab" aria-selected="${i === state.tab}" data-tab="${i}">${t}</button>`).join("");
+  $$("[data-tab]").forEach(b => b.addEventListener("click", () => { state.tab = +b.dataset.tab; renderMain(); }));
+  const ct = clicksToday(sec) + (state.tab > 0 ? 1 : 0), cn = (dest ? clicksNew(dest, sec) : clicksNew({}, sec)) + (state.tab > 0 ? 1 : 0);
+  const neighbours = dest ? dest.sections.filter(s => s !== sec).map(s => s.label) : SETTINGS.filter(s => s !== sec).map(s => s.label);
+  $("#content").innerHTML = `
+    <section class="panel"><div class="panel-h"><h2>Where this page lives</h2></div><div class="panel-b"><div class="pg">
+      <div class="k">Today</div><div><span class="path">${today.map(p => `<span class="p">${p}</span>`).join('<span class="sep">›</span>')}${tabs.length && state.tab ? `<span class="sep">›</span><span class="p">${tabs[state.tab]}</span>` : ""}</span></div>
+      <div class="k">Here</div><div><span class="path">${crumb.map(p => `<span class="p new">${p}</span>`).join('<span class="sep">›</span>')}${tabs.length && state.tab ? `<span class="sep">›</span><span class="p new">${tabs[state.tab]}</span>` : ""}</span></div>
+      <div class="k">Clicks from elsewhere</div><div>${ct} today → <b>${cn}</b> here ${cn < ct ? '<span class="badge success">fewer</span>' : cn > ct ? '<span class="badge warning">more</span>' : ""}</div>
+      <div class="k">Beside it now</div><div>${neighbours.join(" · ")}</div>
+      ${sec.call ? `<div class="k">Placed by</div><div><span class="badge warning">Best fit</span> The doc has no destination for what Aughor knows</div>` : ""}
+    </div></div></section>
+    <div class="placeholder">${sec.label}${tabs.length ? " › " + tabs[state.tab] : ""}: the page as it is today, unchanged. This mockup is about where pages live, not what they look like.</div>`;
+  $("#st-where").textContent = crumb.join(" › ");
+}
+
+function renderSettingsMenu() {
+  const m = $("#settings-menu");
+  m.hidden = !state.menu; $("#gear").setAttribute("aria-expanded", state.menu);
+  m.innerHTML = `<div class="h">Settings</div>` + SETTINGS.slice(0, 5).map(s => `<button role="menuitem" data-set="${s.id}" aria-current="${state.settings === s.id ? "page" : "false"}">${s.label}</button>`).join("")
+    + `<hr><button role="menuitem" data-set="integrations" aria-current="${state.settings === "integrations" ? "page" : "false"}">Integrations</button>`;
+  $$("[data-set]").forEach(b => b.addEventListener("click", () => { state.settings = b.dataset.set; state.tab = 0; state.menu = false; render(); }));
+}
+
+function renderNotes() {
+  const rows = [];
+  DEST.forEach(d => d.sections.forEach(s => {
+    rows.push({ today: todayPath(s).join(" › "), here: `${destName(d)} › ${s.label}`, ct: clicksToday(s), cn: clicksNew(d, s), call: s.call });
+    (s.tabs || []).slice(1).forEach(t => rows.push({ today: todayPath(s).join(" › ") + " › " + t, here: `${destName(d)} › ${s.label} › ${t}`, ct: clicksToday(s) + 1, cn: clicksNew(d, s) + 1 }));
+  }));
+  SETTINGS.forEach(s => {
+    rows.push({ today: todayPath(s).join(" › "), here: `Settings (top bar) › ${s.label}`, ct: clicksToday(s), cn: clicksNew({}, s) });
+    (s.tabs || []).slice(1).forEach(t => rows.push({ today: todayPath(s).join(" › ") + " › " + t, here: `Settings › ${s.label} › ${t}`, ct: clicksToday(s) + 1, cn: clicksNew({}, s) + 1 }));
+  });
+  $("#mapping").innerHTML = `<tr><th>Today</th><th>Here</th><th class="r">Clicks</th></tr>` + rows.map(r => `<tr${r.call ? ' class="call"' : ""}><td>${r.today}</td><td>${r.here}</td>
+      <td class="r">${r.ct} → ${r.cn === r.ct ? r.cn : `<span class="${r.cn > r.ct ? "up" : "down"}">${r.cn}</span>`}</td></tr>`).join("");
+  const fewer = rows.filter(r => r.cn < r.ct).length, more = rows.filter(r => r.cn > r.ct).length, same = rows.length - fewer - more;
+  // Fit: the tallest destination opened, measured in this window.
+  const keep = { dest: state.dest, sec: state.sec };
+  let tallest = { name: "", bottom: 0 };
+  DEST.forEach(d => { state.dest = d.id; state.sec = d.sections[0].id; renderNav();
+    const items = $$("#nav .dest:not(#collapse), #nav .sec"); const bottom = Math.max(...items.map(e => e.getBoundingClientRect().bottom)) - $("#nav").getBoundingClientRect().top;
+    if (bottom > tallest.bottom) tallest = { name: destName(d), n: d.sections.length, bottom: Math.round(bottom) }; });
+  state.dest = keep.dest; state.sec = keep.sec;
+  const navH = Math.round($("#nav").getBoundingClientRect().height);
+  $("#figs").innerHTML = `
+    <div class="fig"><b>22 → 7</b><span>top-level rows (today's 22 counts Settings)</span></div>
+    <div class="fig"><b>${rows.length}</b><span>pages and tabs placed, none dropped</span></div>
+    <div class="fig"><b>${fewer} · ${same} · ${more}</b><span>fewer · same · more clicks than today</span></div>
+    <div class="fig"><b>${tallest.bottom}px of ${navH}px</b><span>${tallest.name} open (${tallest.n} sections), the tallest, in this window. Today's 22 rows end at 830 of 852 at 1440×900</span></div>`;
+}
+
+function render() { renderNav(); renderMain(); renderSettingsMenu(); }
+
+$("#gear").addEventListener("click", e => { e.stopPropagation(); state.menu = !state.menu; renderSettingsMenu(); });
+document.addEventListener("click", e => { if (state.menu && !e.target.closest("#settings-menu")) { state.menu = false; renderSettingsMenu(); } });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && state.menu) { state.menu = false; renderSettingsMenu(); $("#gear").focus(); } });
+$$("[data-names]").forEach(b => b.addEventListener("click", () => { state.names = b.dataset.names; $$("[data-names]").forEach(x => x.setAttribute("aria-pressed", x === b)); render(); renderNotes(); render(); }));
+$$("[data-theme-btn]").forEach(b => b.addEventListener("click", () => { document.documentElement.dataset.theme = b.dataset.themeBtn; $$("[data-theme-btn]").forEach(x => x.setAttribute("aria-pressed", x === b)); }));
+render(); renderNotes(); render();
+window.addEventListener("resize", () => { renderNotes(); render(); });
+</script>
+</body>
+</html>

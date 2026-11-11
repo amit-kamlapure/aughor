@@ -1,0 +1,280 @@
+"""report_json (parsed to an ExportDoc) → a PowerPoint deck, via python-pptx.
+
+Layout strategy: a title slide, then one "section" slide per heading that
+collects the prose/bullets/findings under it, with charts and tables promoted to
+their own full-bleed slides (they read better large). Walks the SAME ExportDoc
+blocks the PDF does — no report-shape logic here.
+"""
+from __future__ import annotations
+
+import io
+import re
+
+from pptx import Presentation
+from pptx.dml.color import RGBColor
+from pptx.util import Inches, Pt
+
+from .document import Block, ExportDoc
+
+# Palette — the light theme, literal.
+# A print artifact has no document to read CSS vars from, so these mirror
+# web/aughor-v2/theme/tokens-v2.css's [data-theme="light"] block by hand and must
+# move with it (the same contract as printChartTokens() in the web chart theme).
+#   _ACCENT --blue3 · _INK --t1 · _MUTED --t2 · _LINE --b2 · _BG --bg-3
+# _BODY is _INK: this system has one ink for prose and one for meta, and the old
+# third grey was a leftover from a palette that is no longer used anywhere.
+_ACCENT = RGBColor(0x1F, 0x6C, 0xB0)
+_INK = RGBColor(0x11, 0x17, 0x1C)
+_BODY = _INK
+_MUTED = RGBColor(0x5F, 0x72, 0x81)
+_BG = RGBColor(0xF4, 0xF7, 0xF9)
+_WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+
+_W = Inches(13.333)
+_H = Inches(7.5)
+_MARGIN = Inches(0.7)
+
+
+def _blank(prs):
+    return prs.slides.add_slide(prs.slide_layouts[6])
+
+
+def _title_bar(slide, text: str):
+    box = slide.shapes.add_textbox(_MARGIN, Inches(0.45), _W - _MARGIN * 2, Inches(0.9))
+    tf = box.text_frame
+    tf.word_wrap = True
+    p = tf.paragraphs[0]
+    run = p.add_run()
+    run.text = text
+    run.font.size = Pt(24)
+    run.font.bold = True
+    run.font.color.rgb = _ACCENT
+    # accent underline
+    line = slide.shapes.add_shape(1, _MARGIN, Inches(1.35), Inches(1.1), Pt(3))
+    line.fill.solid()
+    line.fill.fore_color.rgb = _ACCENT
+    line.line.fill.background()
+    return slide
+
+
+_BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _para(tf, text, *, size=14, bold=False, color=_BODY, bullet=False, space_before=2):
+    p = tf.add_paragraph() if (tf.paragraphs and tf.paragraphs[0].runs) else tf.paragraphs[0]
+    p.space_before = Pt(space_before)
+    p.space_after = Pt(2)
+
+    def _run(t, b):
+        r = p.add_run()
+        r.text = t
+        r.font.size = Pt(size)
+        r.font.bold = bold or b
+        r.font.color.rgb = color
+
+    if bullet:
+        _run("•  ", False)
+    text = re.sub(r"`([^`\n]+)`", r"\1", text)    # an answer reads bold or normal, never as code
+    # split on **bold** so emphasis survives into the deck (one run per segment)
+    pos, segs = 0, []
+    for m in _BOLD_RE.finditer(text):
+        if m.start() > pos:
+            segs.append((text[pos:m.start()], False))
+        segs.append((m.group(1), True))
+        pos = m.end()
+    if pos < len(text):
+        segs.append((text[pos:], False))
+    for seg_text, seg_bold in (segs or [(text, False)]):
+        if seg_text:
+            _run(seg_text, seg_bold)
+    return p
+
+
+def _source_footer(slide, text: str, url: str) -> None:
+    """Idea 11 — where a slide's figure came from, at its foot: the receipt page, linked when
+    the install knows its web address."""
+    if not text:
+        return
+    box = slide.shapes.add_textbox(_MARGIN, _H - Inches(0.55), _W - _MARGIN * 2, Inches(0.35))
+    run = box.text_frame.paragraphs[0].add_run()
+    run.text = text
+    run.font.size = Pt(9)
+    run.font.color.rgb = _MUTED
+    if url:
+        run.hyperlink.address = url
+
+
+class _Deck:
+    def __init__(self, source_text: str = "", source_url: str = ""):
+        self.source_text, self.source_url = source_text, source_url
+        self.prs = Presentation()
+        self.prs.slide_width = _W
+        self.prs.slide_height = _H
+        self.section = None  # (slide, text_frame)
+        # The caption of a chart this deck could not draw. `document._chart_or_table`
+        # blanks the TABLE's caption whenever a chart block exists, on the reasonable
+        # assumption that the chart carries the title — and the PDF does draw it, from the
+        # SVG. PPTX needs a raster, and this repo has no rasterizer it can rely on
+        # (`export.echarts.svg_to_png` returns None without a reportlab renderPM backend,
+        # and `routers/charts.py` says outright that raster is the caller's edge to
+        # convert at). So the picture goes, and with it the only place the title lived:
+        # a customer received an UNTITLED table. Held here and spent on the next table.
+        self._orphaned_caption = ""
+
+    def title_slide(self, doc: ExportDoc):
+        s = _blank(self.prs)
+        box = s.shapes.add_textbox(_MARGIN, Inches(2.3), _W - _MARGIN * 2, Inches(2.6))
+        tf = box.text_frame
+        tf.word_wrap = True
+        _para(tf, doc.title, size=34, bold=True, color=_INK)
+        if doc.subtitle and doc.subtitle != doc.title:
+            _para(tf, doc.subtitle, size=15, color=_MUTED, space_before=10)
+        if doc.meta:
+            _para(tf, "   ·   ".join(doc.meta), size=11, color=_MUTED, space_before=14)
+        bar = s.shapes.add_shape(1, _MARGIN, Inches(2.1), Inches(1.6), Pt(4))
+        bar.fill.solid()
+        bar.fill.fore_color.rgb = _ACCENT
+        bar.line.fill.background()
+
+    def _new_section(self, heading: str):
+        s = _blank(self.prs)
+        _title_bar(s, heading)
+        box = s.shapes.add_textbox(_MARGIN, Inches(1.7), _W - _MARGIN * 2, _H - Inches(2.4))
+        tf = box.text_frame
+        tf.word_wrap = True
+        self.section = (s, tf)
+
+    def _body_tf(self):
+        if self.section is None:
+            self._new_section("Details")
+        return self.section[1]
+
+    def image_slide(self, png: bytes, caption: str):
+        s = _blank(self.prs)
+        if caption:
+            _title_bar(s, caption[:90])
+        from PIL import Image as _PILImage
+        iw, ih = _PILImage.open(io.BytesIO(png)).size
+        max_w, max_h = _W - _MARGIN * 2, _H - Inches(2.0)
+        w = max_w
+        h = int(w * ih / iw)
+        if h > max_h:
+            h = max_h
+            w = int(h * iw / ih)
+        left = int((_W - w) / 2)
+        s.shapes.add_picture(io.BytesIO(png), left, Inches(1.7), width=w, height=h)
+        _source_footer(s, self.source_text, self.source_url)
+        self.section = None
+
+    def table_slide(self, columns, rows, caption: str):
+        s = _blank(self.prs)
+        _title_bar(s, caption or "Data")
+        cols = columns[:6]
+        body = rows[:12]
+        n_r, n_c = len(body) + 1, len(cols)
+        gtable = s.shapes.add_table(n_r, n_c, _MARGIN, Inches(1.7),
+                                    _W - _MARGIN * 2, Inches(0.4) * n_r).table
+        for j, c in enumerate(cols):
+            cell = gtable.cell(0, j)
+            cell.text = str(c)[:30]
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = _ACCENT
+            para = cell.text_frame.paragraphs[0]
+            para.runs[0].font.size = Pt(11)
+            para.runs[0].font.bold = True
+            para.runs[0].font.color.rgb = _WHITE
+        for i, r in enumerate(body, 1):
+            for j in range(n_c):
+                cell = gtable.cell(i, j)
+                cell.text = (str(r[j])[:32] if j < len(r) else "")
+                run = cell.text_frame.paragraphs[0].runs
+                if run:
+                    run[0].font.size = Pt(10)
+                    run[0].font.color.rgb = _BODY
+        _source_footer(s, self.source_text, self.source_url)
+        self.section = None
+
+    def add(self, b: Block):
+        if b.kind == "heading":
+            self._new_section(b.text)
+        elif b.kind == "prose":
+            tf = self._body_tf()
+            if b.tag:
+                _para(tf, b.tag.upper(), size=9, bold=True, color=_ACCENT, space_before=6)
+            _para(tf, b.text, size=14, color=_BODY)
+        elif b.kind == "bullets":
+            tf = self._body_tf()
+            for it in b.items:
+                _para(tf, it, size=13, color=_BODY, bullet=True)
+        elif b.kind == "finding":
+            tf = self._body_tf()
+            if b.caption:
+                _para(tf, b.caption, size=14, bold=True, color=_INK, space_before=8)
+            if b.text:
+                _para(tf, b.text, size=12.5, color=_BODY)
+            # The statistical verdict — same omission the PDF had: `document.py` sets it on
+            # every finding and this branch never read it, so a deck shipped the claim
+            # without the caveat that qualifies it. Not uppercased: on a finding this field
+            # is a sentence, not a label.
+            if b.tag:
+                _para(tf, b.tag, size=10, color=_MUTED)
+            if b.confidence is not None:
+                # a word, never a percentage: the number is the model's estimate of itself, and a
+                # figure on a slide reads as a counted frequency it is not (the 2027 study §B)
+                label = "High" if b.confidence >= 0.75 else "Medium" if b.confidence >= 0.5 else "Low"
+                _para(tf, f"stated confidence: {label}", size=10, color=_MUTED)
+        elif b.kind == "recs":
+            tf = self._body_tf()
+            for i, r in enumerate(b.recs, 1):
+                _para(tf, f"{i}.  {r.get('action', '')}", size=13, color=_BODY, bullet=False, space_before=4)
+                extra = [x for x in (
+                    f"impact: {r['expected_impact']}" if r.get("expected_impact") else "",
+                    f"owner: {r['owner']}" if r.get("owner") else "",
+                    f"by {r['timeline']}" if r.get("timeline") else "",
+                ) if x]
+                if extra:
+                    _para(tf, "    " + " · ".join(extra), size=10, color=_MUTED)
+        elif b.kind == "keynums" and b.keynums:
+            tf = self._body_tf()
+            parts = [f"{k.label}: {k.value}" + (f" ({k.delta})" if k.delta else "") for k in b.keynums]
+            _para(tf, "    ".join(parts), size=12.5, bold=True, color=_INK, space_before=4)
+            if self.source_text:
+                src = _para(tf, self.source_text, size=9, color=_MUTED)
+                if self.source_url and src.runs:
+                    src.runs[-1].hyperlink.address = self.source_url
+        elif b.kind == "chart" and b.png:
+            # `b.svg` is deliberately not read here: PPTX has no vector surface, so a chart
+            # reaches a deck as the raster the SSR step produced alongside it. The SVG is
+            # the PDF's (see Block.svg). Named explicitly because an unread producer field
+            # is otherwise indistinguishable from the one that dropped every stat_note.
+            self.image_slide(b.png, b.caption)
+            self._orphaned_caption = ""
+        elif b.kind == "chart":
+            # A chart with no raster. Keep its caption for the table that follows: the
+            # table is the same exhibit in numbers, and it was stripped of its title
+            # precisely because this slide was expected to carry one.
+            #
+            # Deliberately NOT a "chart unavailable" slide. The numbers arrive on the very
+            # next slide, so announcing the absence of a picture would add a line about
+            # our own plumbing to a customer's deck without telling them anything they
+            # cannot see. What was actually lost is the TITLE, so the title is what is
+            # restored.
+            self._orphaned_caption = b.caption or self._orphaned_caption
+        elif b.kind == "table" and b.columns:
+            self.table_slide(b.columns, b.rows, b.caption or self._orphaned_caption)
+            self._orphaned_caption = ""
+        # code blocks are omitted from slides (they live in the PDF appendix)
+
+    def render(self) -> bytes:
+        buf = io.BytesIO()
+        self.prs.save(buf)
+        buf.seek(0)
+        return buf.read()
+
+
+def render_pptx(doc: ExportDoc) -> bytes:
+    deck = _Deck(doc.source_text(), doc.source_url)
+    deck.title_slide(doc)
+    for b in doc.blocks:
+        deck.add(b)
+    return deck.render()

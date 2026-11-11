@@ -1,0 +1,251 @@
+[project]
+name = "aughor"
+version = "0.1.0"
+description = "Autonomous Data Analyst — investigative agent over your warehouse"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Sidha Sadhak" }]
+keywords = ["sql", "llm", "agent", "data-analysis", "nl2sql", "duckdb", "langgraph"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Database",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "langgraph>=0.2.0",
+    "langchain-core>=0.3.0",
+    "openai>=1.50.0",
+    # PENDING item 17: the `anthropic` backend is offered in every install's Settings, and its
+    # client (`instructor.from_anthropic`) needs this SDK — undeclared, choosing it failed at
+    # the first model call with `No module named 'anthropic'`. Core for the reason resvg-py is.
+    # Below 1.0: the 1.x SDK moves to a second HTTP stack (httpx2) that instructor's
+    # `from_anthropic` was not built against; 0.x rides the httpx this tree already has.
+    "anthropic>=0.40.0,<1",
+    "instructor>=1.4.0",
+    "duckdb>=1.1.0",
+    # scipy stays: `tools/stats.py` imports it at module level and is imported at module
+    # level by agent/explore.py, nodes.py and investigate.py — it is on the ANALYSIS path,
+    # even though it is absent from the API's boot closure.
+    "scipy>=1.13.0",
+    "numpy>=1.26.0",
+    # RC-2 — rasterizes the chart SVG for surfaces that cannot embed vectors: a
+    # scheduled Slack post's PNG, and the PPTX export that had been dropping its chart
+    # slides in silence. Core rather than an extra (1.2 MB, prebuilt wheels, links no
+    # system library) because the scheduled chart is DEFAULT-ON: a rasterizer that lived
+    # in an optional extra would make the feature quietly absent on every install that
+    # skipped it, which is how the last few capabilities stalled at "tested".
+    "resvg-py>=0.5.0",
+    "sqlglot>=25.0.0",
+    "rich>=13.0.0",
+    "click>=8.1.0",
+    "pydantic>=2.7.0",
+    "python-dotenv>=1.0.0",
+    "fastapi>=0.136.1",
+    "uvicorn>=0.46.0",
+    "cryptography>=48.0.0",
+    "psycopg2-binary>=2.9.12",
+    "pyyaml>=6.0.3",
+    "langgraph-checkpoint-sqlite>=3.1.0",
+    "python-multipart>=0.0.9",
+    "apscheduler>=3.10.0",
+    "pytz>=2024.1",
+    "mcp>=1.28.0",
+    "ag-ui-protocol==0.1.19",
+    # VA-10: OIDC bearer verification (security/oidc.py). Already in the tree as a
+    # transitive dep — declared directly because we import it; [crypto] pins the
+    # RS256/ES256 signature backend (cryptography, also already a direct dep).
+    "pyjwt[crypto]>=2.9.0",
+]
+
+[project.optional-dependencies]
+# ── Weight moved OFF the serving path (measured 2026-08-05) ────────────────────────────
+# The development environment is ~1.2 GB, but importing `aughor.api` and diffing
+# sys.modules shows the API's boot closure is ~106 MB. Those are DIFFERENT measurements —
+# venv on disk vs import closure — and quoting one number for both is how the README's
+# figures drifted 2x out of date. Re-derive with `scripts/measure_footprint.py --compare`
+# rather than trusting the comment (re-measured 2026-08-18, linux-x86-64 / CPython 3.11).
+# The bulk sat in dependencies nothing on the request path imports. Splitting them out
+# makes a ~110 MB deployment real rather than theoretical, and each extra below is
+# guarded so a missing one degrades with a clear message instead of an ImportError.
+#
+#   deleted outright: statsmodels (36 MB) — imported by ZERO modules.
+#   kept:             scipy — on the analysis path via tools/stats.py.
+#
+# `polars` is 192 MB and pulls `pyarrow` (120 MB) to serve ONE call site
+# (`db/connection.py`), which already falls back to DuckDB on ImportError — so the
+# fast bulk-read path is an optimisation, not a requirement. `connectorx` (113 MB) is
+# its partner and already lives in [warehouse].
+fastread = [
+    "polars>=1.0.0",
+]
+# Track B2 (docs/TENX_PROGRAM_2026-11-05.md) — a deployment whose state is a shared Postgres
+# (AUGHOR_DB_URL): LangGraph's own checkpointer, so a paused investigation resumes on any process
+# that shares the database. A laptop never imports it; set AUGHOR_DB_URL without it and the first
+# checkpoint says which extra to install. Pinned to 3.1.3 (2026-11-08): 3.1.2 carried GHSA-6hmw-9432-67qq,
+# a namespace collision in LangGraph's stores (Aughor uses only the checkpointer, not the stores), and
+# the dependency audit fails on it. 3.1.3 needs langgraph-checkpoint >= 4.3, taken with it; the
+# checkpoint tests, a second process resuming on a real Postgres among them, pass on 4.3.1.
+shared-state = [
+    "langgraph-checkpoint-postgres==3.1.3",
+    # The saver speaks psycopg 3, which imports nothing without a libpq; [binary] ships one (psycopg2,
+    # the stores' driver, is binary already). Measured: without it the saver raised "no pq wrapper".
+    "psycopg[binary]>=3.2.0",
+]
+# Semantic search / RAG. `qdrant-client` is 3 MB but drags 39 MB of grpc — kept an
+# extra so lean/serverless installs (pgvector rides psycopg2, already in the serving
+# set) don't carry it. With the extra installed no server is needed any more (S1):
+# the seam runs qdrant EMBEDDED at AUGHOR_QDRANT_PATH unless AUGHOR_QDRANT_URL pins a
+# server — so `uv sync --all-extras` (the documented setup) gets working semantic
+# search with no second process. Every entry point in `semantic/vector_store.py`
+# checks `available()` and degrades to "empty index": reads return nothing, writes
+# no-op. A CONNECTION failure still raises, because a configured index that is down
+# is an outage worth surfacing, not a silent no-op.
+semantic = [
+    "qdrant-client>=1.9.0",
+]
+# PDF/PPTX rendering. Reached only through `from aughor.export import export_report`
+# inside a router handler, never at import time.
+export = [
+    "reportlab>=4.5.1",
+    "python-pptx>=1.0.2",
+    # CA-4 one-renderer: charts come from the web's own ECharts resolver via a
+    # node subprocess (chart_ssr.bundle.mjs, §5-3a) as SVG; svglib turns that SVG
+    # into a reportlab drawing the PDF embeds as VECTOR (`export/pdf.py`).
+    # Rasterization moved to resvg in the core deps — renderPM needed an rlPyCairo
+    # backend that was absent far more often than present. matplotlib's port is gone.
+    "svglib>=1.5.1",
+]
+# Document ingestion. `firecrawl-anydoc` is the converter for every binary format
+# (Word/PowerPoint/Excel/OpenDocument/RTF/EPUB/CSV/PDF → Markdown): a pure-Rust
+# library shipped as abi3 wheels, so it adds no build step and no ML model. It
+# replaced a pypdf/python-docx text path that dropped tables silently and read
+# unknown binaries as mojibake — see aughor/knowledge/convert.py.
+# pypdf and python-docx REMAIN: they are the outbound renderers' dependencies and
+# the fallback reader on installs that predate the converter.
+# `pdfplumber` reads a PDF's text WITH its coordinates, which anydoc necessarily
+# discards: Markdown is a linear stream and a chart's data labels are positioned
+# graphics. Measured on an 83-page retail deck, 32 pages carried a chart whose values
+# were present as exact text and unreadable as data, because the only thing tying
+# `104` to `2018` was that they shared an x position. See aughor/knowledge/charts.py.
+# It is NOT a second document reader — anydoc remains the pivot for prose.
+docs = [
+    "firecrawl-anydoc>=0.2.4",
+    "pdfplumber>=0.11.10",
+    "pypdf>=6.4.0",
+    "python-docx>=1.0.0",
+]
+# Every driver a warehouse connector imports. `pyexasol` was missing from this list and
+# from every other one, so the Exasol tile could not work in ANY install of this project,
+# including a full `[warehouse]` one: the picker offered it, and the ImportError arrived
+# after the user had filled in a connection form. Its own `dep_check` already named the
+# pin — the declaration was the only thing absent.
+warehouse = [
+    "ibis-framework[duckdb,postgres]>=9.0.0",
+    "connectorx>=0.3.3",
+    "google-cloud-bigquery>=3.0.0",
+    "snowflake-connector-python>=3.0.0",
+    "PyMySQL>=1.0.0",
+    "pyexasol>=0.25.0",
+    "trino>=0.330.0",
+    "pymssql>=2.3.0",
+    "oracledb>=2.0.0",
+    "clickhouse-connect>=0.8.0",
+    "databricks-sql-connector>=3.0.0",
+    "PyAthena>=3.0.0",
+]
+# The three REST connectors (`connectors/api/`) speak HTTP through `requests`, imported at
+# MODULE level in all three. This extra used to declare `stripe`, `hubspot-api-client` and
+# `simple-salesforce` — three vendor SDKs that **nothing in this repo imports**, statically
+# or dynamically (stripe.py's own header says the SDK is "not required") — while omitting
+# the one module they all need. It resolved only because something else drags `requests`
+# in transitively, which is a fact about today's lock file, not a declaration.
+crm = [
+    "requests>=2.32.0",
+]
+cloud-storage = [
+    "azure-storage-blob>=12.0.0",
+]
+knowledge-sync = [
+    "atlassian-python-api>=3.41.0",
+    "notion-client>=2.2.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "httpx>=0.27.0",
+    "pytest-anyio>=0.0.0",
+]
+observability = [
+    # Upper-bounded on purpose (OA·LF-1). The old `>=2.0.0` resolved to 4.x, whose
+    # client dropped every v2 method telemetry.py called — init still succeeded, so
+    # the backend reported enabled and shipped nothing for as long as that pin stood.
+    # Spans now travel over OTLP, so the SDK is only used for its documented
+    # trace-id seeding; `tests/unit/test_telemetry_sdk_surface.py` fails loudly if a
+    # future major moves either that or the OTel attribute keys.
+    "langfuse>=4,<5",
+    "opentelemetry-sdk>=1.24.0",
+    "opentelemetry-exporter-otlp>=1.24.0",
+    # obs.mlflow feature flag — MLflow trace trees per investigation (≥3.13 for
+    # the OSS RBAC/archival-era client; 3.9.0 had a Postgres+S3 trace bug).
+    # Skinny on purpose: the full `mlflow` server distribution pins pandas<3 /
+    # older cryptography, which would downgrade the whole lock (CVE-audit
+    # regressions). The server runs in Docker; the app only needs the client.
+    "mlflow-skinny>=3.13",
+]
+evals = [
+    "braintrust>=0.0.150",
+    "autoevals>=0.0.70",
+]
+
+[project.urls]
+Homepage = "https://github.com/amit-kamlapure/aughor"
+Repository = "https://github.com/amit-kamlapure/aughor"
+Issues = "https://github.com/amit-kamlapure/aughor/issues"
+
+[project.scripts]
+aughor = "aughor.cli:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "e2e: end-to-end tests that require a live LLM (deselect with -m 'not e2e')",
+    "eval: delta-ratchet accuracy/compute evals that require a live LLM (run with -m eval)",
+]
+
+[tool.ruff]
+target-version = "py311"
+extend-exclude = ["web", "evals/spider2*"]
+
+[tool.ruff.lint]
+# Enforce pyflakes (real problems: unused imports/vars, undefined names, redefinitions)
+# plus the default bug-ish pycodestyle checks. The style rules below clash with
+# deliberate, pervasive codebase conventions and would be WRONG to mass-rewrite, so
+# they are disabled rather than "fixed":
+#   E402 — intentional lazy / mid-module imports (cycle avoidance)
+#   E701 / E702 — one-line guards (`if x: return`, `a; b`)
+#   E731 — assigned lambdas
+#   E741 — short loop/lambda names (l, I, O)
+ignore = ["E402", "E701", "E702", "E731", "E741"]
+
+[tool.ruff.lint.per-file-ignores]
+# __init__.py files re-export their package's public API; the imports are
+# intentional even though unused *within* the file.
+"__init__.py" = ["F401"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["aughor"]
+
+[tool.vercel]
+# Stated explicitly because autodetection cannot choose: every FastAPI router test
+# builds its own `app` for its TestClient, so a dozen files under tests/ look like
+# candidate entrypoints. The served application is the one in aughor/api.py.
+entrypoint = "aughor.api:app"

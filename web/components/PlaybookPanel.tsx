@@ -1,0 +1,415 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+import { getApiBase } from "@/lib/config";
+import { pct, formatTimestamp } from "@/lib/format";
+import { getPlaybookVersions, type PlaybookVersion } from "@/lib/api";
+import { Loading } from "@/components/ui/states";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+
+interface PlaybookEntry {
+  id: string;
+  source_kb_id: string | null;
+  trigger_metric: string;
+  trigger_condition: string;
+  trigger_operator: string;
+  trigger_value: number;
+  recommendation: string;
+  expected_impact: string;
+  typical_timeline: string;
+  owner_role: string;
+  tags: string[];
+  evidence_sources: string[];
+  historical_success_rate: number;
+  status: "active" | "draft" | "deprecated";
+  version?: number;
+  receipt?: string;
+  updated_at?: string;
+}
+
+const STATUS_CHIP: Record<string, { bg: string; color: string; label: string }> = {
+  active:     { bg: "var(--grn1)", color: "var(--grn4)", label: "active" },
+  draft:      { bg: "var(--bg-1)", color: "var(--t3)", label: "draft" },
+  deprecated: { bg: "var(--red1)", color: "var(--red4)", label: "deprecated" },
+};
+
+function fmtRate(r: number): string {
+  if (r <= 0) return "—";
+  return pct(r, 0);
+}
+
+function StatusChip({ status }: { status: string }) {
+  const s = STATUS_CHIP[status] ?? STATUS_CHIP.draft;
+  return (
+    <span className="text-[11px] font-mono px-1.5 py-0.5 rounded-[3px]"
+      style={{ background: s.bg, color: s.color, border: `0.5px solid color-mix(in srgb, ${s.color} 25%, transparent)` }}>
+      {s.label}
+    </span>
+  );
+}
+
+export function PlaybookPanel() {
+  const [entries, setEntries] = useState<PlaybookEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [filter, setFilter] = useState("");
+  const [showRuleOuts, setShowRuleOuts] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [seeding, setSeeding] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${getApiBase()}/playbook`);
+      if (res.ok) setEntries(await res.json());
+    } catch {}
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const selectedEntry = entries.find(e => e.id === selected) ?? null;
+
+  const handleStatusChange = async (id: string, status: string) => {
+    const entry = entries.find(e => e.id === id);
+    if (!entry) return;
+    const updated = { ...entry, status };
+    try {
+      const res = await fetch(`${getApiBase()}/playbook/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updated),
+      });
+      if (!res.ok) throw new Error(`status change failed (${res.status})`);
+      const data = await res.json();
+      setEntries(prev => prev.map(e => e.id === id ? data : e));
+    } catch (e) {
+      // A swallowed failure made the status chip silently snap back.
+      window.alert(e instanceof Error ? e.message : "Status change failed");
+    }
+  };
+
+  const handleReseed = async () => {
+    setSeeding(true);
+    try {
+      const res = await fetch(`${getApiBase()}/playbook/seed`, { method: "POST" });
+      if (res.ok) { await load(); }
+    } catch {}
+    finally { setSeeding(false); }
+  };
+
+  const q = filter.toLowerCase().trim();
+  // A data-quality play is a RULE-OUT the Verifier runs during a deep report — never a
+  // decision a person takes. Measured 2026-09-19: 486 of 878 live entries are one, so
+  // they outnumbered the plays somebody might read by more than two to one. Filtered out
+  // of the default view and COUNTED in it: a reader who cannot see them must still learn
+  // they exist and where they run (DS-17b's lesson, one screen over).
+  const isRuleOut = (e: PlaybookEntry) => e.tags.some(t => t.toLowerCase() === "data quality");
+  const ruleOutCount = entries.filter(isRuleOut).length;
+
+  const filtered = entries.filter(e => {
+    const matchStatus = statusFilter === "all" || e.status === statusFilter;
+    const matchQ = !q
+      || e.trigger_metric.toLowerCase().includes(q)
+      || e.recommendation.toLowerCase().includes(q)
+      || e.trigger_condition.toLowerCase().includes(q)
+      || e.tags.some(t => t.toLowerCase().includes(q));
+    // Searching REACHES them: a person who types "data quality" has named the thing, and
+    // hiding a row somebody asked for by name is the defect this filter exists to avoid,
+    // wearing different clothes.
+    const matchScope = showRuleOuts || !!q || !isRuleOut(e);
+    return matchStatus && matchQ && matchScope;
+  });
+
+  const activeCount  = entries.filter(e => e.status === "active").length;
+  const draftCount   = entries.filter(e => e.status === "draft").length;
+  const provenCount  = entries.filter(e => e.historical_success_rate > 0).length;
+
+  return (
+    <div className="flex h-full gap-0" style={{ background: "var(--bg-0)" }}>
+
+      {/* ── Left list ── */}
+      <div className="flex flex-col border-r" style={{ width: "340px", flexShrink: 0, borderColor: "var(--b2)" }}>
+
+        {/* Header */}
+        <div className="px-4 pt-4 pb-3 shrink-0" style={{ borderBottom: "0.5px solid var(--b2)" }}>
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-[13px] font-medium" style={{ color: "var(--t1)" }}>Playbook</h2>
+            <Button variant="plain" size="xs"
+              onClick={handleReseed}
+              disabled={seeding}
+              className="aug-fs-xs px-2 py-1 rounded-[4px] transition-colors"
+              style={{ border: "0.5px solid var(--b2)", background: "var(--bg-1)", color: "var(--t3)" }}
+              onMouseEnter={e => e.currentTarget.style.color = "var(--t2)"}
+              onMouseLeave={e => e.currentTarget.style.color = "var(--t3)"}
+            >
+              {seeding ? "Seeding…" : "Re-seed from KB"}
+            </Button>
+          </div>
+          <div className="flex items-center gap-3 aug-fs-xs font-mono mb-3" style={{ color: "var(--t3)" }}>
+            <span><span style={{ color: "var(--grn4)" }}>{activeCount}</span> active</span>
+            <span><span style={{ color: "var(--t3)" }}>{draftCount}</span> draft</span>
+            {provenCount > 0 && <span><span style={{ color: "var(--blue4)" }}>{provenCount}</span> proven</span>}
+          </div>
+          {ruleOutCount > 0 && (
+            <Button variant="plain" size="xs"
+              onClick={() => setShowRuleOuts(v => !v)}
+              data-testid="playbook-ruleouts-toggle"
+              className="aug-fs-xs mb-2 text-left"
+              style={{ background: "none", border: "none", padding: 0, color: "var(--t3)",
+                       cursor: "pointer", lineHeight: 1.45 }}
+            >
+              {showRuleOuts
+                ? `${ruleOutCount} data-quality rule-outs shown`
+                : `${ruleOutCount} data-quality rule-outs run in the Verifier — not listed`}
+            </Button>
+          )}
+          <Input
+            value={filter}
+            onChange={e => setFilter(e.target.value)}
+            placeholder="Search recommendations…"
+            className="w-full mb-2"
+          />
+          <div className="flex gap-1">
+            {(["all", "active", "draft", "deprecated"] as const).map(s => (
+              <Button variant="plain" size="xs"
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                className="text-[11px] px-2 py-0.5 rounded-[var(--r-chip)] font-mono transition-colors"
+                style={{
+                  background: statusFilter === s ? "var(--blue1)" : "transparent",
+                  border: `0.5px solid ${statusFilter === s ? "#3d6bff55" : "var(--b2)"}`,
+                  color: statusFilter === s ? "var(--blue4)" : "var(--t3)",
+                }}
+              >
+                {s}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        {/* List */}
+        <div className="flex-1 overflow-y-auto min-h-0 py-2">
+          {loading && (
+            <div className="space-y-1.5 px-3">
+              {[1, 2, 3, 4, 5].map(i => (
+                <div key={i} className="h-14 aug-skeleton" style={{ borderRadius: "var(--r3)" }} />
+              ))}
+            </div>
+          )}
+          {!loading && filtered.length === 0 && (
+            <p className="aug-fs-xs text-center py-8" style={{ color: "var(--t3)" }}>
+              {entries.length === 0 ? "No playbook entries yet. Click \"Re-seed from KB\" to generate." : "No entries match."}
+            </p>
+          )}
+          {filtered.map(e => (
+            <Button variant="plain" size="xs"
+              key={e.id}
+              onClick={() => setSelected(selected === e.id ? null : e.id)}
+              className="w-full text-left px-4 py-2.5 transition-colors"
+              style={{
+                background: selected === e.id ? "var(--bg-1)" : "transparent",
+                borderLeft: selected === e.id ? "2px solid #3d6bff" : "2px solid transparent",
+              }}
+              onMouseEnter={ev => { if (selected !== e.id) ev.currentTarget.style.background = "var(--bg-2)"; }}
+              onMouseLeave={ev => { if (selected !== e.id) ev.currentTarget.style.background = "transparent"; }}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  {/* PX-1 — the human sentence is the title; the machine key is
+                      metadata. 392 rows titled `air_load_factor` read as a config
+                      dump, not a playbook. */}
+                  <p className="aug-fs-sm leading-snug" style={{ color: "var(--t1)" }}
+                    title={e.recommendation}>
+                    {e.recommendation.length > 80 ? e.recommendation.slice(0, 78) + "…" : e.recommendation}
+                  </p>
+                  <p className="aug-fs-xs font-mono truncate mt-0.5" style={{ color: "var(--t3)" }}>{e.trigger_metric}</p>
+                </div>
+                <div className="flex flex-col items-end gap-1 shrink-0 mt-0.5">
+                  <StatusChip status={e.status} />
+                  {e.historical_success_rate > 0 && (
+                    <span className="aug-fs-xs font-mono" style={{ color: "var(--blue3)" }}>
+                      {fmtRate(e.historical_success_rate)}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Right detail ── */}
+      <div className="flex-1 overflow-y-auto min-h-0 p-6">
+        {!selectedEntry ? (
+          <div className="h-full flex items-center justify-center">
+            <p className="aug-fs-sm" style={{ color: "var(--t3)" }}>Select an entry to view and edit</p>
+          </div>
+        ) : (
+          <PlaybookDetail
+            entry={selectedEntry}
+            onStatusChange={(s) => handleStatusChange(selectedEntry.id, s)}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PlaybookDetail({
+  entry,
+  onStatusChange,
+}: {
+  entry: PlaybookEntry;
+  onStatusChange: (status: string) => void;
+}) {
+  return (
+    <div className="max-w-2xl space-y-5">
+      {/* Metric + condition */}
+      <div>
+        <div className="flex items-center gap-2 mb-1">
+          <span className="aug-fs-xs font-mono px-2 py-0.5 rounded-[3px]"
+            style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t3)" }}>
+            {entry.trigger_metric}
+          </span>
+          <StatusChip status={entry.status} />
+          {entry.source_kb_id && (
+            <span className="text-[11px] font-mono" style={{ color: "var(--t3)" }}>
+              from KB: {entry.source_kb_id}
+            </span>
+          )}
+        </div>
+        <p className="text-[12px] italic" style={{ color: "var(--t3)" }}>{entry.trigger_condition}</p>
+      </div>
+
+      {/* Recommendation */}
+      <div>
+        <p className="aug-fs-xs uppercase tracking-wider mb-1.5" style={{ color: "var(--t3)" }}>Recommendation</p>
+        <p className="aug-fs-ui leading-relaxed" style={{ color: "var(--t1)" }}>{entry.recommendation}</p>
+      </div>
+
+      {/* Impact + timeline + owner */}
+      <div className="grid grid-cols-3 gap-4">
+        {[
+          { label: "Expected impact", value: entry.expected_impact },
+          { label: "Timeline",        value: entry.typical_timeline },
+          { label: "Owner",           value: entry.owner_role },
+        ].map(({ label, value }) => value ? (
+          <div key={label}>
+            <p className="aug-fs-xs uppercase tracking-wider mb-1" style={{ color: "var(--t3)" }}>{label}</p>
+            <p className="aug-fs-sm" style={{ color: "var(--t2)" }}>{value}</p>
+          </div>
+        ) : null)}
+      </div>
+
+      {/* Success rate */}
+      <div className="flex items-center gap-4">
+        <div>
+          <p className="aug-fs-xs uppercase tracking-wider mb-1" style={{ color: "var(--t3)" }}>Historical success rate</p>
+          <p className="aug-fs-h1 font-semibold font-mono"
+            style={{ color: entry.historical_success_rate > 0 ? "var(--grn4)" : "var(--t3)" }}>
+            {entry.historical_success_rate > 0 ? fmtRate(entry.historical_success_rate) : "No data yet"}
+          </p>
+          {entry.evidence_sources.length > 0 && (
+            <p className="aug-fs-xs mt-0.5" style={{ color: "var(--t3)" }}>
+              {entry.evidence_sources.length} deep analys{entry.evidence_sources.length > 1 ? "es" : "is"} as evidence
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Tags */}
+      {entry.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {entry.tags.map(t => (
+            <span key={t} className="aug-fs-xs px-2 py-0.5 rounded-[var(--r-chip)] font-mono"
+              style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t3)" }}>
+              {t}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Version history (Governed Dives — immutable, receipt-pinned versions) */}
+      <VersionHistory entryId={entry.id} currentVersion={entry.version} />
+
+      {/* Promote / deprecate */}
+      <div className="flex gap-2 pt-2" style={{ borderTop: "0.5px solid var(--b2)" }}>
+        {entry.status !== "active" && (
+          <Button variant="plain" size="xs"
+            onClick={() => onStatusChange("active")}
+            className="aug-fs-xs px-3 py-1.5 rounded-[5px] transition-colors"
+            style={{ background: "var(--grn1)", border: "0.5px solid var(--grn2)", color: "var(--grn4)" }}
+            onMouseEnter={e => e.currentTarget.style.borderColor = "var(--grn4)"}
+            onMouseLeave={e => e.currentTarget.style.borderColor = "var(--grn2)"}
+          >
+            Promote to active
+          </Button>
+        )}
+        {entry.status !== "deprecated" && (
+          <Button variant="plain" size="xs"
+            onClick={() => onStatusChange("deprecated")}
+            className="aug-fs-xs px-3 py-1.5 rounded-[5px] transition-colors"
+            style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t3)" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--red4)"; e.currentTarget.style.color = "var(--red4)"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b2)"; e.currentTarget.style.color = "var(--t3)"; }}
+          >
+            Deprecate
+          </Button>
+        )}
+        {entry.status === "deprecated" && (
+          <Button variant="plain" size="xs"
+            onClick={() => onStatusChange("draft")}
+            className="aug-fs-xs px-3 py-1.5 rounded-[5px] transition-colors"
+            style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t3)" }}
+          >
+            Restore to draft
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function VersionHistory({ entryId, currentVersion }: { entryId: string; currentVersion?: number }) {
+  const [open, setOpen] = useState(false);
+  const [versions, setVersions] = useState<PlaybookVersion[] | null>(null);
+
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (next && versions === null) getPlaybookVersions(entryId).then(setVersions).catch(() => setVersions([]));
+  };
+
+  return (
+    <div style={{ borderTop: "0.5px solid var(--b1)", paddingTop: 12 }}>
+      <Button variant="ghost" size="xs" onClick={toggle} className="flex items-center gap-2 aug-fs-xs" style={{ color: "var(--t3)" }}>
+        <span style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .12s" }}>▸</span>
+        Version history
+        {currentVersion != null && (
+          <span className="aug-fs-xs px-1.5 py-0.5 rounded-[3px] font-mono"
+            style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t3)" }}>v{currentVersion}</span>
+        )}
+      </Button>
+      {open && (
+        <div className="mt-2 space-y-1.5">
+          {versions === null && <Loading what="versions" />}
+          {versions?.length === 0 && <p className="aug-fs-xs" style={{ color: "var(--t3)" }}>No frozen versions yet.</p>}
+          {versions?.slice().reverse().map(v => (
+            <div key={v.version} className="flex items-center gap-3 aug-fs-xs" style={{ color: "var(--t3)" }}>
+              <span className="font-mono px-1.5 py-0.5 rounded-[3px]"
+                style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t2)" }}>v{v.version}</span>
+              <span style={{ color: "var(--t3)" }}>{v.saved_at ? formatTimestamp(v.saved_at) : ""}</span>
+              <span className="font-mono truncate" style={{ color: "var(--t3)" }} title={v.receipt}>{v.receipt ? v.receipt.slice(0, 16) + "…" : ""}</span>
+            </div>
+          ))}
+          <p className="aug-fs-xs mt-1" style={{ color: "var(--t3)" }}>
+            Immutable, receipt-pinned versions — a finding that cited an older version resolves against the exact content it relied on.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}

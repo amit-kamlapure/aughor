@@ -1,0 +1,639 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { SqlResultTable } from "@/components/AugTable";
+import { Button } from "@/components/ui/button";
+import { compactNumber, formatCount } from "@/lib/format";
+import { MetricsPanel } from "./MetricsPanel";
+import { useSchema } from "@/lib/schema-context";
+import {
+  updateCanvas,
+  getCanvasInstructions,
+  putCanvasInstructions,
+  getConnectionInstructions,
+  putConnectionInstructions,
+  type Connection,
+  type Canvas,
+} from "@/lib/api";
+
+import { getApiBase } from "@/lib/config";
+import { Icon } from "@/components/ui/icon";
+import { ColumnTypeIcon } from "@/components/icons/columnType";
+import { Loading } from "@/components/ui/states";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+interface SchemaColumn {
+  name: string;
+  type: string;
+  is_fk: boolean;
+}
+interface SchemaTable {
+  name: string;
+  row_count: string;
+  columns: SchemaColumn[];
+}
+
+const leaf = (s: string) => (s || "").split(".").pop()!.toLowerCase();
+
+// ── Shared tab bar ────────────────────────────────────────────────────────────
+
+function TabBar({
+  tabs,
+  active,
+  onChange,
+}: {
+  tabs: { id: string; label: string }[];
+  active: string;
+  onChange: (id: string) => void;
+}) {
+  return (
+    <div className="flex border-b border-[var(--b1)] shrink-0">
+      {tabs.map((t) => (
+        <Button variant="ghost" size="xs"
+          key={t.id}
+          onClick={() => onChange(t.id)}
+          className={`px-4 py-2.5 aug-fs-sm font-medium transition-colors border-b-2 -mb-px ${
+            active === t.id
+              ? "border-[var(--blue3)] text-[var(--t1)]"
+              : "border-transparent text-[var(--t3)] hover:text-[var(--t1)]"
+          }`}
+        >
+          {t.label}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
+// ── About tab (Canvas-level) ────────────────────────────────────────────────
+
+function AboutTab({
+  canvas,
+  connection,
+  onCanvasUpdate,
+}: {
+  canvas: Canvas;
+  connection: Connection | undefined;
+  onCanvasUpdate?: (c: Canvas) => void;
+  /** Open the global document corpus. Documents are not canvas-scoped, so this tab
+   *  points at their real home instead of hosting an uploader that would imply they are. */
+  onOpenDocuments?: () => void;
+}) {
+  const [name, setName] = useState(canvas.name);
+  const [desc, setDesc] = useState(canvas.description);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => { setName(canvas.name); setDesc(canvas.description); }, [canvas.id, canvas.name, canvas.description]);
+
+  const scope = canvas.scopes[0];
+  const tableCount = scope?.tables.length ?? 0;
+  const dirty = name.trim() !== canvas.name || desc !== canvas.description;
+
+  async function handleSave() {
+    if (!dirty || !name.trim()) return;
+    setSaving(true);
+    try {
+      const updated = await updateCanvas(canvas.id, { name: name.trim(), description: desc });
+      onCanvasUpdate?.(updated);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const scopeRows: { label: string; value: string }[] = [
+    { label: "Connection", value: connection?.name ?? scope?.connection_id ?? "—" },
+    { label: "Type",       value: connection?.conn_type ?? "—" },
+    { label: "Schema",     value: scope?.schema_name ?? connection?.schema_name ?? "—" },
+    { label: "Tables",     value: tableCount === 0 ? "All tables" : `${tableCount} selected` },
+  ];
+
+  return (
+    <div className="flex-1 overflow-y-auto p-4 space-y-5">
+      <div>
+        <p className="aug-label mb-2">Data Canvas name</p>
+        <Input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Data Canvas name"
+        />
+      </div>
+
+      <div>
+        <p className="aug-label mb-2">Description</p>
+        <Textarea
+          value={desc}
+          onChange={(e) => setDesc(e.target.value)}
+          rows={4}
+          placeholder="What is this canvas about? Auto-generated from your data — edit anytime."
+          className="w-full resize-none"
+        />
+      </div>
+
+      <div className="flex justify-end">
+        <Button
+          onClick={handleSave}
+          disabled={!dirty || !name.trim() || saving}
+          variant="default"
+          size="xs"
+          className="disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {saving ? "Saving…" : saved ? "Saved ✓" : "Save"}
+        </Button>
+      </div>
+
+      <div>
+        <p className="aug-label mb-3">Scope</p>
+        <div className="rounded-md border border-[var(--b1)] overflow-hidden" style={{ background: "var(--bg-3)" }}>
+          {scopeRows.map((r, i) => (
+            <div key={r.label} className={`flex items-start px-3 py-2.5 gap-4 aug-fs-sm ${i > 0 ? "border-t border-[var(--b0)]" : ""}`}>
+              <span className="w-20 shrink-0 text-[var(--t3)]">{r.label}</span>
+              <span className="text-[var(--t1)] font-mono break-all">{r.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Table detail (Overview + Sample Data) ──────────────────────────────────────
+
+function TableDetail({
+  connId,
+  table,
+  onClose,
+}: {
+  connId: string;
+  table: SchemaTable;
+  onClose: () => void;
+}) {
+  const [subtab, setSubtab] = useState<"overview" | "sample">("overview");
+  const [sampleCols, setSampleCols] = useState<string[]>([]);
+  const [sampleRows, setSampleRows] = useState<(string | null)[][]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (subtab !== "sample" || loaded) return;
+    setLoading(true);
+    fetch(`${getApiBase()}/connections/${connId}/tables/${encodeURIComponent(table.name)}/sample?limit=100`)
+      .then((r) => r.json())
+      .then((d) => { setSampleCols(d.columns ?? []); setSampleRows(d.rows ?? []); setLoaded(true); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [subtab, connId, table.name, loaded]);
+
+  /* A per-type colour table lived here — sky VARCHAR, amber INT, violet DOUBLE — and it
+     agreed with none of the other three this app was keeping. The type mark in front of
+     each name says the same thing in a form that survives greyscale, so the type text is
+     plain. */
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--b1)] shrink-0">
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="xs" onClick={onClose} className="text-[var(--t3)] hover:text-[var(--t1)]">
+            <span className="rotate-180 inline-block"><Icon name="chevr" size={16} label="Back" /></span>
+          </Button>
+          <span className="aug-fs-sm font-semibold text-[var(--t1)] font-mono">{table.name}</span>
+          <span className="aug-fs-xs text-[var(--t3)]">
+            {table.columns.length} cols · {formatCount(Number(table.row_count))} rows
+          </span>
+        </div>
+      </div>
+
+      <TabBar
+        tabs={[{ id: "overview", label: "Overview" }, { id: "sample", label: "Sample Data" }]}
+        active={subtab}
+        onChange={(id) => setSubtab(id as "overview" | "sample")}
+      />
+
+      {subtab === "overview" && (
+        <div className="flex-1 overflow-y-auto">
+          <Table className="aug-fs-sm">
+            <TableHeader className="sticky top-0 z-10">
+              <TableRow style={{ background: "var(--bg-3)" }}>
+                <TableHead className="px-3 py-2 text-left text-[var(--t2)] font-semibold">Column</TableHead>
+                <TableHead className="px-3 py-2 text-left text-[var(--t2)] font-semibold">Type</TableHead>
+                <TableHead className="px-3 py-2 text-left text-[var(--t2)] font-semibold">FK</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {table.columns.map((col, i) => (
+                <TableRow key={col.name} className={`border-t border-[var(--b0)] ${i % 2 === 0 ? "" : "bg-white/[0.01]"}`}>
+                  <TableCell className="px-3 py-2 font-mono text-[var(--t1)]">
+                    <span className="flex items-center gap-2">
+                      <ColumnTypeIcon type={col.type} size={13} />
+                      {col.name}
+                    </span>
+                  </TableCell>
+                  <TableCell className="px-3 py-2 font-mono text-[var(--t3)]">{col.type}</TableCell>
+                  <TableCell className="px-3 py-2 text-[var(--t3)]">{col.is_fk ? "✓" : ""}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {subtab === "sample" && (
+        <div className="flex-1 overflow-auto">
+          {loading && (
+            <Loading what="the sample rows" className="flex items-center justify-center h-24" />
+          )}
+          {!loading && sampleCols.length > 0 && (
+            <SqlResultTable columns={sampleCols} rows={sampleRows as unknown[][]} maxHeight={420} />
+          )}
+          {!loading && sampleCols.length === 0 && loaded && (
+            <p className="aug-fs-sm text-[var(--t2)] p-4">No data available.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Data tab (scoped to Canvas tables) ──────────────────────────────────────
+
+function DataTab({
+  canvas,
+  connId,
+  onCanvasUpdate,
+}: {
+  canvas: Canvas;
+  connId: string;
+  onCanvasUpdate?: (c: Canvas) => void;
+  /** Open the global document corpus. Documents are not canvas-scoped, so this tab
+   *  points at their real home instead of hosting an uploader that would imply they are. */
+  onOpenDocuments?: () => void;
+}) {
+  const { schema } = useSchema();
+  const allTables: SchemaTable[] = (schema?.tables ?? []) as SchemaTable[];
+  const [selected, setSelected] = useState<SchemaTable | null>(null);
+  const [filter, setFilter] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const scope = canvas.scopes[0];
+  const scopeTables = scope?.tables ?? [];
+
+  // Membership as a set of leaf names. Empty scope = ALL tables included.
+  const allLeaves = useMemo(() => allTables.map((t) => leaf(t.name)), [allTables]);
+  const [included, setIncluded] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    setIncluded(
+      scopeTables.length === 0
+        ? new Set(allLeaves)
+        : new Set(scopeTables.map(leaf)),
+    );
+    // Re-sync when the canvas or the available table set changes.
+  }, [canvas.id, scopeTables.length, allLeaves.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const persist = (next: Set<string>) => {
+    if (!scope) return;
+    const coversAll = allLeaves.length > 0 && allLeaves.every((l) => next.has(l));
+    const tables = coversAll
+      ? []                                   // all tables → store empty (means "all")
+      : allTables.filter((t) => next.has(leaf(t.name))).map((t) => t.name);
+    setSaving(true);
+    updateCanvas(canvas.id, {
+      scopes: [{ connection_id: scope.connection_id, schema_name: scope.schema_name ?? null, tables }],
+    })
+      .then((updated) => onCanvasUpdate?.(updated))
+      .catch(() => {})
+      .finally(() => setSaving(false));
+  };
+
+  const toggle = (name: string) => {
+    const l = leaf(name);
+    const next = new Set(included);
+    if (next.has(l)) next.delete(l);
+    else next.add(l);
+    setIncluded(next);
+    persist(next);
+  };
+
+  const setAll = (on: boolean) => {
+    const next = on ? new Set(allLeaves) : new Set<string>();
+    setIncluded(next);
+    persist(next);
+  };
+
+  if (selected) {
+    return <TableDetail connId={connId} table={selected} onClose={() => setSelected(null)} />;
+  }
+
+  const filtered = allTables.filter((t) =>
+    !filter || t.name.toLowerCase().includes(filter.toLowerCase())
+  );
+  const includedCount = allLeaves.filter((l) => included.has(l)).length;
+  const isAll = includedCount === allLeaves.length && allLeaves.length > 0;
+
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Scope note + filter */}
+      <div className="px-3 py-2 border-b border-[var(--b1)] shrink-0 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="aug-fs-xs text-[var(--t3)]">
+            {isAll
+              ? "All tables included in this canvas."
+              : `${includedCount} of ${allTables.length} table${allTables.length === 1 ? "" : "s"} included.`}
+            {saving && <span className="text-[var(--t3)]"> · saving…</span>}
+          </p>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button variant="ghost" size="xs"
+              onClick={() => setAll(true)}
+              disabled={isAll || saving}
+              className="aug-fs-xs text-[var(--t3)] hover:text-[var(--t1)] disabled:opacity-40"
+            >
+              Include all
+            </Button>
+            <span className="text-[var(--b2)]">·</span>
+            <Button variant="ghost" size="xs"
+              onClick={() => setAll(false)}
+              disabled={includedCount === 0 || saving}
+              className="aug-fs-xs text-[var(--t3)] hover:text-[var(--t1)] disabled:opacity-40"
+            >
+              Clear
+            </Button>
+          </div>
+        </div>
+        <Input
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filter tables…"
+        />
+      </div>
+
+      {/* Table list — checkbox toggles canvas membership; row opens detail */}
+      <div className="flex-1 overflow-y-auto">
+        {allTables.length > 0 && (
+          <div className="flex items-center px-3 py-2 aug-label border-b border-[var(--b1)] sticky top-0" style={{ background: "var(--bg-1)" }}>
+            <span className="w-6" />
+            <span className="flex-1">Name</span>
+            <span className="w-12 text-right">Cols</span>
+            <span className="w-20 text-right">Rows</span>
+            <span className="w-4" />
+          </div>
+        )}
+        {filtered.map((t) => {
+          const on = included.has(leaf(t.name));
+          return (
+          <div
+            key={t.name}
+            className="w-full flex items-center px-3 py-2.5 aug-fs-sm border-b border-[var(--b0)] hover:bg-[var(--bg-hover)] transition group"
+          >
+            {/* Membership checkbox */}
+            <Button variant="ghost" size="xs"
+              onClick={() => toggle(t.name)}
+              disabled={saving}
+              title={on ? "Remove from canvas" : "Add to canvas"}
+              className="w-6 shrink-0 flex items-center"
+            >
+              <span
+                className="w-4 h-4 rounded flex items-center justify-center transition"
+                style={{
+                  border: `1px solid ${on ? "var(--blue4)" : "var(--b2)"}`,
+                  background: on ? "var(--blue4)" : "transparent",
+                }}
+              >
+                {on && (
+                  <span style={{ color: "#0b1220", display: "inline-flex" }}><Icon name="check" size={11} stroke={2.4} /></span>
+                )}
+              </span>
+            </Button>
+            {/* Open detail */}
+            <button onClick={() => setSelected(t)} className="flex-1 flex items-center min-w-0 text-left">
+              <span className="text-[var(--t3)] shrink-0 mr-2"><Icon name="table" size={16} label="Table" /></span>
+              <span className="flex-1 font-mono text-[var(--t1)] truncate">{t.name}</span>
+            </button>
+            <span className="w-12 text-right text-[var(--t3)] shrink-0">{t.columns.length}</span>
+            <span className="w-20 text-right text-[var(--t3)] shrink-0 font-mono">
+              {compactNumber(Number(t.row_count), 1)}
+            </span>
+            <Button variant="plain" size="xs" onClick={() => setSelected(t)} className="text-[var(--t3)] group-hover:text-[var(--t2)] transition ml-1 shrink-0">
+              <Icon name="chevr" size={16} />
+            </Button>
+          </div>
+          );
+        })}
+        {filter && filtered.length === 0 && (
+          <p className="aug-fs-sm text-[var(--t2)] p-4">No tables match &ldquo;{filter}&rdquo;.</p>
+        )}
+        {!filter && allTables.length === 0 && (
+          <p className="aug-fs-sm text-[var(--t2)] p-4">No tables available in this connection.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Instructions tab (Canvas-level) ─────────────────────────────────────────
+
+function InstructionsEditor({
+  label,
+  hint,
+  placeholder,
+  load,
+  save,
+}: {
+  label: string;
+  hint: string;
+  placeholder: string;
+  load: () => Promise<string>;
+  save: (text: string) => Promise<void>;
+}) {
+  const [text, setText] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    setLoaded(false);
+    load()
+      .then((t) => { setText(t); setLoaded(true); })
+      .catch(() => setLoaded(true));
+  }, [load]);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await save(text);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="flex-1 flex flex-col gap-1.5 min-h-0">
+      <div className="shrink-0">
+        <span className="aug-fs-sm font-semibold text-[var(--t1)]">{label}</span>
+        <p className="aug-fs-xs text-[var(--t3)] leading-relaxed">{hint}</p>
+      </div>
+      <Textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        disabled={!loaded}
+        aria-label={label}
+        placeholder={loaded ? placeholder : "Loading…"}
+        className="flex-1 resize-none"
+      />
+      <div className="flex justify-end shrink-0">
+        <Button
+          onClick={handleSave}
+          disabled={saving || !loaded}
+          variant="default"
+          size="xs"
+          className="disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {saving ? "Saving…" : saved ? "Saved ✓" : "Save"}
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+export function InstructionsTab({ canvasId, connectionId }: { canvasId: string; connectionId: string }) {
+  const [subtab, setSubtab] = useState<"text" | "metrics">("text");
+
+  // Stable per id — an inline arrow would retrigger the editor's load effect (and wipe
+  // unsaved text) on every parent render.
+  const loadCanvas = useMemo(() => () => getCanvasInstructions(canvasId), [canvasId]);
+  const saveCanvas = useMemo(() => (t: string) => putCanvasInstructions(canvasId, t), [canvasId]);
+  const loadConnection = useMemo(() => () => getConnectionInstructions(connectionId), [connectionId]);
+  const saveConnection = useMemo(() => (t: string) => putConnectionInstructions(connectionId, t), [connectionId]);
+
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <TabBar
+        tabs={[{ id: "text", label: "Text" }, { id: "metrics", label: "Metrics" }]}
+        active={subtab}
+        onChange={(id) => setSubtab(id as "text" | "metrics")}
+      />
+
+      {subtab === "text" && (
+        <div className="flex-1 flex flex-col overflow-hidden p-3 gap-3">
+          <InstructionsEditor
+            label="This Canvas"
+            hint="Plain-English rules the AI follows for every query on this canvas — business rules, metric definitions, fiscal calendar, naming conventions. Takes precedence over connection-level rules on conflict."
+            placeholder={"* Revenue uses the net_revenue column, not gross_revenue\n* Fiscal year starts in February\n* Always include region when comparing performance"}
+            load={loadCanvas}
+            save={saveCanvas}
+          />
+          {connectionId && (
+            <InstructionsEditor
+              label="Whole connection"
+              hint="Rules that apply to every Canvas on this connection."
+              placeholder={"* Exclude test accounts (is_test = true) from all analyses\n* Amounts are in EUR unless a column says otherwise"}
+              load={loadConnection}
+              save={saveConnection}
+            />
+          )}
+        </div>
+      )}
+
+      {subtab === "metrics" && (
+        <div className="flex-1 overflow-auto p-2">
+          <MetricsPanel />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main ConfigurePanel ───────────────────────────────────────────────────────
+
+interface ConfigurePanelProps {
+  canvas: Canvas;
+  connections: Connection[];
+  onClose: () => void;
+  onCanvasUpdate?: (c: Canvas) => void;
+  /** Open the global document corpus. Documents are not canvas-scoped, so this tab
+   *  points at their real home instead of hosting an uploader that would imply they are. */
+  onOpenDocuments?: () => void;
+}
+
+export function ConfigurePanel({ canvas, connections, onClose, onCanvasUpdate, onOpenDocuments }: ConfigurePanelProps) {
+  const [tab, setTab] = useState<"about" | "data" | "instructions" | "docs">("about");
+  const connectionId = canvas.scopes[0]?.connection_id ?? "";
+  const connection = connections.find((c) => c.id === connectionId);
+  const scopeTables = canvas.scopes[0]?.tables ?? [];
+
+  const TABS = [
+    { id: "about",        label: "About" },
+    { id: "data",         label: "Data" },
+    { id: "instructions", label: "Instructions" },
+    { id: "docs",         label: "Docs" },
+  ];
+
+  return (
+    <>
+      {/* Backdrop — only covers area below both topbars (global h-12=48px + section h=52px) */}
+      <div
+        className="fixed left-0 right-0 bottom-0 z-40"
+        style={{ top: "100px" }}
+        onClick={onClose}
+      />
+
+      {/* Panel — anchored below topbars, not covering the header */}
+      <div
+        className="fixed right-0 bottom-0 z-50 flex flex-col border-l border-[var(--b1)] shadow-[var(--shadow-md)]"
+        style={{ top: "100px", width: "400px", background: "var(--bg-0)" }}
+      >
+        {/* Panel header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--b1)] shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-[var(--t3)]"><Icon name="info" size={16} label="Configure" /></span>
+            <span className="aug-fs-sm font-semibold text-[var(--t1)]">Configure</span>
+            <span className="aug-fs-xs text-[var(--t3)] truncate max-w-[180px]">{canvas.name}</span>
+          </div>
+          <Button variant="ghost" size="xs" onClick={onClose} className="text-[var(--t3)] hover:text-[var(--t1)]">
+            <Icon name="close" size={16} label="Close" />
+          </Button>
+        </div>
+
+        {/* Top-level tabs */}
+        <TabBar tabs={TABS} active={tab} onChange={(id) => setTab(id as typeof tab)} />
+
+        {/* Tab content */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {tab === "about" && (
+            <AboutTab canvas={canvas} connection={connection} onCanvasUpdate={onCanvasUpdate} />
+          )}
+          {tab === "data" && (
+            <DataTab canvas={canvas} connId={connectionId} onCanvasUpdate={onCanvasUpdate} />
+          )}
+          {tab === "instructions" && (
+            <InstructionsTab canvasId={canvas.id} connectionId={connectionId} />
+          )}
+          {tab === "docs" && (
+            <div className="flex-1 overflow-auto p-4">
+              <p className="text-xs text-zinc-400 leading-relaxed max-w-md">
+                Documents are shared across every canvas and connection — a policy uploaded
+                once is retrievable everywhere. Hosting the uploader here suggested each
+                canvas had its own set, which it never did.
+              </p>
+              {onOpenDocuments && (
+                <Button variant="plain" size="xs"
+                  type="button"
+                  onClick={onOpenDocuments}
+                  className="mt-3 aug-fs-xs px-2 py-1 rounded border border-zinc-600 hover:bg-zinc-800"
+                >
+                  Open Documents
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}

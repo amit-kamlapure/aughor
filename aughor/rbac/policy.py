@@ -1,0 +1,228 @@
+"""Declarative RBAC policy — the single, auditable map from endpoint → the
+permission it requires (RBAC P4).
+
+Rather than scatter ``gate_permission(...)`` across 150+ route decorators (which no
+one can audit as a whole), the entire surface's authorization lives here as one
+table, consulted per-request by the global ``deps.enforce_rbac`` dependency. This is
+the "governance as an auditable primitive" the architecture review asked for.
+
+The default is a least-astonishment floor:
+
+  * **safe methods** (GET/HEAD/OPTIONS) require nothing beyond identity — a *viewer*
+    reads everything.
+  * **mutating methods** (POST/PUT/PATCH/DELETE) require ``resource.write`` — so a
+    viewer can change nothing, *anywhere*, without every route having to opt in.
+
+``POLICY`` then RAISES the bar for the endpoints that need a more specific
+permission (admin/governance, connection lifecycle, analysis runs, exports), and can
+LOWER it (a mutating endpoint that should stay open maps to ``None``). Keys are
+``(METHOD, route-template)`` where the template is the FastAPI path with its params,
+e.g. ``/connections/{conn_id}`` — matched exactly against the request's resolved
+route, so there are no path-prefix collisions.
+"""
+from __future__ import annotations
+
+from typing import Optional
+
+from aughor.rbac.permissions import Permission as P
+
+SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+DEFAULT_WRITE: P = P.RESOURCE_WRITE
+
+# (METHOD, route-template) -> required Permission (or None to force-open a mutation).
+POLICY: dict[tuple[str, str], Optional[P]] = {
+    # ── Admin / governance (owner-only) ──
+    ("GET", "/rbac/assignments"): P.ADMIN_MANAGE_ROLES,
+    ("POST", "/rbac/assignments"): P.ADMIN_MANAGE_ROLES,
+    ("DELETE", "/rbac/assignments"): P.ADMIN_MANAGE_ROLES,
+    # HB-1 — groups and level grants sit with role administration (they decide who
+    # receives what and who may touch what). The member and grant LISTS are gated
+    # too, like /rbac/assignments: they name people. /groups (names + channels) and
+    # the two receipts /access/explain + /access/route stay at the open-read floor —
+    # "why did I receive this" must be answerable by whoever received it.
+    ("POST", "/groups"): P.ADMIN_MANAGE_ROLES,
+    ("DELETE", "/groups/{group_id}"): P.ADMIN_MANAGE_ROLES,
+    ("GET", "/groups/{group_id}/members"): P.ADMIN_MANAGE_ROLES,
+    ("POST", "/groups/{group_id}/members"): P.ADMIN_MANAGE_ROLES,
+    ("DELETE", "/groups/{group_id}/members"): P.ADMIN_MANAGE_ROLES,
+    ("GET", "/access/grants"): P.ADMIN_MANAGE_ROLES,
+    ("POST", "/access/grants"): P.ADMIN_MANAGE_ROLES,
+    ("DELETE", "/access/grants"): P.ADMIN_MANAGE_ROLES,
+    ("PUT", "/org-settings"): P.ADMIN_MANAGE_ORG,
+    # DE-2b — the organisation's agent policy is set by a person who manages the org, never by
+    # the agent it governs (the route refuses the agent mark on its own).
+    ("PUT", "/org-settings/agent-policy"): P.ADMIN_MANAGE_ORG,
+    ("DELETE", "/org-settings/agent-policy"): P.ADMIN_MANAGE_ORG,
+    ("PATCH", "/agents/{agent_id}"): P.ADMIN_MANAGE_ORG,
+    ("PUT", "/system/flags/{name}"): P.ADMIN_MANAGE_ORG,
+    ("POST", "/metastore/workspaces/{workspace_id}/grants"): P.ADMIN_MANAGE_ORG,
+    ("DELETE", "/metastore/workspaces/{workspace_id}/grants/{catalog_id}"): P.ADMIN_MANAGE_ORG,
+    ("POST", "/llm/config"): P.ADMIN_MANAGE_BILLING,
+    # An added provider is a new address prompts can be sent to, with a key that bills — the same act as the
+    # config it extends.
+    ("POST", "/llm/providers"): P.ADMIN_MANAGE_BILLING,
+    ("PUT", "/llm/providers/{provider_id}"): P.ADMIN_MANAGE_BILLING,
+    ("DELETE", "/llm/providers/{provider_id}"): P.ADMIN_MANAGE_BILLING,
+    # Arc OC-6 (D7, the user's call 2026-10-10: Admins) — allowlisting a high-risk action for a connection and changing
+    # an action's authority govern what runs unattended; they fell to the write floor, so once RBAC was enforced any
+    # Editor could allowlist. Running an action, undoing a run and withdrawing an edit stay with editors — the action's
+    # own approval gate still holds them.
+    ("POST", "/approvals/allow"): P.ADMIN_MANAGE_ORG,
+    ("POST", "/approvals/revoke"): P.ADMIN_MANAGE_ORG,
+    ("POST", "/authority/{action_id}/grant-l5"): P.ADMIN_MANAGE_ORG,
+    ("POST", "/authority/{action_id}/graduate"): P.ADMIN_MANAGE_ORG,
+    ("POST", "/authority/{action_id}/ceiling"): P.ADMIN_MANAGE_ORG,
+    ("POST", "/authority/{action_id}/widen"): P.ADMIN_MANAGE_ORG,
+    ("POST", "/authority/{action_id}/demote"): P.ADMIN_MANAGE_ORG,
+    # Wave G3 — the governance reporting surface. Usage names what the org SPENT and on
+    # which model, and the audit feed spans every governance sink, so both sit with the
+    # other org-administration reads rather than under the viewer-reads-everything floor.
+    ("GET", "/usage"): P.ADMIN_MANAGE_BILLING,
+    ("GET", "/usage/cost-sql"): P.ADMIN_MANAGE_BILLING,
+    ("GET", "/audit/feed"): P.ADMIN_MANAGE_ORG,
+    # Arc TC, TC-5 — the feed's window as a file carries what the feed does, so it sits beside it.
+    ("GET", "/audit/feed/export"): P.ADMIN_MANAGE_ORG,
+    # VA-10 — the admin view across users. Metadata only (§6.4: counts, costs, roles);
+    # it names users, so it sits with org administration, never the open-read floor.
+    ("GET", "/admin/users"): P.ADMIN_MANAGE_ORG,
+    # Usage caps are governance POLICY: setting one changes what the org may spend, so the
+    # writes sit with org administration — and the read sits beside them because a cap
+    # list names subjects (user ids), which is more than the open-read floor should carry.
+    ("GET", "/governance/caps"): P.ADMIN_MANAGE_ORG,
+    ("PUT", "/governance/caps"): P.ADMIN_MANAGE_ORG,
+    ("DELETE", "/governance/caps"): P.ADMIN_MANAGE_ORG,
+    # Wave CR1/CR2 — raw session events carry SQL text and, when the capture flag is
+    # on, prompt content; they sit with the audit feed, not under the open-read floor.
+    # The control-room AGGREGATES (/control-room/*) stay at the floor like /jobs.
+    ("GET", "/traces"): P.ADMIN_MANAGE_ORG,
+    ("GET", "/traces/{trace_id}"): P.ADMIN_MANAGE_ORG,
+    # The same run's summary, spans, logs and trajectory carry the same query text and figures as the trace itself, so
+    # they sit beside it — they were open reads while the trace was admin-only (found by TC-5; the user's call,
+    # 2026-10-27). A run's feedback stays open: it holds judgements, not the run's content.
+    ("GET", "/traces/{trace_id}/summary"): P.ADMIN_MANAGE_ORG,
+    ("GET", "/traces/{trace_id}/spans/{span_id}"): P.ADMIN_MANAGE_ORG,
+    ("GET", "/traces/{trace_id}/logs"): P.ADMIN_MANAGE_ORG,
+    ("GET", "/traces/{trace_id}/trajectory"): P.ADMIN_MANAGE_ORG,
+    ("GET", "/activity"): P.ADMIN_MANAGE_ORG,
+    ("GET", "/activity/stream"): P.ADMIN_MANAGE_ORG,
+    # Arc TC, TC-5 — searching every run's lines at once sits with the other cross-run reads.
+    ("GET", "/obs/logs"): P.ADMIN_MANAGE_ORG,
+    # Prompt capture writes model-call CONTENT for a bounded window — opening one is an
+    # org-administration act, and reading its status says whether content is being stored.
+    ("GET", "/obs/prompt-capture"): P.ADMIN_MANAGE_ORG,
+    ("POST", "/obs/prompt-capture"): P.ADMIN_MANAGE_ORG,
+    ("DELETE", "/obs/prompt-capture"): P.ADMIN_MANAGE_ORG,
+
+    # ── Slack bots (RC-5) ──
+    # A bot record holds three Slack credentials and binds an agent to a workspace, so
+    # creating one is an admin act, not the write floor: anyone who can mint a bot can
+    # make Aughor speak in a channel under a name of their choosing.
+    # The supervisor's door — the ONE route that returns raw Slack credentials, so it is
+    # gated like an admin write even though it is a GET. Reading it is equivalent to
+    # holding every bot token in the org.
+    ("GET", "/slack-bots/runtime"): P.ADMIN_MANAGE_ORG,
+    # AO-2a — the supervisor's heartbeat: the same caller as the runtime read (the
+    # route checks the same key), so the same entry.
+    ("POST", "/slack-bots/runtime/heartbeat"): P.ADMIN_MANAGE_ORG,
+    # AO-2e — minting the supervisor's key is minting the right to read every raw token
+    # above; it was unlisted, so it fell to the write floor (and its status GET was open).
+    # Measured 2026-10-03: on a default install anyone on the port could mint a key and
+    # then read the tokens.
+    ("POST", "/slack-bots/supervisor-key"): P.ADMIN_MANAGE_ORG,
+    ("GET", "/slack-bots/supervisor-key"): P.ADMIN_MANAGE_ORG,
+    # AO-2b — the managed supervisor's status and restart: the same admin that may read
+    # the runtime route may see and bounce the process that reads it.
+    ("GET", "/slack-bots/supervisor"): P.ADMIN_MANAGE_ORG,
+    ("POST", "/slack-bots/supervisor/restart"): P.ADMIN_MANAGE_ORG,
+    # AO-2d — creating the app in Slack and installing it are the acts that make a bot.
+    ("POST", "/slack-bots/apps"): P.ADMIN_MANAGE_ORG,
+    ("GET", "/slack-bots/{bot_id}/install"): P.ADMIN_MANAGE_ORG,
+    # The OAuth callback is Slack's browser redirect: it carries an authenticated state
+    # (the bot id, sealed) and no session, so it is open here and exempt in `api.py`.
+    ("GET", "/slack-bots/oauth/callback"): None,
+    ("POST", "/slack-bots"): P.ADMIN_MANAGE_ORG,
+    ("PATCH", "/slack-bots/{bot_id}"): P.ADMIN_MANAGE_ORG,
+    ("DELETE", "/slack-bots/{bot_id}"): P.ADMIN_MANAGE_ORG,
+
+    # ── Doors to a custom agent (AO-5) ──
+    # Minting or revoking an agent's key is minting a way in for a caller with no session;
+    # a Teams bot binds an Azure registration to an agent. Admin acts, like a Slack bot.
+    ("POST", "/agents/custom/{agent_id}/key"): P.ADMIN_MANAGE_ORG,
+    ("DELETE", "/agents/custom/{agent_id}/key"): P.ADMIN_MANAGE_ORG,
+    ("POST", "/teams-bots"): P.ADMIN_MANAGE_ORG,
+    ("DELETE", "/teams-bots/{bot_id}"): P.ADMIN_MANAGE_ORG,
+    # The doors themselves carry their own credential (the agent's key as a bearer; the
+    # Bot Framework's signature) and are auth-exempt by prefix in `api.py` — open here.
+    ("POST", "/doors/agents/{agent_id}/ask"): None,
+    ("POST", "/doors/agents/{agent_id}/webhook"): None,
+    ("POST", "/doors/agents/{agent_id}/grounding"): None,   # FA-7 — a read with the agent's key; it writes nothing
+    ("POST", "/doors/a2a/{agent_id}"): None,
+    ("POST", "/doors/teams/{bot_id}/messages"): None,
+
+    # ── Connection lifecycle ──
+    ("POST", "/connections"): P.CONNECTION_CREATE,
+    # Seeding the demo writes a DuckDB file and makes a new connection appear, which is
+    # the same act as adding one — not the write floor a viewer clears.
+    ("POST", "/connections/demo"): P.CONNECTION_CREATE,
+    ("DELETE", "/connections/{conn_id}"): P.CONNECTION_DELETE,
+
+    # ── Analysis runs (a viewer consumes existing answers; it doesn't run new ones) ──
+    ("POST", "/chat"): P.ANALYSIS_RUN,
+    ("POST", "/ask"): P.ANALYSIS_RUN,
+    ("POST", "/investigate"): P.ANALYSIS_RUN,
+    # SE-0 — user SQL and its siblings run analysis against the warehouse, same tier
+    # as /ask (they execute; the pure helpers build-sql/decompile/postproc stay at
+    # the write floor). Object-level org scoping is separate (query.py DATA-06).
+    ("POST", "/query/run"): P.ANALYSIS_RUN,
+    # DE-5d — the count and the next page of a cut result run the person's statement again.
+    ("POST", "/query/count"): P.ANALYSIS_RUN,
+    ("POST", "/query/more"): P.ANALYSIS_RUN,
+    # DE-5f — the rows related to a value run a composed statement through the same door.
+    ("POST", "/query/related"): P.ANALYSIS_RUN,
+    ("POST", "/query/semantic"): P.ANALYSIS_RUN,
+    ("POST", "/query/semantic/text-columns"): P.ANALYSIS_RUN,
+    ("POST", "/query/cross-source-join"): P.ANALYSIS_RUN,
+    ("POST", "/query/federated-answer"): P.ANALYSIS_RUN,
+    ("POST", "/query/auto-federated-answer"): P.ANALYSIS_RUN,
+    ("POST", "/query/validate"): P.ANALYSIS_RUN,
+    ("POST", "/query/capability-answer"): P.ANALYSIS_RUN,
+    # Arc AP-7 — a person's own query on a dashboard runs their SQL against the warehouse, by the SQL editor's own rule.
+    ("POST", "/dashboards/queries"): P.ANALYSIS_RUN,
+    ("POST", "/dashboards/queries/preview"): P.ANALYSIS_RUN,
+    # PENDING 54 — a question kept on a dashboard is asked by the agent on its rhythm, and asking now is a run.
+    ("POST", "/dashboards/questions"): P.ANALYSIS_RUN,
+    ("POST", "/dashboards/questions/{automation_id}/ask"): P.ANALYSIS_RUN,
+
+    # ── Resource delete / export (more specific than the write floor) ──
+    ("DELETE", "/investigations"): P.RESOURCE_DELETE,
+    ("DELETE", "/investigations/{inv_id}"): P.RESOURCE_DELETE,
+    ("GET", "/investigations/{inv_id}/export"): P.RESOURCE_EXPORT,
+}
+
+
+def required_permission(method: str, template: str) -> Optional[P]:
+    """The permission an endpoint requires, or ``None`` when it's open to any
+    identified caller (all reads, plus any mutation explicitly force-opened).
+
+    An explicit ``POLICY`` entry always wins (including a ``None`` that opens a
+    mutation); otherwise safe methods are open and every other method falls to the
+    ``resource.write`` floor.
+    """
+    method = (method or "").upper()
+    key = (method, template)
+    if key in POLICY:
+        return POLICY[key]
+    if method in SAFE_METHODS:
+        return None
+    return DEFAULT_WRITE
+
+
+def policy_version() -> str:
+    """A short, stable fingerprint of the route permission table and its defaults (Track C1).
+
+    Recorded on every job's authority (`kernel/job_auth.py`) so a later check can tell that the rules
+    changed under a job that was waiting — the table is code, so its version is its content."""
+    import hashlib
+    rows = sorted(f"{m} {t} {p.value if p else '-'}" for (m, t), p in POLICY.items())
+    rows += [f"default-write {DEFAULT_WRITE.value}", "safe " + ",".join(sorted(SAFE_METHODS))]
+    return hashlib.sha1("\n".join(rows).encode()).hexdigest()[:12]

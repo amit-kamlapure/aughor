@@ -1,0 +1,19 @@
+id: manufacturing-map
+name: Manufacturing, the industry map
+version: 1
+persona: >
+  What a manufacturer usually records — products and their bills of materials, planning, purchasing,
+  the shop floor, quality and traceability, maintenance, stock and shipping, and costing — each read
+  as a thing or as a part of one. Expectations, measured against the data.
+owner_team: Platform
+default_temporal_grain: period
+domains:
+  - manufacturing
+  - production
+  - quality
+  - maintenance
+  - procurement
+extends: []
+scope:
+  connections: ["*"]
+status: draft

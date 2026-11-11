@@ -1,0 +1,347 @@
+# Wave A — Automations: PR arc
+
+Scoped 2026-07-23 from the six-wave platform roadmap of 2026-07-22 (now [`PLATFORM_PROGRAM_2026-07-24.md`](PLATFORM_PROGRAM_2026-07-24.md)),
+grounded by a code-mapping pass over the three schedulers, the kinetic executor, and the kernel job
+spine. Mirrors the [Wave K arc](WAVE_K_KINETIC_PLANE_ARC.md) format: each PR carries a flag (default
+off), a test estimate, and a **pre-registered decision gate**.
+
+**Wave A depends on Wave K** — "effects execute declared actions" is the joint, and K1–K5 merged in
+[#201](https://github.com/amit-kamlapure/aughor/pull/201).
+
+---
+
+## 0. What this is, and what it is NOT
+
+Aughor already *reacts* — it just does so three separate times, in three modules that cannot see each
+other. Wave A makes **condition → effect** one declared, governed, inspectable thing.
+
+**IS:**
+- **One engine**: a declared `Automation` binds combinable **conditions** (time · metric · source
+  change · entity appearance) to ordered **effects** (investigate · brief · notify · execute a
+  declared `KineticAction`), with muting, pausing, expiry, jittered retries, a fallback effect, and
+  **per-run history**.
+- **The write path stays governed**: an effect that writes goes through `execute_kinetic_action`
+  ([`kinetic/executor.py:222`](../aughor/actions/executor.py)) — the same criteria → approval → audit
+  pipeline a human gets. Wave A adds **no** second write path.
+- **A staged-proposal queue with an agent decision log**, so an autonomous write is *proposed*,
+  recorded with its reasoning, and applied only on human accept.
+- **Change detection by cheap source version probes** (max transaction id / max activity timestamp /
+  snapshot fingerprint) instead of "it has been N days."
+
+**IS NOT:**
+- **Not a new execution runtime.** Effects dispatch through primitives that already exist
+  (`kernel().submit`, `deliver_subscription`, `fire_action`, `execute_kinetic_action`). The engine
+  decides *whether* and *when*; it never learns *how*.
+- **Not autonomous writes by default.** Nothing above LOW risk auto-fires — that property is
+  inherited from K2, not re-implemented, and A must not weaken it.
+- **Not a monitors/briefs rewrite.** A5 *adopts* them behind a flag with the legacy schedulers intact
+  until the adoption is proven on real runs.
+
+**Pre-registered guardrails:** every PR below states the one observation that would make it a
+failure. If a gate can't be met, the PR is wrong, not the gate.
+
+---
+
+## 1. The finding that shaped the scope
+
+The study says Wave A should "unify monitors + briefs + explorer re-arm under one engine." The code
+says those three are not three configurations of one engine — they are **three engines that happen to
+agree**, plus one that is not a trigger at all.
+
+| Today | Reality | file:line |
+|---|---|---|
+| Monitor scheduling | Own `BackgroundScheduler`, own `_make_job_fn`, `misfire_grace_time=300` | [`monitors/scheduler.py:27`](../aughor/monitors/scheduler.py) |
+| Brief scheduling | A **near-verbatim copy** of the above — own scheduler, own `_make_job_fn`, `misfire_grace_time=3600`. Its own docstring says "Mirrors aughor.monitors.scheduler" | [`briefs/scheduler.py:21`](../aughor/briefing/scheduler.py) |
+| Conditions | **Six already exist** — `threshold_cross`, `trend_reversal`, `anomaly`, `segment_drift`, `data_freshness`, `any_change` — but as a `Literal` *inside* `Monitor`, reachable only by a monitor | [`monitors/models.py:49`](../aughor/monitors/models.py) |
+| Brief conditions | **Time only.** `resolved_cron()` — a brief cannot fire on a metric at all | [`briefs/models.py:39`](../aughor/briefing/models.py) |
+| Effects | Monitor → **exactly one**: append a `MonitorAlert`. Brief → **exactly one**: `deliver_subscription`. Neither can do the other's | [`monitors/scheduler.py:66`](../aughor/monitors/scheduler.py), [`briefs/scheduler.py:42`](../aughor/briefing/scheduler.py) |
+| Muting / pausing | `grace_period_hours` — a *severity-aware anti-flap debounce*, monitor-only. There is no pause, no expiry, no mute-until | [`monitors/models.py:40`](../aughor/monitors/models.py) |
+| Retries | **None.** A failed tick is logged and dropped; the next cron fire is the only retry | [`monitors/scheduler.py:84`](../aughor/monitors/scheduler.py) |
+| Run history | Monitors persist only **fired alerts**. A tick that evaluated cleanly, or crashed, leaves **no row** — "did it run?" is unanswerable | [`monitors/store.py:285`](../aughor/monitors/store.py) |
+| "Explorer re-arm" | **Not a trigger.** `explore_watermark.json` is a per-(conn,table) max-activity timestamp used to *narrow a scan* (`delta_clause`), consumed only inside an already-running exploration | [`explorer/watermark.py:42`](../aughor/explorer/watermark.py) |
+| Staged proposals | `Proposal` is a **dataclass, never persisted** — proposals are live per-answer and die with the response (recorded as a K5 follow-on) | [`kinetic/propose.py:39`](../aughor/actions/propose.py) |
+| `trigger_investigation` | *(was an open seam at the time of this recon; **closed by Wave H5**)* — K2 raised `KineticDispatchError` for it, because the only working runner lived inside A. H5 lifted that runner to `aughor/runners/investigation.py`, which both packages call | [`runners/investigation.py`](../aughor/runners/investigation.py) |
+
+**Three findings that change the plan:**
+
+1. **The six condition kinds are not new work — they are trapped.** They already exist and are
+   already tested, but as monitor-private enum values. A1's job is to *free* them, not invent them.
+   Anything that reimplements `run_monitor`'s statistics is a regression, not a wave.
+2. **"Explorer re-arm" does not exist to unify.** The watermark is a scan optimizer, not a trigger.
+   The study's `source_change` condition is **net-new** — and the watermark is the right *shape* to
+   generalize (cheap probe, per-connection, JSON-backed, fail-open to "run fully"), which is A3.
+3. **Wave A closes a Wave K seam.** `trigger_investigation` has no dispatcher. Wave A's `investigate`
+   effect is that dispatcher — so A2 makes an existing declared-action kind executable rather than
+   adding a parallel one. This is the concrete form of "A depends on K."
+
+**Naming.** Aughor now has *four* "action"-adjacent concepts (`OntologyAction` read-templates,
+ActionHub `ActionTrigger` webhooks, Wave K `KineticAction`, and now Wave A `Effect`). An **Effect is
+not a new action type** — it is a *reference to* one of the first three plus the arguments to invoke
+it with. Docs and UI must never call an Effect an "action" unqualified.
+
+---
+
+## 2. The deterministic ⁄ model-gated split
+
+| PR | Needs a model? | Why |
+|---|---|---|
+| **A1** Automation model + store + run history | **No** | pydantic models + a SQLite store |
+| **A2** the one condition→effect engine | **No** | deterministic gate order; probes + dispatch injected in tests |
+| **A3** source version probes (change detection) | **No** | `MAX(id)` / `MAX(ts)` / row-count fingerprint — plain SQL |
+| **A4** staged-proposal queue + agent decision log | **Persistence: no.** Producing a proposal: yes (K4's proposer, already built) | the queue is a store; the model already exists upstream |
+| **A5** adopt monitors + briefs onto the engine | **No** | a translation layer + equivalence tests |
+| **A6** Automations surface (frontend) | No | UI over A1–A4 |
+
+**A1–A3 and A5 need zero quota.** Only A4's *upstream* (the K4 proposer) calls a model, and that is
+already shipped and flag-gated.
+
+---
+
+## PR-A1 — The Automation model + store + run history
+
+**Scope.** `aughor/automations/models.py`: `Automation` (id, org/conn scope, name, `conditions:
+list[Condition]`, `condition_logic: all|any`, `effects: list[Effect]`, `fallback_effect`, `enabled`,
+`paused_until`, `expires_at`, `max_retries`, `retry_backoff_seconds`) · `Condition` (kind + typed
+config) · `Effect` (kind + target ref + params) · `AutomationRun` (append-only: outcome, which
+conditions fired, each effect's status, attempt count, duration, error). `aughor/automations/store.py`
+clones the [`monitors/store.py`](../aughor/monitors/store.py) idiom — `resolve_db_path`, forward-only
+migrations, `purge_connection` for the catalog-delete cascade.
+
+The six condition kinds are **re-exported from the monitor vocabulary**, not redefined.
+
+**Flag** `automations.engine` (default off) · **Tests** ~24 · **Decision gate:** an `Automation` with
+two conditions and two effects round-trips model → SQLite → model byte-identically including every
+lifecycle field; an `AutomationRun` records a tick that fired **nothing** (the case monitors cannot
+represent today); deleting the connection purges both tables. If a clean no-op tick leaves no row,
+the gate fails — "did it run?" is the question this store exists to answer.
+
+---
+
+## PR-A2 — One condition→effect engine
+
+**Scope.** `aughor/automations/engine.py` — `run_automation(automation, *, probe=None, dispatch=None)`,
+the **only** way an automation fires. Gate order is load-bearing and mirrors K2's discipline (cheap,
+side-effect-free gates first; the only step that can cause a side effect is last):
+
+```
+enabled → not expired → not paused/muted → evaluate conditions (all|any)
+        → effects in declared order → jittered retry on failure → fallback effect → record run
+```
+
+Effect dispatch is injectable (`Dispatch` seam, exactly as
+[`kinetic/executor.py:159`](../aughor/actions/executor.py)). The default dispatcher wires
+`investigate` → a supervised `kernel()` job draining `build_ask_stream` at `depth="deep"` (the real
+answer path, via the same in-process technique the evals `ask_target` uses), `brief` →
+`deliver_subscription`, `notify` → `fire_action`, and `kinetic_action` →
+`execute_kinetic_action` — never a bypass, so criteria/approval/audit apply unchanged. An unwired
+kind raises rather than no-ops.
+
+> ⚠️ **Scope note, stated precisely.** This gives *automations* a working investigation dispatcher.
+> It does **not** by itself close K2's `trigger_investigation` branch, which still raises: wiring
+> that would make `kinetic` depend on `automations`, inverting the wave dependency. Closing it
+> properly means lifting the runner into a module neither package owns — a follow-on, not a claim
+> A2 gets to make.
+>
+> *(Resolved: **Wave H5** did exactly that — [`aughor/runners/investigation.py`](../aughor/runners/investigation.py).
+> The follow-on the note predicted, in the shape it predicted.)*
+
+**Flag** `automations.engine` · **Tests** ~34 · **Decision gate:** a paused, expired, or
+condition-negative automation performs **zero** effect dispatches and still writes a run row saying
+so; a `kinetic_action` effect whose submission criterion fails returns the **authored message
+verbatim** and dispatches nothing; a HIGH-risk effect without approval records `approval_required`
+and fires nothing. If any effect fires on a gated tick, or the engine reaches the warehouse when
+muted, the gate fails.
+
+> ✅ **Gate met (2026-07-23), proven on the live path** — the real app, the real overrides YAML, the
+> real Wave-K executor, against the `workspace` connection:
+>
+> | tick | outcome | effect |
+> |---|---|---|
+> | `amount_eur=25000` | `fired` (10ms) | `criterion_failed` — *"Refunds over EUR 10,000 need finance sign-off."*, byte-identical to the authored YAML, 1 attempt |
+> | `amount_eur=500` | `fired` (6ms) | `approval_required` — risk `high`, nothing executed |
+> | muted | `gated` (0ms) | none; zero conditions evaluated |
+>
+> **The live run found two defects the green tests could not**, both now fixed and regression-tested:
+> 1. **`dispatch_error` was retriable.** Naming an action the connection does not declare burned
+>    **48 seconds** of a held scheduler thread retrying an id that could never resolve. A structural
+>    error is a *verdict*, not a fault — only `failed` retries in-tick now.
+> 2. **A missing schema ontology reported "not a declared action".** A schema that was never built
+>    fell back to another schema's graph and blamed the *declaration*, pointing the diagnosis at the
+>    wrong thing entirely. The three cases are now distinguished in the message.
+
+---
+
+## PR-A3 — Source version probes (change detection)
+
+**Scope.** `aughor/automations/probes.py` — a cheap per-(connection, table) **source version**:
+`MAX(<pk>)` / `MAX(<ts>)` / `(row_count, MAX(ts))` fingerprint, chosen by what the table has, one
+bounded query. Persisted like the watermark, but as a *trigger* input rather than a scan narrower;
+the `source_change` condition fires when the version advanced since the last recorded run. Generalizes
+[`explorer/watermark.py`](../aughor/explorer/watermark.py) without changing its scan behaviour.
+
+**Flag** `automations.source_probes` (default off) · **Tests** ~20 · **Decision gate:** inserting a
+row advances the probe and fires the condition exactly **once** (a second tick with no new rows does
+not re-fire); a table with no usable id/timestamp column fails **open** to "changed" with the reason
+recorded, never silently never-fires. If a probe costs a full scan on a large table, the gate fails.
+
+> ✅ **Gate met (2026-07-24), proven on the live path** — the real app over HTTP, a real DuckDB
+> warehouse file, the engine's default probe path (25 tests + the proof):
+>
+> | tick | outcome | fingerprint |
+> |---|---|---|
+> | first observation | `fired` | `n=2\|updated_at=2026-07-21 09:30:00` (signal auto-chosen: count + `MAX(updated_at)`) |
+> | no change | `not_fired` | unchanged |
+> | 1 row inserted | `fired` **once** | `n=2\|…` → `n=3\|updated_at=2026-07-24 01:00:00` |
+> | again | `not_fired` | consumed |
+> | 1 row deleted | `fired` | `n=3\|…` → `n=2\|…` — **inequality catches what a watermark's `>` would miss** |
+> | ghost table | `fired` | fail-open with the full Catalog Error recorded on the run |
+>
+> The probe SQL is asserted in tests to be exactly one `SELECT COUNT(*), MAX(col)` — never a scan.
+>
+> **Two semantics sharpened during the build:**
+> 1. **Baselines commit only on a FIRED tick** (not at probe time, as this doc's original "since
+>    the last recorded run" wording loosely implied). Probe-time advancement silently consumes a
+>    change whenever the other condition of an `all`-logic automation is false — seen once, fired
+>    never. Commit-on-fire is the only reading under which no change can be lost; a failed commit
+>    re-fires (at-least-once), never loses. Locked by
+>    `test_a_change_seen_while_the_schedule_is_quiet_is_not_lost`.
+> 2. **A2 clock fix found while testing this:** the engine evaluated conditions against the
+>    injected tick clock but stamped run rows with the wall clock, so `_schedule_fired`'s
+>    since-last-run arithmetic mixed clocks the moment they diverged — the A2 schedule test had
+>    been passing by date-straddling accident. Run timestamps now derive from the tick clock
+>    (identical in production, where the tick clock IS the wall clock).
+
+---
+
+## PR-A4 — Resolve-once proposal inbox + target-bound standing grants
+
+**Scope (redesigned per the program doc J1/J2 — this is no longer a plain proposal table).** Two
+new kinetic-plane stores behind `automations.proposals`:
+
+- **The inbox** ([`kinetic/inbox.py`](../aughor/actions/inbox.py)) persists K4's `Proposal` (today a
+  live-only dataclass) as a **durable, resolve-once** record. Accept/reject is a single conditional
+  `UPDATE … WHERE status='pending'` — first-responder-wins; a second resolution updates zero rows and
+  is a no-op, never a second dispatch. Idempotent by `(org, run_id, call_id)`, so a replayed run
+  after a restart finds the existing item instead of duplicating or resurrecting it. **Accept IS the
+  approval act**, so it executes with `approved=True` — bypassing the approval gate but **never the
+  submission criteria** (those run at step 2, before approval at step 3). Both outcomes are audited
+  with the actor, so a rejected proposal is evidence, not a gap.
+- **Standing grants** ([`kinetic/grants.py`](../aughor/actions/grants.py)) — a human accepting can
+  mint a **target-bound** grant: "allow this action → this *exact* target value," eligible only for a
+  single-parameter action (no ambiguous target otherwise), **owned by the automation that minted it**
+  (revoked with it), consulted by the executor before `govern.guard`, and **cited by id in the audit
+  ledger and on every `KineticResult`**. The grant lets an *unattended* automation run one
+  pre-authorized target without a blanket allow — and still cannot pass a value the criteria reject.
+
+**Flag** `automations.proposals` (default off) · **Tests** 40 · **Decision gate:** a proposal
+survives a process restart, accept executes it **exactly once** (double-accept is a no-op), reject
+leaves an auditable row with no side effect; a grant is target-bound (a different value still gates)
+and never bypasses a criterion. If accept can fire twice, or a grant lets a criterion-failing value
+through, the gate fails.
+
+> ✅ **Gate met (2026-07-24), proven on the live path** — the real app over HTTP, the real
+> `refund_orders` overrides YAML (single-target `amount_eur`, `risk=high`, criterion
+> `amount_eur <= 10000`), the real executor + approval gate:
+>
+> | step | result |
+> |---|---|
+> | reject, then reject again | `rejected: true` → `rejected: false` (resolve-once) |
+> | accept `amount=25000` | **422** `criterion_failed` — *"Refunds over EUR 10,000 need finance sign-off."* verbatim (accept ≠ criteria bypass) |
+> | accept `amount=500` | **executed** — the accept is the approval, despite `risk=high` + approval ON |
+> | re-accept the same | **409** `already_resolved`, no second dispatch |
+> | direct execute `500`, no grant | **428** `approval_required` (unattended, no human, no grant) |
+> | accept with `mint_grant` → direct execute `500` | **executed**, cites `granted_by=<id>` |
+> | direct execute `999` | **428** — the grant is target-bound |
+>
+> **The live proof caught a defect 40 green tests missed** (every unit test used a `VARCHAR` param
+> where coercion is identity): a grant minted from the **raw** proposal params bound `amount_eur`
+> as `"500"`, but the executor matches against **coerced** params (`500.0` → `"500.0"`), so the
+> grant it had just minted never matched. Fixed by minting from coerced params;
+> `test_a_numeric_grant_minted_from_coerced_params_actually_matches` locks it. (Also: my proof
+> harness omitted `AUGHOR_AUTOMATIONS_DB`, leaking an empty `data/automations.db` — the store-drift
+> class already filed as a task; deleted, and the `dump_openapi.py` isolation was extended.)
+
+---
+
+## PR-A5 — Adopt monitors + briefs onto the engine
+
+**Scope.** A translation layer: every `Monitor` and `BriefSubscription` reads as an `Automation`
+(cron condition + its single effect), executed by the A2 engine, with the legacy schedulers still
+present and authoritative until the flag flips. Equivalence tests assert the engine produces the
+**same alert/delivery** as the legacy path for the same input.
+
+**Flag** `automations.adopt_legacy` (default off) · **Tests** 12 · **Decision gate:** for a corpus
+of existing monitors and subscriptions, engine output equals legacy output — same alert severity,
+message, and debounce behaviour — and flipping the flag off restores the legacy path with no data
+migration. If the anti-flap debounce changes behaviour, the gate fails.
+
+> ✅ **Gate met (2026-07-24), proven on the live path** — a real monitor (revenue floor: warn<5000,
+> crit<2000) against a real DuckDB warehouse (today=1200):
+>
+> | step | result |
+> |---|---|
+> | legacy `run_monitor` | `critical`: *"Revenue floor: 1200 below critical threshold 2000"* |
+> | **adopted → engine** | run `fired`, effect `executed`, **appended the same `critical` alert, byte-identical message** |
+> | adoption active → legacy job body | **stood down** (alerts 1 → 1, no double-fire) |
+> | adoption off → legacy job body | ran (debounce then suppressed the duplicate — the same anti-flap behaviour, preserved) |
+>
+> **Why equivalence is structural, not lucky:** the translation calls the *same two functions* from a
+> different loop — a `Monitor` → `schedule(check_cron)` + a `monitor` effect that replays
+> `run_monitor(…, suppress=True)` and appends its alert; a `BriefSubscription` →
+> `schedule(resolved_cron)` + the existing `brief` effect (`deliver_subscription`). The adopted
+> automations are **virtual** (computed from the monitor/brief stores, ids `monitor:<id>`/`brief:<id>`,
+> never written to the automations table); the engine's `schedule` condition reads their `last_run`
+> from the shared `automation_runs` table so each fires once per due window, exactly the legacy cadence.
+>
+> **No double-fire, by construction.** `adopt_legacy` only takes effect when `automations.engine` is
+> also on (so the heartbeat is actually there to drive the adopted objects — the flag can never stand
+> the legacy loops down with nothing to replace them). While active, the legacy monitor and brief
+> jobs stand down at **fire time** (not just at start), so a *runtime* flag flip cannot make both
+> loops run the same object — which for a brief would be a duplicate **outward send**. Flag off ⇒ the
+> legacy schedulers run exactly as before (byte-identical), no data migration.
+
+---
+
+## PR-A6 — Automations surface
+
+**Scope.** An **Automations** layer in the Operations workspace (mirroring the `MonitorsPanel`
+skeleton): author conditions/effects, see per-tick history with **the reason a tick did nothing**,
+enable/mute/run-now/delete, and **work the proposal queue** (accept/reject, mint a target-bound grant
+on accept, revoke grants). A hand-written `web/lib/api.ts` client for `/automations` and
+`/kinetic-actions/inbox`+`/grants`; a new `AutomationsPanel.tsx`; the layer wired into
+`OperationsWorkspace.tsx`. Frontend-heavy; pairs with Wave S. Backend is unchanged — this is UI over
+A1–A4, so no route/schema change and no `api.gen.ts` regen.
+
+**Flag** reuses `automations.*` (the panel renders against whatever the backend exposes; the inbox
+tab is empty when `automations.proposals` is off) · **Tests** — verified live in the browser rather
+than unit-tested (it is presentational; the logic it drives is covered by A1–A4's suites) ·
+**Decision gate:** author → tick → history → proposal accept renders end-to-end against the local
+fixture with no console errors.
+
+> ✅ **Gate met (2026-07-24), verified in the browser** against an isolated API (scratch stores, the
+> three flags on) + the auto-seeded fixture connection:
+>
+> | step | result |
+> |---|---|
+> | **author** | Created "Nightly refund sweep" (schedule daily → notify) via the form; it rendered in the list with its condition→effect summary and the stat row (1 / 1 enabled / 0 muted) |
+> | **tick** | The live heartbeat fired the first run; **Run now** produced a second |
+> | **history** | The Runs view showed **FIRED** — *"schedule(0 9 * * *): first run"* with the effect outcome *"dispatch_error · notify (oncall-webhook) — unknown Action Hub trigger"*, and **NOT FIRED** — *"schedule(0 9 * * *): next due 2026-07-24T09:00:00…"* (the "did nothing" reason) |
+> | **proposal accept** | Two seeded proposals rendered in the Inbox (badge "2"); Accept → **executed** (shown in "Recently resolved"), pending count → 1 |
+> | **grant eligibility, live** | Accepting with "also allow this target unattended" **correctly minted no grant** — `note_known_event` declares two params, so it is not single-target eligible (the J2 rule, demonstrated) |
+> | **console** | **no errors** (only a benign tolerated file-op warning from the isolated scratch dir) |
+>
+> `tsc` clean; the React-purity lint forced the `Date.now()`/`new Date()` calls out of the component
+> body into module-level helpers (`isFuture`, `muteUntilISO`).
+
+---
+
+## Sequencing & dependencies
+
+```
+A1 (model/store) ──▶ A2 (engine) ──▶ A3 (source probes) ──▶ A5 (adopt legacy) ──▶ A6 (surface)
+                          └────────▶ A4 (proposal queue) ─────────┘
+                          (A2 'kinetic_action' dispatch is Wave K's executor, unchanged)
+```
+
+A1+A2 ship together: A1 alone is a schema with no consumer, which is exactly the
+BUILT-but-not-LEVERAGED failure mode the platform review flagged.

@@ -1,0 +1,4046 @@
+"""LLM provider abstraction — Ollama, LM Studio, Groq, Together, Anthropic, Gemini, OpenRouter
+or OpenAI, and any OpenAI-compatible endpoint a person adds in Settings ▸ Inference.
+
+Two roles, two model slots:
+  coder   — SQL generation, hypothesis scoring, decomposition (structured reasoning)
+  narrator — report synthesis (long-form prose)
+  fast     — a cheaper narrator sub-tier for simpler per-phase interpret calls
+
+Configuration precedence (highest first):
+  1. runtime config   data/llm_config.json — set from the Settings → Inference UI
+                      (POST /llm/config); API keys are secretvault-encrypted.
+  2. environment      AUGHOR_BACKEND / AUGHOR_*_MODEL / *_API_KEY / *_BASE_URL
+  3. built-in default per-backend models + localhost base URLs
+
+So the provider is switchable at runtime (no restart, no env edit) AND still honours
+the env for headless/CI runs. `get_provider(role)` is process-global and rebuilds
+its cache whenever the config changes (a version bump on every save).
+
+Env vars (still honoured as the layer-2 fallback):
+  AUGHOR_BACKEND, AUGHOR_CODER_MODEL, AUGHOR_NARRATOR_MODEL, AUGHOR_FAST_NARRATOR_MODEL,
+  AUGHOR_MODEL, OLLAMA_BASE_URL, LMSTUDIO_BASE_URL, GROQ_API_KEY, TOGETHER_API_KEY,
+  ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY, OPENAI_API_KEY, AUGHOR_FALLBACK_MODEL,
+  AUGHOR_FALLBACK_DISABLED. An added provider has no env layer: it exists only in the runtime config.
+
+Operator note — the precedence trap (CI-5a, pinned by test_ci5a_model_resolution):
+  Choosing a BACKEND in the Settings UI disables the AUGHOR_*_MODEL env overrides,
+  even when the UI chose no models: the env model names were tuned for the env
+  backend, and applying "llama3:8b" to an openrouter binding would 404 every call
+  (see _active_model). Consequences worth knowing cold:
+  * SERVERLESS (Vercel): the runtime config file cannot persist across cold starts,
+    so a UI model choice silently reverts and the env vars are the ONLY durable
+    model configuration — set backend AND per-role models together in the env.
+  * LOCAL: a data/llm_config.json with a "backend" key makes AUGHOR_*_MODEL a
+    silent no-op. This is why AUGHOR_BACKEND=faux does not make a dry run on a
+    machine whose config file names a backend — the printed binding from
+    get_provider() is the only authority on what a script will hit.
+"""
+from __future__ import annotations
+
+import contextvars
+import json
+import logging
+import os
+import random
+import re
+import sys
+import threading
+import time
+from pathlib import Path
+from typing import Any, Callable, Literal, Optional, Type, TypeVar
+
+import instructor
+from openai import OpenAI
+from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
+
+T = TypeVar("T", bound=BaseModel)
+
+Role = Literal["coder", "narrator", "fast"]
+ROLES: tuple[Role, ...] = ("coder", "narrator", "fast")
+#: The BUILT-IN providers. A provider a person adds in Settings ▸ Inference joins them in
+#: :func:`backends` — the one list every reader asking "is this a provider here?" consults.
+#: This tuple alone answers only "which ones ship" (and the CLI keeps a literal mirror of it).
+BACKENDS: tuple[str, ...] = ("ollama", "lmstudio", "groq", "together", "anthropic",
+                             "gemini", "openrouter", "openai")
+# Built-in backends that require an API key (the others are local). An added provider takes a
+# key too, and may run without one — see :func:`keyed_backends`.
+NEEDS_KEY: tuple[str, ...] = ("groq", "together", "anthropic", "gemini", "openrouter", "openai")
+# Backends whose base URL is user-overridable (the hosted ones are fixed).
+LOCAL_BACKENDS: tuple[str, ...] = ("ollama", "lmstudio")
+
+_KEY_ENV = {"groq": "GROQ_API_KEY", "together": "TOGETHER_API_KEY", "anthropic": "ANTHROPIC_API_KEY",
+            "gemini": "GEMINI_API_KEY", "openrouter": "OPENROUTER_API_KEY", "openai": "OPENAI_API_KEY"}
+
+# The scripted test backend — first-class through the whole provider stack
+# (constructor, model resolution, tiers) but never operator-selectable; see the
+# registration note on _FAUX_MODELS and aughor/llm/faux.py's module docstring.
+FAUX_BACKEND = "faux"
+DEFAULT_FAUX_MODELS = {"coder": "faux-coder", "narrator": "faux-narrator", "fast": "faux-fast"}
+_BASE_URL_ENV = {"ollama": "OLLAMA_BASE_URL", "lmstudio": "LMSTUDIO_BASE_URL"}
+
+_DEFAULT_BASE_URLS = {
+    "ollama":   "http://localhost:11434/v1",
+    "lmstudio": "http://localhost:1234/v1",
+    "groq":     "https://api.groq.com/openai/v1",
+    "together": "https://api.together.xyz/v1",
+    # Google Gemini's OpenAI-compatibility endpoint (chat/completions + tools + json_schema).
+    "gemini":   "https://generativelanguage.googleapis.com/v1beta/openai/",
+    # OpenRouter — one key, many vendors, OpenAI-compatible. Its /models endpoint is
+    # public, which is what lets the model picker show a live catalogue.
+    "openrouter": "https://openrouter.ai/api/v1",
+    # OpenAI's own API. Its model is the person's pick from its catalogue (`GET /models`, keyed).
+    "openai":   "https://api.openai.com/v1",
+}
+
+class NoModelConfigured(RuntimeError):
+    """No model is set for a role, and nothing ships one to fall back on.
+
+    Until 2026-08-15 every backend carried built-in per-role defaults, so a fresh
+    install always resolved *some* model id. That id was this repo's guess about
+    another vendor's catalogue, and the guesses went stale silently: two OpenRouter
+    defaults never existed, an Ollama default was retired mid-life, another became
+    subscription-only. Each time the app kept running and produced nothing —
+    structured calls returned empty content and every caller fell through its own
+    fail-open path. An app that runs and produces nothing is the worst outcome
+    available, and it was reached BY having a default.
+
+    So there is no default. A model is configured or it is not, and if it is not,
+    this is raised at the moment one is needed — naming the role and where to set it.
+    """
+
+    def __init__(self, backend: str, role: str):
+        self.backend, self.role = backend, role
+        super().__init__(
+            f"No model configured for the '{role}' role on backend '{backend}'. "
+            f"Set one in Settings ▸ Models (it lists what '{backend}' actually serves), "
+            f"or set AUGHOR_{'CODER' if role == 'coder' else 'NARRATOR'}_MODEL. "
+            f"Nothing is assumed — this deployment ships no default model."
+        )
+
+
+#: The scripted TEST backend's fixtures (aughor/llm/faux.py). Not a provider and not
+#: operator-selectable — `faux` is deliberately absent from BACKENDS — so these are
+#: harness scaffolding, not a model list: `faux-coder` is not a model anybody serves.
+#: The removal above is about ids this repo asserted on a vendor's behalf.
+_FAUX_MODELS: dict[str, dict[Role, str]] = {
+    FAUX_BACKEND: dict(DEFAULT_FAUX_MODELS),
+}
+
+# AUGHOR_LLM_CONFIG_PATH relocates the runtime config — the test suite points it at
+# an isolated file so tests can never read the developer's live backend choice or
+# encrypted keys (every other data/ store already has exactly this env seam; this
+# one was the last store tests inherited from the developer's machine). Read at
+# import like its siblings: conftest sets it above any app import.
+# The default follows a migrated data home (IN-4) once `migrate-state` has run; the checkout until then.
+from aughor.db.home import rehome as _rehome  # noqa: E402
+_CONFIG_PATH = Path(os.getenv("AUGHOR_LLM_CONFIG_PATH", "").strip()
+                    or _rehome(Path(__file__).parent.parent.parent / "data" / "llm_config.json"))
+
+
+def config_path() -> Path:
+    """Where the runtime LLM config is read from — the public answer to a question callers
+    outside this module legitimately have. `aughor doctor` needs it to report whether a backend
+    is chosen WITHOUT going through `resolve_binding`, which would open `org_llm.db` and make a
+    diagnostic a second writer on `data/`. Resolved from the module global on CALL, so a test
+    that repoints `_CONFIG_PATH` is honoured."""
+    return _CONFIG_PATH
+
+
+def _flag(name: str, default: str = "") -> bool:
+    return os.getenv(name, default).strip().lower() in ("1", "true", "yes", "on")
+
+
+# Output ceiling for OpenAI-compatible backends. The Anthropic path has always passed
+# max_tokens=4096 (the SDK requires it); every other backend passed NOTHING, so generation was
+# bounded only by the model stopping or by our own 600s deadline. On a reasoning model that is a
+# runaway: the 2026-07-22 OpenRouter export shows three requests that each ran the full 600s and
+# emitted 13.5k / 15.4k / 18.9k tokens of pure reasoning with NO finish_reason and no usable
+# output — 4 requests (6% of traffic) burned 58% of all output tokens for nothing.
+_MAX_OUTPUT_TOKENS = 4096
+# Reasoning effort for backends that expose it. 93% of completion tokens in that same export were
+# reasoning, so this is the direct lever on output volume. OpenRouter reads `reasoning` from the
+# request body; other OpenAI-compat shims reject unknown fields, so it is sent ONLY where it is
+# known to be understood (see _complete_on's retry-without-extras path for the rest).
+_REASONING_EFFORT_DEFAULT = "low"
+
+
+def _max_output_tokens(role: str = "coder", model: str = "") -> int:
+    """Cap on generated tokens for ONE call (AUGHOR_MAX_OUTPUT_TOKENS).
+
+    The default is model-sized (A1 ModelProfile): a capable large-context binding
+    gets 8192 — the 4096 floor demonstrably truncated a ~25-finding briefing — and
+    an unknown model keeps the old 4096. The env var still wins outright.
+
+    Wave 3 (4.2a) makes it ROLE-sized as well. This function used to take no
+    arguments and resolve ``"coder"``'s model unconditionally, so a narrator writing
+    a long brief and a `fast` throwaway both generated under whatever ceiling the
+    CODER's binding implied — the one role that was never asking for the headroom.
+    Now the ceiling follows the role: a narrator gets room to finish, and `fast`,
+    which is cheap by declaration, does not inherit a capable binding's bump.
+
+    ``model`` is the model actually being called, so a fallback link is sized by the
+    binding that will really serve the request rather than the primary's.
+    """
+    default = _MAX_OUTPUT_TOKENS
+    try:
+        from aughor.llm.profile import role_output_cap
+        default = role_output_cap(role or "coder",
+                                  model or _active_model(_active_backend(), role or "coder"))
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "profile tier unreadable — legacy output ceiling",
+                 counter="llm.profile_tier_unreadable")
+    return max(256, _int_env("AUGHOR_MAX_OUTPUT_TOKENS", default))
+
+
+# How many attempts instructor may spend inside ONE logical structured call.
+#
+# Instructor's own default is 3, and we had never overridden it — so every structured
+# failure in Aughor silently cost THREE full-prompt requests before our code saw the
+# error, and a fourth against another provider when the fallback chain took over.
+# Measured on the real transport stack (a real socket, real openai client, real
+# instructor): a response with a trailing comma cost 3 requests. On an ADA synthesis
+# call each of those re-sends the entire evidence block.
+#
+# 1 = one attempt, and Wave R1 owns the retry budget from there: the deterministic
+# normalizer recovers the structural failures at ZERO requests, and `llm.bounded_repair`
+# spends at most one more — carrying only the broken output and the specific validation
+# error, not a second copy of the original prompt. Worst case is now 1 big request + 1
+# small one, against 3 big ones before.
+#
+# What this trades away is instructor's blind re-ask, which can occasionally succeed
+# where our normalizer cannot. That is a real loss and it is not measurable from here —
+# a stub returns the same body every time, so no local harness can price it. It is
+# accepted on two grounds: the bounded repair covers the same ground more cheaply and
+# with a better prompt, and for a TRUNCATION instructor's extra attempts are provably
+# useless (the ceiling is ours and rides on every request). Restore the old ladder with
+# AUGHOR_LLM_STRUCTURED_ATTEMPTS=3.
+_STRUCTURED_ATTEMPTS = 1
+
+
+def _structured_attempts() -> int:
+    """Attempts instructor may make per structured call (AUGHOR_LLM_STRUCTURED_ATTEMPTS)."""
+    return max(1, _int_env("AUGHOR_LLM_STRUCTURED_ATTEMPTS", _STRUCTURED_ATTEMPTS))
+
+
+def _reasoning_extra_body(backend: str) -> dict:
+    """Provider-specific body extras that bound reasoning, or ``{}``.
+
+    ``AUGHOR_REASONING_EFFORT`` accepts low|medium|high, or ``off`` to omit the field
+    entirely (for a binding that rejects it). Unset, the default is model-sized (A1
+    ModelProfile): "medium" for a capable family — the free tier's constraint is
+    request RATE, not tokens, and reasoning depth is the direct quality lever — and
+    the old "low" for anything unknown."""
+    default_effort = _REASONING_EFFORT_DEFAULT
+    try:
+        from aughor.llm.profile import tier_for
+        default_effort = tier_for(_active_model(backend, "coder"))["reasoning_effort"]
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "profile tier unreadable — legacy reasoning effort",
+                 counter="llm.profile_tier_unreadable")
+    effort = os.getenv("AUGHOR_REASONING_EFFORT", default_effort).strip().lower()
+    if backend != "openrouter" or effort in ("", "off", "none"):
+        return {}
+    if effort not in ("low", "medium", "high"):
+        effort = default_effort
+    return {"reasoning": {"effort": effort}}
+
+
+def _retry_at_low_reasoning(exc: Exception, kwargs: dict, call) -> Optional[tuple]:
+    """One more attempt with reasoning cut to `low`, when THINKING filled the ceiling.
+
+    `reliability.TRUNCATED` is deliberately not "repairable": re-sending the same prompt
+    under the same budget truncates the same way. This is not that retry. On a reasoning
+    model `max_tokens` bounds reasoning AND content together, so the budget has a second
+    dial — and turning it is a different call, not the identical one that rule refuses.
+
+    Measured on this deployment (2026-09-23): the same business-profile inference that
+    succeeded under `gemini-3.1-flash-lite` fails under `deepseek/deepseek-v4.1-flash`,
+    which averages 1,286 completion tokens per call against gemini's 259 — 5x, and 27s
+    against 3.7s. A complete profile is ~2,072 tokens of CONTENT, so ~6,120 of the 8,192
+    ceiling is available to think in, and medium effort spends it.
+
+    Only fires when there is a dial to turn: the extras must already be going out and the
+    effort must be above `low`. Already-low keeps the original error rather than paying a
+    request to prove the ceiling is where it was — the exact waste `TRUNCATED` was
+    classified first to avoid. Raising `max_tokens` instead was rejected: it gives
+    reasoning more room to expand into, and costs it on every call rather than on the
+    rare one that truncates (19 failures in 725 calls here).
+    """
+    from aughor.llm.reliability import TRUNCATED, StructuredOutputError
+    if not isinstance(exc, StructuredOutputError) or exc.diagnosis.failure != TRUNCATED:
+        return None
+    extra = kwargs.get("extra_body") or {}
+    effort = ((extra.get("reasoning") or {}).get("effort") or "").lower()
+    if effort not in ("medium", "high"):
+        return None
+    logger.warning("llm: output ceiling hit with reasoning=%s; one retry at reasoning=low", effort)
+    retry_kwargs = {**kwargs, "extra_body": {**extra, "reasoning": {"effort": "low"}}}
+    try:
+        return call(retry_kwargs)
+    except Exception as second:            # noqa: BLE001 — the caller raises the FIRST error
+        logger.warning("llm: the low-reasoning retry also failed (%s)", str(second)[:120])
+        return None
+
+
+def _answer_shape(exc: BaseException) -> str:
+    """What a failed structured call's response held, in a few words: its stop reason, its blocks, its first words.
+    The failure a person reads says WHY no object came back; this says what came back instead."""
+    msg = next((m for e in (exc, getattr(exc, "__cause__", None)) if e is not None
+                for m in (getattr(e, "last_completion", None) or getattr(e, "raw_response", None),) if m), None)
+    blocks = getattr(msg, "content", None)
+    if not isinstance(blocks, list):
+        return "no response kept"
+    kinds = ",".join(str(getattr(b, "type", "?")) for b in blocks) or "no blocks"
+    first = next((str(getattr(b, "text", "")) for b in blocks if getattr(b, "text", None)), "")
+    return f"stop {getattr(msg, 'stop_reason', '?')}; blocks {kinds}" + (f"; began {first[:120]!r}" if first else "")
+
+
+def _anthropic_as_text(client):
+    """The Claude client's ``messages`` endpoint asking for the JSON as text (instructor's ``ANTHROPIC_JSON``), or
+    None when the instructor wrapper exposes no raw client."""
+    raw = getattr(client, "client", None)
+    return instructor.from_anthropic(raw, mode=instructor.Mode.ANTHROPIC_JSON).messages if raw is not None else None
+
+
+def _anthropic_json_reask(exc: BaseException, client, kwargs: dict, base_url: str, *,
+                          on_fail: Optional[Callable[[BaseException, float], None]] = None) -> Optional[tuple]:
+    """One more request to the same Claude model, asked for the JSON as text (instructor's ``ANTHROPIC_JSON``), before
+    the fallback chain answers from another provider.
+
+    Under ``tool_choice: auto`` (the current Claude models refuse a forced one) the model may answer in prose, call
+    no tool, or return nothing: measured 2026-10-11, 3 of 160 calls on ``claude-sonnet-5-5`` fell back to OpenRouter
+    — two "did not match the schema", one "returned no content" — and none was repaired. Asking for the JSON as text
+    takes the tool choice out of it. Same request count as the failover, and the answer stays on the operator's
+    model. Never for a truncation (the same ceiling), a refusal, or a request that never ran."""
+    from aughor.llm.reliability import EMPTY, SCHEMA_MISMATCH, UNKNOWN, UNPARSEABLE, StructuredOutputError
+    if not isinstance(exc, StructuredOutputError) or exc.diagnosis.failure not in (
+            EMPTY, UNPARSEABLE, SCHEMA_MISMATCH, UNKNOWN):
+        return None
+    as_text = _anthropic_as_text(client)
+    if as_text is None:
+        return None
+    logger.warning("llm: anthropic gave no usable answer (%s; %s); asking once more for the JSON as text",
+                   exc.diagnosis.failure, _answer_shape(exc))
+    t0 = time.monotonic()
+    try:
+        return _run_resilient(lambda: as_text.create_with_completion(**kwargs), base_url, max_retries=0)
+    except Exception as second:            # noqa: BLE001 — the caller raises the FIRST error
+        logger.warning("llm: asked again for JSON text, anthropic failed too (%s)", str(second)[:120])
+        if on_fail is not None:            # the re-ask was a request: the caller writes its row
+            on_fail(second, (time.monotonic() - t0) * 1000.0)
+        return None
+
+
+def _fallback_model() -> str:
+    """The Anthropic model the fallback chain uses: ``AUGHOR_FALLBACK_MODEL``, else "".
+
+    No default. Every other binding fails loud when the operator named no model
+    (2026-08-15's directive: a model id in shipped code is a claim about another
+    vendor's catalogue this repo cannot keep true), and this one shipped a literal in the
+    one spelling the ratchet did not see — slashless — until the trajectory census
+    found it (TJ-1). "" means the anthropic hop is skipped like any unconfigured backend;
+    the primary's own dispatch refuses an empty model with its usual message."""
+    return (os.getenv("AUGHOR_FALLBACK_MODEL", "") or "").strip()
+
+
+# Order the fallback chain is tried in when the primary backend fails. Anthropic stays
+# first so an install that already had a key keeps its exact previous behaviour; the rest
+# follow so a install WITHOUT an Anthropic key (the common case) still has somewhere to go
+# — which is the whole point: the fallback used to be Anthropic-or-nothing, so the majority
+# of installs had no fallback at all and a rate-limited role model surfaced as a 500.
+# Local backends are deliberately absent: they need no key, so they would always look
+# "configured" and a fallback would hang against a server that isn't running. Name one in
+# AUGHOR_FALLBACK_BACKENDS to opt in.
+_FALLBACK_ORDER: tuple[str, ...] = ("anthropic", "gemini", "groq", "together", "openrouter", "openai")
+
+
+def _fallback_backends() -> tuple[str, ...]:
+    """Backends to try, in order, when the primary fails.
+
+    Override with AUGHOR_FALLBACK_BACKENDS (comma-separated, e.g. "gemini,groq") to pin a
+    chain — order is honoured as given, and unknown names are dropped rather than raising,
+    so a typo degrades to a shorter chain instead of breaking every LLM call. The one
+    explicit spelling is "none" — an EMPTY chain (no fallback at all). It exists because
+    "" cannot mean empty (it has always meant the default order), and the test suite's
+    no-key guarantee needs a value that structurally forbids the chain while still letting
+    an individual test override the variable to exercise it."""
+    known = backends()
+    raw = os.getenv("AUGHOR_FALLBACK_BACKENDS", "").strip()
+    if raw:
+        if raw.lower() == "none":
+            return ()
+        return tuple(b for b in (p.strip() for p in raw.split(",")) if b in known)
+    # Settings → Models. The env var still outranks it: that is how a deployment nobody
+    # can open Settings on is steered. "none" means the same here as there — an empty
+    # chain, chosen deliberately — which is why the field carries the word rather than
+    # using "" for it ("" has always meant "the default order").
+    chosen = str((_cfg().get("fallback") or {}).get("backend") or "").strip()
+    if chosen:
+        if chosen.lower() == "none":
+            return ()
+        return (chosen,) if chosen in known else ()
+    # A provider a person added joins the default order after the built-ins — but only one
+    # holding a key, for the reason local backends are absent above: a keyless endpoint always
+    # looks configured, and a fallback would hang on one that is not running. Choose a keyless
+    # one as the fallback to use it.
+    return _FALLBACK_ORDER + tuple(b for b in added_providers() if _active_key(b))
+
+
+# A backend that answered "quota exhausted" will answer the same way for every call until
+# its allowance resets, so re-probing it once per LLM call adds a guaranteed-failed round
+# trip to each one. A briefing fans out into dozens of calls: that cost a wasted probe every
+# time and turned a 9s brief into 76s. Cooldown is in-process and self-healing — the entry
+# simply expires, so a topped-up account recovers on its own without a restart.
+#
+# Held by the coordinator (aughor/llm/coordination.py) rather than a module dict, so a
+# multi-instance deployment can share it: otherwise every instance has to rediscover an
+# exhausted backend independently, which is the wasted-probe cost above paid N times over.
+_QUOTA_COOLDOWN_S = 900.0
+
+
+def _coordinator():
+    """The pacing / concurrency / cooldown gates (see aughor/llm/coordination.py).
+
+    Resolved per call, never cached in a module constant — caching it here would pin the
+    backend chosen at import time and defeat the point of the seam.
+    """
+    from aughor.llm.coordination import default
+    return default()
+
+
+def _mark_quota_exhausted(backend: str) -> None:
+    _coordinator().mark_cooldown(
+        backend, max(0.0, _float_env("AUGHOR_QUOTA_COOLDOWN_S", _QUOTA_COOLDOWN_S)))
+
+
+def _in_quota_cooldown(backend: str) -> bool:
+    return _coordinator().in_cooldown(backend)
+
+
+def _fallback_model_for(backend: str, role: Role) -> str:
+    """The model a fallback backend should use for this role, or "" to SKIP that link.
+
+    Precedence: the per-backend env pin (``AUGHOR_FALLBACK_MODEL_<BACKEND>``, and
+    ``AUGHOR_FALLBACK_MODEL`` for anthropic — both pre-existing contracts) → the model the
+    operator last bound for that backend in Settings → Models → "".
+
+    That middle step is what makes the chain exist at all. Nothing ships a default, and
+    `models` holds bindings only for the CURRENTLY selected backend, so every non-anthropic
+    link resolved to "" and `_fallback_provider` skipped it. A deployment holding three
+    working keys therefore had NO fallback: a throttled primary took the whole run down
+    while a healthy provider sat unused, and the run reported `fallback: false` with no
+    hint that the chain had never been walked.
+
+    Reading the operator's own remembered choice keeps the rule that no model id is
+    hardcoded here (2026-08-15): the value came from the picker, for that backend, chosen
+    by a person. A backend they have never configured still resolves to "" and is still
+    skipped — better a short chain than a request dispatched to a vendor under a model id
+    tuned for a different one.
+    """
+    env = (os.getenv(f"AUGHOR_FALLBACK_MODEL_{backend.upper()}", "") or "").strip()
+    if env:
+        return env
+    cfg = _cfg()
+    fallback = cfg.get("fallback") or {}
+    if str(fallback.get("backend") or "").strip() == backend:
+        chosen = str(fallback.get("model") or "").strip()
+        if chosen:
+            return chosen          # one model, every role — what Settings offers
+    if backend == "anthropic":
+        return _fallback_model()
+    remembered = (cfg.get("models_by_backend") or {}).get(backend) or {}
+    return str(remembered.get(role) or "").strip()
+
+
+# ── Runtime config (data/llm_config.json) ────────────────────────────────────
+# Schema: {backend?: str, models?: {coder,narrator,fast}, base_urls?: {ollama,lmstudio},
+#          keys?: {groq,together,anthropic}, json_mode?: {<backend>: [<model>, …]}}
+#          — keys are secretvault-encrypted strings.
+# `json_mode` is keyed by BACKEND then model, not "backend/model": model ids contain
+# slashes (`nvidia/nemotron-…`), so a flat composite key cannot be split back apart.
+
+_runtime: Optional[dict] = None
+_config_version = 0          # bumped on every config (re)load
+_cache_version = -1          # the version the _providers cache was built against
+# Keyed (org_id, org_fingerprint, role) since CI-5b — a tenant's config change moves
+# only its own fingerprint, so one org's rebuild never evicts another's clients.
+_providers: dict[tuple, "LLMProvider"] = {}
+# Providers pinned to an explicit model (per-agent override), keyed
+# (org_id, org_fingerprint, role, model).
+_pinned_providers: dict[tuple, "LLMProvider"] = {}
+
+# Per-agent LLM model: a run can pin the model its LLM calls use (set by the kernel from
+# the agent's governance, override-wins). A contextvar so it scopes to the run without
+# threading a model arg through every get_provider() call site — mirrors the metering hook.
+_run_model: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "aughor_run_model", default=None
+)
+
+
+def set_run_model(model: Optional[str]):
+    """Pin the LLM model for the current run/context (returns a reset token)."""
+    return _run_model.set((model or "").strip() or None)
+
+
+def reset_run_model(token) -> None:
+    try:
+        _run_model.reset(token)
+    except (ValueError, LookupError) as exc:
+        logger.debug("reset_run_model: stale token ignored (%s)", exc)  # token from another context
+
+
+def current_run_model() -> Optional[str]:
+    return _run_model.get()
+
+
+# ON-7b — the binding that ANSWERED the most recent structured call in this context: the primary, or the fallback link
+# that stood in for it. A claim a model made carries the model that made it (J4), and `resolve_binding` names only the
+# model that was ASKED. Set by every successful `_complete_on`; a fresh tuple each time, so a caller can tell its own
+# call's answer from an earlier one by identity.
+_answered: contextvars.ContextVar[Optional[tuple[str, str, bool]]] = contextvars.ContextVar(
+    "aughor_llm_answered", default=None
+)
+
+
+def answered_by() -> Optional[tuple[str, str, bool]]:
+    """``(backend, model, fallback)`` of the last structured call that succeeded in this context, or None."""
+    return _answered.get()
+
+
+# Per-run sampling temperature (Wave E4). The role defaults are 0.1 for structured calls and
+# 0.0 for a few others, and the deep path's spine calls pass none at all — so a measured run
+# cannot floor the sampling noise it is trying to measure. A contextvar lands the decision at
+# the last hop, like the model pin above, and reaches worker threads the same way.
+_run_temperature: contextvars.ContextVar[Optional[float]] = contextvars.ContextVar(
+    "aughor_run_temperature", default=None
+)
+
+
+def set_run_temperature(temperature: Optional[float]):
+    """Pin the sampling temperature for the current run/context (returns a reset token)."""
+    return _run_temperature.set(None if temperature is None else float(temperature))
+
+
+def reset_run_temperature(token) -> None:
+    try:
+        _run_temperature.reset(token)
+    except (ValueError, LookupError) as exc:
+        logger.debug("reset_run_temperature: stale token ignored (%s)", exc)  # foreign context
+
+
+def current_run_temperature() -> Optional[float]:
+    return _run_temperature.get()
+
+
+def _effective_temperature(temperature: float, backend: str) -> float:
+    """The temperature a call will actually use.
+
+    A run-scoped pin wins over the argument: the argument is a *role default* chosen by the
+    call site, the pin is a *measurement decision* about the whole run. Clamped to the
+    backend's accepted range — Anthropic rejects anything above 1.0 while the
+    OpenAI-compatible backends accept 2.0, so an unclamped grid axis would die on one
+    backend and quietly succeed on the other.
+    """
+    pinned = _run_temperature.get()
+    t = float(temperature if pinned is None else pinned)
+    return max(0.0, min(t, 1.0 if backend == "anthropic" else 2.0))
+
+
+def _pinned_model(role: Role, model: Optional[str]) -> str:
+    """The model this call is pinned to, or ``""`` for the role's tier default.
+
+    Precedence: an explicit ``model=`` wins for **every** role — that is a deliberate
+    direct pin (bakeoff arm, health-check probe, a test). The implicit per-agent run pin
+    (:func:`set_run_model`, set by the kernel from the agent's governance) deliberately
+    does **not** reach the ``fast`` tier.
+
+    Why ``fast`` is exempt: it is Aughor's cheap-by-declaration role — the call site chose
+    it because the work is a throwaway (a phase interpret, a question classify, the
+    evidence digest). A per-agent pin means "run *this agent's* reasoning on a stronger
+    model" (Analyst → 550B for 1M-ctx root-causing; Briefer → 550B for user-visible
+    synthesis) — none of the charter recommendations were chosen for the interpret calls.
+    Letting the scalar pin clobber ``fast`` runs those throwaways on a 550B reasoning
+    model: the single biggest per-run cost driver on a job-borne investigation, where the
+    interpret call fires once per phase (up to ~7) plus the digest reduce. The heavy roles
+    (``coder``/``narrator``) still take the pin, so intended quality is untouched.
+
+    ``AUGHOR_PIN_ALL_ROLES=1`` restores the old total-pin behaviour for an operator who
+    genuinely wants every call, cheap ones included, on the pinned model.
+
+    The rule is BLANKET again: a run pin never reaches ``fast``. Wave R2 had widened it
+    per-model — "may this model serve the cheap tier" was a declared property in the
+    vouched matrix, so a pin onto a genuinely cheap model (a 9B nano, a haiku) passed
+    through. That matrix was a hardcoded list of model ids and has been removed
+    (2026-08-15), and there is no way to know a model is cheap without naming it. The
+    blanket rule is the conservative half of what R2 did — it can cost an operator a
+    cheap pin they wanted, never a 550B running every throwaway interpret call.
+    """
+    explicit = (model or "").strip()
+    if explicit:
+        return explicit
+    run = (current_run_model() or "").strip()
+    if run and role == "fast" and not _flag("AUGHOR_PIN_ALL_ROLES"):
+        return ""
+    return run
+
+
+def _read_config() -> dict:
+    try:
+        if _CONFIG_PATH.exists():
+            data = json.loads(_CONFIG_PATH.read_text())
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        logger.warning("llm: could not read %s — using env/defaults", _CONFIG_PATH, exc_info=True)
+    return {}
+
+
+def _cfg() -> dict:
+    global _runtime
+    if _runtime is None:
+        _runtime = _read_config()
+    return _runtime
+
+
+def load_config() -> None:
+    """(Re)load the on-disk config and invalidate the provider cache. Call on
+    startup and after any change so live providers pick up the new settings."""
+    global _runtime, _config_version
+    _runtime = _read_config()
+    _config_version += 1
+
+
+# ── The providers a person added (Settings ▸ Inference ▸ Add a provider) ─────
+# An OpenAI-compatible endpoint the platform does not ship — Azure OpenAI, Mistral, DeepSeek, xAI,
+# Fireworks, a keyed vLLM. It is not a second mechanism beside the built-ins: it is stored in this
+# same file and joins the same list. `providers: {id: {name, base_url}}` holds what it IS; its key
+# goes where every key goes (`keys[id]`, secretvault-encrypted, never returned); the model ids a
+# person listed go where every kept model id goes (`custom_models[id]`, the catalogue's list). Every
+# reader that asks "is this a provider here?" asks :func:`backends`, so the role picker, the
+# fallback picker and chain, the catalogue, the health check and an organisation's own binding
+# reach it the way they reach a built-in one.
+
+def added_providers() -> dict[str, dict]:
+    """``{id: {"name", "base_url"}}`` for every provider a person added, in the order added."""
+    raw = _cfg().get("providers") or {}
+    if not isinstance(raw, dict):
+        return {}
+    return {str(pid): {"name": str(p.get("name") or pid), "base_url": str(p.get("base_url") or "")}
+            for pid, p in raw.items()
+            if isinstance(p, dict) and str(pid) not in BACKENDS and str(pid) != FAUX_BACKEND}
+
+
+def is_added_provider(backend: str) -> bool:
+    return backend in added_providers()
+
+
+def backends() -> tuple[str, ...]:
+    """Every provider this deployment can bind: the built-in ones, then the ones a person added."""
+    return BACKENDS + tuple(added_providers())
+
+
+def keyed_backends() -> tuple[str, ...]:
+    """Every provider that takes an API key: the built-in keyed ones, and every added one — whose
+    key may be empty (a keyless endpoint), so a missing key there is not a fault. `NEEDS_KEY`
+    stays the list where a missing key IS one."""
+    return NEEDS_KEY + tuple(added_providers())
+
+
+def unknown_backend(backend: str) -> ValueError:
+    """The one refusal for a name that is no provider here — said as a sentence, naming what is."""
+    added = list(added_providers())
+    return ValueError(
+        f"unknown backend {backend!r}: it is not a provider here. The built-in ones are "
+        f"{', '.join(BACKENDS)}"
+        + (f", and the added ones {', '.join(added)}" if added else ", and none has been added")
+        + "; if it was added in Settings ▸ Inference, it has since been removed.")
+
+
+# ── Public accessors for the rest of the inference plane ─────────────────────
+# The catalogue (aughor/llm/models.py) needs the effective base URL, key and
+# defaults for a backend, and a way to persist. Exposed as public names so it
+# imports an interface rather than reaching into this module's internals.
+
+def read_config() -> dict:
+    """The on-disk config as written (secrets still encrypted)."""
+    return _read_config()
+
+
+def write_config(cfg: dict) -> None:
+    """Persist and reload. One writer, because the file holds encrypted keys and
+    the mkdir/write/chmod/reload sequence must not drift between call sites."""
+    _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
+    try:
+        _CONFIG_PATH.chmod(0o600)  # it holds encrypted keys
+    except Exception:
+        logger.debug("could not chmod %s (non-fatal)", _CONFIG_PATH, exc_info=True)
+    load_config()
+
+
+def active_backend() -> str:
+    """The backend this deployment is bound to. Public because callers outside the
+    inference plane legitimately need it — ``kernel/agents.py`` was reaching for
+    ``_active_backend`` and tripping the private-cross-import ratchet, which is the
+    ratchet doing its job: an internal that two planes need is an interface that has
+    not been declared yet."""
+    return _active_backend()
+
+
+def active_base_url(backend: str) -> str:
+    return _active_base_url(backend)
+
+
+def active_key(backend: str) -> str:
+    return _active_key(backend)
+
+
+def key_is_undecryptable(backend: str) -> bool:
+    """True when a key IS configured for this backend and cannot be decrypted.
+
+    `_active_key` keeps an undecryptable stored key in its encrypted form for exactly this
+    check (the vault itself returns empty) — a string that looks like a key and is a Fernet
+    token, whose only other sign would be the provider's reply. Measured: `AUGHOR_SECRET_KEY` unset, and `enc:v1:…` went to Google,
+    which answered "Please pass a valid API key" — true of what it got, false about what was
+    wrong, and expensive, because it sends a person to rotate a key that works.
+    """
+    from aughor.secretvault import is_encrypted
+
+    return backend in keyed_backends() and is_encrypted(_active_key(backend))
+
+
+def _undecryptable_key_error(backend: str) -> RuntimeError:
+    """The one message, so the chat path and the embedding lane cannot describe this
+    differently."""
+    return RuntimeError(
+        f"the stored {backend} key cannot be decrypted — AUGHOR_SECRET_KEY is missing "
+        f"or does not match the one it was encrypted with. The key itself is probably "
+        f"fine; nothing was sent to the provider.")
+
+
+def usable_key(backend: str) -> str:
+    """The key, or '' when there is none or it cannot be decrypted.
+
+    For callers ASKING whether a backend can be used — failover eligibility, for instance.
+    They must not raise: a chain that crashes because one candidate has a bad key is worse
+    than one that skips it."""
+    return "" if key_is_undecryptable(backend) else _active_key(backend)
+
+
+def default_models(backend: str) -> dict:
+    """``{}`` for every operator-selectable backend — nothing ships a default model.
+    Kept as a function because callers (the config payload, the picker) still ask; it
+    now answers honestly instead of handing back this repo's guess at a vendor's ids."""
+    return dict(_FAUX_MODELS.get(backend, {}))
+
+
+# ── Active accessors (org store → runtime config → env → default) ─────────────
+
+def _org_overlay() -> dict:
+    """The current org's BYOK config (CI-5b), or ``{}``.
+
+    Layered ABOVE the runtime file: the file cannot persist on serverless and is
+    deployment-global besides, while this row is per-tenant and store-backed. Reads
+    fail OPEN to the deployment config — a broken org store must degrade a tenant to
+    the operator's binding, never take inference down. Keys inside the overlay stay
+    encrypted; only :func:`_active_key` decrypts, at the moment a client is built.
+    """
+    try:
+        from aughor.llm.org_config import overlay_for
+        from aughor.org.context import current_org_id
+        return overlay_for(current_org_id())
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "org LLM overlay is fail-open; the deployment config serves",
+                 counter="llm.org_overlay")
+        return {}
+
+
+def _org_own_keyed_backends() -> Optional[set[str]]:
+    """The keyed backends this org brought itself, or ``None`` when it brought none.
+
+    ``None`` and ``set()`` mean different things and the distinction is the whole point.
+    ``None`` = no BYOK row at all: the org IS the deployment, so the deployment's chain
+    is its own and nothing is scoped. An empty set cannot occur through the normal path
+    (a row with no keys still resolves to ``None`` here), which keeps "unconfigured" a
+    single state rather than two that behave alike until one day they don't.
+    """
+    keys = _org_overlay().get("keys") or {}
+    return {b for b in keys} or None
+
+
+def _active_backend() -> str:
+    org_backend = (_org_overlay().get("backend") or "").strip()
+    if org_backend:
+        return org_backend
+    return ((_cfg().get("backend") or os.getenv("AUGHOR_BACKEND") or "ollama")).strip()
+
+
+def _active_base_url(backend: str) -> str:
+    cfg_url = (_cfg().get("base_urls") or {}).get(backend)
+    if cfg_url:
+        return cfg_url.strip()
+    env = _BASE_URL_ENV.get(backend)
+    if env and os.getenv(env):
+        return os.getenv(env).strip()
+    added = added_providers().get(backend)
+    if added:
+        return added["base_url"]
+    return _DEFAULT_BASE_URLS.get(backend, "")
+
+
+def endpoint_for(backend: str) -> tuple[str, str]:
+    """`(base_url, api_key)` for a backend — the ladder's key and URL resolution, for
+    callers that are not the chat path.
+
+    Public because the embedding lane needs exactly this and nothing else: the same
+    org-overlay → config → env precedence, the same secretvault decryption, so a key set
+    once in Settings works for chat and for embeddings rather than for one of them. A
+    caller reaching `_active_key` directly would be a second copy of that precedence, and
+    the two would drift the first time either changed.
+
+    The key is empty for local backends, which need none, and for an added provider that
+    runs without one.
+    """
+    if backend not in backends():
+        raise unknown_backend(backend)
+    if backend not in keyed_backends():
+        return _active_base_url(backend), ""
+
+    if key_is_undecryptable(backend):
+        raise _undecryptable_key_error(backend)
+    return _active_base_url(backend), _active_key(backend)
+
+
+def _active_key(backend: str) -> str:
+    """The backend's key, decrypted — or, when the stored key cannot be decrypted, the stored
+    value itself, still encrypted, ON PURPOSE: every model door asks `key_is_undecryptable`
+    first and refuses it by name before anything is sent. The vault hands no other caller a
+    ciphertext (`secretvault.decrypt_secret` returns empty), so this is the one place a stored
+    `enc:…` value survives, and only to be refused."""
+    from aughor.secretvault import decrypt_secret, readable
+    org_enc = (_org_overlay().get("keys") or {}).get(backend)
+    enc = org_enc or (_cfg().get("keys") or {}).get(backend)
+    if enc:
+        return (decrypt_secret(enc) or "") if readable(enc) else enc
+    return os.getenv(_KEY_ENV.get(backend, ""), "") or ""
+
+
+def _env_model_for_role(backend: str, role: Role) -> str:
+    """Layer-2/3 model resolution — env only. The built-in default that used to sit
+    under it is gone, so an unset env yields "" and the caller raises
+    :class:`NoModelConfigured`."""
+    defaults = _FAUX_MODELS.get(backend, {})
+    base_role = "narrator" if role in ("narrator", "fast") else role
+    fallback = os.getenv("AUGHOR_MODEL", defaults.get(role) or defaults.get(base_role, ""))
+    if role == "coder":
+        return os.getenv("AUGHOR_CODER_MODEL", fallback)
+    narrator_model = os.getenv("AUGHOR_NARRATOR_MODEL", fallback)
+    if role == "fast":
+        return os.getenv("AUGHOR_FAST_NARRATOR_MODEL", narrator_model)
+    return narrator_model
+
+
+def model_supports_tools(model: str) -> Optional[bool]:
+    """Does this model declare native tool calling? ``None`` when nobody has asked yet.
+
+    Recorded from the provider's own catalogue (``aughor/llm/models.py``): Ollama's
+    ``/api/show`` ``capabilities``, or ``supported_parameters`` on the OpenAI-compatible
+    ``/models``. ``AUGHOR_MODEL_TOOLS=1|0`` overrides, for a provider that declares
+    nothing. Callers treat ``None`` as "no" — the conservative mode."""
+    env = os.getenv("AUGHOR_MODEL_TOOLS", "").strip().lower()
+    if env in ("1", "true", "yes"):
+        return True
+    if env in ("0", "false", "no"):
+        return False
+    key = (model or "").strip()
+    if not key:
+        return None
+    val = (_cfg().get("model_tools") or {}).get(key)
+    return bool(val) if val is not None else None
+
+
+def measured_cache_mode(backend: str, model: str) -> Optional[str]:
+    """The empirically-measured cache_mode for a binding, or None if never probed.
+    Persisted in the runtime config under ``measured_cache: {"backend:model": mode}`` by
+    the prefix-cache probe (`aughor/llm/cache_probe.py`); consulted by the capability seam
+    so a measured verdict overrides the declared default (evidence > guess)."""
+    return (_cfg().get("measured_cache") or {}).get(f"{backend}:{model}") or None
+
+
+def set_measured_cache_mode(backend: str, model: str, mode: Optional[str]) -> None:
+    """Persist (or clear, with ``mode=None``) a measured cache_mode for one binding, then
+    reload so live capabilities reflect it. Written by the probe after it runs."""
+    cfg = dict(_read_config())
+    measured = dict(cfg.get("measured_cache") or {})
+    key = f"{backend}:{model}"
+    if mode:
+        measured[key] = mode
+    else:
+        measured.pop(key, None)
+    cfg["measured_cache"] = measured
+    _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
+    load_config()
+
+
+def resolve_binding(role: Role = "coder", *, model: Optional[str] = None) -> tuple[str, str, str]:
+    """The single binding resolver — the effective ``(backend, model, base_url)`` for a role.
+
+    Shared by :func:`get_provider` (data plane, builds the client) and
+    :func:`aughor.control_plane.inference.vend_llm` (control-plane seam, describes the binding),
+    so a vended :class:`InferenceCapability` always matches the binding a real call uses.
+    Model precedence mirrors :func:`get_provider`: explicit pin → run/agent contextvar
+    (``set_run_model``) → role default — i.e. Org default → … → Agent override. The
+    run/agent pin skips the ``fast`` tier (see :func:`_pinned_model`)."""
+    backend = _active_backend()
+    pinned = _pinned_model(role, model)
+    eff_model = pinned or _active_model(backend, role)
+    return backend, eff_model, _active_base_url(backend)
+
+
+def _active_model(backend: str, role: Role) -> str:
+    """The configured model for this role, or "" — never a shipped default.
+
+    The precedence is unchanged (org overlay → runtime config → env); what changed is
+    the floor. Where a chosen backend used to fall through to its built-in default,
+    there is now nothing underneath, and "" propagates to the caller that raises
+    :class:`NoModelConfigured`. The CI-5a precedence trap this guarded against — env
+    model names tuned for a DIFFERENT backend leaking into a chosen one — is still
+    guarded: those layers are still skipped, they just resolve to nothing instead of
+    to a guess.
+    """
+    org = _org_overlay()
+    org_model = (org.get("models") or {}).get(role)
+    if org_model:
+        return str(org_model).strip()
+    if org.get("backend"):
+        return _FAUX_MODELS.get(backend, {}).get(role, "")
+    cfg = _cfg()
+    cfg_model = (cfg.get("models") or {}).get(role)
+    if cfg_model:
+        return cfg_model.strip()
+    if cfg.get("backend"):
+        return _FAUX_MODELS.get(backend, {}).get(role, "")
+    return _env_model_for_role(backend, role)
+
+
+def require_model(backend: str, role: Role) -> str:
+    """:func:`_active_model`, but raises :class:`NoModelConfigured` instead of returning
+    "". The single seam where "nothing is configured" becomes a loud, actionable error
+    rather than a request dispatched with an empty model id."""
+    model = (_active_model(backend, role) or "").strip()
+    if not model:
+        raise NoModelConfigured(backend, role)
+    return model
+
+
+# ── Client builders ───────────────────────────────────────────────────────────
+
+def _ollama_openai_base(base_url: str) -> str:
+    """Ollama's OpenAI-compatible base — the inverse of ``models._ollama_root``.
+
+    Ollama advertises itself as ``http://localhost:11434``: that is what ``ollama serve``
+    prints and what its own documentation shows. Its OpenAI-compatible surface, though,
+    lives under ``/v1``. An operator who pasted the URL Ollama handed them had every call
+    POSTed to ``/chat/completions``, which Ollama answers with a bare ``404 page not
+    found`` — classified here as ``wrong_endpoint``, a message that names the base URL
+    without ever saying which segment is missing. Measured 2026-09-07 against a live
+    daemon: ``/chat/completions`` 404, ``/v1/chat/completions`` 200 on the same model.
+
+    The native side already accepts both spellings (``_ollama_root`` strips ``/v1``
+    before calling ``/api/tags``). This is the missing other direction, so either form
+    of the base URL now works everywhere rather than only on half the endpoints.
+    """
+    root = base_url.rstrip("/")
+    if not root:
+        return base_url
+    return root if root.endswith("/v1") else root + "/v1"
+
+
+def _build_ollama_client(model: str, base_url: str) -> instructor.Instructor:
+    # Cloud-backed models (e.g. kimi:cloud, qwen3-coder-next:cloud) go through Ollama
+    # to an external API and can hang indefinitely without a timeout.
+    # connect=30s, read=300s (5 min) — enough for any realistic single inference call.
+    import httpx
+    _timeout = httpx.Timeout(connect=30.0, read=300.0, write=30.0, pool=10.0)
+    raw = OpenAI(base_url=_ollama_openai_base(base_url), api_key="ollama",
+                 timeout=_timeout, max_retries=_SDK_RETRIES)
+    # TOOLS mode when the model declares native tool calling, so <think>…</think>
+    # tokens stay isolated from structured output; JSON mode lets reasoning tokens
+    # pollute it and the call comes back empty.
+    #
+    # This was a keyword list ("qwen3", "kimi", "deepseek-r1", "qwq", "qwen-coder") and
+    # it is the clearest case in this codebase for why naming models does not work:
+    # `deepseek-v4-flash:cloud` declares `capabilities: [completion, tools, thinking]`
+    # to anyone who asks, matched none of those keywords, and so ran every structured
+    # call in JSON mode — "structured output empty: the model returned no content", on
+    # a model that supports exactly what was needed. Now we ask, and fall back to JSON
+    # (the conservative mode) when the answer is not known yet.
+    # The declaration is taken at face value. When it turns out to be false the call
+    # FAILS, loudly and by name — see `_raise_if_tools_declaration_false`. Answering in
+    # another mode on our own initiative would leave a model that misreports itself
+    # quietly in place; an operator who pins `json_mode` has decided that for themselves.
+    use_tools = model_supports_tools(model) and not forces_json_mode("ollama", model)
+    mode = instructor.Mode.TOOLS if use_tools else instructor.Mode.JSON
+    return instructor.from_openai(raw, mode=mode)
+
+
+#: Backends whose client builder consults `forces_json_mode`. Vended to the UI so it
+#: offers the pin only where it does something: a control that silently has no effect is
+#: worse than an absent one. lmstudio already builds in JSON_SCHEMA mode and the hosted
+#: OpenAI-compatible backends do not choose their mode from a model declaration, so
+#: ollama is the whole list today.
+JSON_MODE_PINNABLE: tuple[str, ...] = ("ollama",)
+
+
+def forces_json_mode(backend: str, model: str) -> bool:
+    """Has the operator pinned this (backend, model) to JSON structured output?
+
+    The deliberate counterpart to :class:`ToolsDeclarationError`. That error refuses a
+    model which advertises tool calling and then does not do it, because working around
+    a false declaration silently leaves a model that misreports itself in place. This is
+    the same outcome ASKED FOR: an operator who knows their model cannot do tool calling
+    and wants it used anyway says so once, in config, and the binding stops pretending
+    to try. The distinction is consent — not whether JSON mode is ever used.
+    """
+    pinned = (_cfg().get("json_mode") or {}).get(backend) or []
+    return model in pinned
+
+
+class ToolsDeclarationError(RuntimeError):
+    """A model that advertises tool calling and then does not do it.
+
+    Measured 2026-09-07: an Ollama model advertising
+    ``capabilities: [completion, tools, insert]`` answered a tool-choice-forced call with
+    ``tool_calls: null``, rendering the call as plain text — ``{"name": "Ping",
+    "arguments": {}}``, its required field absent.
+
+    Raised rather than quietly re-asking in JSON mode. The mode is chosen from the
+    model's OWN declaration, so answering around a false one would leave a model that
+    misreports itself in place, working by accident and only for the calls that happen
+    not to need a tool — the same reasoning that makes `BindingConfigError` refuse to
+    walk the fallback chain. The operator is the one who can fix this, by choosing a
+    model that honours the capability it advertises.
+    """
+
+    def __init__(self, backend: str, model: str, cause: BaseException):
+        self.backend, self.model = backend, model
+        super().__init__(
+            f"{backend}/{model} declares tool calling but returned no tool call. "
+            f"This binding cannot produce schema-native structured output — choose a "
+            f"model that honours tool calling on this backend.")
+        self.__cause__ = cause
+
+
+def _tool_call_absent(exc: BaseException) -> Optional[bool]:
+    """Did the provider's response carry NO tool call at all?
+
+    None when the response cannot be reached from ``exc`` — and then no accusation is
+    made. A model that genuinely supports tools can still fail a schema; what it does
+    NOT do is answer a forced tool call with prose. Only the absence of any tool call
+    is evidence that the declaration was false, so only that is acted on.
+
+    And only with PROSE in its place: an EMPTY reply is no evidence either. Gemini
+    returned nothing in 0.6 s on two of five runs (2026-09-29) — a provider hiccup, not a
+    model that cannot call tools — and this read it as one: the operator was told to
+    choose another model, and the call skipped the fallback an empty reply is owed.
+    """
+    completion = (getattr(exc, "last_completion", None)
+                  or getattr(exc, "raw_response", None))
+    if completion is None:
+        return None
+    try:
+        choices = getattr(completion, "choices", None) or []
+        message = getattr(choices[0], "message", None) if choices else None
+        if message is None:
+            return None
+        if getattr(message, "tool_calls", None):
+            return False
+        content = getattr(message, "content", None)
+        return True if isinstance(content, str) and content.strip() else None
+    except Exception:  # pragma: no cover - a response shape we do not recognise
+        return None
+
+
+def _raise_if_tools_declaration_false(client, backend: str, model: str,
+                                      exc: BaseException) -> None:
+    """Turn a disproved ``tools`` declaration into a named configuration fault."""
+    if getattr(client, "mode", None) != instructor.Mode.TOOLS:
+        return
+    if not _is_structured_failure(exc):
+        return
+    if _tool_call_absent(exc) is not True:
+        return          # no evidence — never accuse a model on a guess
+    logger.warning("llm: %s/%s declared tool support and returned no tool call",
+                   backend, model)
+    raise ToolsDeclarationError(backend, model, exc)
+
+
+def _build_lmstudio_client(base_url: str) -> instructor.Instructor:
+    # LM Studio only accepts response_format.type = "json_schema" or "text",
+    # not "json_object" — use JSON_SCHEMA mode which sends the full Pydantic schema.
+    raw = OpenAI(base_url=base_url, api_key="lm-studio", max_retries=_SDK_RETRIES)
+    return instructor.from_openai(raw, mode=instructor.Mode.JSON_SCHEMA)
+
+
+#: The OpenAI SDK retries transient failures ITSELF, twice by default — below our retry
+#: ladder, below `_pace`, and below the failure classifier. Measured on one real ask
+#: case: 6 paced releases produced **14** HTTP requests to the provider, so more than
+#: half of all traffic was invisible to every guard we own. Worse, the amplification is
+#: worst exactly when it hurts: a 429 became three 429s, which is how a run that sends
+#: 7 requests a minute gets refused by a 20-per-minute cap.
+#:
+#: Retries belong to `_run_resilient`, which paces them, classifies them (R2's markers),
+#: counts them, and bounds them by deadline. Same lesson as R1's instructor default, one
+#: layer further down: a library's DEFAULT is part of your cost model.
+_SDK_RETRIES = 0
+
+
+def _build_openai_compat(base_url: str, api_key: str) -> instructor.Instructor:
+    if not api_key:
+        raise RuntimeError("missing API key for this backend — set it in Settings → Inference")
+    raw = OpenAI(base_url=base_url, api_key=api_key, max_retries=_SDK_RETRIES)
+    return instructor.from_openai(raw, mode=instructor.Mode.JSON)
+
+
+#: What an added provider that runs WITHOUT a key is sent in the key's place. The OpenAI client
+#: refuses to build with no key and, handed None, reads `OPENAI_API_KEY` from the environment —
+#: which would send this deployment's OpenAI key to somebody else's endpoint. A stand-in, as the
+#: local backends send ("ollama", "lm-studio"), and never a real credential.
+_KEYLESS = "no-key"
+
+
+def _build_added_client(base_url: str, api_key: str) -> instructor.Instructor:
+    """An added provider: OpenAI-compatible at the base URL the person gave, with their key or none."""
+    if not base_url:
+        raise RuntimeError("this added provider has no base URL — edit it in Settings → Inference")
+    return _build_openai_compat(base_url, api_key or _KEYLESS)
+
+
+def _build_gemini_client(base_url: str, api_key: str) -> instructor.Instructor:
+    """Google Gemini via its OpenAI-compatibility endpoint. Gemini 2.x are thinking models,
+    so TOOLS mode (schema-native function-calling structured output) keeps reasoning tokens out
+    of the JSON — same rationale as the ollama reasoning-model path, where plain JSON mode lets
+    <thinking> pollute the output. Tune with AUGHOR_GEMINI_INSTRUCTOR_MODE (TOOLS|JSON|JSON_SCHEMA)."""
+    if not api_key:
+        raise RuntimeError("missing Gemini API key — set it in Settings → Inference (or GEMINI_API_KEY)")
+    raw = OpenAI(base_url=base_url, api_key=api_key, max_retries=_SDK_RETRIES)
+    mode = getattr(instructor.Mode, os.getenv("AUGHOR_GEMINI_INSTRUCTOR_MODE", "TOOLS").upper(),
+                   instructor.Mode.TOOLS)
+    return instructor.from_openai(raw, mode=mode)
+
+
+def _build_anthropic_client(api_key: str) -> instructor.Instructor:
+    if not api_key:
+        raise RuntimeError("missing Anthropic API key — set it in Settings → Inference")
+    import anthropic
+    raw = anthropic.Anthropic(api_key=api_key, max_retries=_SDK_RETRIES)
+    # Tools with `tool_choice: auto`, never instructor's default forced choice: the current Claude models refuse
+    # `tool_choice` "tool" and "any" with a 400 (seen 2026-10-11 on claude-sonnet-5-5), so every structured call on
+    # this backend failed before reaching the model. The schema still rides as the one tool offered.
+    return instructor.from_anthropic(raw, mode=instructor.Mode.ANTHROPIC_REASONING_TOOLS)
+
+
+class ToolCall(BaseModel):
+    """The model's choice of tool, with the arguments it supplied.
+
+    ``arguments`` is the PARSED object. The wire carries a JSON string, and a model that
+    emits malformed JSON is a routine event rather than an exceptional one — so parsing
+    happens once, here, instead of at every call site where a silent ``json.loads``
+    failure would read as "the model chose nothing".
+    """
+    name: str
+    arguments: dict
+    id: str = ""
+    #: Non-standard fields the wire hung on THIS call, kept verbatim so a loop can hand
+    #: them back. Google's OpenAI-compatible endpoint returns Gemini's reasoning
+    #: signature here (``extra_content.google.thought_signature``) and REFUSES any later
+    #: request whose function calls replay without it — 400 INVALID_ARGUMENT, "Function
+    #: call is missing a thought_signature in functionCall parts". Rebuilding the
+    #: assistant message from name + arguments alone dropped it, so every multi-step
+    #: loop died on its SECOND request while single-shot calls were untouched. Opaque on
+    #: purpose: the transport round-trips what it was handed rather than learning any one
+    #: vendor's schema.
+    extra_content: Optional[dict] = None
+
+
+class ToolTurn(BaseModel):
+    """One turn's outcome: prose, or a tool choice — never both, never neither.
+
+    Kept as a value rather than a raised exception or a bare tuple because "the model
+    decided to look something up" is an ordinary result the loop must branch on, and P2
+    says failures are values. ``malformed`` records a tool call whose arguments would not
+    parse: the model did choose, and the loop deserves to know that rather than seeing an
+    empty turn it will misread as silence.
+    """
+    text: Optional[str] = None
+    tool_call: Optional[ToolCall] = None
+    malformed: Optional[str] = None
+    #: The reply hit the output ceiling before producing anything usable. Distinct from
+    #: an empty turn on purpose: a REASONING model spends output budget on thinking
+    #: tokens, so it can exhaust `max_tokens` having emitted no content and no tool call.
+    #: Reported as "the model declined" that is a lie about a budget problem, and the fix
+    #: (raise the ceiling) is nothing like the fix for a model that chose to say nothing.
+    truncated: bool = False
+
+    @property
+    def chose_tool(self) -> bool:
+        return self.tool_call is not None
+
+
+def _vendor_extras(call: Any) -> Optional[dict]:
+    """The non-standard fields a backend hung on one tool call, as plain data.
+
+    Checked on ``model_extra`` as well as the attribute: ``extra_content`` is not part
+    of the OpenAI schema, so the SDK keeps it as an UNMODELLED extra (its models are
+    ``extra="allow"``) — which of the two surfaces it lands on depends on the client
+    version, and a reader that consulted only one would silently find nothing on the
+    other and reintroduce the very drop this exists to prevent.
+    """
+    raw = getattr(call, "extra_content", None)
+    if raw is None:
+        extras = getattr(call, "model_extra", None)
+        if isinstance(extras, dict):
+            raw = extras.get("extra_content")
+    if hasattr(raw, "model_dump"):            # a typed model on some client versions
+        raw = raw.model_dump()
+    return raw if isinstance(raw, dict) and raw else None
+
+
+def _parse_tool_turn(raw, fallback_text: Any = None) -> ToolTurn:
+    """Read one OpenAI-compatible completion as a :class:`ToolTurn`.
+
+    Tool calls are checked BEFORE content because the TOOLS-mode shape sets
+    ``content`` to None and puts the payload on ``tool_calls[0].function.arguments``;
+    reading content first would see an empty answer and report silence where there was
+    a decision.
+    """
+    choices = getattr(raw, "choices", None) or []
+    message = getattr(choices[0], "message", None) if choices else None
+    calls = getattr(message, "tool_calls", None) if message is not None else None
+
+    if calls:
+        fn = getattr(calls[0], "function", None)
+        name = str(getattr(fn, "name", "") or "")
+        rawargs = getattr(fn, "arguments", "") or ""
+        try:
+            parsed = json.loads(rawargs) if isinstance(rawargs, str) else dict(rawargs)
+        except (ValueError, TypeError):
+            return ToolTurn(malformed=f"{name}: arguments were not valid JSON: {rawargs!r}")
+        if not isinstance(parsed, dict):
+            return ToolTurn(malformed=f"{name}: arguments were {type(parsed).__name__}, not an object")
+        return ToolTurn(tool_call=ToolCall(name=name, arguments=parsed,
+                                           id=str(getattr(calls[0], "id", "") or ""),
+                                           extra_content=_vendor_extras(calls[0])))
+
+    # A reasoning model's reply can live on `reasoning`/`reasoning_content` while
+    # `content` stays null. Read those too rather than reporting silence — but only as a
+    # fallback, because when both are present `content` is the answer and the reasoning
+    # is the working.
+    content = getattr(message, "content", None) if message is not None else None
+    if not content and message is not None:
+        for field in ("reasoning_content", "reasoning"):
+            alt = getattr(message, field, None)
+            if isinstance(alt, str) and alt.strip():
+                content = alt
+                break
+
+    finish = getattr(choices[0], "finish_reason", None) if choices else None
+    if not content and finish == "length":
+        return ToolTurn(truncated=True)
+
+    if content is None and fallback_text is not None:
+        # instructor with `response_model=None` hands the passthrough value back as the
+        # first tuple element; prefer the completion but do not lose a reply that only
+        # arrived there.
+        content = fallback_text if isinstance(fallback_text, str) else None
+    return ToolTurn(text=content)
+
+
+def _anthropic_tools(tools: list[dict]) -> list[dict]:
+    """OpenAI-shaped function specs → Anthropic's ``tools`` (name, description, input_schema)."""
+    out = []
+    for spec in tools:
+        fn = spec.get("function", spec)
+        out.append({"name": fn.get("name", ""), "description": fn.get("description", ""),
+                    "input_schema": fn.get("parameters") or {"type": "object", "properties": {}}})
+    return out
+
+
+def _anthropic_messages(user: str, history: Optional[list[dict]]) -> list[dict]:
+    """The tool loop's OpenAI-shaped transcript → Anthropic's alternating turns.
+
+    The loop records a step as an assistant message carrying ``tool_calls`` and a
+    ``role="tool"`` result, or a plain user message (`tool_loop._exchange`). Anthropic puts a
+    call in a ``tool_use`` block, its answer in a ``tool_result`` block inside a USER turn,
+    and refuses two turns in a row from one role — so adjacent same-role messages merge."""
+    def _blocks(content) -> list[dict]:
+        if isinstance(content, list):
+            return list(content)
+        return [{"type": "text", "text": str(content)}] if content else []
+
+    turns: list[dict] = []
+
+    def _push(role: str, blocks: list[dict]) -> None:
+        if not blocks:
+            return
+        if turns and turns[-1]["role"] == role:
+            turns[-1]["content"].extend(blocks)
+        else:
+            turns.append({"role": role, "content": blocks})
+
+    _push("user", _blocks(user))
+    for message in history or []:
+        role = message.get("role")
+        if role == "assistant":
+            blocks = _blocks(message.get("content"))
+            for call in message.get("tool_calls") or []:
+                fn = call.get("function") or {}
+                args = fn.get("arguments") or "{}"
+                try:
+                    parsed = json.loads(args) if isinstance(args, str) else dict(args)
+                except (ValueError, TypeError):
+                    parsed = {}
+                blocks.append({"type": "tool_use", "id": call.get("id") or "call_1",
+                               "name": fn.get("name", ""),
+                               "input": parsed if isinstance(parsed, dict) else {}})
+            _push("assistant", blocks)
+        elif role == "tool":
+            _push("user", [{"type": "tool_result",
+                            "tool_use_id": message.get("tool_call_id") or "call_1",
+                            "content": str(message.get("content") or "")}])
+        else:
+            _push("user", _blocks(message.get("content")))
+    return turns
+
+
+def _parse_anthropic_tool_turn(raw) -> ToolTurn:
+    """Read one Anthropic ``messages`` reply as a :class:`ToolTurn` — a ``tool_use`` block
+    before any text, as `_parse_tool_turn` reads ``tool_calls`` before ``content``."""
+    blocks = getattr(raw, "content", None) or []
+    for block in blocks:
+        if getattr(block, "type", "") == "tool_use":
+            name = str(getattr(block, "name", "") or "")
+            args = getattr(block, "input", None)
+            if not isinstance(args, dict):
+                return ToolTurn(malformed=f"{name}: arguments were {type(args).__name__}, not an object")
+            return ToolTurn(tool_call=ToolCall(name=name, arguments=args,
+                                               id=str(getattr(block, "id", "") or "")))
+    text = "".join(str(getattr(b, "text", "") or "") for b in blocks
+                   if getattr(b, "type", "") == "text").strip()
+    if not text and getattr(raw, "stop_reason", None) == "max_tokens":
+        return ToolTurn(truncated=True)
+    return ToolTurn(text=text or None)
+
+
+def _extract_usage(raw) -> tuple[int, int]:
+    """(prompt_tokens, completion_tokens) from a raw OpenAI/Anthropic completion,
+    best-effort. Returns (0, 0) when unavailable (e.g. some local backends omit
+    usage) — metering is honest about what it could measure, never guesses."""
+    usage = getattr(raw, "usage", None)
+    if usage is None:
+        return 0, 0
+    pt = getattr(usage, "prompt_tokens", None)          # OpenAI-compatible
+    if pt is None:
+        pt = getattr(usage, "input_tokens", 0)           # Anthropic
+    ct = getattr(usage, "completion_tokens", None)       # OpenAI-compatible
+    if ct is None:
+        ct = getattr(usage, "output_tokens", 0)          # Anthropic
+    try:
+        return int(pt or 0), int(ct or 0)
+    except Exception:
+        return 0, 0
+
+
+def _extract_cached_tokens(raw) -> Optional[int]:
+    """Prompt tokens the PROVIDER served from its own cache, or None if it did not say.
+
+    `_extract_usage` above reports `prompt_tokens` — and a cached token is counted there
+    exactly like a fresh one. So every cost figure this platform produces has been unable
+    to tell a cache hit from a cache miss, and a repeated prefix reads as full price whether
+    or not a penny of it was charged.
+
+    That matters most where it was measured (2026-09-18): `run_tool_loop` is 42.7% of all
+    prompt tokens, and 94% of its per-turn prefix is the 37 tool schemas — ~8,200 tokens
+    re-sent on EVERY turn of a loop whose median length is 3 and whose tail reaches 24.
+    Gemini, the live binding, is an `auto_prefix` backend (`control_plane/inference.py`):
+    that prefix is very likely already being served from cache. Without this number there
+    is no way to know, and trimming tools to fix a cost that is not being charged would be
+    work spent on nothing.
+
+    Three vocabularies, because three providers name it differently:
+      * OpenAI-compatible — `usage.prompt_tokens_details.cached_tokens`
+      * Anthropic         — `usage.cache_read_input_tokens`
+      * Gemini            — `usage.cached_content_token_count`
+
+    None (not 0) when the backend is silent, for the same reason `_record_llm_call`
+    distinguishes them: folding "did not say" into "said zero" makes the aggregate lie.
+    """
+    usage = getattr(raw, "usage", None)
+    if usage is None:
+        return None
+
+    def _get(obj, name):
+        if obj is None:
+            return None
+        v = getattr(obj, name, None)
+        if v is None and isinstance(obj, dict):
+            v = obj.get(name)
+        return v
+
+    v = _get(_get(usage, "prompt_tokens_details"), "cached_tokens")
+    if v is None:
+        v = _get(usage, "cache_read_input_tokens")
+    if v is None:
+        v = _get(usage, "cached_content_token_count")
+    try:
+        return int(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+# ── Resilience: per-endpoint concurrency cap + transient-error retry/backoff ──
+# Cloud inference endpoints throttle and intermittently 429/5xx/timeout under sustained load
+# (observed: a benchmark run hung after ~2.5h of unbounded parallel calls). This is a platform
+# concern, not a benchmark one — every Aughor LLM call goes through here. We (a) cap concurrent
+# in-flight calls per base_url with a shared semaphore so bursts don't trip throttling, and
+# (b) retry transient failures with exponential backoff + jitter under an overall deadline.
+# All knobs are env-tunable; defaults are conservative and behaviour-preserving on the happy path.
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _float_env(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _concurrency_slot(base_url: str):
+    """Per-endpoint concurrency gate (cap = AUGHOR_LLM_MAX_CONCURRENCY, default 4).
+
+    A context manager rather than a bare semaphore: a shared backend has to release its
+    slot on the way out, and returning the primitive itself would leak an in-process
+    ``threading`` object into a contract that must also be satisfiable remotely.
+    """
+    return _coordinator().concurrency_slot(
+        base_url or "default", max(1, _int_env("AUGHOR_LLM_MAX_CONCURRENCY", 4)))
+
+
+def _pace(base_url: str) -> None:
+    """Space calls to one endpoint at least ``60/RPM`` apart, when an RPM is declared.
+
+    The concurrency semaphore caps how many calls are IN FLIGHT; it says nothing about
+    the RATE. Four concurrent calls that each take a second still put 240 requests a
+    minute at an endpoint whose free tier allows 20 — which is exactly how a measured
+    eval grid turns into a wall of 429s, recorded as case failures and read as "the
+    variant made things worse".
+
+    Off by default (``AUGHOR_LLM_RPM`` unset ⇒ 0 ⇒ no wait), because an interactive
+    answer should not be slowed for a limit it will never approach. A measured run sets
+    it, since a run that trips the limiter measures the limiter.
+    """
+    rpm = _int_env("AUGHOR_LLM_RPM", 0)
+    if rpm <= 0:
+        return
+    interval = 60.0 / float(rpm)
+    key = base_url or "default"
+    # Counted so a paced run can be AUDITED rather than assumed: compare
+    # `llm.paced.<key>` against the provider's own request count. If the gate is passed
+    # fewer times than requests were made, some path is issuing calls around it — which
+    # is exactly the open question from L2's first paced grid, where 16 RPM still drew
+    # 72 `free-models-per-min` refusals.
+    try:
+        from aughor.stats import bump
+        bump(f"llm.paced.{key[:40]}")
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "pacing telemetry is best-effort; the rate gate itself still held",
+                 counter="llm.pace_counter")
+    # The claim is atomic inside the coordinator; the sleep stays here so a shared
+    # backend never holds a connection open while a caller waits.
+    coord = _coordinator()
+    while True:
+        wait = coord.reserve(key, interval)
+        if wait <= 0.0:
+            return
+        time.sleep(wait)
+
+
+_TRANSIENT_TYPES = (
+    "RateLimitError", "APITimeoutError", "APIConnectionError", "InternalServerError",
+    "ReadTimeout", "ConnectTimeout", "PoolTimeout", "WriteTimeout", "TimeoutException",
+    "ConnectError", "RemoteProtocolError",
+)
+_TRANSIENT_MSGS = (
+    "timeout", "timed out", "rate limit", "too many requests", "overloaded",
+    "temporarily unavailable", "service unavailable", "connection reset", "connection error",
+    "econnreset", "bad gateway", "gateway timeout",
+    # A per-minute allowance throttle. Safe to retry because _is_quota_exhausted runs
+    # FIRST and has already claimed the day-scale and spent-balance wordings — so what
+    # reaches here is the kind that clears within the backoff ladder (Gemini's free tier
+    # caps requests per minute and phrases it exactly this way).
+    "quota exceeded", "exceeded your current quota",
+)
+# A 429 that will NOT clear on the retry timescale: a daily/monthly allowance or a spent
+# balance, not a per-minute throttle. Retrying these burns the whole backoff ladder
+# (~15s) on a counter that resets tomorrow — and, worse, delays the fallback that
+# WOULD have answered.
+#
+# These markers are deliberately narrow. The first cut also matched "billing" and
+# "quota exceeded", which sounded day-scale but are exactly the words Gemini uses for its
+# per-MINUTE free-tier limit ("You exceeded your current quota … limit: 5 … check your
+# plan and billing details"). That misread put a backend into a 15-minute cooldown over a
+# 60-second throttle. Only phrases naming a day, or a balance that needs topping up, count.
+_QUOTA_EXHAUSTED_MSGS = (
+    "per-day", "per day", "daily limit", "requests per day",
+    # Google names the exhausted quota in a camel-case id with no separators —
+    # "GenerateRequestsPerDayPerProjectPerModel-FreeTier" — which none of the spaced
+    # forms above match. Its message ALSO carries a "retry in 36s" that is simply wrong
+    # for a daily cap, so missing this meant retrying a day-long block three times.
+    "perday",
+    "insufficient_quota", "credit limit exceeded", "add credits", "payment required",
+    # A spent prepaid balance, in the providers' own words (2026-11-08): Anthropic's 400 "Your credit balance is too
+    # low to access the Anthropic API" matched none of the above, so a spent primary was read as a bad request and
+    # probed again on EVERY call — a wasted round trip ahead of each fallback — and never cooled down. OpenRouter's
+    # 402 says "Insufficient credits".
+    "credit balance is too low", "insufficient credits",
+)
+
+# ── Wave R2: the error body names the failure; read it (J7) ───────────────────
+# "Google's quotaId is the authority, its retry-in prose lies" generalised chain-wide.
+# A provider's error BODY distinguishes failures that a status code flattens into one
+# 4xx, and one of those distinctions is load-bearing: a model id the provider will
+# never serve is a CONFIG error, not a transport failure.
+#
+# Why it earns its own class: the failover chain answers the question anyway, so a
+# guessed or retired model id produces working answers from a DIFFERENT model while the
+# binding the operator actually chose is dead. That is not hypothetical — the first pass
+# at the OpenRouter defaults shipped two ids that do not exist, and the app kept
+# answering. Silence is the bug; the chain was hiding it.
+#
+# Deliberately narrow, and matched against the message only. Every phrase here names an
+# identifier the provider does not recognise. "not found" alone is absent on purpose —
+# it is ordinary prose in a tool result or a SQL error that could ride along in an
+# exception chain, and a false positive here fails a call that would have succeeded.
+_MODEL_NOT_FOUND_MSGS = (
+    "model_not_found",
+    "does not exist or you do not have access",
+    "no such model",
+    "model not found",
+    "unknown model",
+    "invalid model",
+    "is not a valid model",
+    "the model does not exist",
+)
+
+
+def _error_text(exc: BaseException, _depth: int = 0) -> str:
+    """What a failure SAYS, for the classifiers below — never what the model WROTE.
+
+    Every marker those classifiers look for is a provider's own wording ("per day", "insufficient_quota", "unknown
+    model", "429"). Two exceptions carry the model's output in their text: instructor's, whose ``str()`` renders each
+    failed attempt's whole completion, and pydantic's ``ValidationError``, which quotes the value it refused. Read
+    whole, a reply that said "orders per day" and failed validation was a spent daily allowance: the backend that had
+    just ANSWERED was put in a 15-minute quota cooldown and dropped from the fallback chain. With the primary's
+    balance spent, that was every model call failing for fifteen minutes — seen 2026-11-08 on a restored copy, when
+    the API "stopped falling back" until it was restarted (CP-3's comparison, punch list 70). The same reading could
+    retry an answer that mentioned a timeout, wait a "retry in N s" the model wrote, or fail a primary hard as an
+    unknown model id.
+
+    So: a validation error is its error types alone (it is never a provider's statement); a structured-output failure
+    whose reply came back is its failure class alone (only UNAVAILABLE is about the request, and it carries the
+    provider's own words); instructor's error is its message and its attempts' exceptions, without their completions;
+    anything else reads as before."""
+    if _depth > _CAUSE_DEPTH_CAP:
+        return ""
+    from pydantic import ValidationError
+    if isinstance(exc, ValidationError):
+        return "; ".join(str(e.get("type") or "") for e in exc.errors())
+    diagnosis = getattr(exc, "diagnosis", None)
+    if diagnosis is not None and type(exc).__name__ == "StructuredOutputError":
+        from aughor.llm.reliability import UNAVAILABLE
+        if getattr(diagnosis, "failure", "") != UNAVAILABLE:
+            return f"structured output {diagnosis.failure}"
+        return str(exc)
+    from instructor.core.exceptions import InstructorError
+    if isinstance(exc, InstructorError):
+        parts = [(_error_text(a, _depth + 1) if isinstance(a, BaseException) else str(a)) for a in exc.args]
+        parts += [_error_text(f.exception, _depth + 1) for f in (exc.failed_attempts or [])
+                  if isinstance(getattr(f, "exception", None), BaseException)]
+        return " ".join(p for p in parts if p)
+    return str(exc)
+
+
+def _is_model_not_found(exc: BaseException) -> bool:
+    """True when the provider says it does not serve this model id.
+
+    Quota and rate limits are checked first and win: an exhausted free tier sometimes
+    phrases itself as "you do not have access", and mistaking that for a bad id would
+    turn a self-healing 15-minute cooldown into a permanent hard failure.
+    """
+    if _is_quota_exhausted(exc) or _is_rate_limited(exc):
+        return False
+    if getattr(exc, "status_code", None) == 410:      # Gone: a model id the provider retired (NVIDIA, 2026-11-09)
+        return True
+    msg = _error_text(exc).lower()
+    return any(k in msg for k in _MODEL_NOT_FOUND_MSGS)
+
+
+# Marker sets for the remaining classes a status code flattens together. A 401 and a
+# 404-on-the-path and a refused socket are three different jobs for whoever is reading
+# the health check, and "error: <240 chars of provider prose>" makes them one.
+_BAD_KEY_MSGS = (
+    "invalid api key", "invalid_api_key", "incorrect api key", "api key not valid",
+    "unauthorized", "authentication", "permission denied", "api_key_invalid",
+    "no api key", "missing api key",
+)
+_UNREACHABLE_MSGS = (
+    "connection refused", "connection error", "econnrefused", "name or service not known",
+    "nodename nor servname", "failed to establish", "temporary failure in name resolution",
+    "getaddrinfo", "max retries exceeded", "connection aborted", "ssl",
+)
+#: How far `classify_provider_error` follows an exception's __cause__/__context__ chain
+#: looking for the evidence a wrapper's prose dropped. Bounded so a self-referential or
+#: cyclic chain cannot spin.
+_CAUSE_DEPTH_CAP = 5
+
+_WRONG_ENDPOINT_MSGS = (
+    "404 page not found", "not found for url", "invalid url", "no route matched",
+    "<!doctype html", "<html", "unexpected content type",
+)
+
+#: The health-check verdicts, ordered by how specific the evidence is. Each names what
+#: the operator must DO, which is the only thing a health check is for.
+PROVIDER_ERROR_CLASSES = (
+    "bad_key", "model_not_found", "quota_exhausted", "rate_limited",
+    "wrong_endpoint", "unreachable", "timeout", "tools_unsupported", "config", "bad_request", "unknown",
+)
+
+_ERROR_HINTS = {
+    "bad_key": "The API key is missing, wrong, or lacks access — re-enter it in Settings → Inference.",
+    "model_not_found": "This backend does not serve that model id — pick one from the catalogue.",
+    "quota_exhausted": ("The allowance or the balance is spent: a daily allowance resets on the provider's own "
+                        "schedule, a spent credit balance needs topping up."),
+    "rate_limited": "Throttled right now — the binding is fine; retry in a moment.",
+    "wrong_endpoint": "The base URL does not look like this provider's API root.",
+    "unreachable": "Nothing answered at that address — check the server is running and the URL.",
+    "timeout": "The endpoint accepted the request but did not answer in time.",
+    "tools_unsupported": "This model advertises tool calling but does not do it — pick a model that honours it.",
+    "config": "The client could not be built — usually a missing key or an unknown backend.",
+    "bad_request": "The provider refused the request as written (400) — its own words say what it would not take.",
+    "unknown": "Unrecognised failure — the provider's own message is in `error`.",
+}
+
+
+def error_hint(reason: str) -> str:
+    """The operator-facing remedy for a :data:`PROVIDER_ERROR_CLASSES` verdict, or "".
+
+    Public because the reliability layer names the same failures from the other side of
+    the call — see :func:`aughor.llm.reliability.classify`. Reaching into `_ERROR_HINTS`
+    from there would be a second reader of a private table, and the hints would drift the
+    first time one of them was reworded.
+    """
+    return _ERROR_HINTS.get(reason, "")
+
+
+def classify_provider_error(exc: BaseException, *, _depth: int = 0) -> str:
+    """One of :data:`PROVIDER_ERROR_CLASSES` for a failed provider call.
+
+    Ordered most-specific first, because the classes overlap in prose: a bad key often
+    says "permission", an exhausted quota often says "you do not have access", and a
+    404 says "not found" whether the *model* or the *URL* is wrong. The specific
+    evidence has to be consumed before the generic phrasing can claim it.
+    """
+    # A type check outranks every prose marker below: this one was raised by us, from
+    # evidence, rather than inferred from a provider's wording.
+    if isinstance(exc, ToolsDeclarationError):
+        return "tools_unsupported"
+    # A structured failure wraps the provider's own error, and its prose is OUR hint for it ("The API key is missing,
+    # wrong, or lacks access…"), which reads as a client that could not be built — a 403 from NVIDIA was said as
+    # "config" (2026-11-09). The provider's error is the evidence: read it first.
+    cause = getattr(exc, "__cause__", None)
+    if type(exc).__name__ == "StructuredOutputError" and cause is not None and _depth < _CAUSE_DEPTH_CAP:
+        inner = classify_provider_error(cause, _depth=_depth + 1)
+        if inner != "unknown":
+            return inner
+    msg = _error_text(exc).lower()
+    status = getattr(exc, "status_code", None)
+    if any(k in msg for k in _BAD_KEY_MSGS) or status in (401, 403):
+        return "bad_key"
+    if _is_quota_exhausted(exc):
+        return "quota_exhausted"
+    if _is_model_not_found(exc):
+        return "model_not_found"
+    if _is_rate_limited(exc):
+        return "rate_limited"
+    if any(k in msg for k in _WRONG_ENDPOINT_MSGS):
+        return "wrong_endpoint"
+    if any(k in msg for k in _UNREACHABLE_MSGS):
+        return "unreachable"
+    if "timeout" in msg or "timed out" in msg:
+        return "timeout"
+    if isinstance(exc, BindingConfigError):
+        return "model_not_found"
+    if isinstance(exc, (ValueError, RuntimeError)) and "api key" in msg:
+        return "config"
+    # A request the provider read and refused as written (HTTP 400): the key and the model are fine, the request is
+    # not — said as such, never as "the model returned no content" (an Anthropic key, 2026-10-11)
+    if status == 400 or "invalid_request_error" in msg:
+        return "bad_request"
+    # A WRAPPER'S PROSE IS NOT THE EVIDENCE. `StructuredOutputError` (and any other
+    # re-raise) replaces the provider's own words with a summary: "structured output
+    # unavailable: the request never reached the model (wrong endpoint) — The base URL
+    # does not look like this provider's API root." carries none of the markers above,
+    # so a fault this function HAD classified came back "unknown" and the health check
+    # told the operator "Unrecognised failure" about a wrong base URL it had named
+    # correctly one layer down (measured 2026-09-07 on an Ollama binding).
+    # `__cause__` is kept precisely so the evidence survives the wrap — follow it.
+    #
+    # instructor's retry error is the other wrap: it is raised inside tenacity's RetryError handler, so its
+    # `__context__` is that RetryError and the provider's own error rides in its ARGUMENTS (2026-11-09). Its status
+    # was never read, and an OpenRouter 400 under it classed as nothing — the reliability layer then said "the model
+    # returned no content" of a request no model saw. The attempt error is followed first, then the chain.
+    if _depth < _CAUSE_DEPTH_CAP:
+        from instructor.core.exceptions import InstructorError
+        attempts = ([a for a in exc.args if isinstance(a, BaseException)] if isinstance(exc, InstructorError) else [])
+        cause = getattr(exc, "__cause__", None) or getattr(exc, "__context__", None)
+        for behind in (*attempts, cause):
+            if behind is None or behind is exc:
+                continue
+            verdict = classify_provider_error(behind, _depth=_depth + 1)
+            if verdict != "unknown" or behind is cause:
+                return verdict
+    return "unknown"
+
+
+def _behind(exc: BaseException):
+    """``exc`` and the errors it stands for, nearest first, bounded: its ``__cause__``/``__context__``, and — for
+    instructor's retry error — the attempt errors it carries in its arguments and ``failed_attempts``.
+
+    instructor raises its retry error from inside tenacity's ``RetryError`` handler, so its ``__context__`` is that
+    RetryError and the provider's own error is reachable only through its arguments. A walk along ``__cause__`` alone
+    found nothing there, and an intake OpenRouter refused three times on 2026-11-08 was logged as "the request never
+    reached the model (bad request)" with no word of what OpenRouter said."""
+    seen: set[int] = set()
+    queue: list[tuple[BaseException, int]] = [(exc, 0)]
+    while queue:
+        at, depth = queue.pop(0)
+        if id(at) in seen or depth > _CAUSE_DEPTH_CAP:
+            continue
+        seen.add(id(at))
+        yield at
+        nxt = [a for a in getattr(at, "args", ()) if isinstance(a, BaseException)]
+        nxt += [f.exception for f in (getattr(at, "failed_attempts", None) or [])
+                if isinstance(getattr(f, "exception", None), BaseException)]
+        nxt += [e for e in (getattr(at, "__cause__", None), getattr(at, "__context__", None)) if e is not None]
+        queue.extend((n, depth + 1) for n in nxt)
+
+
+def _provider_error(exc: BaseException) -> Optional[BaseException]:
+    """The nearest error behind ``exc`` that carries an HTTP status — the provider's own answer — or None."""
+    return next((at for at in _behind(exc) if isinstance(getattr(at, "status_code", None), int)), None)
+
+
+def provider_words(exc: BaseException, *, limit: int = 300) -> str:
+    """The provider's own message behind ``exc`` — the nearest error that carries an HTTP status, its wrappers and
+    instructor's attempts followed — or "" when none does. What a refusal said, kept for the operator.
+
+    OpenRouter puts the upstream provider's words in ``error.metadata.raw`` under a message of its own ("Provider
+    returned error"); both are kept, the router's first."""
+    at = _provider_error(exc)
+    if at is None:
+        return ""
+    body = getattr(at, "body", None)
+    # The OpenAI SDK keeps the `error` object itself as `body`; Anthropic's keeps the whole response.
+    err = body.get("error") if isinstance(body, dict) and isinstance(body.get("error"), dict) else body
+    said = err.get("message") if isinstance(err, dict) else None
+    raw = (err.get("metadata") or {}).get("raw") if isinstance(err, dict) and isinstance(err.get("metadata"), dict) else None
+    if said and raw:
+        said = f"{said}: {raw}"
+    return str(said or getattr(at, "message", "") or at)[:limit]
+
+
+#: The failure classes after which no model ran: the provider refused the request, or never received it. A provider
+#: bills no such request, so its row in the model-call log says ``refused`` and costs $0, and every reader of spend
+#: counts it apart from the billed calls (`aughor.obs.session_log.refused`). Not here, deliberately: ``timeout`` and
+#: ``unknown``, after which a model may have run and billed (their cost stays unknown, and says so), and
+#: ``tools_unsupported``, which is a model that answered.
+REFUSED_CLASSES = frozenset({"bad_key", "model_not_found", "quota_exhausted", "rate_limited", "wrong_endpoint",
+                             "unreachable", "config", "bad_request"})
+
+
+def attempt_failure(exc: BaseException) -> dict:
+    """What the model-call log's row says of one failed attempt: ``error_class``, ``refused``, the exception's type,
+    and — for a refusal — the provider's own words (``provider_said``, bounded, credentials masked).
+
+    A reply that came back and was unusable (it failed validation, ran out of room, said nothing parseable) was a model
+    that ANSWERED: its class is the reliability layer's diagnosis, it is billed, and none of its words is kept here — they
+    are the model's output, not the provider's statement. Everything else is classed as the health check classes it
+    (`classify_provider_error`), and is refused when no model ran (`REFUSED_CLASSES`, or the provider answered with an
+    HTTP error status)."""
+    out: dict[str, Any] = {"exception": type(exc).__name__}
+    try:
+        from aughor.llm import reliability
+        diagnosis = getattr(exc, "diagnosis", None) if isinstance(exc, reliability.StructuredOutputError) else None
+        if diagnosis is None and _is_structured_failure(exc):
+            diagnosis = reliability.classify(exc)
+        if diagnosis is not None and diagnosis.failure != reliability.UNAVAILABLE:
+            return {**out, "error_class": diagnosis.failure, "refused": False}
+    except Exception as cls_exc:                          # noqa: BLE001 — the record must still be written
+        from aughor.kernel.errors import tolerate
+        tolerate(cls_exc, "an attempt's failure could not be diagnosed; it is classed as a provider error",
+                 counter="llm.attempt_failure_unclassified")
+    cls = classify_provider_error(exc)
+    status_err = _provider_error(exc)
+    refused = cls in REFUSED_CLASSES or (status_err is not None and int(status_err.status_code) >= 400
+                                         and cls not in ("timeout", "tools_unsupported"))
+    said = provider_words(exc)
+    if said:
+        from aughor.security.credentials import mask_credentials
+        said = mask_credentials(said)[0]
+    return {**out, "error_class": cls, "refused": refused, **({"provider_said": said} if said else {})}
+
+
+class BindingConfigError(RuntimeError):
+    """A binding names a model its backend will not serve — a configuration fault.
+
+    Raised instead of walking the fallback chain, so the operator learns that the model
+    they chose is unusable rather than receiving answers from a substitute they never
+    selected. Carries the backend, the model and the provider's own words.
+    """
+
+    def __init__(self, backend: str, model: str, cause: BaseException):
+        self.backend, self.model = backend, model
+        super().__init__(
+            f"{backend} does not serve the model {model!r} — check the binding in "
+            f"Settings → Inference (or the AUGHOR_*_MODEL env var). "
+            f"Provider said: {str(cause)[:240]}")
+        self.__cause__ = cause
+
+
+# Providers usually say how long to wait — Gemini as "Please retry in 42.3s", OpenAI-compatible
+# shims as a retryDelay field or a Retry-After header. Our ladder tops out around 15s, so a 42s
+# window was never survived: we exhausted the retries and failed a call that would have succeeded.
+# Honour the server's own number when it gives one.
+_RETRY_AFTER_RE = re.compile(
+    r"(?:retry(?:\s+again)?\s+in|retry[-_]?after|retrydelay)\D{0,12}?(\d+(?:\.\d+)?)\s*s",
+    re.IGNORECASE,
+)
+_RETRY_AFTER_MAX_S = 120.0
+
+
+def _retry_after_seconds(exc: BaseException) -> Optional[float]:
+    """Seconds the provider asked us to wait, or None. Capped so a pathological value
+    cannot park a request for minutes; the overall deadline still bounds everything."""
+    m = _RETRY_AFTER_RE.search(_error_text(exc))
+    if not m:
+        return None
+    try:
+        return min(_RETRY_AFTER_MAX_S, max(0.0, float(m.group(1))))
+    except ValueError:
+        return None
+
+
+# Overall budget for one logical call, INCLUDING backoff. Was 600s, which is the only reason
+# the runaway generations in the 2026-07-22 export ran exactly 600.2s — our own deadline was
+# the sole brake. Not lowered to 90s: the same export contains a legitimate call that finished
+# at 86.7s, and a ceiling that kills real work is worse than a loose one. 180s bounds the
+# runaway (now also capped by max_tokens) with real headroom above the observed honest maximum.
+_DEADLINE_S = 180.0
+
+# 429/quota-shaped: the errors where ANOTHER attempt is itself another request against the limit.
+_RATE_LIMIT_MSGS = ("rate limit", "too many requests", "quota", "resource_exhausted")
+#: HTTP 429 named in a message — as a whole number. A bare "429" substring also matched a memory address in an
+#: exception's text: tenacity's `RetryError[<Future at 0x1394290f0 …>]` under instructor read as a rate limit, so an
+#: empty Claude answer was said as "the request never reached the model (rate limited)" and never asked again — a
+#: flake in `test_anthropic_json_reask` whenever an address happened to hold those three digits (2026-10-13).
+_STATUS_429 = re.compile(r"\b429\b")
+
+
+def _is_rate_limited(exc: BaseException) -> bool:
+    """True when the failure is the endpoint refusing on volume, not a transient fault."""
+    if type(exc).__name__ == "RateLimitError":
+        return True
+    status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+    if status == 429:
+        return True
+    msg = _error_text(exc).lower()
+    return any(k in msg for k in _RATE_LIMIT_MSGS) or bool(_STATUS_429.search(msg))
+
+
+def _is_quota_exhausted(exc: BaseException) -> bool:
+    """True when the error is an exhausted allowance rather than a momentary throttle.
+
+    Such an error is 'transient' by status (429/402) but not by timescale, so it is
+    routed to the fallback chain immediately instead of through the retry ladder."""
+    return any(k in _error_text(exc).lower() for k in _QUOTA_EXHAUSTED_MSGS)
+
+
+def _is_transient(exc: BaseException) -> bool:
+    """True for errors worth retrying (throttle / transient network), False for real failures
+    (validation, 4xx-other, auth) which must surface immediately.
+
+    Checked before the type/status tests below, because an exhausted quota arrives as a
+    RateLimitError with status 429 and 'rate limit' in the message — it would match all
+    three and be retried pointlessly."""
+    if _is_quota_exhausted(exc):
+        return False
+    if type(exc).__name__ in _TRANSIENT_TYPES:
+        return True
+    status = getattr(exc, "status_code", None)
+    if not isinstance(status, int):
+        status = getattr(exc, "status", None)
+    if isinstance(status, int) and (status == 429 or 500 <= status < 600):
+        return True
+    msg = _error_text(exc).lower()
+    return any(k in msg for k in _TRANSIENT_MSGS)
+
+
+def _caller_attribution() -> Optional[str]:
+    """Which prompt SITE spent these tokens — the first stack frame outside the
+    LLM/observability plumbing, as ``module:function`` (PE-1).
+
+    Automatic rather than a ``template=`` kwarg threaded through call sites: an
+    opt-in label covers only the sites that remembered to pass it and rots as
+    prompts move, while the stack answers for every call — including ones added
+    after this line was written. "Top prompt templates by token spend" must be
+    a dashboard read, not an instrumentation project. Frames in ``aughor.llm``
+    (provider, reliability, failover) and ``aughor.obs`` are plumbing, never the
+    spender; the first frame outside them that lives in ``aughor.`` is the site.
+    A call issued directly by non-aughor code (tests, scripts) attributes to its
+    immediate caller so nothing folds into an anonymous bucket silently. The walk
+    starts at this function's own caller and lets the MODULE FILTER skip the
+    plumbing — a fixed frame depth would break the moment an intermediate helper
+    appeared (and already differs between the production path and a direct call)."""
+    try:
+        frame = sys._getframe(1)
+    except Exception:
+        return None
+    fallback = None
+    for _ in range(40):
+        if frame is None:
+            break
+        mod = frame.f_globals.get("__name__", "") or ""
+        if not mod.startswith(("aughor.llm", "aughor.obs")):
+            if fallback is None:
+                fallback = f"{mod}:{frame.f_code.co_name}"
+            if mod.startswith("aughor."):
+                return f"{mod}:{frame.f_code.co_name}"
+        frame = frame.f_back
+    return fallback
+
+
+def _emit_chain_state(event: str, from_backend: str, to_backend: str, *,
+                      model: str = "", role: str = "", detail: str = "") -> None:
+    """FL-2 — surface a chain transition on the run's SSE stream, when one listens.
+
+    Goes through the platform-safe sink (`aughor/util/stream_events.py`, NOT the
+    agent's progress module — the platform must not import the agent). Shielded:
+    a chain that cannot narrate itself must still fail over."""
+    try:
+        from aughor.util.stream_events import emit_chain_state
+        emit_chain_state(event, from_backend, to_backend,
+                         model=model, role=role, detail=detail)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "chain-state narration is disposable; the failover itself must proceed",
+                 counter="llm.chain_state_forward")
+
+
+#: The fallback hop the current attempt serves, while a fallback link is being called: the binding it stands in for,
+#: why the chain was walked, and the link's place in it. `_record_llm_call` writes it on the link's row, so the
+#: model-call log says which link answered after which failed — the chain-state frames (`_emit_chain_state`) reach
+#: only a listening stream, and are gone with it.
+_hop: contextvars.ContextVar[Optional[dict]] = contextvars.ContextVar("aughor_llm_hop", default=None)
+
+
+class QuotaCooldown(RuntimeError):
+    """The primary was not asked: it is in a quota cooldown, so the chain is walked without a request to it."""
+
+
+def _hop_why(primary_exc: BaseException) -> str:
+    """Why the chain was walked, as the link's row says it: the primary's failure class, or ``quota_cooldown``."""
+    if isinstance(primary_exc, QuotaCooldown):
+        return "quota_cooldown"
+    return str(attempt_failure(primary_exc).get("error_class") or "unknown")
+
+
+def _completion_of(exc: BaseException) -> Any:
+    """The reply a failed structured attempt got back, when it got one — what its tokens are read from."""
+    for at in _behind(exc):
+        got = getattr(at, "last_completion", None) or getattr(at, "raw_response", None)
+        if got is not None:
+            return got
+    return None
+
+
+def _record_failed_attempt(exc: BaseException, *, backend: str, model: str, role: str, ms: float,
+                           retries: int = 0, temperature: Optional[float] = None, fallback: bool = False,
+                           streamed: bool = False, system: Optional[str] = None, user: Optional[str] = None,
+                           extra: Optional[dict] = None) -> None:
+    """One row for one attempt that failed — refused by the provider, or answered unusably.
+
+    A refused attempt carries no tokens (no model ran) and ``refused: true``; one that answered carries what its
+    reply was billed, when the reply says, so a validation failure is not read as a free call. Every sub-attempt —
+    the re-send without reasoning extras, the bounded repair, the low-reasoning retry, the JSON re-ask, a degraded
+    stream — is one of these, named by ``extra["attempt"]``; the retry ladder's transient re-sends stay a count on
+    the attempt's own row (``retries``)."""
+    failure = attempt_failure(exc)
+    pt, ct = (None, None) if failure["refused"] else _usage_or_none(_completion_of(exc))
+    _record_llm_call(backend=backend, model=model, role=role, prompt_tokens=pt, completion_tokens=ct, ms=ms,
+                     ok=False, retries=retries, temperature=temperature, fallback=fallback, streamed=streamed,
+                     system=system, user=user, failure=failure, extra=extra)
+
+
+def _record_llm_call(*, backend: str, model: str, role: str,
+                     prompt_tokens: Optional[int], completion_tokens: Optional[int],
+                     ms: float, ok: bool = True, error_class: Optional[str] = None,
+                     retries: int = 0, temperature: Optional[float] = None,
+                     fallback: bool = False, streamed: bool = False,
+                     system: Optional[str] = None, user: Optional[str] = None,
+                     output: Any = None, extra: Optional[dict] = None,
+                     failure: Optional[dict] = None) -> None:
+    """Mirror one model call into the session log (flag ``obs.session_log``).
+
+    ``metering.record_llm`` sums the same numbers into a per-run aggregate, which
+    answers "what did this run cost" but not "which model was asked, how long it
+    took, how hard it had to try, or whether the fallback quietly swapped it
+    mid-run" — the questions a measurement must answer before it can be trusted.
+    The dedicated per-call record (``telemetry.log_generation``) existed but had
+    no call sites, so all of it was discarded — until VA-3 gave it this one. It is
+    now the export path too: the same measurement, in the OTel GenAI vocabulary, on
+    a span an external backend can read.
+
+    Provider, model and token counts go to real columns rather than payload JSON:
+    "tokens by model this week" should be a GROUP BY, not a JSON extraction —
+    especially through ``aughor_ops``, where an agent writes the SQL itself.
+
+    ``prompt_tokens``/``completion_tokens`` are ``None`` when the backend did not
+    report usage. That is deliberately distinct from 0: several local backends
+    omit usage entirely, and folding them into zero makes every cost aggregate
+    silently wrong.
+
+    One row per ATTEMPT that reached a provider or was refused by one (2026-11-09). A failed attempt passes
+    ``failure`` (:func:`attempt_failure`): its class goes to ``error_class`` — the health check's verdict, or the
+    reliability layer's diagnosis for a reply that came back unusable — and ``refused``, the exception's type and the
+    provider's own words ride the payload. A row on a fallback link carries ``fallback_of`` (the binding it stood
+    in for and why) and ``link`` from :data:`_hop`.
+
+    Strict no-op when the flag is off; never raises (the sink swallows).
+    """
+    from aughor.obs import session_log
+    if failure:
+        error_class = failure.get("error_class") or error_class
+        extra = {**(extra or {}), "refused": bool(failure.get("refused")),
+                 **{k: failure[k] for k in ("exception", "provider_said") if failure.get(k)}}
+    hop = _hop.get() if fallback else None
+    # Captured ONCE and reused below. `capture_prompt` spends the operator's
+    # window budget when it stores content, so calling it again for the export
+    # path would charge two captures for one model call — and the number the
+    # operator was shown would stop meaning what it says.
+    captured = session_log.capture_prompt(system, user, _response_text(output))
+    session_log.emit(
+        session_log.LLM_CALL, name=model, ok=ok, duration_ms=round(ms, 1),
+        error_class=error_class, provider=backend, model=model,
+        prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
+        retries=retries or None,
+        payload={"role": role, "fallback": fallback, "streamed": streamed,
+                 **({"caller": _c} if (_c := _caller_attribution()) else {}),
+                 **(hop or {}),
+                 **(extra or {}),
+                 **({"temperature": temperature} if temperature is not None else {}),
+                 **({"usage_reported": False} if prompt_tokens is None
+                    and completion_tokens is None else {}),
+                 # Content only while a prompt-capture WINDOW is open;
+                 # the helper owns the capping + truncation-marking policy.
+                 **captured},
+    )
+    # VA-3 — the same call, exported. `telemetry.log_generation` was written for
+    # exactly this and had no caller for its entire life, so a trace shipped to
+    # Jaeger, Tempo, Grafana or Langfuse arrived carrying our phases and **not one
+    # model call**: no model name, no provider, no token counts. This is the one
+    # chokepoint every backend funnels through, so it is the only place the wire
+    # belongs. Strict no-op unless an OTLP endpoint is configured.
+    try:
+        from aughor import telemetry
+        telemetry.log_generation(
+            telemetry.current_trace_id(), role, model,
+            backend=backend, prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens, duration_ms=ms,
+            temperature=temperature, error_class=error_class,
+            content=captured or None,
+            metadata={"role": role, "fallback": fallback, "streamed": streamed,
+                      **({"retries": retries} if retries else {})},
+        )
+    except Exception as exc:  # telemetry must never break the call it records
+        logger.debug("generation export skipped: %s", exc)
+
+
+def _response_text(output: Any) -> Optional[str]:
+    """A model response as text, across the shapes the three paths produce
+    (pydantic model, dict, str). Only ever consumed while a capture window is open;
+    returns None when there is nothing to record."""
+    if output is None:
+        return None
+    try:
+        dump = getattr(output, "model_dump_json", None)
+        if callable(dump):
+            return dump()
+        if isinstance(output, (dict, list)):
+            import json as _json
+            return _json.dumps(output, default=str)
+        return str(output)
+    except Exception:
+        return None
+
+
+def _usage_or_none(raw) -> tuple[Optional[int], Optional[int]]:
+    """Token counts, or (None, None) when the backend reported no usage at all.
+
+    ``_extract_usage`` collapses that case to (0, 0) because metering only needs
+    a number to add; the per-call record needs to know it was never measured."""
+    if getattr(raw, "usage", None) is None:
+        return None, None
+    return _extract_usage(raw)
+
+
+def _streamed_field(buf: str, field: str, jiter_mod) -> Any:
+    """``field`` of the JSON object a stream has written so far, or None while there is none to read: any preamble or
+    fence before the first ``{`` is skipped, and an object still being written is read partially."""
+    start = buf.find("{")
+    if start < 0:
+        return None   # still in a preamble/fence
+    try:
+        obj = jiter_mod.from_json(buf[start:].encode(), partial_mode="trailing-strings")
+    except Exception:
+        return None   # incomplete escape mid-chunk etc. — the next chunk heals it
+    return obj.get(field) if isinstance(obj, dict) else None
+
+
+def _json_shape(node: dict, defs: dict, _seen: tuple = ()) -> str:
+    """A JSON Schema node as a one-line shape — ``{"a": string, "b": [{"c": number}]}``.
+
+    Written for the raw streaming path's instruction: a model follows a literal shape more
+    reliably than prose about one, and it costs a fraction of the schema's bytes. A
+    recursive model is named instead of expanded, so the rendering always terminates."""
+    if not isinstance(node, dict):
+        return "value"
+    ref = node.get("$ref")
+    if isinstance(ref, str):
+        name = ref.rsplit("/", 1)[-1]
+        if name in _seen:
+            return name
+        return _json_shape(defs.get(name) or {}, defs, _seen + (name,))
+    if "const" in node:
+        return json.dumps(node["const"])
+    if "enum" in node:
+        return "|".join(json.dumps(v) for v in node["enum"])
+    for union in ("anyOf", "oneOf"):
+        if isinstance(node.get(union), list):
+            return "|".join(_json_shape(n, defs, _seen) for n in node[union])
+    if isinstance(node.get("allOf"), list) and len(node["allOf"]) == 1:
+        return _json_shape(node["allOf"][0], defs, _seen)
+    kind = node.get("type")
+    if kind == "array":
+        items = node.get("items")
+        return f"[{_json_shape(items, defs, _seen)}]" if isinstance(items, dict) else "[]"
+    if kind == "object" or "properties" in node:
+        props = node.get("properties") or {}
+        if not props:
+            return "object"
+        return "{" + ", ".join(f'"{k}": {_json_shape(v, defs, _seen)}'
+                               for k, v in props.items()) + "}"
+    if isinstance(kind, list):
+        return "|".join(str(t) for t in kind)
+    return str(kind) if kind else "value"
+
+
+def _run_resilient(do, base_url: str, *, stats: dict | None = None,
+                   max_retries: Optional[int] = None):
+    """Run ``do()`` under the per-endpoint semaphore, retrying transient errors with exponential
+    backoff + jitter, bounded by AUGHOR_LLM_MAX_RETRIES (default 3) and an overall deadline
+    AUGHOR_LLM_DEADLINE_S (default 180s, see _DEADLINE_S). Non-transient errors raise immediately.
+
+    ``stats`` (optional, mutated in place) reports ``retries`` — the count was
+    previously local and discarded, so a model that only ever succeeds on its
+    second attempt looked identical to one that never struggles. A degrading
+    endpoint should be visible before it starts failing outright."""
+    if stats is not None:
+        stats["retries"] = 0
+    max_retries = (max(0, int(max_retries)) if max_retries is not None
+                   else max(0, _int_env("AUGHOR_LLM_MAX_RETRIES", 3)))
+    deadline = time.monotonic() + max(1.0, _float_env("AUGHOR_LLM_DEADLINE_S", _DEADLINE_S))
+    attempt = 0
+    while True:
+        # Every request — first attempt, retry, fallback link, blocking redo — passes here,
+        # so this is the one place an abandoned run stops spending.
+        from aughor.kernel import cancellation
+        cancellation.checkpoint()
+        _pace(base_url)  # rate gate BEFORE the concurrency gate: waiting for a slot we
+        # are not yet allowed to use would hold it from callers who are.
+        # Acquired fresh per attempt — the slot is a single-use context manager, and a
+        # retry must re-queue for the gate rather than re-enter a spent one.
+        with _concurrency_slot(base_url):  # held only during the call, never during backoff
+            try:
+                return do()
+            except Exception as e:
+                # A rate limit gets ONE retry, not the full ladder. Every attempt is itself a
+                # REQUEST against the very limit that just rejected us, so firing three more is
+                # how a throttle becomes a spiral — the live Gemini account peaked at 19 RPM
+                # against a 15 RPM cap with a 429-dominated error chart. One retry, at the delay
+                # the server itself asked for, is the most that can help.
+                # min(), not a bare 1: this is a CEILING on the ladder, and written as a
+                # plain assignment it became a FLOOR — a caller that explicitly asked for
+                # max_retries=0 got one retry anyway, plus a sleep honouring the server's
+                # retry-after (up to 120s). That silently defeats the health check, which
+                # passes 0 precisely so it reports what is true NOW; and the health check is
+                # the likeliest place to meet a 429 (12 of 62 requests in the 2026-07-22
+                # export were health probes, against a 50/day cap).
+                budget = min(1, max_retries) if _is_rate_limited(e) else max_retries
+                if not _is_transient(e) or attempt >= budget or time.monotonic() >= deadline:
+                    raise
+                attempt += 1
+                if stats is not None:
+                    stats["retries"] = attempt
+                err_name = type(e).__name__   # `e` is unbound after the except block
+                err_budget = budget           # ditto — report the ladder we actually ran
+                wait = min(30.0, 2.0 ** attempt) + random.uniform(0.0, 0.5 * attempt)
+                # The provider's own number wins when it is LONGER than our guess: a
+                # throttle that says "retry in 42s" is not survivable on a 15s ladder.
+                asked = _retry_after_seconds(e)
+                if asked is not None and asked > wait:
+                    wait = asked
+        if time.monotonic() + wait >= deadline:
+            wait = max(0.0, deadline - time.monotonic())
+        logger.warning("llm: transient error (%s); retry %d/%d in %.1fs",
+                       err_name, attempt, err_budget, wait)
+        time.sleep(wait)
+
+
+# ── Wave R1: structured-output recovery, before any extra request ─────────────
+# A structured call that does not parse or validate is NOT a transport failure, but
+# `complete()` has always treated it like one — straight to the fallback chain, one
+# whole request against a second provider. On the free tier the scarce resource is
+# requests, so a markdown fence around correct JSON is one of the most expensive
+# characters a model can emit. These helpers put a deterministic recovery, and an
+# honest classification, in front of that spend. See aughor/llm/reliability.py.
+
+# Instructor's structured-output failures. Named by string so this module keeps its
+# single `import instructor` and does not depend on the exception module's layout
+# (which moved from instructor.exceptions to instructor.core in 1.15).
+_STRUCTURED_EXC_TYPES = (
+    "InstructorRetryException", "IncompleteOutputException",
+    "ResponseParsingError", "ValidationError", "ModeError",
+)
+
+
+def _is_structured_failure(exc: BaseException) -> bool:
+    """True when ``exc`` is 'the model's output was wrong', not 'the call did not happen'.
+
+    The transport tests run FIRST and win. Instructor wraps whatever ended the attempt,
+    so a rate-limited call can surface as an InstructorRetryException carrying a 429 in
+    its message — and misreading that as a formatting problem would strip the very
+    markers `_is_quota_exhausted` needs, silently disabling the cooldown. A transport
+    failure stays a transport failure all the way up.
+    """
+    if _is_transient(exc) or _is_quota_exhausted(exc):
+        return False
+    return type(exc).__name__ in _STRUCTURED_EXC_TYPES
+
+
+def _typed_structured_error(exc: BaseException, response_model) -> BaseException:
+    """``exc`` re-expressed as a :class:`StructuredOutputError` when it is a
+    structured-output failure, else ``exc`` untouched.
+
+    The diagnosis is what lets `complete()` decline a failover that cannot help; a
+    transport error is returned as-is so every existing classification still sees the
+    original message.
+    """
+    if not _is_structured_failure(exc):
+        return exc
+    try:
+        from aughor.llm import reliability
+
+        diagnosis = reliability.classify(exc)
+        from aughor.stats import bump
+        bump(f"llm.failure.{diagnosis.failure}")
+        return reliability.StructuredOutputError(diagnosis, exc)
+    except Exception:
+        logger.debug("llm: could not classify structured failure", exc_info=True)
+        return exc
+
+
+def _should_failover(exc: BaseException) -> bool:
+    """Whether walking the fallback chain can help with ``exc``.
+
+    True for everything except the classes the reliability layer can prove another
+    provider will reproduce. Fail-open: an unclassifiable error keeps the pre-R1
+    behaviour (try the chain), because a wrongly-suppressed failover breaks a working
+    install while a wrongly-attempted one only costs one request.
+
+    ``never_failover`` is the one attribute-based veto: the faux backend's
+    exhausted-script failure is a TEST bug, and a chain that answers in its place is
+    the silent fall-through the faux backend exists to kill — so the veto lives here,
+    where the chain decision is made, not in the test harness.
+    """
+    if getattr(exc, "never_failover", False):
+        return False
+    from aughor.llm.reliability import StructuredOutputError, should_failover
+
+    if isinstance(exc, StructuredOutputError):
+        return should_failover(exc.diagnosis)
+    return True
+
+
+def _repair_kwargs(kwargs: dict, system: str, user: str) -> dict:
+    """The original call's kwargs, re-pointed at the repair prompt.
+
+    Reuses the binding (same client, same model) on purpose: the repair asks the model
+    to re-format *its own* output, which is the one task it is guaranteed to have the
+    context for. `max_tokens` is left at the original ceiling rather than tightened —
+    a repair emits roughly what the first attempt emitted, so a smaller cap would
+    manufacture the single failure class a repair cannot fix.
+    """
+    kw = dict(kwargs)
+    kw.pop("extra_body", None)      # reasoning extras buy nothing on a re-format
+    if "system" in kw:              # Anthropic shape
+        kw["system"] = system
+        kw["messages"] = [{"role": "user", "content": user}]
+    else:
+        kw["messages"] = [{"role": "system", "content": system},
+                          {"role": "user", "content": user}]
+    if "temperature" in kw:
+        kw["temperature"] = 0.0
+    return kw
+
+
+def _recover_structured(exc: BaseException, response_model, *, endpoint, kwargs: dict,
+                        base_url: str, backend: str, model: str, role: str,
+                        fallback: bool, stats: dict,
+                        before_repair: Optional[Callable[[], None]] = None):
+    """Recover a valid ``response_model`` from a failed structured call, or ``None``.
+
+    Two stages, in cost order (both hardwired unconditional — flag endgame Wave 2,
+    2026-08-01, graduated with receipts as ``llm.structured_salvage`` /
+    ``llm.bounded_repair``):
+
+    1. **Deterministic salvage** — zero requests. Returns ``(value, completion)`` so
+       the caller's normal success path still meters the tokens the provider already
+       charged us for.
+    2. **One bounded repair** — exactly one request, only when the diagnosis says
+       another request could plausibly help. Never for a truncation, an empty body
+       or a refusal.
+
+    Never raises: a failure inside the recovery layer must leave the original error's
+    path intact, not replace one failure with a different one.
+    """
+    if not _is_structured_failure(exc):
+        return None
+    try:
+        from aughor.llm import reliability
+    except Exception:
+        logger.debug("llm: reliability layer unavailable", exc_info=True)
+        return None
+
+    try:
+        result = reliability.salvage(exc, response_model)
+        if result.ok:
+            completion = (getattr(exc, "last_completion", None)
+                          or getattr(exc, "raw_response", None))
+            stats["salvaged"] = True
+            stats["repairs"] = list(result.repairs)
+            return result.value, completion
+
+        diagnosis = result.diagnosis
+        if diagnosis is None or not diagnosis.repairable:
+            return None
+    except Exception:
+        logger.debug("llm: deterministic salvage failed", exc_info=True)
+        return None
+
+    # ── the one repair request ────────────────────────────────────────────────
+    from aughor.stats import bump
+    if before_repair is not None:
+        # The answer being repaired was a request of its own: its row goes in first, so the log reads in the order
+        # the requests were made.
+        try:
+            before_repair()
+        except Exception as rec_exc:                      # noqa: BLE001 — "never raises" holds here too
+            from aughor.kernel.errors import tolerate
+            tolerate(rec_exc, "the repaired answer's row could not be written; the repair proceeds",
+                     counter="llm.repair_record")
+    sys_p, usr_p = reliability.repair_prompt(diagnosis, response_model)
+    bump("llm.repair.calls")
+    stats["repair_tried"] = True
+    _t0 = time.monotonic()
+    try:
+        cwc = getattr(endpoint, "create_with_completion", None)
+        kw = _repair_kwargs(kwargs, sys_p, usr_p)
+        # max_retries=0: the repair budget is ONE request, and the retry ladder would
+        # quietly turn it into four against a limit we are trying to spend less of.
+        out, raw = _run_resilient(
+            (lambda: cwc(**kw)) if cwc is not None else (lambda: (endpoint.create(**kw), None)),
+            base_url, max_retries=0)
+    except Exception as repair_exc:
+        bump("llm.repair.failed")
+        logger.warning("llm: bounded repair failed (%s); surfacing the original failure",
+                       str(repair_exc)[:120])
+        # A request, refused or answered: its own row. It used to return None with no record at all.
+        _record_failed_attempt(repair_exc, backend=backend, model=model, role=role,
+                               ms=(time.monotonic() - _t0) * 1000.0, fallback=fallback,
+                               extra={"attempt": "repair", "repair_of": diagnosis.failure})
+        return None
+    bump("llm.repair.ok")
+    logger.info("llm: repaired a %s response in one request (%s)",
+                response_model.__name__, diagnosis.detail[:120])
+    # The repair's row is the caller's answering row (`_complete_on`), which carries `repair_of` — written here as
+    # well, it was two rows for one request, both carrying the repair's tokens, while the first answer went unrecorded.
+    stats["repaired"] = True
+    stats["repair_of"] = diagnosis.failure
+    stats["repair_started"] = _t0
+    return out, raw
+
+
+#: Request parameters a binding may refuse as unsupported, and are then sent its way. OpenAI's reasoning models
+#: refuse ``max_tokens`` (they take ``max_completion_tokens``) and any temperature but their default; an Azure
+#: deployment or another compatible endpoint can do the same. Learned from the provider's own 400 — its ``param``
+#: and an ``unsupported_*`` code — never guessed from a model's name, and remembered per (backend, model) for the
+#: life of the process, so the refusal is paid once (a refused request bills nothing).
+_ADAPTABLE_PARAMS = ("max_tokens", "temperature")
+_refused_params: dict[tuple[str, str], set[str]] = {}
+
+
+def _refused_param(exc: BaseException) -> str:
+    """The parameter a provider's 400 refused as unsupported, when it is one we can send otherwise, else ""."""
+    at: Optional[BaseException] = exc
+    for _ in range(_CAUSE_DEPTH_CAP + 1):
+        if at is None:
+            break
+        if getattr(at, "status_code", None) is not None:
+            param = str(getattr(at, "param", "") or "")
+            code = str(getattr(at, "code", "") or "")
+            refused = getattr(at, "status_code", None) == 400 and code.startswith("unsupported")
+            return param if refused and param in _ADAPTABLE_PARAMS else ""
+        at = getattr(at, "__cause__", None) or getattr(at, "__context__", None)
+    return ""
+
+
+def _as_accepted(backend: str, model: str, kwargs: dict) -> dict:
+    """``kwargs`` as this binding has said it takes them: the output ceiling under the name it reads, and no
+    temperature where it accepts only its own."""
+    refused = _refused_params.get((backend, model)) or set()
+    if not refused:
+        return kwargs
+    out = dict(kwargs)
+    if "max_tokens" in refused and "max_tokens" in out:
+        out["max_completion_tokens"] = out.pop("max_tokens")
+    if "temperature" in refused:
+        out.pop("temperature", None)
+    return out
+
+
+def _learned_refusal(exc: BaseException, backend: str, model: str) -> bool:
+    """Record a newly refused parameter for this binding; True when there is something new to send otherwise."""
+    param = _refused_param(exc)
+    known = _refused_params.setdefault((backend, model), set())
+    if not param or param in known:
+        return False
+    known.add(param)
+    logger.warning("llm: %s/%s refused %r as unsupported; sending it as the provider asks from now on",
+                   backend, model, param)
+    return True
+
+
+class LLMProvider:
+    """Call .complete() with a Pydantic response_model, get a typed object back."""
+
+    def __init__(self, backend: str, role: Role, *,
+                 model: Optional[str] = None, api_key: Optional[str] = None,
+                 base_url: Optional[str] = None):
+        self.backend = backend
+        self.role = role
+        # May be "" — see `complete()`, which is where a missing model is refused.
+        # Constructing is NOT using: `SqlWriter.__init__` builds a provider eagerly and
+        # its callers treat a failed fix as "drop this angle, continue", so raising here
+        # turned one unconfigured role into a crash on a path designed to degrade. The
+        # client itself needs no model (it is a base URL + key; the id rides on each
+        # request), so building one is harmless and refusing at dispatch is honest.
+        self._model = (model or "").strip() or _active_model(backend, role)
+        # The chat path's point of use. Without this the ciphertext travels as the
+        # credential and the first sign of trouble is the provider blaming the key — the
+        # same failure the embedding lane hit, one door along. An explicitly PASSED key is
+        # the caller's business and is not second-guessed.
+        if api_key is None and key_is_undecryptable(backend):
+            raise _undecryptable_key_error(backend)
+        key = api_key if api_key is not None else _active_key(backend)
+        url = base_url or _active_base_url(backend)
+        self._base_url = url
+        if backend == "ollama":
+            self._client = _build_ollama_client(self._model, url)
+        elif backend == "lmstudio":
+            self._client = _build_lmstudio_client(url)
+        elif backend in ("groq", "together", "openrouter", "openai"):
+            # OpenRouter is OpenAI-compatible, so it shares this client. Registering
+            # a backend in the metadata tables without a branch here is silent until
+            # someone selects it: the constructor falls through to the error below,
+            # which then lists the backend it just refused. test_every_backend_builds
+            # covers the whole set so that cannot recur.
+            self._client = _build_openai_compat(url, key)
+        elif backend == "gemini":
+            self._client = _build_gemini_client(url, key)
+        elif backend == "anthropic":
+            self._client = _build_anthropic_client(key)
+        elif backend == FAUX_BACKEND:
+            from aughor.llm.faux import build_client
+            self._client = build_client(role)
+        elif is_added_provider(backend):
+            self._client = _build_added_client(url, key)
+        else:
+            raise unknown_backend(backend)
+
+    @property
+    def model(self) -> str:
+        """The bound model id, "" when the role has none. Read-only: the binding is the
+        operator's (Settings › Models), never a caller's to reassign. TJ-1 — the answer
+        receipt stamps ``model.id`` from this property; before it existed the receipt read
+        a `.model` this class never had and 1,276 of 1,277 receipts carried null."""
+        return self._model
+
+    @property
+    def capability(self):
+        """The vended :class:`InferenceCapability` describing this provider's binding —
+        backend, model, endpoint, and the declared profile (cache_mode, privacy_class, …).
+        The seam Layer-A/Layer-B optimisation and governance routing dispatch on
+        (PLATFORM_ARCHITECTURE.md §5b). Lazy import avoids a module-load cycle."""
+        from aughor.org.context import current_org_id
+        from aughor.control_plane.inference import capability_for
+
+        return capability_for(self.backend, self._model, self.role, self._base_url, current_org_id())
+
+    def complete_with_tools(
+        self,
+        system: str,
+        user: str,
+        tools: list[dict],
+        *,
+        history: Optional[list[dict]] = None,
+        temperature: float = 0.1,
+    ) -> "ToolTurn":
+        """One agent turn: the model either speaks, or it chooses a tool.
+
+        This is the capability the converse body (Layer 3) needs and the transport has
+        never had — ``complete()`` asks for a *shape* (instructor validates a
+        ``response_model``), while an agent turn asks a *question* whose answer may be
+        "call this tool with these arguments". Structured output and tool choice are the
+        same wire feature used for opposite purposes, which is why this is a sibling of
+        ``complete()`` rather than a parameter on it: bolting a tools list onto the
+        structured path would entangle two call shapes and put every existing caller's
+        behaviour at risk. Nothing here changes ``_complete_on``.
+
+        It deliberately goes through ``chat.completions.create_with_completion`` — the
+        one surface ``FauxClient`` duck-types — so every converse turn is scriptable
+        offline with zero credentials, which is the whole point of the Layer 0
+        investment. Calling the raw OpenAI client directly would be simpler and would
+        silently forfeit that.
+
+        ``tools`` are OpenAI-shaped function specs. Returns a :class:`ToolTurn`; a model
+        that answers in prose gives ``text``, one that picks a tool gives ``tool_call``.
+
+        ``history`` carries the turns since the question — the assistant's tool calls and
+        the ``role="tool"`` results answering them — appended after the user message. A
+        loop is a conversation that GROWS, and without this the model would re-decide from
+        the same two messages every step and pick the same tool forever. Omitted on the
+        first turn, which is why it is optional rather than a required message list.
+
+        NOT YET EXERCISED AGAINST A LIVE BACKEND: ``response_model=None`` is faux-proven
+        and is instructor's documented pass-through, but no run has confirmed it on a
+        real provider — verify before converse serves traffic. The anthropic binding speaks
+        ``client.messages``; `_tools_on` translates for it (PENDING item 17 — it used to
+        raise here, and every quick `/ask` turn on that backend ended in an error).
+        """
+        if not self._model:                       # same contract as `complete()`
+            raise NoModelConfigured(self.backend, self.role)
+        # Same posture as `complete()`: a primary already known to be out of allowance is
+        # skipped rather than re-probed. An agent loop makes SEVERAL calls per user turn,
+        # so a wasted round trip per call is paid once per step, not once per question.
+        if _in_quota_cooldown(self.backend) and self._tools_fallbacks():
+            return self._tools_via_fallback(
+                system, user, tools, temperature, history,
+                QuotaCooldown(f"{self.backend} is in quota cooldown (allowance exhausted)"))
+        try:
+            return self._tools_on(self._client, self.backend, self._model,
+                                  system, user, tools, temperature, history=history)
+        except Exception as primary_exc:
+            if _is_quota_exhausted(primary_exc):
+                _mark_quota_exhausted(self.backend)
+            # A model id the primary does not serve is a CONFIGURATION fault, and
+            # failing over is what hides it — same reasoning as `complete()`.
+            if _is_model_not_found(primary_exc) and _flag("AUGHOR_MODEL_ID_STRICT", "1"):
+                raise BindingConfigError(self.backend, self._model, primary_exc) from primary_exc
+            if not _should_failover(primary_exc) or not self._tools_fallbacks():
+                raise
+            return self._tools_via_fallback(system, user, tools, temperature, history,
+                                            primary_exc)
+
+    def _tools_fallbacks(self) -> list[str]:
+        """Fallback links that can serve a tool call — every link, since `_tools_on` speaks
+        each binding's own surface (anthropic's ``client.messages`` included; it was filtered
+        out here while it could only raise)."""
+        return list(self._fallback_candidates())
+
+    def _tools_via_fallback(self, system: str, user: str, tools: list[dict],
+                            temperature: float, history: Optional[list[dict]],
+                            primary_exc: BaseException) -> "ToolTurn":
+        """Walk the chain for one tool turn. Raises ``primary_exc`` if every link fails."""
+        why = _hop_why(primary_exc)
+        link = 0
+        for backend in self._tools_fallbacks():
+            fb = self._fallback_provider(backend)
+            if fb is None:
+                continue
+            link += 1
+            logger.warning("provider: %s failed on a tool turn (%s); falling back to %s %s",
+                           self.backend, str(primary_exc)[:120], backend, fb._model)
+            _emit_chain_state("fallback", self.backend, backend, model=fb._model,
+                              role=str(self.role), detail=str(primary_exc)[:160])
+            hop = _hop.set({"fallback_of": {"backend": self.backend, "model": self._model, "why": why},
+                            "link": link})
+            try:
+                return self._tools_on(fb._client, backend, fb._model,
+                                      system, user, tools, temperature,
+                                      history=history, fallback=True)
+            except Exception as fb_exc:
+                if _is_quota_exhausted(fb_exc):
+                    _mark_quota_exhausted(backend)
+                logger.warning("provider: tool-turn fallback %s also failed (%s)",
+                               backend, str(fb_exc)[:120])
+                _emit_chain_state("link_failed", self.backend, backend, model=fb._model,
+                                  role=str(self.role), detail=str(fb_exc)[:160])
+                if not _should_failover(fb_exc):
+                    break
+            finally:
+                _hop.reset(hop)
+        raise primary_exc  # every link failed — surface the ORIGINAL cause, not the last
+
+    def _tools_on(self, client, backend: str, model: str, system: str, user: str,
+                  tools: list[dict], temperature: float, *,
+                  history: Optional[list[dict]] = None,
+                  fallback: bool = False) -> "ToolTurn":
+        """One tool turn against ONE binding. The per-backend half of the call, split out
+        so the fallback walk reuses it exactly — the primary and every link run the same
+        code path, which is what keeps a chain-served turn honest."""
+        from aughor.kernel import cancellation, metering
+
+        # This request skips `_run_resilient`, so it needs the funnel's stop of its own:
+        # an abandoned analyst's next tool choice is a full-context request.
+        cancellation.checkpoint()
+        if backend == "anthropic":
+            # Anthropic speaks `messages`, not chat completions (PENDING item 17): the tools,
+            # the transcript and the reply are translated here, on the raw client instructor
+            # wraps, and everything after the request — metering, the call record, the budget
+            # check — is the code every other binding runs. Temperature rides only a pinned
+            # run, as on this binding's structured path.
+            pinned = current_run_temperature() is not None
+            anthropic_kwargs: dict[str, Any] = dict(
+                model=model,
+                max_tokens=_max_output_tokens(self.role, model),
+                system=system,
+                messages=_anthropic_messages(user, history),
+                # An EMPTY roster means "no tools on the wire", not "an empty menu":
+                # both wire formats reject `tools: []`, and the tool loop's closing
+                # request depends on a turn that genuinely cannot choose a tool.
+                **({"tools": _anthropic_tools(tools),
+                    "tool_choice": {"type": "auto"}} if tools else {}),
+                **({"temperature": _effective_temperature(temperature, backend)} if pinned else {}),
+            )
+            _t0 = time.monotonic()
+            try:
+                raw = (getattr(client, "client", None) or client).messages.create(**anthropic_kwargs)
+            except Exception as exc:
+                # A refused tool turn is a row too — before 2026-11-09 the only record came after a reply.
+                _record_failed_attempt(exc, backend=backend, model=model, role=self.role,
+                                       ms=(time.monotonic() - _t0) * 1000.0, temperature=temperature,
+                                       fallback=fallback, system=system, user=user)
+                raise
+            _ms = (time.monotonic() - _t0) * 1000.0
+            _out = raw
+        else:
+            endpoint = client.chat.completions
+            kwargs: dict[str, Any] = dict(
+                model=model,
+                temperature=_effective_temperature(temperature, backend),
+                max_tokens=_max_output_tokens(self.role, model),
+                messages=([{"role": "system", "content": system},
+                           {"role": "user", "content": user}] + list(history or [])),
+                **({"tools": tools, "tool_choice": "auto"} if tools else {}),
+                response_model=None,
+            )
+            extra = _reasoning_extra_body(backend)
+            if extra:
+                kwargs["extra_body"] = extra
+
+            _t0 = time.monotonic()
+            while True:
+                try:
+                    _out, raw = endpoint.create_with_completion(**_as_accepted(backend, model, kwargs))
+                    break
+                except Exception as exc:
+                    # Every attempt is a row (2026-11-09): a parameter the binding refused is learned and sent again
+                    # as it asks — and that refused request is a row of its own, named so.
+                    learned = _learned_refusal(exc, backend, model)
+                    _record_failed_attempt(exc, backend=backend, model=model, role=self.role,
+                                           ms=(time.monotonic() - _t0) * 1000.0, temperature=temperature,
+                                           fallback=fallback, system=system, user=user,
+                                           extra={"attempt": "parameter_refused"} if learned else None)
+                    if not learned:
+                        raise
+                    _t0 = time.monotonic()
+            _ms = (time.monotonic() - _t0) * 1000.0
+
+            # instructor's `response_model=None` pass-through hands the completion back as
+            # the FIRST element and None as the second — the opposite of the structured
+            # path, where the first is the validated object and the second is the raw
+            # response. Found only by a live call: the faux backend returns both halves
+            # non-None, so no offline test could reach this. Without the swap the turn
+            # parses to nothing (no choices on None) AND `_extract_usage(None)` returns
+            # (0, 0), so every live tool turn read as an empty reply that cost zero tokens
+            # — silent on both counts.
+            if raw is None:
+                raw = _out
+
+        # Metered exactly like a structured call. A turn the model spends choosing a tool
+        # costs the same tokens as one it spends answering, and a loop that runs untracked
+        # is how a free-tier allowance disappears without a line item.
+        pt, ct = _extract_usage(raw)
+        metering.record_llm(pt, ct, _ms)
+        _pt, _ct = _usage_or_none(raw)
+        # The tool loop re-sends its whole prefix every turn; whether that prefix is
+        # actually BILLED is the difference between a 42.7% cost and a 42.7% count.
+        _cached = _extract_cached_tokens(raw)
+        _record_llm_call(backend=backend, model=model, role=self.role,
+                         prompt_tokens=_pt, completion_tokens=_ct, ms=_ms, retries=0,
+                         temperature=temperature, fallback=fallback, system=system,
+                         user=user, output=_out,
+                         extra=({"cached_tokens": _cached} if _cached is not None else None))
+        metering.check_budget()
+        turn = (_parse_anthropic_tool_turn(raw) if backend == "anthropic"
+                else _parse_tool_turn(raw, _out))
+        if (turn.tool_call is None and not turn.text and not turn.malformed
+                and not turn.truncated):
+            # Neither a choice, nor words, nor a stated failure. That is the transport
+            # failing to READ a reply, not a model with nothing to say — and a silent
+            # empty turn reads downstream as "the model declined", which is a different
+            # and much more plausible-looking lie. Name the shape so the gap is findable.
+            try:
+                msg = raw.choices[0].message
+                shape = {k: type(getattr(msg, k, None)).__name__
+                         for k in ("content", "tool_calls", "reasoning", "reasoning_content")}
+            except Exception:            # noqa: BLE001 - diagnosis must not mask the event
+                shape = {"raw": type(raw).__name__}
+            logger.warning(
+                "provider: %s/%s returned a tool turn this parser could not read "
+                "(no tool_call, no text). Message shape: %s", backend, model, shape)
+        return turn
+
+    def complete(
+        self,
+        system: str,
+        user: str,
+        response_model: Type[T],
+        temperature: float = 0.1,
+    ) -> T:
+        # The moment a model is actually needed. Nothing ships a default, so an
+        # unconfigured role is refused here — named, actionable, and catchable by the
+        # fail-soft paths that wrap `.complete()` exactly like any other LLM failure.
+        if not self._model:
+            raise NoModelConfigured(self.backend, self.role)
+        self._warn_if_over_window(system, user)
+        # A primary known to be out of allowance is skipped rather than re-probed: the
+        # answer cannot have changed, and the wasted round trip is paid by EVERY call.
+        if _in_quota_cooldown(self.backend) and self._fallback_candidates():
+            primary_exc: Exception = QuotaCooldown(
+                f"{self.backend} is in quota cooldown (allowance exhausted)")
+            return self._complete_via_fallback(
+                system, user, response_model, temperature, primary_exc)
+        try:
+            return self._complete_on(self._client, self.backend, self._model,
+                                     system, user, response_model, temperature,
+                                     base_url=self._base_url, role=self.role)
+        except Exception as primary_exc:
+            if _is_quota_exhausted(primary_exc):
+                _mark_quota_exhausted(self.backend)
+            # Wave R2 (J7): a model id this backend does not serve is a CONFIGURATION
+            # fault, and the failover is what hides it — the chain answers from some
+            # other model while the binding the operator chose stays dead and silent.
+            # That is exactly how two non-existent OpenRouter ids shipped as defaults
+            # and kept answering. Fail loudly, naming the model and the provider's own
+            # words, so the fix is obvious instead of invisible.
+            if _is_model_not_found(primary_exc) and _flag("AUGHOR_MODEL_ID_STRICT", "1"):
+                raise BindingConfigError(self.backend, self._model, primary_exc) from primary_exc
+            # Wave R1: some failures are provably identical on the next provider, so the
+            # failover is a request spent to learn nothing. A truncation is the case that
+            # matters — the ceiling that cut the response off is OURS, sent on every
+            # backend, so the next link generates against the same limit and stops in the
+            # same place. Classify first, then decide.
+            if not _should_failover(primary_exc):
+                raise
+            # Resilience: if the primary backend is unreachable, erroring, or out of
+            # allowance, transparently fall back to the next CONFIGURED backend. Enabled
+            # by default; disable with AUGHOR_FALLBACK_DISABLED=1, pin the order with
+            # AUGHOR_FALLBACK_BACKENDS. This used to be Anthropic-or-nothing, which meant
+            # an install without an Anthropic key had no fallback at all: an exhausted
+            # free-tier quota took down every brief with an opaque 500.
+            if not self._fallback_candidates():
+                raise
+            return self._complete_via_fallback(
+                system, user, response_model, temperature, primary_exc)
+
+    def _complete_via_fallback(self, system: str, user: str, response_model: Type[T],
+                               temperature: float, primary_exc: BaseException) -> T:
+        """Walk the fallback chain for one call. Raises ``primary_exc`` if every link fails."""
+        why = _hop_why(primary_exc)
+        link = 0
+        for backend in self._fallback_candidates():
+            fb = self._fallback_provider(backend)
+            if fb is None:
+                continue
+            link += 1
+            logger.warning("provider: %s failed (%s); falling back to %s %s",
+                           self.backend, str(primary_exc)[:120], backend, fb._model)
+            _emit_chain_state("fallback", self.backend, backend, model=fb._model,
+                              role=str(self.role), detail=str(primary_exc)[:160])
+            # The hop goes in the log on the link's own rows (`_record_llm_call` reads it), not only on the stream.
+            hop = _hop.set({"fallback_of": {"backend": self.backend, "model": self._model, "why": why},
+                            "link": link})
+            try:
+                return self._complete_on(fb._client, backend, fb._model,
+                                         system, user, response_model, temperature,
+                                         base_url=fb._base_url,
+                                         role=self.role, fallback=True)
+            except Exception as fb_exc:
+                # Try the next link rather than giving up on the first miss — the
+                # chain exists precisely because any one backend can be down or spent.
+                if _is_quota_exhausted(fb_exc):
+                    _mark_quota_exhausted(backend)
+                # A bad id on a FALLBACK link is our own default gone stale, not the
+                # operator's setting — so it is logged at error level (it needs fixing in
+                # this repo) but the chain continues, because the caller's real problem is
+                # whatever took the primary down. Only the PRIMARY's bad id is fatal.
+                if _is_model_not_found(fb_exc):
+                    logger.error("provider: fallback binding %s/%s is not a model this "
+                                 "backend serves — the built-in default needs updating (%s)",
+                                 backend, fb._model, str(fb_exc)[:160])
+                else:
+                    logger.warning("provider: fallback %s also failed (%s)",
+                                   backend, str(fb_exc)[:120])
+                _emit_chain_state("link_failed", self.backend, backend, model=fb._model,
+                                  role=str(self.role), detail=str(fb_exc)[:160])
+                # …unless the failure is one every link reproduces. A truncation walking
+                # the whole chain spends one request per backend to hit the same ceiling
+                # each time — the most expensive way there is to learn nothing.
+                if not _should_failover(fb_exc):
+                    break
+            finally:
+                _hop.reset(hop)
+        raise primary_exc  # every link failed — surface the ORIGINAL cause, not the last
+
+    def complete_streaming(
+        self,
+        *,
+        system: str,
+        user: str,
+        response_model: Type[T],
+        temperature: float = 0.0,
+        text_field: str,
+        on_text: Callable[[str], None],
+    ) -> T:
+        """Like :meth:`complete`, but streams the growing value of one text field
+        (``text_field``) through ``on_text`` while the model writes it — instructor
+        partial streaming (CK-0.2). Each callback receives the FULL text so far
+        (replace semantics, never a suffix delta), and only when it grew.
+
+        Self-healing: any failure — before or during the stream, including a final
+        partial that doesn't validate as a complete ``response_model`` — falls back
+        to the blocking :meth:`complete` (which itself has the Anthropic fallback).
+        Partial ``on_text`` calls that already happened are harmless: the caller's
+        terminal event always carries the authoritative final value."""
+        self._warn_if_over_window(system, user)
+        try:
+            return self._stream_on(self._client, self.backend, self._model,
+                                   system, user, response_model, temperature,
+                                   text_field, on_text, base_url=self._base_url,
+                                   role=self.role)
+        except Exception as stream_exc:
+            # An abandoned caller (a synthesis past its timeout, a run past its budget) gets
+            # no redo: the blocking call would be a second full request nobody reads.
+            from aughor.kernel import cancellation
+            cancellation.checkpoint()
+            logger.warning("provider: partial streaming failed (%s); falling back to blocking complete()",
+                           str(stream_exc)[:120])
+            return self.complete(system=system, user=user,
+                                 response_model=response_model, temperature=temperature)
+
+    def _warn_if_over_window(self, system: str, user: str) -> None:
+        """Layer-A safety net (§5b.3): a single, universal overflow check on every call.
+        Warn-only — never truncates (silently cutting evidence would risk grounding); the
+        signal is "the bound model is too small for this prompt; bind a larger-context one".
+        Best-effort: a budgeting hiccup must never block a real completion."""
+        try:
+            from aughor.llm.context_budget import overflow_tokens
+
+            over = overflow_tokens(system, user, self.capability.max_context)
+            if over:
+                est, budget = over
+                logger.warning(
+                    "llm: prompt ~%d tok exceeds %s's usable window ~%d tok (ctx %d) — "
+                    "the call may be rejected or truncated; bind a larger-context model.",
+                    est, self._model, budget, self.capability.max_context)
+        except Exception:
+            logger.debug("llm: overflow check skipped", exc_info=True)
+
+    @staticmethod
+    def _complete_on(client, backend, model, system, user, response_model, temperature,
+                     base_url: str = "", *, role: str = "", fallback: bool = False,
+                     max_retries: Optional[int] = None):
+        from aughor.kernel import metering
+        pinned_temp = current_run_temperature()
+        temperature = _effective_temperature(temperature, backend)
+        if backend == "anthropic":
+            endpoint = client.messages
+            kwargs = dict(model=model, max_tokens=_max_output_tokens(role, model), system=system,
+                          messages=[{"role": "user", "content": user}],
+                          response_model=response_model,
+                          max_retries=_structured_attempts(),
+                          # This branch has never carried temperature. A measured run needs the
+                          # sampling floor, but there is no Anthropic key in this environment to
+                          # verify the addition against — so send it ONLY when a run pins one,
+                          # leaving ordinary traffic byte-identical.
+                          **({"temperature": temperature} if pinned_temp is not None else {}))
+        else:
+            endpoint = client.chat.completions
+            kwargs = dict(model=model, temperature=temperature, response_model=response_model,
+                          max_tokens=_max_output_tokens(role, model),
+                          max_retries=_structured_attempts(),
+                          messages=[{"role": "system", "content": system},
+                                    {"role": "user", "content": user}])
+            extra = _reasoning_extra_body(backend)
+            if extra:
+                kwargs["extra_body"] = extra
+            kwargs = _as_accepted(backend, model, kwargs)
+        # Prefer create_with_completion (instructor ≥1.0) so we can read token usage
+        # off the raw response. Falls back to create() with no usage on older clients.
+        cwc = getattr(endpoint, "create_with_completion", None)
+
+        def _call(kw):
+            if cwc is not None:
+                return cwc(**kw)
+            return endpoint.create(**kw), None
+
+        def _recorded(attempt: str):
+            """``_call`` for a sub-attempt: a failure is its own row, named ``attempt``, then raised as before."""
+            def call(kw):
+                t = time.monotonic()
+                try:
+                    return _call(kw)
+                except Exception as sub_exc:
+                    _record_failed_attempt(sub_exc, backend=backend, model=model, role=role,
+                                           ms=(time.monotonic() - t) * 1000.0, temperature=temperature,
+                                           fallback=fallback, system=system, user=user,
+                                           extra={"attempt": attempt})
+                    raise
+            return call
+
+        def _do():
+            nonlocal kwargs
+            # A parameter the binding refuses as unsupported is sent as it asks, and the request goes again —
+            # at most once per parameter, since each is learned once (`_learned_refusal`). The refused request is a
+            # row of its own (2026-11-09: every attempt is a row).
+            while True:
+                t_sent = time.monotonic()
+                try:
+                    return _send()
+                except Exception as exc:
+                    if backend == "anthropic" or not _learned_refusal(exc, backend, model):
+                        raise
+                    _record_failed_attempt(exc, backend=backend, model=model, role=role,
+                                           ms=(time.monotonic() - t_sent) * 1000.0, temperature=temperature,
+                                           fallback=fallback, system=system, user=user,
+                                           extra={"attempt": "parameter_refused"})
+                    kwargs = _as_accepted(backend, model, kwargs)
+
+        def _send():
+            t = time.monotonic()
+            try:
+                return _call(kwargs)
+            except Exception as exc:
+                # Same shape as the stream_options fallback below: an OpenAI-compat shim that
+                # rejects `reasoning` must not take the call down with it. Retry once without the
+                # extras, and only for a 4xx-shaped complaint — a rate limit or outage has to stay
+                # transient so the retry ladder and fallback chain still see it.
+                #
+                # `_is_structured_failure` closes the hole that made that last clause a lie
+                # (Wave R1). The guard admitted anything that was neither transient nor a
+                # quota block — and a Pydantic validation error is neither. So on
+                # OpenRouter, the one backend that sends `extra_body` AND the app's
+                # primary, EVERY structured-output failure quietly re-sent the whole
+                # prompt to test a hypothesis that was already false: the shim had
+                # accepted `reasoning` fine, the model's JSON was simply wrong. Measured
+                # on this exact path: 2 requests spent per validation failure, against a
+                # 1,000/day cap. The response the model already gave us is the thing to
+                # look at, and that is what `_recover_structured` now does.
+                if ("extra_body" not in kwargs or _is_transient(exc)
+                        or _is_quota_exhausted(exc) or _is_structured_failure(exc)):
+                    raise
+                logger.warning("llm: %s rejected the reasoning extras (%s); retrying without",
+                               backend, str(exc)[:100])
+                # The refused request is a row of its own; the re-send's outcome is the row below.
+                _record_failed_attempt(exc, backend=backend, model=model, role=role,
+                                       ms=(time.monotonic() - t) * 1000.0, temperature=temperature,
+                                       fallback=fallback, system=system, user=user,
+                                       extra={"attempt": "with_reasoning_extras"})
+                _stats["without_reasoning_extras"] = True
+                return _call({k: v for k, v in kwargs.items() if k != "extra_body"})
+
+        _t0 = _t_start = time.monotonic()
+        _stats: dict = {}
+        _answered_by = ""      # the sub-attempt whose reply is returned, "" for the call itself
+        try:
+            # concurrency cap + transient-error retry/backoff
+            out, raw = _run_resilient(_do, base_url, stats=_stats, max_retries=max_retries)
+        except Exception as exc:
+            # Wave R1: before this failure becomes a request against another provider,
+            # try to recover the answer we were already given. `_recover_structured`
+            # returns a valid object with ZERO extra requests when the response was
+            # merely fenced/comma-trailing/mis-cased, and re-raises a typed
+            # StructuredOutputError otherwise so `complete()` can decline a failover
+            # that provably cannot help.
+            _t_failed, _first_exc = time.monotonic(), exc
+
+            def _first_failed() -> None:
+                # Before a repair request goes out: the answer it repairs was billed, and is a row of its own.
+                _record_failed_attempt(_first_exc, backend=backend, model=model, role=role,
+                                       ms=(_t_failed - _t_start) * 1000.0,
+                                       retries=_stats.get("retries", 0), temperature=temperature,
+                                       fallback=fallback, system=system, user=user)
+                _stats["first_recorded"] = True
+
+            recovered = _recover_structured(
+                # Claude's one repair asks for the JSON as text: the tool mode is what answered in prose.
+                exc, response_model, endpoint=(backend == "anthropic" and _anthropic_as_text(client)) or endpoint,
+                kwargs=kwargs,
+                base_url=base_url, backend=backend, model=model, role=role,
+                fallback=fallback, stats=_stats, before_repair=_first_failed)
+            if recovered is not None:
+                out, raw = recovered
+                if _stats.get("repaired"):
+                    # Two requests, two rows: the first answer (recorded before the repair went out) and the
+                    # repair, the answering row below, timed from its own start.
+                    _t0, _answered_by = _stats["repair_started"], "repair"
+            else:
+                # A call that fails past its retries must still leave a record —
+                # otherwise "which model fails" is unanswerable precisely when it
+                # matters, and the log flatters the provider it is meant to audit.
+                if not _stats.get("first_recorded"):
+                    _record_failed_attempt(exc, backend=backend, model=model, role=role,
+                                           ms=(time.monotonic() - _t0) * 1000.0,
+                                           retries=_stats.get("retries", 0), temperature=temperature,
+                                           fallback=fallback, system=system, user=user)
+                # A model that DECLARED tool calling and then returned no tool call at
+                # all has misreported itself, and that is a configuration fault the
+                # operator must see by name.
+                _raise_if_tools_declaration_false(client, backend, model, exc)
+                typed = _typed_structured_error(exc, response_model)
+                # The ceiling was filled by THINKING, not by the answer — turn the one
+                # dial that exists and try once more. Returns None when there is no dial,
+                # and then the original diagnosis stands unchanged.
+                _t_again = time.monotonic()
+                again = _retry_at_low_reasoning(typed, kwargs, _recorded("low_reasoning_retry"))
+                _answered_by = "low_reasoning_retry"
+                if again is None and backend == "anthropic" and not _stats.get("repair_tried"):
+                    _t_again = time.monotonic()
+                    again = _anthropic_json_reask(
+                        typed, client, kwargs, base_url,
+                        on_fail=lambda e, ms: _record_failed_attempt(
+                            e, backend=backend, model=model, role=role, ms=ms, temperature=temperature,
+                            fallback=fallback, system=system, user=user, extra={"attempt": "json_reask"}))
+                    _stats["reasked_as_json"] = again is not None
+                    _answered_by = "json_reask"
+                if again is None:
+                    raise typed
+                out, raw = again
+                _t0 = _t_again
+        pt, ct = _extract_usage(raw)
+        _ms = (time.monotonic() - _t0) * 1000.0
+        metering.record_llm(pt, ct, (time.monotonic() - _t_start) * 1000.0)
+        _pt, _ct = _usage_or_none(raw)
+        _record_llm_call(backend=backend, model=model, role=role, prompt_tokens=_pt,
+                         completion_tokens=_ct, ms=_ms,
+                         # the ladder's re-sends belong to the first request's row when a sub-attempt answered
+                         retries=0 if _answered_by else _stats.get("retries", 0),
+                         temperature=temperature, fallback=fallback,
+                         system=system, user=user, output=out,
+                         # A call that only succeeded because the normalizer repaired it
+                         # must not read as clean in the log — "which binding needs
+                         # salvaging how often" is the signal that retires a bad model.
+                         extra={
+                             **({"salvaged": True, "repairs": _stats.get("repairs", [])}
+                                if _stats.get("salvaged") else {}),
+                             # which sub-attempt's reply this is — its failed predecessors are rows of their own
+                             **({"attempt": _answered_by} if _answered_by else {}),
+                             **({"repair_of": _stats["repair_of"]} if _stats.get("repaired") else {}),
+                             **({"without_reasoning_extras": True}
+                                if _stats.get("without_reasoning_extras") else {}),
+                             # answered only when asked again for the JSON as text (`_anthropic_json_reask`)
+                             **({"reasked_as_json": True} if _stats.get("reasked_as_json") else {}),
+                             **({"cached_tokens": _cached}
+                                if (_cached := _extract_cached_tokens(raw)) is not None else {}),
+                         } or None)
+        _answered.set((backend, model, bool(fallback)))
+        metering.check_budget()   # in-context budget — the ask stream's, or the job's own (JobKernel._run)
+        return out
+
+    @staticmethod
+    def _json_stream_instruction(response_model) -> str:
+        """A compact 'answer as this JSON object' instruction for the raw streaming
+        path (which bypasses instructor's own schema prompt).
+
+        The whole shape, nested objects included. Top-level names alone told a model
+        ``"recommendations" (array)`` and nothing about the items, so it wrote strings
+        where the model requires objects — every deep synthesis on this path failed its
+        terminal validation and was paid for twice through the blocking fallback. The
+        terminal ``model_validate`` stays the real contract."""
+        schema = response_model.model_json_schema()
+        shape = _json_shape(schema, schema.get("$defs") or {})
+        return (f"\n\nReturn ONLY a JSON object of this shape: {shape}. "
+                "No markdown fences, no prose outside the JSON.")
+
+    @staticmethod
+    def _stream_on(client, backend, model, system, user, response_model, temperature,
+                   text_field, on_text, base_url: str = "", *, role: str = ""):
+        from aughor.kernel import metering
+        pinned_temp = current_run_temperature()
+        temperature = _effective_temperature(temperature, backend)
+        if backend == "anthropic":
+            # Streamed as TEXT and parsed as it grows, like the OpenAI-compatible family below. instructor's partial
+            # stream reads JSON only from a forced tool call, and the current Claude models refuse a forced
+            # `tool_choice` (400) — so the forced mode cannot stream and the reasoning mode yields nothing to parse.
+            import json as _json
+            import jiter as _jiter
+            raw_client = getattr(client, "client", None) or client
+            kwargs = dict(model=model, max_tokens=_max_output_tokens(role, model), stream=True,
+                          system=system + LLMProvider._json_stream_instruction(response_model),
+                          messages=[{"role": "user", "content": user}],
+                          # Sent only under a run-scoped pin — see _complete_on.
+                          **({"temperature": temperature} if pinned_temp is not None else {}))
+
+            def _do():
+                # Drain the WHOLE stream inside the resilient closure: the per-endpoint
+                # semaphore is released the moment do() returns, so the slot must be
+                # held for the stream's entire life.
+                buf, seen, pt, ct = "", "", None, None
+                for event in raw_client.messages.create(**kwargs):
+                    kind = getattr(event, "type", "")
+                    if kind == "message_start":
+                        u = getattr(getattr(event, "message", None), "usage", None)
+                        pt = getattr(u, "input_tokens", None)
+                    elif kind == "message_delta":
+                        ct = getattr(getattr(event, "usage", None), "output_tokens", None)
+                    elif kind == "content_block_delta":
+                        piece = getattr(event.delta, "text", None)
+                        if not piece:
+                            continue
+                        buf += piece
+                        text = _streamed_field(buf, text_field, _jiter)
+                        if isinstance(text, str) and len(text) > len(seen):
+                            seen = text
+                            try:
+                                on_text(text)   # full text so far — replace semantics
+                            except Exception:
+                                logger.debug("llm: on_text callback failed; delta dropped", exc_info=True)
+                start, end = buf.find("{"), buf.rfind("}")
+                if start < 0 or end <= start:
+                    raise RuntimeError("stream produced no JSON object")
+                from types import SimpleNamespace
+                usage = (SimpleNamespace(input_tokens=pt or 0, output_tokens=ct or 0)
+                         if pt is not None or ct is not None else None)
+                return _json.loads(buf[start:end + 1]), SimpleNamespace(usage=usage)
+
+            _t0 = time.monotonic()
+            _stats: dict = {}
+            try:
+                final_dict, raw_usage_src = _run_resilient(_do, base_url, stats=_stats)
+            except Exception as exc:
+                _record_failed_attempt(exc, backend=backend, model=model, role=role,
+                                       ms=(time.monotonic() - _t0) * 1000.0,
+                                       retries=_stats.get("retries", 0),
+                                       temperature=temperature, streamed=True,
+                                       system=system, user=user)
+                raise
+            pt, ct = _extract_usage(raw_usage_src)
+            _ms = (time.monotonic() - _t0) * 1000.0
+            metering.record_llm(pt, ct, _ms)
+            _pt, _ct = _usage_or_none(raw_usage_src)
+            _record_llm_call(backend=backend, model=model, role=role, prompt_tokens=_pt,
+                             completion_tokens=_ct, ms=_ms,
+                             retries=_stats.get("retries", 0), temperature=temperature,
+                             streamed=True, system=system, user=user, output=final_dict)
+            metering.check_budget()
+            # Terminal validation is the contract; a mismatch heals via the complete() fallback.
+            return response_model.model_validate(final_dict)
+
+        # OpenAI-compatible family (ollama/lmstudio/groq/together): stream RAW and
+        # parse the growing buffer ourselves. instructor's partial parser chokes the
+        # moment a model emits any preamble/fence before the JSON ("expected value at
+        # line 1 column 1" — observed live on glm via the ollama shim); scanning to
+        # the first '{' and partial-parsing with jiter tolerates that entire class,
+        # and stream_options.include_usage gives REAL token accounting.
+        import json as _json
+        import jiter as _jiter
+        raw_client = getattr(client, "client", None)   # instructor wrapper → underlying OpenAI client
+        if raw_client is None:
+            raise RuntimeError(f"{backend} instructor wrapper exposes no raw client — streaming unavailable")
+        sys_prompt = system + LLMProvider._json_stream_instruction(response_model)
+        # max_tokens rides here for the same reason it rides on _complete_on: without it the
+        # only brake on a reasoning model is the deadline. It was set on the blocking path only,
+        # so the three highest-volume calls in the app — the quick-path headline, the post-answer
+        # insight, and the deep synthesis — are all STREAMED and were all still unbounded.
+        # It is deliberately NOT part of the degrade ladder below: `max_tokens` is core OpenAI,
+        # every compat shim takes it, and a cap that can be silently dropped is not a cap.
+        base_kwargs = dict(model=model, temperature=temperature, stream=True,
+                           max_tokens=_max_output_tokens(role, model),
+                           messages=[{"role": "system", "content": sys_prompt},
+                                     {"role": "user", "content": user}])
+        extra = _reasoning_extra_body(backend)
+        if extra:
+            base_kwargs["extra_body"] = extra
+        # What this binding has refused before is sent as it asked; a first refusal here falls to the blocking
+        # path (see `complete_streaming`), which learns it.
+        base_kwargs = _as_accepted(backend, model, base_kwargs)
+
+        # Degrade ladder, richest first. `stream_options` and `reasoning` are both shim-optional
+        # and an endpoint that has never heard of one rejects the whole request, so drop them one
+        # at a time rather than lose the call.
+        _ladder = [dict(stream_options={"include_usage": True}, **base_kwargs)]
+        if extra:
+            _ladder.append({k: v for k, v in _ladder[0].items() if k != "extra_body"})
+        _ladder.append({k: v for k, v in base_kwargs.items() if k != "extra_body"})
+
+        def _open_stream():
+            last = len(_ladder) - 1
+            for i, kw in enumerate(_ladder):
+                t = time.monotonic()
+                try:
+                    return raw_client.chat.completions.create(**kw)
+                except Exception as exc:
+                    # Only a 4xx-shaped "I don't know that field" earns a degrade. A transient
+                    # error or a quota block must propagate untouched: re-sending it here is
+                    # another request against the very limit that just refused us (#200), and it
+                    # would hide the failure from the retry ladder and the fallback chain.
+                    if i == last or _is_transient(exc) or _is_quota_exhausted(exc):
+                        raise
+                    logger.warning("llm: %s rejected a streaming extra (%s); degrading",
+                                   backend, str(exc)[:100])
+                    # The refused rung was a request: its own row, before the next rung goes out.
+                    _record_failed_attempt(exc, backend=backend, model=model, role=role,
+                                           ms=(time.monotonic() - t) * 1000.0, temperature=temperature,
+                                           streamed=True, system=system, user=user,
+                                           extra={"attempt": "with_streaming_extras"})
+
+        def _do():
+            # Semaphore held for the stream's whole life (drained fully in here).
+            stream = _open_stream()
+            buf, seen, usage = "", "", None
+            for chunk in stream:
+                usage = getattr(chunk, "usage", None) or usage
+                if not (chunk.choices and chunk.choices[0].delta):
+                    continue
+                piece = chunk.choices[0].delta.content
+                if not piece:
+                    continue
+                buf += piece
+                text = _streamed_field(buf, text_field, _jiter)
+                if isinstance(text, str) and len(text) > len(seen):
+                    seen = text
+                    try:
+                        on_text(text)   # full text so far — replace semantics
+                    except Exception:
+                        logger.debug("llm: on_text callback failed; delta dropped", exc_info=True)
+            start, end = buf.find("{"), buf.rfind("}")
+            if start < 0 or end <= start:
+                raise RuntimeError("stream produced no JSON object")
+            return _json.loads(buf[start:end + 1]), usage
+
+        _t0 = time.monotonic()
+        _stats: dict = {}
+        try:
+            final_dict, usage = _run_resilient(_do, base_url, stats=_stats)
+        except Exception as exc:
+            _record_failed_attempt(exc, backend=backend, model=model, role=role,
+                                   ms=(time.monotonic() - _t0) * 1000.0,
+                                   retries=_stats.get("retries", 0),
+                                   temperature=temperature, streamed=True,
+                                   system=system, user=user)
+            raise
+        from types import SimpleNamespace
+        _raw = SimpleNamespace(usage=usage)
+        pt, ct = _extract_usage(_raw)   # extractor reads .usage
+        _ms = (time.monotonic() - _t0) * 1000.0
+        metering.record_llm(pt, ct, _ms)
+        _pt, _ct = _usage_or_none(_raw)
+        _record_llm_call(backend=backend, model=model, role=role, prompt_tokens=_pt,
+                         completion_tokens=_ct, ms=_ms, retries=_stats.get("retries", 0),
+                         temperature=temperature, streamed=True,
+                         system=system, user=user, output=final_dict)
+        metering.check_budget()   # in-context budget — the ask stream's, or the job's own (JobKernel._run)
+        # Terminal validation is the contract; a mismatch heals via complete() fallback.
+        return response_model.model_validate(final_dict)
+
+    def _fallback_provider(self, backend: str) -> Optional["LLMProvider"]:
+        """A provider bound to `backend` for this role, or None if it cannot be built.
+
+        Building a full LLMProvider (rather than a bare client) is what keeps the chain
+        honest: model resolution, base URL and client construction all come from the one
+        constructor that already knows every backend, so a backend added there is
+        fallback-capable for free."""
+        cache = getattr(self, "_fb_providers", None)
+        if cache is None:
+            cache = self._fb_providers = {}
+        if backend not in cache:
+            # The link's OWN model, or none. Handed nothing, the constructor fills the gap from `_active_model`, which
+            # reads the role bindings whatever the backend — the PRIMARY's model id (`claude-sonnet-5-5`) sent to a
+            # vendor that never served it, a refusal dressed as a fallback (punch list 76, 2026-11-09). A link with no
+            # model chosen is skipped, as `_fallback_model_for` always said it would be, and the skip is said.
+            model = _fallback_model_for(backend, self.role) or _FAUX_MODELS.get(backend, {}).get(self.role, "")
+            if not model:
+                logger.info("provider: fallback %s skipped for the %s role — no model is chosen for it "
+                            "(Settings ▸ Models ▸ Fallback)", backend, self.role)
+                from aughor.stats import stats
+                stats.inc("llm.fallback.no_model")
+                cache[backend] = None
+                return None
+            try:
+                cache[backend] = LLMProvider(backend=backend, role=self.role, model=model)
+            except Exception as exc:
+                logger.debug("provider: fallback %s unavailable (%s)", backend, exc)
+                cache[backend] = None
+        return cache[backend]
+
+    def _fallback_candidates(self) -> list[str]:
+        """Configured backends worth trying for this call, in order — never the primary,
+        only those holding a key (an unkeyed backend fails identically every time, so
+        trying it just adds latency to a call that is already failing), never one
+        currently in quota cooldown, and — for a BYOK org — never one whose key belongs
+        to somebody else.
+
+        That last clause is the CI-5b follow-up (user decision 2026-08-13). ``_active_key``
+        resolves org overlay → deployment config → env, which is right for the PRIMARY
+        binding and wrong here: an org that brought only an OpenRouter key could fail over
+        onto the operator's Anthropic or Gemini key, and the operator would absorb that
+        tenant's spend with nothing surfacing it. A tenant's spend surface must be exactly
+        what that tenant declared.
+
+        Scoping applies only when the org actually brought keys. An org with no BYOK row
+        is byte-identical to before: it IS the deployment, so the deployment chain is its
+        own. Keyless/local backends stay eligible either way — they cost nothing to try,
+        so excluding them would shorten the chain for no benefit.
+        """
+        if _flag("AUGHOR_FALLBACK_DISABLED"):
+            return []
+        own_keys = _org_own_keyed_backends()
+        added = added_providers()
+        # An added provider is the operator's endpoint, keyed or not, so a BYOK org reaches it
+        # only with a key of its own — the same rule as a built-in keyed one.
+        operators = set(NEEDS_KEY) | set(added)
+        return [b for b in _fallback_backends()
+                if b != self.backend
+                # `usable_key`, not `_active_key`: a candidate whose key cannot be
+                # decrypted is not a candidate. Falling over TO it would turn one
+                # misconfiguration into a second, more confusing failure.
+                and (b not in NEEDS_KEY or usable_key(b))
+                # An added provider may run without a key — never on one that cannot be read.
+                and not (b in added and key_is_undecryptable(b))
+                and (own_keys is None or b not in operators or b in own_keys)
+                and not _in_quota_cooldown(b)]
+
+
+def _fallback_status(primary: str) -> dict:
+    """The fallback binding as the UI needs it: what is configured, what will be tried,
+    and whether the primary is currently spent so runs are landing on the fallback.
+
+    `active` is best-effort — a cooldown read failing must never take Settings down with
+    it, so an unknown answer is reported as "not active" rather than raised.
+    """
+    fb = _cfg().get("fallback") or {}
+    chain = list(_fallback_backends())
+    try:
+        active = bool(chain) and _in_quota_cooldown(primary)
+    except Exception:                                     # pragma: no cover - defensive
+        logger.debug("provider: fallback cooldown read failed", exc_info=True)
+        active = False
+    return {
+        "backend": str(fb.get("backend") or "").strip(),
+        "model": str(fb.get("model") or "").strip(),
+        "chain": chain,
+        "active": active,
+        # An env pin silently OUTRANKS whatever Settings says. Without surfacing it the
+        # panel would show a chosen provider, the chain would show a different one, and
+        # nothing would explain which is real — a picker that does nothing is worse than
+        # no picker.
+        "env_pinned": bool(os.getenv("AUGHOR_FALLBACK_BACKENDS", "").strip()),
+    }
+
+
+def _org_cache_scope() -> tuple[str, str]:
+    """The (org_id, config-fingerprint) pair a cached provider was built for (CI-5b).
+
+    The fingerprint is the org row's ``updated_at``: an org save moves ITS
+    fingerprint, so exactly that tenant's next call rebuilds — no global
+    ``_config_version`` bump, no other tenant's cached clients touched, and none of
+    the reload-everything behaviour that cancels in-flight work. The default org
+    with no BYOK row scopes to ``("default", "")``, which is the pre-CI-5b cache
+    exactly.
+    """
+    try:
+        from aughor.llm.org_config import config_stamp
+        from aughor.org.context import current_org_id
+        org = current_org_id()
+        return org, config_stamp(org)
+    except Exception:
+        return "default", ""
+
+
+def get_provider(role: Role = "coder", *, model: Optional[str] = None) -> LLMProvider:
+    """Provider for `role`, cached per (org, config-fingerprint). Rebuilds when the
+    deployment config changes (global version) or the current ORG's stored config
+    changes (its fingerprint moves) — the latter without touching any other tenant.
+
+    When a model is pinned — explicitly via ``model=`` or implicitly by the current run's
+    ``set_run_model`` (the per-agent override) — returns a provider bound to that model,
+    cached per ``(org, role, model)``. With no pin, the normal role-default provider is
+    used, so unpinned code is unaffected. The implicit run pin skips the ``fast`` tier so
+    an agent pin never promotes cheap interpret calls to a heavy model
+    (see :func:`_pinned_model`)."""
+    global _cache_version
+    if _cache_version != _config_version:
+        _providers.clear()
+        _pinned_providers.clear()
+        _cache_version = _config_version
+    scope = _org_cache_scope()
+    pinned = _pinned_model(role, model)
+    if pinned:
+        key = (*scope, role, pinned)
+        if key not in _pinned_providers:
+            _pinned_providers[key] = LLMProvider(_active_backend(), role, model=pinned)
+        return _pinned_providers[key]
+    cache_key = (*scope, role)
+    if cache_key not in _providers:
+        _providers[cache_key] = LLMProvider(_active_backend(), role)
+    return _providers[cache_key]
+
+
+def _key_state(backend: str) -> str:
+    """`"set"` · `"unset"` · `"unreadable"` for one backend's API key.
+
+    `unreadable` means a key IS stored and cannot be decrypted — the vault key is absent
+    or has changed since it was written. Measured live: the ciphertext reached Google,
+    which answered *"Please pass a valid API key"*, and that message sends a person to
+    rotate a key that was never the problem.
+    """
+    from aughor.secretvault import is_encrypted
+
+    key = _active_key(backend)
+    if not key:
+        return "unset"
+    return "unreadable" if is_encrypted(key) else "set"
+
+
+# ── Config management (used by the /llm/config API) ───────────────────────────
+
+def current_config() -> dict:
+    """A secret-free view of the effective config, for the Settings UI.
+
+    `models`/`base_urls` are the *effective* values (what calls actually use);
+    `keys_set` says whether a key is available (config OR env) — never the value.
+    `capabilities` is the per-role vended profile (§5b) — what the bound model can do
+    and, crucially for BYO-model governance, its `privacy_class` (local · private_endpoint
+    · public_api). All non-secret; surfaced so Settings → Inference shows it plainly."""
+    from aughor.control_plane.inference import capability_for
+
+    cfg = _cfg()
+    backend = _active_backend()
+    base_url = _active_base_url(backend)
+
+    def _capability(role: Role) -> dict:
+        m = _active_model(backend, role)
+        cap = capability_for(backend, m, role, base_url,
+                             cache_mode_override=measured_cache_mode(backend, m))
+        return {
+            "cache_mode": cap.cache_mode,
+            "tooling": cap.tooling,
+            "structured_output": cap.structured_output,
+            "token_accounting": cap.token_accounting,
+            "max_context": cap.max_context,
+            "privacy_class": cap.privacy_class,
+            "cost": cap.cost,
+        }
+
+    return {
+        "backend": backend,
+        # effective values (what calls actually use):
+        "models": {r: _active_model(backend, r) for r in ROLES},
+        # What the operator bound for each backend they have configured. Settings restores
+        # these when the provider is switched, instead of clearing to nothing; the fallback
+        # chain dispatches with them. Never secret — model ids, chosen from the picker.
+        "models_by_backend": {b: dict(m) for b, m in
+                              (cfg.get("models_by_backend") or {}).items() if m},
+        # The fallback binding, and whether it is carrying traffic right now. `chain` is
+        # what will actually be tried (env pin > Settings > default order), so the panel
+        # never has to re-derive that precedence; `active` is true when the PRIMARY is in
+        # quota cooldown, which is the moment a run silently lands on the fallback instead
+        # — the roster reads it so an operator is not left guessing which model answered.
+        "fallback": _fallback_status(backend),
+        "base_urls": {b: _active_base_url(b) for b in LOCAL_BACKENDS},
+        # A key that cannot be DECRYPTED is not a key that is set. `decrypt_secret`
+        # returns an undecryptable value as-is — deliberate, so one bad record cannot take
+        # down a read path — so the ciphertext itself used to satisfy `bool(...)` and this
+        # answered `true` for a key the provider would reject. Both available answers were
+        # lies: "set" sends a person to check the provider, "unset" sends them to paste a
+        # key they already pasted. The third state is the true one, and it is the only one
+        # that names the actual fix (AUGHOR_SECRET_KEY is absent or has changed).
+        "keys_set": {b: _key_state(b) == "set" for b in keyed_backends()},
+        "keys_state": {b: _key_state(b) for b in keyed_backends()},
+        # the vended capability profile per role (§5b, Invariant #7):
+        "capabilities": {r: _capability(r) for r in ROLES},
+        # explicit overrides on disk (so the UI shows set vs default), never secrets:
+        "models_set": dict(cfg.get("models") or {}),
+        "base_urls_set": dict(cfg.get("base_urls") or {}),
+        # Models the operator has pinned to JSON structured output, per backend, and
+        # where the pin is honoured at all.
+        "json_mode": {b: list(v) for b, v in (cfg.get("json_mode") or {}).items()},
+        "json_mode_backends": list(JSON_MODE_PINNABLE),
+        # The one list: the built-in providers, then the ones a person added.
+        "backends": list(backends()),
+        # Where a missing key is a fault. An added provider takes a key but may run without one.
+        "needs_key": list(NEEDS_KEY),
+        "local_backends": list(LOCAL_BACKENDS),
+        # The providers a person added, as Settings shows and edits them — what each IS and
+        # whether its key is set, NEVER the key (this route is not gated; the key is write-only).
+        "providers": [describe_added_provider(pid) for pid in added_providers()],
+        # Always {} per backend now — no model id ships. The key stays so the UI's
+        # payload shape is unchanged; what it no longer does is suggest a model.
+        "default_models": {b: {} for b in backends()},
+    }
+
+
+def describe_added_provider(pid: str) -> dict:
+    """One added provider for a reader: its id, name, base URL, listed model ids and key STATE."""
+    from aughor.llm.models import custom_models
+
+    p = added_providers().get(pid) or {"name": pid, "base_url": ""}
+    return {"id": pid, "name": p["name"], "base_url": p["base_url"],
+            "models": custom_models(pid), "key_state": _key_state(pid)}
+
+
+def ensure_free_or_allowed(backend: str, model: str, *, allow_paid: bool = False) -> None:
+    """Free-by-default binding guard (raises ValueError on a silent paid bind).
+
+    On the metered OpenRouter catalog the deployment's default posture is the
+    `:free` tier — the credit balance is a threshold reserve that keeps the
+    free-tier request cap unlocked, not a spend budget. A non-`:free` model
+    binds only when the caller says `allow_paid` explicitly, so paying becomes
+    a deliberate act rather than a typo. BYO-key backends (anthropic / groq /
+    together / gemini) are inherently paid by the operator's own choice of key
+    and pass through untouched.
+    """
+    if backend != "openrouter" or not model or model.endswith(":free"):
+        return
+    if not allow_paid:
+        raise ValueError(
+            f"{model!r} is a paid OpenRouter model — free (`:free`) models are the "
+            "default here, and paid calls bill your OpenRouter credit. Re-save with "
+            "allow_paid to bind it deliberately."
+        )
+
+
+def set_config(patch: dict) -> dict:
+    """Merge `patch` into the on-disk config and reload. Returns current_config().
+
+    - models / base_urls: a non-empty string sets it; "" clears it back to default.
+    - keys: a new string is encrypted; "" clears it; a masked/None value is left as-is.
+    - a non-`:free` model on the openrouter backend requires `allow_paid: true`
+      (see :func:`ensure_free_or_allowed`).
+    """
+    from aughor.secretvault import encrypt_secret, is_masked
+
+    cfg = dict(_read_config())
+    known = backends()
+
+    if patch.get("backend"):
+        if patch["backend"] not in known:
+            raise unknown_backend(patch["backend"])
+        cfg["backend"] = patch["backend"]
+
+    if isinstance(patch.get("json_mode"), dict):
+        # Per backend, the list REPLACES that backend's pins; [] clears them. Replace
+        # rather than merge so the UI's "off" is expressible — with merge-only semantics
+        # a pin could be added and never removed.
+        pins = dict(cfg.get("json_mode") or {})
+        for b, models in patch["json_mode"].items():
+            if b not in known:
+                raise unknown_backend(b)
+            cleaned = [str(m).strip() for m in (models or []) if str(m).strip()]
+            if cleaned:
+                pins[b] = sorted(set(cleaned))
+            else:
+                pins.pop(b, None)
+        cfg["json_mode"] = pins
+
+    if isinstance(patch.get("models"), dict):
+        effective_backend = str(cfg.get("backend") or _active_backend())
+        allow_paid = bool(patch.get("allow_paid"))
+        models = dict(cfg.get("models") or {})
+        for r, m in patch["models"].items():
+            if r not in ROLES:
+                continue
+            if m and str(m).strip():
+                ensure_free_or_allowed(effective_backend, str(m).strip(),
+                                       allow_paid=allow_paid)
+                models[r] = str(m).strip()
+            else:
+                models.pop(r, None)
+        cfg["models"] = models
+        # Mirror the choice under its backend. `models` is a single role->model map that
+        # belongs to whichever backend is selected right now, so switching provider used to
+        # discard the previous one's bindings entirely — which is why the fallback chain had
+        # nothing to dispatch with (see `_fallback_model_for`), and why re-selecting a
+        # provider made the operator retype models they had already chosen once.
+        by_backend = dict(cfg.get("models_by_backend") or {})
+        remembered = dict(by_backend.get(effective_backend) or {})
+        for r, m in patch["models"].items():
+            if r not in ROLES:
+                continue
+            if m and str(m).strip():
+                remembered[r] = str(m).strip()
+            else:
+                remembered.pop(r, None)
+        if remembered:
+            by_backend[effective_backend] = remembered
+        else:
+            by_backend.pop(effective_backend, None)
+        cfg["models_by_backend"] = by_backend
+
+    if isinstance(patch.get("fallback"), dict):
+        fb = dict(cfg.get("fallback") or {})
+        if "backend" in patch["fallback"]:
+            chosen = str(patch["fallback"]["backend"] or "").strip()
+            # "" = the default order, "none" = no chain at all, else a real backend.
+            if chosen and chosen.lower() != "none" and chosen not in known:
+                raise ValueError(f"The fallback cannot be {chosen!r} — " + str(unknown_backend(chosen)))
+            fb["backend"] = chosen
+        if "model" in patch["fallback"]:
+            model = str(patch["fallback"]["model"] or "").strip()
+            # A paid fallback bills exactly like a paid primary — same consent, same guard.
+            # Skipping it here would make the fallback the one way to spend money without
+            # meaning to, which is the hole the free-by-default rule exists to close.
+            if model and fb.get("backend") and fb["backend"].lower() != "none":
+                ensure_free_or_allowed(fb["backend"], model,
+                                       allow_paid=bool(patch.get("allow_paid")))
+            fb["model"] = model
+        cfg["fallback"] = fb
+
+    if isinstance(patch.get("base_urls"), dict):
+        urls = dict(cfg.get("base_urls") or {})
+        for b, u in patch["base_urls"].items():
+            if b not in LOCAL_BACKENDS:
+                continue
+            if u and str(u).strip():
+                urls[b] = str(u).strip()
+            else:
+                urls.pop(b, None)
+        cfg["base_urls"] = urls
+
+    if isinstance(patch.get("keys"), dict):
+        keys = dict(cfg.get("keys") or {})
+        for b, k in patch["keys"].items():
+            if b not in keyed_backends():
+                continue
+            if k is None or is_masked(k):
+                continue  # unchanged
+            if str(k).strip() == "":
+                keys.pop(b, None)  # cleared
+            else:
+                keys[b] = encrypt_secret(str(k).strip())
+        cfg["keys"] = keys
+
+    write_config(cfg)
+    return current_config()
+
+
+# ── Adding, editing and removing a provider ───────────────────────────────────
+
+_NAME_MAX = 40
+#: Ids an added provider may not take: the fallback's "none" and the scripted test backend.
+_RESERVED_IDS = frozenset({"none", FAUX_BACKEND})
+
+
+def provider_id_for(name: str) -> str:
+    """The id an added provider is stored and bound under: its name, lower-cased, each run of other characters
+    one hyphen ("Azure OpenAI" → "azure-openai"). The config, the call ledger and the price list
+    (`AUGHOR_MODEL_PRICES="azure-openai:<model>=…"`) key on it, so it is fixed once the provider is added."""
+    return re.sub(r"[^a-z0-9]+", "-", (name or "").strip().lower()).strip("-")
+
+
+def _name_clash(pid: str, shown: str) -> str:
+    """Why this name cannot be a new provider's, or "". Spellings that differ only by case, spaces or hyphens
+    clash: two entries reading "Open AI" and "OpenAI" in one picker are one mistake waiting to be made."""
+    squash = pid.replace("-", "")
+    if pid in _RESERVED_IDS:
+        return f"{shown!r} cannot name a provider — the settings already use {pid!r} for something else."
+    for b in BACKENDS:
+        if squash == b.replace("-", ""):
+            return (f"{shown!r} is the name of a built-in provider ({b}), which is already in the list — choose "
+                    f"another name for a second endpoint.")
+    for other, p in added_providers().items():
+        if squash == other.replace("-", "") or shown.casefold() == p["name"].casefold():
+            return (f"{shown!r} is taken — a provider named {p['name']!r} was already added. Edit that one, "
+                    f"or choose another name.")
+    return ""
+
+
+def _checked_base_url(url: Any) -> str:
+    u = str(url or "").strip()
+    if not re.match(r"^https?://[^\s/]+", u):
+        raise ValueError("The base URL must start with http:// or https:// and name a host — the address its "
+                         "OpenAI-compatible API answers on, such as https://api.mistral.ai/v1.")
+    return u.rstrip("/")
+
+
+def _listed_models(models: Any) -> list[str]:
+    out: list[str] = []
+    for m in models or []:
+        s = str(m).strip()
+        if s and s not in out:
+            out.append(s)
+    return out
+
+
+def _not_added(pid: str) -> ValueError:
+    if pid in BACKENDS:
+        return ValueError(f"{pid!r} is a built-in provider: it is not edited or removed here — its key is "
+                          f"set in the Provider card when it is chosen.")
+    return unknown_backend(pid)
+
+
+def _forget_cached(pid: str) -> None:
+    """Drop what this process remembers about a provider's answers: its catalogue and its health verdicts."""
+    from aughor.llm.models import clear_cache
+    clear_cache(pid)
+    with _ping_lock:
+        for k in [k for k in _ping_cache if k[0] == pid]:
+            _ping_cache.pop(k, None)
+
+
+def add_provider(name: str, base_url: str, api_key: str = "", models: Any = None) -> dict:
+    """Add a named OpenAI-compatible provider. Returns :func:`current_config`.
+
+    Its key is encrypted where every key is; an empty key is allowed (a keyless endpoint). Its model ids, when
+    given, are kept in the catalogue's list for it, so the pickers offer them where the provider lists none.
+    Refused, with a sentence, when the name collides with a built-in or an added provider, or names nothing."""
+    from aughor.secretvault import encrypt_secret
+
+    shown = " ".join(str(name or "").split())
+    if not shown:
+        raise ValueError("A provider needs a name — what the pickers will call it, such as Mistral.")
+    if len(shown) > _NAME_MAX:
+        raise ValueError(f"A provider's name is at most {_NAME_MAX} characters; {shown!r} has {len(shown)}.")
+    pid = provider_id_for(shown)
+    if not pid:
+        raise ValueError(f"{shown!r} has no letter or digit to know it by — choose a name with one.")
+    clash = _name_clash(pid, shown)
+    if clash:
+        raise ValueError(clash)
+    url = _checked_base_url(base_url)
+
+    cfg = dict(_read_config())
+    cfg["providers"] = {**dict(cfg.get("providers") or {}), pid: {"name": shown, "base_url": url}}
+    key = str(api_key or "").strip()
+    if key:
+        cfg["keys"] = {**dict(cfg.get("keys") or {}), pid: encrypt_secret(key)}
+    listed = _listed_models(models)
+    if listed:
+        cfg["custom_models"] = {**dict(cfg.get("custom_models") or {}), pid: listed}
+    write_config(cfg)
+    _forget_cached(pid)
+    return current_config()
+
+
+def update_provider(pid: str, *, base_url: Any = None, api_key: Any = None, models: Any = None) -> dict:
+    """Edit an added provider. ``None`` leaves a field as it is; ``api_key=""`` removes the stored key (the
+    endpoint takes none) and a masked key is left unchanged; ``models`` REPLACES its listed ids. Its name is
+    its identity and is not edited — every setting that names it names it by that."""
+    from aughor.secretvault import encrypt_secret, is_masked
+
+    if pid not in added_providers():
+        raise _not_added(pid)
+    cfg = dict(_read_config())
+    providers = dict(cfg.get("providers") or {})
+    entry = dict(providers.get(pid) or {})
+    if base_url is not None:
+        entry["base_url"] = _checked_base_url(base_url)
+    providers[pid] = entry
+    cfg["providers"] = providers
+    if api_key is not None and not is_masked(api_key):
+        keys = dict(cfg.get("keys") or {})
+        if str(api_key).strip():
+            keys[pid] = encrypt_secret(str(api_key).strip())
+        else:
+            keys.pop(pid, None)
+        cfg["keys"] = keys
+    if models is not None:
+        customs = dict(cfg.get("custom_models") or {})
+        listed = _listed_models(models)
+        if listed:
+            customs[pid] = listed
+        else:
+            customs.pop(pid, None)
+        cfg["custom_models"] = customs
+    write_config(cfg)
+    _forget_cached(pid)
+    return current_config()
+
+
+def remove_provider(pid: str) -> dict:
+    """Remove an added provider and everything stored for it — its key, its listed models, the models bound
+    for it, its JSON-mode pins, its measured cache verdicts. A setting that NAMED it is cleared, not left to
+    refuse every call: the provider every role ran on, the fallback, an organisation's own binding. Each
+    clearing is said, in ``said``; the call ledger keeps its rows (what was called stays true).
+
+    Returns ``{"removed", "name", "said", "config"}``."""
+    if pid not in added_providers():
+        raise _not_added(pid)
+    name = added_providers()[pid]["name"]
+    cfg = dict(_read_config())
+    said: list[str] = []
+
+    for field in ("providers", "keys", "custom_models", "models_by_backend", "json_mode"):
+        if isinstance(cfg.get(field), dict) and pid in cfg[field]:
+            cfg[field] = {k: v for k, v in cfg[field].items() if k != pid}
+    if isinstance(cfg.get("measured_cache"), dict):
+        cfg["measured_cache"] = {k: v for k, v in cfg["measured_cache"].items()
+                                 if not str(k).startswith(f"{pid}:")}
+    was_primary = str(cfg.get("backend") or "") == pid
+    if was_primary:
+        # The roles' models were chosen for this provider; left behind they would be sent to whichever one
+        # serves next (the CI-5a trap), so they go with it.
+        cfg.pop("backend", None)
+        cfg["models"] = {}
+    fb = dict(cfg.get("fallback") or {})
+    if str(fb.get("backend") or "") == pid:
+        cfg["fallback"] = {"backend": "", "model": ""}
+        said.append(f"The fallback was {name}; it is the built-in order again.")
+    write_config(cfg)
+    _forget_cached(pid)
+
+    try:
+        from aughor.llm.org_config import forget_backend
+        bound, keyed = forget_backend(pid)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "an organisation's binding to a removed provider could not be cleared",
+                 counter="llm.remove_provider.orgs")
+        bound, keyed = [], []
+        said.append(f"The organisations' own bindings could not be read, so any that name {name} still do — "
+                    f"their calls are refused until they choose another provider.")
+    if bound:
+        said.append(f"{len(bound)} organisation{'s' if len(bound) != 1 else ''} ran on {name} as their own "
+                    f"provider ({', '.join(bound)}); that binding is cleared, so they use the deployment's again.")
+    if keyed and set(keyed) - set(bound):
+        n = len(set(keyed) - set(bound))
+        said.append(f"{n} organisation{'s' if n != 1 else ''} held their own key for {name}; it is deleted.")
+    if pid in [p.strip() for p in os.getenv("AUGHOR_FALLBACK_BACKENDS", "").split(",")]:
+        said.append("AUGHOR_FALLBACK_BACKENDS in the environment still names it; the chain skips it.")
+    now = _active_backend()
+    if now == pid:
+        # Only the environment can still name it once the config does not.
+        said.insert(0, f"AUGHOR_BACKEND in the environment still names {name}, so every call is refused until "
+                       f"it changes.")
+    elif was_primary:
+        model = _active_model(now, "coder")
+        said.insert(0, f"Every role ran on {name}; that binding is cleared, so calls now go to {now}"
+                       + (f" on {model}." if model else
+                          " — with no model, so each call fails, saying so, until you choose a provider and models."))
+    return {"removed": pid, "name": name, "said": said, "config": current_config()}
+
+
+# Health-check verdicts, keyed (backend, model) → (expires_at, result). A connection test fires
+# one real completion PER BOUND MODEL, and the 2026-07-22 OpenRouter export shows those 113-token
+# probes were 12 of 62 requests — 19% of the traffic, against a 50-request DAILY cap. Roughly ten
+# of fifty daily requests spent re-proving that the models exist. A verdict is stable on the
+# minute scale; the UI can still force a fresh probe.
+_PING_TTL_S = 300.0
+_ping_cache: dict[tuple[str, str], tuple[float, dict]] = {}
+_ping_lock = threading.Lock()
+
+
+def _ping_cached(backend: str, model: str, role: Role = "coder", *, force: bool = False) -> dict:
+    """`_ping` behind a short TTL. ``force`` always re-probes (an operator asking "is it up NOW")."""
+    ttl = max(0.0, _float_env("AUGHOR_PING_TTL_S", _PING_TTL_S))
+    key = (backend, model)
+    if not force and ttl:
+        with _ping_lock:
+            hit = _ping_cache.get(key)
+            if hit and time.monotonic() < hit[0]:
+                return {**hit[1], "cached": True}
+    result = _ping(backend, model, role)
+    if ttl:
+        with _ping_lock:
+            _ping_cache[key] = (time.monotonic() + ttl, result)
+    return result
+
+
+def _ping(backend: str, model: str, role: Role = "coder") -> dict:
+    """One tiny real completion against an explicit (backend, model)."""
+    class _Ping(BaseModel):
+        ok: bool
+
+    t0 = time.monotonic()
+    try:
+        prov = LLMProvider(backend, role, model=model)
+        # The fallback would mask a real failure — test the chosen backend directly.
+        # max_retries=0: a health check reports what is true NOW. Backing off a 429
+        # for 30s to eventually report the same rate limit is the wrong trade when
+        # someone is waiting on a button.
+        prov._complete_on(prov._client, backend, prov._model,
+                          "You are a health check. Reply with ok=true.",
+                          "Return ok=true.", _Ping, 0.0, max_retries=0)
+        return {"model": prov._model, "ok": True,
+                "ms": round((time.monotonic() - t0) * 1000, 1)}
+    except Exception as e:
+        # Wave R2: say WHICH failure. A health check exists to tell an operator what to
+        # do next, and "error: <240 characters of provider prose>" made a wrong key, a
+        # wrong base URL, a dead server and a spent free tier indistinguishable — all
+        # four render as a red cross with a paragraph. `reason` is a stable enum, `hint`
+        # is the action; `error` keeps the provider's own words, which are still the
+        # authority when the classifier says "unknown".
+        reason = classify_provider_error(e)
+        # A refusal is said in the provider's own words — any refusal, not only a 400: NVIDIA's 403 on a key was said
+        # only as our hint, and the person could not see what NVIDIA objected to (2026-11-09).
+        said = provider_words(e)
+        return {"model": model, "ok": False, "error": said or str(e)[:240],
+                "reason": reason, "hint": error_hint(reason),
+                "ms": round((time.monotonic() - t0) * 1000, 1)}
+
+
+def test_provider(backend: Optional[str] = None, model: Optional[str] = None, *,
+                  include_agents: bool = False, force: bool = False,
+                  models: Optional[dict[str, str]] = None) -> dict:
+    """Validate a backend with real completions. Returns {ok, backend, model, results[]}.
+
+    With no explicit ``model`` this tests EVERY DISTINCT model the deployment
+    would actually use — the three role bindings, plus the per-agent pins when
+    ``include_agents``. It previously tested only the coder model, so a green
+    result said nothing about the narrator or fast bindings even though they can
+    be different models with their own ids, quotas and availability.
+
+    Models are deduplicated: most setups point several roles at one model, and
+    three identical pings would be three times the cost for one fact. Each result
+    reports which roles/agents map to it.
+    """
+    b = (backend or _active_backend()).strip()
+    if b not in backends():
+        return {"ok": False, "backend": b, "error": str(unknown_backend(b)), "results": []}
+
+    is_active = b == _active_backend()
+    # model -> what uses it. Only the ACTIVE backend has models to probe now: a
+    # non-active one used to be tested against its built-in defaults, and with none
+    # shipped there is nothing to test until the operator configures it. The caller
+    # gets an empty result set and the reason, rather than a pass built on a guess.
+    targets: dict[str, list[str]] = {}
+    # ``models`` — the role → model a person has chosen on the form and not saved yet. Settings' "Test connection"
+    # sent the provider picked there but never the models beside it, so a provider not yet saved was answered "no
+    # model configured" and nothing was sent (an added NVIDIA NIM, 2026-11-09). What is on the form is what is tested.
+    chosen = {r: str(m).strip() for r, m in (models or {}).items() if r in ROLES and str(m or "").strip()}
+    if model:
+        targets[model] = ["explicit"]
+    elif chosen:
+        for role in ROLES:
+            if chosen.get(role):
+                targets.setdefault(chosen[role], []).append(role)
+    elif is_active:
+        for role in ROLES:
+            m = _active_model(b, role)
+            if m:
+                targets.setdefault(m, []).append(role)
+    if not model and include_agents and is_active:
+        try:
+            from aughor.kernel.agents import effective_governance, list_charters
+            for c in list_charters():
+                pinned = effective_governance(c.id).model
+                if pinned:
+                    targets.setdefault(pinned, []).append(f"agent:{c.id}")
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "connection test: agent pins unresolved; roles still tested",
+                     counter="llm.test.agents")
+
+    def _role_for(used_by: list[str]) -> Role:
+        for u in used_by:
+            if u in ROLES:
+                return u  # type: ignore[return-value]
+        return "coder"
+
+    # Independent calls — run them together so the wait is the slowest model, not
+    # the sum. The per-endpoint semaphore still bounds real concurrency.
+    results = []
+    if not targets:
+        # Nothing configured to probe. Reachable since built-in defaults were removed:
+        # a non-active backend, or an active one with no model set. Say so — the pool
+        # below raises on zero workers, and "we tested nothing" must never read as a pass.
+        return {"ok": False, "backend": b, "tested": 0, "failed": 0, "results": [],
+                "error": f"no model configured for {b} — set one in Settings ▸ Models"}
+    if len(targets) == 1:
+        (m, used_by), = targets.items()
+        results.append({**_ping_cached(b, m, _role_for(used_by), force=force), "used_by": used_by})
+    else:
+        from aughor.kernel.concurrency import ContextThreadPoolExecutor
+        from aughor.kernel.parallel_safety import fanout_region as _fanout_region
+        with _fanout_region("llm.health_probes"), ContextThreadPoolExecutor(max_workers=min(len(targets), 4)) as pool:
+            futures = {pool.submit(_ping_cached, b, m, _role_for(u), force=force): (m, u)
+                       for m, u in targets.items()}
+            for fut in futures:
+                m, used_by = futures[fut]
+                results.append({**fut.result(), "used_by": used_by})
+    results.sort(key=lambda r: (ROLES.index(r["used_by"][0])
+                                if r["used_by"] and r["used_by"][0] in ROLES else 99))
+
+    failed = [r for r in results if not r["ok"]]
+    coder_model = next((r["model"] for r in results if "coder" in r["used_by"]),
+                       results[0]["model"] if results else (model or ""))
+    out = {
+        "ok": not failed,
+        "backend": b,
+        "model": coder_model,          # back-compat: the headline model
+        "results": results,
+        "tested": len(results),
+        "failed": len(failed),
+    }
+    if failed:
+        out["error"] = f"{failed[0]['model']}: {failed[0].get('error', 'failed')}"
+        # The headline carries the classification too, so a caller that shows only the
+        # summary (the Settings banner) still says what to fix rather than just "failed".
+        out["reason"] = failed[0].get("reason", "unknown")
+        out["hint"] = failed[0].get("hint", "")
+        # Distinct reasons across bindings is itself the diagnosis: one model failing on
+        # `model_not_found` while its siblings pass is a bad id, not a dead provider.
+        out["reasons"] = sorted({r.get("reason", "unknown") for r in failed})
+    return out

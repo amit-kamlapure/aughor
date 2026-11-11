@@ -1,0 +1,80 @@
+"use client";
+import { SkeletonRows } from "@/components/ui/motion";
+
+import dynamic from "next/dynamic";
+import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
+import { Icon as Glyph, type IconName } from "@/components/ui/icon";
+
+// ── Lazy panels ──────────────────────────────────────────────────────────────
+// Each evals surface is a heavy data view — load on first open, then keep mounted
+// (the Workspace's keep-alive), so a suite RUNNING in one layer survives a tab
+// switch to the other. Mirrors OperationsWorkspace (Part 2 REC-U5).
+const loading = () => (
+  <div style={{ flex: 1, background: "var(--bg-0)", padding: 16 }}>
+    <SkeletonRows rows={6} />
+  </div>
+);
+
+const EvalSuitesPanel      = dynamic(() => import("@/components/EvalSuitesPanel").then(m => ({ default: m.EvalSuitesPanel })),           { ssr: false, loading });
+const EvalRunPanel         = dynamic(() => import("@/components/EvalRunPanel").then(m => ({ default: m.EvalRunPanel })),                 { ssr: false, loading });
+const EvalExperimentsPanel = dynamic(() => import("@/components/EvalExperimentsPanel").then(m => ({ default: m.EvalExperimentsPanel })), { ssr: false, loading });
+
+// Icon paths mirror the sidebar's NavIcon set (check / activity).
+/**
+ * This screen's glyphs, by role. The drawings come from the platform icon set
+ * (`components/ui/icon.tsx`); this map only says which role each local name means,
+ * so the existing call sites and `LAYERS` entries keep working unchanged.
+ */
+const ROLE: Record<string, IconName> = {
+  check: "check",
+  activity: "activity",
+  compare: "flask",
+};
+
+function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?: number; color?: string }) {
+  return (
+    <span style={{ color, display: "inline-flex", flexShrink: 0 }}>
+      <Glyph name={ROLE[name] ?? "info"} size={size} />
+    </span>
+  );
+}
+
+export type EvalsLayer = "suites" | "runs" | "experiments";
+
+const LAYERS: WorkspaceLayer<EvalsLayer>[] = [
+  { id: "suites",      icon: "check",    label: "Suites",      blurb: "What is measured, and how each suite last did" },
+  { id: "runs",        icon: "activity", label: "Runs",        blurb: "Each set-up's score as a band, with its trend" },
+  { id: "experiments", icon: "compare",  label: "Experiments", blurb: "A against B, and whether the gap clears the noise" },
+];
+
+type Props = {
+  connId?: string;
+  workspaceId?: string;
+  /** Active layer — controlled by the shell so external nav can deep-link. */
+  layer: EvalsLayer;
+  onLayerChange: (l: EvalsLayer) => void;
+};
+
+/**
+ * The Evals workspace — the surface over Wave E's consolidated eval store (E3),
+ * evaluator library (E2) and grid/fidelity harness (E4). An *instance* of the
+ * generic `<Workspace>` shell: the shell owns the switcher + keep-alive;
+ * the panels bring their own bodies. Suites author what to measure; Runs shows a
+ * measurement as a band (replicates + noise floor), never a single-run point.
+ */
+export function EvalsWorkspace({ connId, workspaceId, layer, onLayerChange }: Props) {
+  return (
+    <Workspace
+      layers={LAYERS}
+      layer={layer}
+      onLayerChange={onLayerChange}
+      ariaLabel="Evals views"
+      renderIcon={(name, size, color) => <Icon name={name} size={size} color={color} />}
+      renderLayer={id => {
+        if (id === "runs") return <EvalRunPanel connId={connId} workspaceId={workspaceId} />;
+        if (id === "experiments") return <EvalExperimentsPanel connId={connId} workspaceId={workspaceId} />;
+        return <EvalSuitesPanel connId={connId} workspaceId={workspaceId} onLayerChange={onLayerChange} />; // "suites"
+      }}
+    />
+  );
+}

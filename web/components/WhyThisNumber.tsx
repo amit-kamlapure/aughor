@@ -1,0 +1,586 @@
+"use client";
+
+/**
+ * WP-10 — "Why this number": the unified public Trust Receipt, on demand.
+ *
+ * A small trigger under an answer opens a drawer that resolves the answer's receipt id
+ * through GET /receipt/{id} — one signed contract for any mode. It shows the executed SQL
+ * (copyable), the guards that fired (each named, with its action), caveats, governed-metric
+ * enforcement, confidence + caps, the model, and the run cost — the moat made inspectable.
+ *
+ * Reusable by any surface that can hand it a receipt id (chat today; ResultFigure / KPI tiles /
+ * briefing figures once those stamp one).
+ */
+import { useEffect, useState } from "react";
+import {
+  getAnswerTrace, getPublicReceipt,
+  type AnswerTrace, type PublicReceipt, type PublicReceiptGuard, type TracedNode,
+  recheckAnswer, type AnswerRecheck as AnswerRecheckResult,
+} from "@/lib/api";
+import { AnswerRecheck } from "@/components/AnswerRecheck";
+import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
+import { renderEmphasis } from "@/components/brief/BriefProse";
+import { MetricProvenancePanel } from "@/components/ontology/MetricProvenance";
+import { StatusChip } from "@/components/brief/StatusChip";
+import { GuardChip, type GuardVerdict } from "@/components/ui/trust";
+import { WarrantChip } from "@/components/graph/WarrantChip";
+import { AddToEvalSuite } from "@/components/AddToEvalSuite";
+import { costSummary } from "@/lib/cost";
+import { formatTimestamp } from "@/lib/format";
+import { Loading } from "@/components/ui/states";
+
+// A guard's action → its verdict and verb. `flagged` is the only warned one; a repair is a guard
+// doing its job and the figure surviving it — passed, never red. A receipt is never a refusal.
+function guardVerdict(action: string): { verdict: GuardVerdict; verb: string } {
+  if (action === "flagged") return { verdict: "warned", verb: "flagged" };
+  // `trusted` is deliberately absent: it is not a guard and is rendered in its own section.
+  // It used to map to "reused a trusted query" here — a claim the receipt cannot support,
+  // since the pattern was shown to the model rather than demonstrably used by it.
+  return { verdict: "passed", verb: action.replace(/_/g, " ") };   // validated_by, etc.
+}
+
+const MODE_LABEL: Record<string, string> = {
+  quick: "Quick answer", deep: "Agent", builder: "Query Builder",
+  explore: "Exploration", monitor: "Monitor", brief: "Briefing",
+};
+
+/**
+ * Wave P1 — the answer's walk: the knowledge-graph nodes it stands on, grouped by WHY
+ * each one is here, plus the connections between them.
+ *
+ * Ordered strongest-first by role: what the planner was shown, then what the SQL read,
+ * then the governed metrics it used. A node the answer named but the graph does not hold
+ * is shown struck through rather than dropped — "the graph does not cover this table" is
+ * a real answer to "can I check every node", and quietly listing 3 of 4 is not.
+ */
+const REASON_TITLE: Record<TracedNode["reason"], string> = {
+  cited: "Shown to the planner before it wrote the SQL",
+  read: "Read by the SQL",
+  metric: "Governed metrics used",
+  finding: "Recorded back onto the graph",
+};
+
+function GroundingWalk({ trace }: { trace: AnswerTrace }) {
+  const order: TracedNode["reason"][] = ["cited", "read", "metric", "finding"];
+  const groups = order
+    .map((r) => ({ reason: r, nodes: trace.nodes.filter((n) => n.reason === r) }))
+    .filter((g) => g.nodes.length > 0);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {groups.map((g) => (
+        <div key={g.reason} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>{REASON_TITLE[g.reason]}</div>
+          {g.nodes.map((n) => (
+            <div key={n.id} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              <span className="aug-fs-xs" style={{
+                color: n.present ? "var(--t1)" : "var(--t3)",
+                textDecoration: n.present ? "none" : "line-through",
+              }}>
+                {n.label}
+              </span>
+              {n.present
+                ? <WarrantChip warrant={n.warrant} showDetail />
+                : <StatusChip hue="muted" strength="soft" title="This answer named it, but the knowledge graph does not hold it.">not in the graph</StatusChip>}
+              {n.summary && (
+                <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{n.summary.slice(0, 120)}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      ))}
+
+      {trace.edges.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>How they connect</div>
+          {trace.edges.map((e) => {
+            const from = trace.nodes.find((n) => n.id === e.from_id);
+            const to = trace.nodes.find((n) => n.id === e.to_id);
+            return (
+              <div key={e.id} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <span className="aug-fs-xs" style={{ color: "var(--t2)" }}>
+                  {from?.label ?? e.from_id} → {to?.label ?? e.to_id}
+                </span>
+                <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{e.label || e.kind.replace(/_/g, " ")}</span>
+                <WarrantChip warrant={e.warrant} showDetail />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div className="aug-fs-xs" style={{ color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em" }}>{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function SqlBlock({ q }: { q: PublicReceipt["executed_sql"][number] }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    void navigator.clipboard?.writeText(q.sql).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1200);
+    });
+  };
+  return (
+    <div style={{ border: "1px solid var(--b1)", borderRadius: "var(--r2)", overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 8px", background: "var(--bg-2)" }}>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{q.label}</span>
+        <Button size="xs" variant="ghost" onClick={copy}>{copied ? "copied ✓" : "copy"}</Button>
+      </div>
+      <pre style={{
+        margin: 0, padding: "8px 10px", background: "var(--code-bg)", fontSize: 11,
+        fontFamily: "var(--font-code)", color: "var(--t2)", whiteSpace: "pre-wrap",
+        wordBreak: "break-word", lineHeight: 1.5,
+      }}>{q.sql}</pre>
+    </div>
+  );
+}
+
+function Drawer({ receiptId, preloaded, onClose, asPage = false }: {
+  receiptId: string; preloaded?: PublicReceipt | null; onClose: () => void;
+  /** Idea 11 — the same receipt as a page of its own (`/receipt/<id>`), the address an
+   *  exported figure links to: no scrim, no Escape, centred. */
+  asPage?: boolean;
+}) {
+  const [rec, setRec] = useState<PublicReceipt | null>(preloaded ?? null);
+  const [state, setState] = useState<"loading" | "ready" | "missing">(
+    preloaded ? "ready" : "loading");
+  // PX-5 — which used metric's definition provenance is open. One at a time: the
+  // drawer answers "whose definition am I looking at", not "list every claimant".
+  const [provFor, setProvFor] = useState<string | null>(null);
+
+  useEffect(() => {
+    // The glance row above already fetched this receipt; re-fetching on open would make
+    // the same answer cost two requests again, which is what the S2 collapse removed.
+    if (preloaded) { setRec(preloaded); setState("ready"); return; }
+    let alive = true;
+    getPublicReceipt(receiptId)
+      .then(r => { if (alive) { setRec(r); setState(r ? "ready" : "missing"); } })
+      .catch(() => { if (alive) setState("missing"); });
+    return () => { alive = false; };
+  }, [receiptId, preloaded]);
+
+  useEffect(() => {
+    if (asPage) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, asPage]);
+
+  // Wave P1 — the knowledge-graph subgraph this answer stands on. Fetched only when the
+  // drawer opens (it costs a graph load) and never blocks the receipt: an answer whose
+  // connection has no graph shows the receipt exactly as it did before this wave.
+  const [trace, setTrace] = useState<AnswerTrace | null>(null);
+  useEffect(() => {
+    let alive = true;
+    getAnswerTrace(receiptId).then(t => { if (alive) setTrace(t); }).catch(() => {});
+    return () => { alive = false; };
+  }, [receiptId]);
+
+  // Wave S2 — a reused trusted pattern arrives in the same `guards` array as a real guard
+  // (one lineage shape, one reader), but it is not a guard that FIRED and must not be
+  // listed as one. It also carries a whole question as its name, which is a sentence, not
+  // a chip label. So the two are separated here and rendered differently.
+  const allRows: PublicReceiptGuard[] = rec?.guards ?? [];
+  const guards = allRows.filter(g => g.action !== "trusted");
+  const trusted = allRows.filter(g => g.action === "trusted");
+
+  // The Learning Receipt as sentences. Only what this run actually did — a zeroed
+  // counter is "the loop ran and changed nothing", which is not worth a line.
+  const l = rec?.learning;
+  const learned: string[] = [];
+  if (l?.readings_reused) {
+    learned.push(`reused ${l.readings_reused} resolved reading${l.readings_reused !== 1 ? "s" : ""}` +
+      (l.corrections_applied ? ` (${l.corrections_applied} correction${l.corrections_applied !== 1 ? "s" : ""})` : ""));
+  }
+  if (l?.resolutions_crystallized) {
+    learned.push(`crystallized ${l.resolutions_crystallized} new resolution${l.resolutions_crystallized !== 1 ? "s" : ""}`);
+  }
+
+  return (
+    <div
+      role={asPage ? "main" : "dialog"}
+      aria-modal={asPage ? undefined : "true"}
+      aria-label="Why this number — Trust Receipt"
+      onClick={e => { if (!asPage && e.target === e.currentTarget) onClose(); }}
+      style={asPage
+        ? { minHeight: "100vh", background: "var(--bg-0)", display: "flex", justifyContent: "center" }
+        : { position: "fixed", inset: 0, background: "var(--scrim)", backdropFilter: "blur(2px)", zIndex: 300, display: "flex", justifyContent: "flex-end" }}
+    >
+      <div style={{
+        width: "100%", maxWidth: asPage ? 720 : 460, height: asPage ? "auto" : "100%", background: "var(--bg-1)",
+        borderLeft: "1px solid var(--b2)", ...(asPage ? { borderRight: "1px solid var(--b2)", minHeight: "100vh" } : {}),
+        display: "flex", flexDirection: "column",
+      }}>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "14px 16px", borderBottom: "1px solid var(--b1)" }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 13, fontWeight: 650, color: "var(--t1)" }}>Why this number</span>
+              {rec && <StatusChip hue="info" strength="soft">{MODE_LABEL[rec.mode] ?? rec.mode}</StatusChip>}
+              {rec?.signature && <StatusChip hue="positive" strength="soft" icon={<Icon name="lock" size={11} />}>server-signed</StatusChip>}
+            </div>
+            {rec?.question && <div style={{ fontSize: 12, color: "var(--t3)", marginTop: 4, lineHeight: 1.5 }}>{rec.question}</div>}
+          </div>
+          {asPage
+            ? <Button size="xs" variant="ghost" onClick={onClose}>Open Aughor →</Button>
+            : <Button size="xs" variant="plain" onClick={onClose} aria-label="Close">✕</Button>}
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 16 }}>
+          {state === "loading" && <Loading what="the receipt" />}
+          {state === "missing" && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>No receipt is available for this answer.</div>}
+          {rec && (
+            <>
+              {rec.headline && (
+                <div style={{ fontSize: 13, color: "var(--t1)", fontWeight: 500, lineHeight: 1.5 }}>{renderEmphasis(rec.headline)}</div>
+              )}
+
+              {rec.executed_sql.length > 0 && (
+                <Section title={`Executed SQL (${rec.executed_sql.length})`}>
+                  {rec.executed_sql.map((q, i) => <SqlBlock key={`sql:${i}`} q={q} />)}
+                </Section>
+              )}
+
+              {guards.length > 0 && (
+                <Section title="Guards that fired">
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {guards.map((g, i) => {
+                      const t = guardVerdict(g.action);
+                      return (
+                        <div key={`g:${i}`} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <GuardChip verdict={t.verdict}>{g.name.replace(/_/g, " ")}</GuardChip>
+                            <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{t.verb}</span>
+                          </div>
+                          {g.caveat && <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>{g.caveat}</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </Section>
+              )}
+
+              {trusted.length > 0 && (
+                <Section title={`Trusted patterns in scope (${trusted.length})`}>
+                  <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>
+                    Verified query patterns for this connection were put in front of the model
+                    for this question. That is what the model was shown — not proof that this
+                    answer reused one.
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
+                    {trusted.map((t, i) => (
+                      <div key={`t:${i}`} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
+                          {t.name}
+                        </div>
+                        {/* The promoter's own warrant sentence, verbatim — it is what
+                            separates consistency-verified from human-checked. */}
+                        {t.caveat && (
+                          <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>
+                            {t.caveat}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </Section>
+              )}
+
+              {rec.resolved_readings.length > 0 && (
+                <Section title="Readings this connection already settled">
+                  <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>
+                    Applied so this question does not re-ask what was decided before.
+                  </div>
+                  {rec.resolved_readings.map((r, i) => (
+                    <div key={`rr:${i}`} className="aug-fs-xs"
+                      style={{ color: "var(--t2)", lineHeight: 1.5, marginTop: 4 }}>
+                      {r.reading}{r.note ? ` — ${r.note}` : ""}
+                    </div>
+                  ))}
+                </Section>
+              )}
+
+              {learned.length > 0 && (
+                <Section title="What the loop learned this run">
+                  <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
+                    {learned.join(" · ")}.
+                  </div>
+                </Section>
+              )}
+
+              {rec.activations.length > 0 && (
+                <Section title="Capabilities whose trigger fired">
+                  {rec.activations.map((a, i) => (
+                    <div key={`ac:${i}`} className="aug-fs-xs"
+                      style={{ color: "var(--t2)", lineHeight: 1.5, marginTop: 2 }}>
+                      {a.capability.replace(/^[a-z]+\./, "").replace(/[._]/g, " ")}
+                      {a.reason ? ` — activated because ${a.reason}` : ""}
+                      {a.count > 1 ? ` (×${a.count})` : ""}
+                    </div>
+                  ))}
+                </Section>
+              )}
+
+              {rec.caveats.length > 0 && (
+                <Section title="Caveats">
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {rec.caveats.map((c, i) => (
+                      <div key={`c:${i}`} className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>• {c}</div>
+                    ))}
+                  </div>
+                </Section>
+              )}
+
+              {(rec.metrics.used.length > 0 || rec.metrics.drifted.length > 0 || rec.metrics.available.length > 0
+                || rec.metrics.proposed.length > 0) && (
+                <Section title="Governed metrics">
+                  <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                    {rec.metrics.used.map((m, i) => <StatusChip key={`u:${i}`} hue="positive" strength="soft">{m} · governed ✓</StatusChip>)}
+                    {rec.metrics.drifted.map((m, i) => <StatusChip key={`d:${i}`} hue="caution" strength="soft" title={m.detail ?? undefined}>⚠ {m.metric} · non-governed</StatusChip>)}
+                    {rec.metrics.proposed.map((m, i) => (
+                      <StatusChip key={`p:${i}`} hue="accent" strength="soft"
+                        title={m.detail ?? "Define this metric in the Semantic Layer to enforce it"}>
+                        define {m.metric}
+                      </StatusChip>))}
+                    {rec.metrics.available.map((m, i) => <StatusChip key={`a:${i}`} hue="muted" strength="soft">{m}</StatusChip>)}
+                  </div>
+                  {/* PX-5 — the provenance panel ON the answer: whose definition this
+                      number used, from which asset, and whether it rests on a check or
+                      only on standing. Live-resolved (like the trace), so it sits
+                      outside the signed body by design. */}
+                  {rec.metrics.used.length > 0 && rec.connection?.id && (
+                    <div style={{ marginTop: 8 }}>
+                      {rec.metrics.used.map((m, i) => (
+                        <div key={`p:${i}`} style={{ marginTop: 4 }}>
+                          <Button variant="ghost" size="xs" data-testid={`wtn-prov-${m}`}
+                            onClick={() => setProvFor(provFor === m ? null : m)}>
+                            {provFor === m ? `Hide ${m}'s provenance` : `Whose definition is “${m}”?`}
+                          </Button>
+                          {provFor === m && (
+                            <div style={{ marginTop: 4 }}>
+                              <MetricProvenancePanel metricId={m} connectionId={rec.connection.id ?? ""} />
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Section>
+              )}
+
+              {/* Wave P1 — the walk. When the connection has a knowledge graph, the bare
+                  table strings become the graph nodes this answer stands on, each with
+                  the warrant behind it and each checkable. Falls back to the plain list
+                  when there is no graph, so nothing is ever lost. */}
+              {trace?.available && trace.nodes.length > 0 ? (
+                <Section title={`What this answer stands on · ${trace.nodes.length} nodes`}>
+                  <GroundingWalk trace={trace} />
+                </Section>
+              ) : rec.input_tables.length > 0 && (
+                <Section title="Input tables">
+                  <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                    {rec.input_tables.map((t, i) => <StatusChip key={`t:${i}`} hue="muted" strength="soft">{t}</StatusChip>)}
+                  </div>
+                </Section>
+              )}
+
+              {/* DE-4 — the columns this number rests on, each with how surely the parser bound
+                  it. A receipt that fell back to tables says why; one from before columns were
+                  traced says that, rather than reading as "no columns". */}
+              {rec.columns && rec.columns.level === "column" && (rec.columns.columns.length > 0 || rec.columns.tables_only.length > 0) && (
+                <Section title={`Columns read · ${rec.columns.columns.length}`}>
+                  <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }} data-testid="receipt-columns">
+                    {rec.columns.columns.map((c, i) => (
+                      <StatusChip key={`c:${i}`} hue={c.confidence === "certain" ? "muted" : "caution"} strength="soft"
+                        title={`${c.roles.join(", ")} · ${c.confidence ?? "unresolved"}${c.as.length ? ` · as ${c.as.join(", ")}` : ""}`}>
+                        {c.table.split(".").slice(-1)[0]}.{c.column}{c.confidence !== "certain" ? ` · ${c.confidence}` : ""}
+                      </StatusChip>
+                    ))}
+                  </div>
+                  {rec.columns.tables_only.length > 0 && (
+                    <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4 }}>
+                      {rec.columns.tables_only.map(t => `${t.as.join(", ") || "an output"} is a row count over ${t.table}: no column`).join(" · ")}
+                    </div>
+                  )}
+                  {rec.columns.note && (
+                    <div className="aug-fs-xs" style={{ color: "var(--amb4)", marginTop: 4 }}>{rec.columns.note}</div>
+                  )}
+                </Section>
+              )}
+              {rec.columns && rec.columns.level === "table" && (
+                <Section title="Columns read">
+                  <div className="aug-fs-xs" style={{ color: "var(--amb4)" }} data-testid="receipt-columns-untraced">
+                    Not traced to columns — {rec.columns.note ?? "the statement could not be qualified"}. The tables above are what is known.
+                  </div>
+                </Section>
+              )}
+
+              {/* Phase 1 of the 2027 study — line two. The hit rate is shown only with its n, and
+                  only when n reached the counter's threshold; below it the count alone is shown,
+                  with why. A bar for a figure nobody counted is what this section refuses. */}
+              {rec.record && (
+                <Section title="How often this kind of answer has held">
+                  {rec.record.confidence ? (
+                    <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }} data-testid="receipt-counted">
+                      {rec.record.confidence.hit_rate != null
+                        ? <><span style={{ color: "var(--t1)", fontWeight: 600 }}>{Math.round(rec.record.confidence.hit_rate * 100)}%</span>
+                            {" "}of {rec.record.confidence.n} {rec.record.confidence.reference_class}
+                            {rec.record.confidence.scope === "all connections" ? ", across every connection" : ""} held.</>
+                        : <>Not enough to count yet: {rec.record.confidence.note} ({rec.record.confidence.reference_class}).</>}
+                    </div>
+                  ) : (
+                    <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>{rec.record.confidence_note}</div>
+                  )}
+                  {rec.record.claim?.restated && (
+                    <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4 }}>
+                      This answer was restated since it was given (version {rec.record.claim.version} in the Record).
+                    </div>
+                  )}
+                </Section>
+              )}
+
+              {rec.record && (
+                <Section title="Who else was told">
+                  {rec.record.told.length > 0 ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }} data-testid="receipt-told">
+                      {rec.record.told.map(t => (
+                        <div key={t.departure_id || `${t.at}:${t.target}`} className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
+                          {t.state === "departed" ? "sent to" : `held (${t.state.replace(/_/g, " ")}) for`} {t.target || t.addressed_to || "—"}
+                          {t.by ? ` by ${t.by}` : ""}{t.at ? ` · ${t.at.slice(0, 10)}` : ""}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>{rec.record.told_note}</div>
+                  )}
+                </Section>
+              )}
+
+              {/* Screen 10 of the 2027 study — the re-check that already runs is offered as a button:
+                  the statement run now, both figures, and whether the difference is late rows or a
+                  restatement. A person asks; nothing is sent anywhere. */}
+              {rec.record?.answer && <Reperform answerId={rec.record.answer} />}
+
+              {(rec.confidence.level || rec.confidence.capped_by) && (
+                <Section title="Stated confidence">
+                  <div className="aug-fs-xs" style={{ color: "var(--t2)" }}>
+                    {rec.confidence.level ?? "—"}
+                    {rec.confidence.capped_by && <span style={{ color: "var(--t3)" }}> · capped by {rec.confidence.capped_by}</span>}
+                  </div>
+                </Section>
+              )}
+
+              {/* Footer facts — connection · model · cost · recorded-at */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 4, paddingTop: 8, borderTop: "1px solid var(--b1)" }}>
+                {rec.connection.name && (
+                  <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+                    Connection: {rec.connection.name}{rec.connection.dialect ? ` · ${rec.connection.dialect}` : ""}
+                  </div>
+                )}
+                {rec.model.id && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>Model: {rec.model.id} ({rec.model.role})</div>}
+                {costSummary(rec.cost) && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>Cost: {costSummary(rec.cost)}</div>}
+                {rec.created_at && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>Recorded {formatTimestamp(rec.created_at)}</div>}
+                <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>Receipt {rec.id} · server-signed (HMAC)</div>
+                {/* E6 — capture this exact question + executed SQL as an eval case. Moved
+                    here from the older per-mode panel, which was the only place it lived. */}
+                {rec.connection.id && rec.executed_sql[0]?.sql && (
+                  <div style={{ marginTop: 4 }}>
+                    <AddToEvalSuite connectionId={rec.connection.id}
+                      sql={rec.executed_sql[0].sql} question={rec.question} />
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Idea 11 — `/receipt/<id>`: the page every exported figure links back to. The drawer's
+ *  own body, so a reader of a PDF or a deck sees exactly what "Why this number" shows. */
+function Reperform({ answerId }: { answerId: string }) {
+  const [state, setState] = useState<"idle" | "running" | "done" | "refused">("idle");
+  const [result, setResult] = useState<AnswerRecheckResult | null>(null);
+  const [why, setWhy] = useState("");
+  const run = async () => {
+    setState("running");
+    try {
+      setResult(await recheckAnswer(answerId));
+      setState("done");
+    } catch (e) {
+      setWhy(e instanceof Error ? e.message : String(e));
+      setState("refused");
+    }
+  };
+  return (
+    <Section title="Re-perform">
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <Button size="xs" variant="outline" onClick={() => void run()} disabled={state === "running"} data-testid="receipt-reperform">
+          {state === "running" ? "Running the statement…" : state === "idle" ? "Run the statement now" : "Run it again"}
+        </Button>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>
+          Runs this answer&apos;s own statement again and compares it with what was said.
+        </span>
+      </div>
+      {state === "refused" && (
+        <div className="aug-fs-xs" role="alert" style={{ color: "var(--t2)", marginTop: 6, lineHeight: 1.5 }}>Not re-performed: {why}.</div>
+      )}
+      {state === "done" && result && (
+        result.status === "changed" ? <AnswerRecheck recheck={result} />
+        : (
+          <div className="aug-fs-xs" style={{ color: "var(--t2)", marginTop: 6, lineHeight: 1.5 }} data-testid="receipt-reperform-result">
+            {result.status === "unchanged"
+              ? `The statement returned the same figures just now (${formatTimestamp(result.checked_at, "short")}).`
+              : `It could not be compared: ${result.reason || "the answer keeps no statement to run again"}.`}
+          </div>
+        )
+      )}
+    </Section>
+  );
+}
+
+export function TrustReceiptPage({ receiptId }: { receiptId: string }) {
+  return <Drawer receiptId={receiptId} asPage onClose={() => { window.location.href = "/"; }} />;
+}
+
+export function WhyThisNumber({ receiptId }: { receiptId: string }) {
+  const [open, setOpen] = useState(false);
+  const [rec, setRec] = useState<PublicReceipt | null>(null);
+
+  // Fetched once here and handed to the drawer, so opening it costs nothing and the chips
+  // and the panel can never disagree about the same answer.
+  useEffect(() => {
+    let alive = true;
+    getPublicReceipt(receiptId)
+      .then(r => { if (alive) setRec(r); })
+      .catch(() => { /* no receipt → the trigger still opens and says so */ });
+    return () => { alive = false; };
+  }, [receiptId]);
+
+  return (
+    <>
+      {/* The link alone (the user, 2026-09-30): the row of receipt chips under every answer
+          is gone — metrics, guards, readings and sources are all in the drawer it opens. */}
+      <div style={{ display: "flex", alignItems: "center", marginTop: 6 }}>
+        <Button size="xs" variant="ghost" onClick={() => setOpen(true)}
+          style={{ color: "var(--t3)" }} aria-label="Why this number — open the Trust Receipt">
+          Why this number →
+        </Button>
+      </div>
+      {open && <Drawer receiptId={receiptId} preloaded={rec} onClose={() => setOpen(false)} />}
+    </>
+  );
+}

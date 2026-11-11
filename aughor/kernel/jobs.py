@@ -1,0 +1,921 @@
+"""The Job Kernel (stage K1) — every long-running operation is a supervised job.
+
+Before K1, long-running work was 17 raw ``asyncio.create_task`` sites with no
+shared state model: explorations stuck "running" after a crash, never resumed
+after a restart, leaked tasks on canvas/connection deletion, and pause states
+that nothing was responsible for releasing. The kernel makes those properties
+structural instead of per-call-site:
+
+- **One state machine** (PENDING → RUNNING → SUCCEEDED | FAILED | CANCELLED,
+  with PAUSED reserved) persisted in the ledger; every transition emits a
+  ``job.state`` event to the journal.
+- **Heartbeats** — a runner-side sidecar touches the job row while the task is
+  alive. A heartbeat that stops without a terminal transition = an orphan.
+  (Liveness of the event loop, not of the work itself — a hung-but-alive task
+  is K1's known blind spot, taken deliberately to avoid threading heartbeat
+  calls through every work loop.)
+- **The Supervisor** — a periodic loop that fails stale orphans, absorbs the
+  old one-shot ``sweep_stale_running`` (history.db, leveraged not duplicated),
+  and resumes explorers left paused by a dead investigation.
+- **Boot recovery** — at startup every non-terminal job row necessarily belongs
+  to a dead process (single-process runtime): mark it FAILED("server restart")
+  and hand resumable explorations back to the caller to respawn from their
+  checkpoint files. The ``api.started`` journal event anchors the timeline.
+- **Idempotency** — submitting with an idempotency key while a job with that
+  key is active returns the existing job instead of double-spawning (the
+  manual-rebuild-races-Phase-8 class).
+- **Scope cancellation** — deleting a canvas/connection cancels its jobs.
+"""
+from __future__ import annotations
+
+import asyncio
+import contextvars
+import json
+import logging
+import re
+import threading
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Awaitable, Callable, Optional
+
+from aughor.kernel import metering
+from aughor.kernel.ledger import Ledger
+from aughor.org.context import DEFAULT_ORG_ID, reset_actor, reset_org_id, set_actor, set_org_id
+
+logger = logging.getLogger(__name__)
+
+# The job whose async context the current code runs under — artifact writes
+# stamp `created_by_job` from this without threading ids through call chains.
+_current_job: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "aughor_current_job", default=None
+)
+
+
+# The agent charter that owns the running job's kind (scout/analyst/curator/…). Resolved
+# ONCE at run start and carried on a contextvar, so every session event emitted anywhere
+# under the run can name its agent without a per-event job lookup. This is the write half
+# of Migration 10: `agent_id` says which CUSTOM agent asked and is empty for all platform
+# work, which left charter identity and model spend in two stores with no join.
+_current_charter: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "aughor_current_charter", default=None
+)
+
+
+def current_job_id() -> Optional[str]:
+    return _current_job.get()
+
+
+def current_charter_id() -> Optional[str]:
+    return _current_charter.get()
+
+
+def stop_reason(job_id: Optional[str] = None) -> str:
+    """Why the kernel cancelled this job (the current one by default), or "" — readable inside the run
+    while it unwinds, so a heartbeat's budget kill is not filed as somebody's stop."""
+    jid = job_id or _current_job.get()
+    return _stop_reasons.get(jid, "") if jid else ""
+
+
+def run_attribution() -> tuple[str, str]:
+    """``(job_id, charter_id)`` for the run this code is executing under, ('','') outside
+    one. Degrades to empty rather than raising — attribution must never break a run."""
+    try:
+        return _current_job.get() or "", _current_charter.get() or ""
+    except Exception:
+        return "", ""
+
+
+#: Why the kernel cancelled a job, readable from INSIDE the run while it unwinds — where
+#: a reconcile has to name the cause. Before this the cancelled run only saw a bare
+#: CancelledError, and filed a 900s budget kill as "the client disconnected".
+_stop_reasons: dict[str, str] = {}
+
+_BUDGET_STOP = re.compile(r"^budget exceeded: (time|token) budget \(([\d,.]+)(?:s| tokens)\)")
+
+
+def describe_stop(exc: Optional[BaseException] = None) -> str:
+    """Why the run on this task ended without an answer, then what to do — one short
+    paragraph for the investigation record and the run history that quotes it."""
+    job_id = _current_job.get()
+    agent_id = _current_charter.get() or ""
+    agent = agent_id
+    try:
+        from aughor.kernel.agents import get_charter
+        charter = get_charter(agent_id) if agent_id else None
+        agent = charter.name if charter else agent_id
+    except Exception as e:
+        from aughor.kernel.errors import tolerate
+        tolerate(e, "a stop reason names the agent best-effort", counter="jobs.describe_stop")
+    from aughor.kernel.cancellation import RunStopped
+    m = metering.current()
+    return stop_sentence(
+        reason=(exc.reason if isinstance(exc, RunStopped)
+                else _stop_reasons.get(job_id, "") if job_id else ""),
+        in_job=job_id is not None, agent_id=agent_id, agent=agent,
+        cancelled=exc is None or isinstance(exc, (asyncio.CancelledError, GeneratorExit)),
+        error="" if exc is None else (str(exc) or type(exc).__name__),
+        llm_calls=m.llm_calls if m is not None else None,
+        queries=m.query_count if m is not None else None)
+
+
+def stop_sentence(*, reason: str, in_job: bool, cancelled: bool, error: str = "",
+                  agent_id: str = "", agent: str = "", llm_calls: Optional[int] = None,
+                  queries: Optional[int] = None) -> str:
+    spent = ""
+    if llm_calls is not None and queries is not None:
+        spent = (f" ({llm_calls} model call{'' if llm_calls == 1 else 's'}, "
+                 f"{queries} quer{'y' if queries == 1 else 'ies'})")
+    who = agent or "agent"
+    patch = f"PATCH /agents/{agent_id}" if agent_id else "PATCH /agents/<agent>"
+    budget = _BUDGET_STOP.match(reason)
+    if budget and budget.group(1) == "time":
+        return (f"Stopped at the {who}'s {budget.group(2)}s time budget before answering"
+                f"{spent}. Bind a faster model in Settings → Models, or raise "
+                f"time_budget_s with {patch}.")
+    if budget:
+        return (f"Stopped at the {who}'s {budget.group(2)}-token budget before answering"
+                f"{spent}. Ask a narrower question, or raise token_budget with {patch}.")
+    if reason:
+        return f"Stopped before answering{spent} — {reason}."
+    if not cancelled:
+        return f"Stopped before answering{spent}: {error}"
+    if in_job:
+        return (f"Cancelled before answering{spent}, with no recorded reason (an API "
+                "restart does this). Run it again.")
+    return (f"Stopped before answering{spent} — the request streaming it ended (a closed "
+            "page or an API restart). Ask again.")
+
+
+class JobState:
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    PAUSED = "PAUSED"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+    #: The process died with this job in flight — a restart, a lost lease, a worker
+    #: that stopped heartbeating. "It broke" and "we do not know how far it got" are
+    #: different facts, and recording the second as the first is a falsehood, not a
+    #: safe default: it charges an infrastructure event to the agent's error rate and
+    #: tells the reader a failure was observed when none was. Not a flag, for the
+    #: same reason — an off-path that lies is not an off-path.
+    INTERRUPTED = "INTERRUPTED"
+
+    ACTIVE = (PENDING, RUNNING, PAUSED)
+    TERMINAL = (SUCCEEDED, FAILED, CANCELLED, INTERRUPTED)
+
+
+_LEGAL = {
+    JobState.PENDING: {JobState.RUNNING, JobState.CANCELLED, JobState.FAILED,
+                       JobState.INTERRUPTED},
+    JobState.RUNNING: {JobState.SUCCEEDED, JobState.FAILED, JobState.CANCELLED,
+                       JobState.PAUSED, JobState.INTERRUPTED},
+    JobState.PAUSED: {JobState.RUNNING, JobState.CANCELLED, JobState.FAILED,
+                      JobState.INTERRUPTED},
+    JobState.SUCCEEDED: set(),
+    JobState.FAILED: set(),
+    JobState.CANCELLED: set(),
+    JobState.INTERRUPTED: set(),
+}
+
+_HEARTBEAT_SECONDS = 15
+_STALE_SECONDS = 120
+
+#: The one shared sentence for interrupted work (unified plan Layer 0.4). An
+#: interrupted run's result is UNKNOWN, not known-bad — "failed" claims a fact
+#: nobody observed — so every surface that reports an orphaned/interrupted run
+#: appends this exact wording rather than coining its own (the web side mirrors it
+#: in web/lib/chatTurn.ts UNCERTAIN_RESULT). The shared vocabulary landed
+#: first so wordings could not diverge; the terminal status followed and is now
+#: ``JobState.INTERRUPTED`` — this sentence explains such a run, it no longer
+#: substitutes for the missing status.
+UNCERTAIN_RESULT = "its result is uncertain and was not replayed"
+
+
+def _int_env(name: str, default: int) -> int:
+    import os
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+# Concurrency cap for user-initiated jobs. Without a bound, a client (or a script
+# loop) hammering /investigate spawns unbounded supervised jobs + SSE streams +
+# LLM calls and exhausts the single process. Background explorers are exempt:
+# they are already bounded one-per-connection by idempotency key, and capping
+# them here would let a few long-lived explorers starve user investigations.
+_UNBOUNDED_KINDS = frozenset({"exploration"})
+
+
+def _max_concurrent_jobs() -> int:
+    import os
+    try:
+        return max(1, int(os.getenv("AUGHOR_MAX_CONCURRENT_JOBS", "8")))
+    except ValueError:
+        return 8
+
+
+#: How often a job waiting for a slot looks again. It only ever looks while the cap is reached.
+_SLOT_POLL_S = 0.05
+
+
+class _JobSlots:
+    """The cap on running jobs, which a job on ANY event loop may wait on.
+
+    Not an ``asyncio.Semaphore``: that belongs to one loop, and once full it raises RuntimeError at a job from another.
+    A step that needs an investigation's answer drains it on its worker thread's own loop (`runners/investigation.py`),
+    so a job submitted while automation ticks filled the cap died before it ran, its row PENDING and the step waiting on
+    it for good (the Daily Briefing, 2026-10-30 to 2026-11-03).
+    """
+
+    def __init__(self, slots: int) -> None:
+        self._free = threading.BoundedSemaphore(slots)
+
+    async def acquire(self) -> None:
+        while not self._free.acquire(blocking=False):
+            await asyncio.sleep(_SLOT_POLL_S)
+
+    def release(self) -> None:
+        self._free.release()
+
+
+def concurrency_policy() -> dict:
+    """The kernel's actual concurrency shape, for surfaces that render it.
+
+    Deliberately not "per-kind caps": there is ONE process-wide cap plus
+    an exemption set. A fleet view that invented per-agent knobs over this
+    would be describing a mechanism that does not exist (Wave CR §2).
+    """
+    return {"max_concurrent_jobs": _max_concurrent_jobs(),
+            "unbounded_kinds": sorted(_UNBOUNDED_KINDS)}
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+class JobKernel:
+    def __init__(self, ledger: Optional[Ledger] = None):
+        self.ledger = ledger or Ledger.default()
+        self._tasks: dict[str, asyncio.Task] = {}
+        self._job_slots: Optional[_JobSlots] = None
+
+    def _slot_for(self, kind: str) -> Optional[_JobSlots]:
+        """The cap a job of *kind* must hold a slot of to run, or None when the
+        kind is exempt from it."""
+        if kind in _UNBOUNDED_KINDS:
+            return None
+        if self._job_slots is None:
+            self._job_slots = _JobSlots(_max_concurrent_jobs())
+        return self._job_slots
+
+    # ── state transitions (the ONLY writer of job.state) ─────────────────────
+
+    def _transition(self, job_id: str, to: str, *, error: Optional[str] = None) -> bool:
+        job = self.ledger.job_get(job_id)
+        if job is None:
+            return False
+        frm = job["state"]
+        if to not in _LEGAL.get(frm, set()):
+            logger.warning("job %s: illegal transition %s → %s ignored", job_id, frm, to)
+            return False
+        fields: dict[str, Any] = {"state": to}
+        if to == JobState.RUNNING and not job.get("started_at"):
+            fields["started_at"] = _now()
+            fields["heartbeat_at"] = _now()
+        if to in JobState.TERMINAL:
+            fields["finished_at"] = _now()
+        if error is not None:
+            fields["error"] = error[:2000]
+        self.ledger.job_update(job_id, **fields)
+        self.ledger.emit(
+            "job.state",
+            {"state": to, "kind": job["kind"], **({"error": error[:300]} if error else {})},
+            conn_id=job.get("conn_id"), canvas_id=job.get("canvas_id"), job_id=job_id,
+        )
+        return True
+
+    # ── submit / run ──────────────────────────────────────────────────────────
+
+    async def submit(
+        self,
+        kind: str,
+        coro_factory: Callable[[], Awaitable[Any]],
+        *,
+        conn_id: Optional[str] = None,
+        canvas_id: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
+        payload: Any = None,
+        org_id: Optional[str] = None,
+        on_finish: Optional[Callable[[str, str], None]] = None,
+    ) -> str:
+        """Create a supervised job and start it. Returns the job id.
+
+        ``on_finish(job_id, final_state)`` runs after the terminal transition —
+        callers use it for registry cleanup (the old add_done_callback role).
+
+        ``org_id`` stamps the job's tenant explicitly — required when submitting from
+        OFF the request/loop context (e.g. a scheduler thread via
+        ``run_coroutine_threadsafe``, where ``current_org_id()`` would be 'default').
+        When omitted, ``job_insert`` falls back to the current Org context, unchanged.
+        """
+        if idempotency_key:
+            existing = self.ledger.jobs_where(
+                states=list(JobState.ACTIVE), idempotency_key=idempotency_key, limit=1
+            )
+            if existing:
+                return existing[0]["id"]
+
+        job_id = uuid.uuid4().hex[:12]
+        # Track C1 — whose authority this job spends, taken once here, while the request (or its
+        # absence) is still in context, and never rewritten (`kernel/job_auth.py`).
+        from aughor.kernel.job_auth import job_auth_context
+        try:
+            auth = job_auth_context(kind, org_id)
+        except Exception as _a_exc:  # noqa: BLE001 — a job is never refused for want of its record
+            from aughor.kernel.errors import tolerate
+            tolerate(_a_exc, "the job's authority could not be taken; recorded as unknown", counter="kernel.job_auth")
+            auth = {"person": "", "org": org_id or "", "verified_by": "unknown", "roles": [],
+                    "policy": "", "purpose": kind, "at": _now(), "error": f"{type(_a_exc).__name__}: {_a_exc}"}
+        self.ledger.job_insert({
+            "id": job_id, "kind": kind, "conn_id": conn_id, "canvas_id": canvas_id,
+            "org_id": org_id, "state": JobState.PENDING, "payload": payload,
+            "idempotency_key": idempotency_key, "attempt": 1, "created_at": _now(), "auth": auth,
+        })
+        self.ledger.emit("job.state", {"state": JobState.PENDING, "kind": kind},
+                         conn_id=conn_id, canvas_id=canvas_id, job_id=job_id)
+
+        sem = self._slot_for(kind)
+
+        async def _gated() -> None:
+            # Hold a concurrency slot for the whole run; the job sits PENDING
+            # until a slot frees. Cancelling a still-queued job closes its row.
+            if sem is not None:
+                try:
+                    await sem.acquire()
+                except asyncio.CancelledError:
+                    self._transition(job_id, JobState.CANCELLED)
+                    self._tasks.pop(job_id, None)
+                    _stop_reasons.pop(job_id, None)
+                    raise
+            try:
+                await self._run(job_id, coro_factory, on_finish)
+            finally:
+                if sem is not None:
+                    sem.release()
+
+        task = asyncio.create_task(_gated(), name=f"job-{kind}-{job_id}")
+        self._tasks[job_id] = task
+        return job_id
+
+    def _resolve_governance(self, job_id: str):
+        """(governance, agent_id) for this job's agent, at its Org/workspace scope.
+        Best-effort — any failure yields the charter defaults (never blocks a run)."""
+        job = self.ledger.job_get(job_id) or {}
+        from aughor.kernel.agents import charter_for_kind, effective_governance
+        charter = charter_for_kind(job.get("kind"))
+        ws = None
+        try:
+            from aughor.workspace.store import workspace_for_connection
+            ws = workspace_for_connection(job.get("conn_id"))
+        except Exception:
+            ws = None
+        gov = effective_governance(charter.id, ws)
+        # A job may carry a tighter token cap of its own (`payload.token_cap`) — the exploration principles §7:
+        # an automatic run is capped at what is left of its month's budget, so one run cannot overshoot it.
+        # The tighter of the two holds; the cap never raises the agent's own budget.
+        payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+        cap = payload.get("token_cap")
+        if isinstance(cap, int) and not isinstance(cap, bool) and cap > 0 and (
+                not gov.token_budget or cap < gov.token_budget):
+            from dataclasses import replace
+            gov = replace(gov, token_budget=cap)
+        return gov, charter.id
+
+    def _set_run_model(self, job_id: str):
+        """Pin this run's LLM model to the agent's per-agent override (governance,
+        override-wins: workspace > app > role default). Returns a reset token, or None when
+        no override applies. Best-effort — a resolve error never blocks the run."""
+        try:
+            gov, _agent = self._resolve_governance(job_id)
+            if getattr(gov, "model", None):
+                from aughor.llm.provider import set_run_model
+                return set_run_model(gov.model)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "per-agent model resolve", counter="agent_model")
+        return None
+
+    def _over_budget(self, job_id: str, gov, elapsed_s: float) -> Optional[str]:
+        """The budget this run has blown, or None. Tokens come from the live
+        metrics registry when the run shares this process, else from the snapshot
+        the heartbeat flushed onto the job row; time from the heartbeat's own clock."""
+        m = _live_or_flushed_metrics(job_id, self.ledger)
+        if gov.token_budget and m and m.total_tokens > gov.token_budget:
+            return f"token budget ({gov.token_budget:,} tokens)"
+        if gov.time_budget_s and elapsed_s > gov.time_budget_s:
+            return f"time budget ({gov.time_budget_s}s)"
+        return None
+
+    async def _heartbeat_loop(self, job_id: str) -> None:
+        import time as _time
+        gov, agent_id = self._resolve_governance(job_id)
+        t0 = _time.monotonic()
+        while True:
+            await asyncio.sleep(_HEARTBEAT_SECONDS)
+            try:
+                # The heartbeat carries the run's live spend out with it. This is what
+                # makes budgets enforceable from OUTSIDE this process: a supervisor that
+                # cannot see the job task's accumulator reads the flushed row instead
+                # (see _live_or_flushed_metrics). Same UPDATE as the heartbeat itself,
+                # so liveness and spend cost one write and can never disagree about
+                # which beat they describe. Snapshot may be None in the teardown window
+                # after unregister — then the beat writes alone rather than nulling the
+                # final flush.
+                fields: dict[str, Any] = {"heartbeat_at": _now()}
+                _snap = metering.snapshot_for_job(job_id)
+                if _snap is not None:
+                    fields["metrics"] = json.dumps(_snap, default=str)
+                self.ledger.job_update(job_id, **fields)
+            except Exception:
+                logger.debug("heartbeat write failed for job %s", job_id, exc_info=True)
+            # Budget enforcement — the reliable kill: cancel raises CancelledError,
+            # which (unlike a plain exception) unwinds past the agent's fail-open
+            # try/excepts. We stamp the reason first; the CANCELLED transition keeps it.
+            over = self._over_budget(job_id, gov, _time.monotonic() - t0)
+            if over:
+                logger.info("job %s exceeded %s — cancelling (agent %s)", job_id, over, agent_id)
+                self.ledger.emit("budget.exceeded", {"agent": agent_id, "reason": over},
+                                 job_id=job_id,
+                                 conn_id=(self.ledger.job_get(job_id) or {}).get("conn_id"))
+                self.ledger.job_update(job_id, error=f"budget exceeded: {over}")
+                self.cancel(job_id, reason=f"budget exceeded: {over}")
+                return
+
+    async def _run(self, job_id: str, coro_factory, on_finish) -> None:
+        self._transition(job_id, JobState.RUNNING)
+        hb = asyncio.create_task(self._heartbeat_loop(job_id), name=f"hb-{job_id}")
+        final = JobState.FAILED
+        _token = _current_job.set(job_id)
+        # Resolve the owning charter once per run. `charter_for_kind` never raises and
+        # returns the _UNKNOWN charter for a kind nothing claims (the automation tick),
+        # which is exactly what the Overview's background-runner lane needs to see.
+        _charter_token = None
+        _agent_id = "worker"
+        try:
+            from aughor.kernel.agents import charter_for_kind
+            _kind = (self.ledger.job_get(job_id) or {}).get("kind")
+            _agent_id = charter_for_kind(_kind).id
+            _charter_token = _current_charter.set(_agent_id)
+        except Exception as _c_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_c_exc, "charter attribution is best-effort; the run proceeds",
+                     counter="obs.job_charter")
+        # Re-bind the job's tenant for the whole run (DATA-06 under identity). The org
+        # was captured on the job row at submit; binding it HERE — not relying on the
+        # implicit contextvar copy — means a job re-run by boot-recovery (no request
+        # context) still operates in its own org, not 'default'.
+        _row = self.ledger.job_get(job_id) or {}
+        _org_token = set_org_id(_row.get("org_id") or DEFAULT_ORG_ID)
+        # Track C1 — and the person it acts for, from the authority written at submit, so a run that
+        # resumes off any request (boot recovery, another process) records its writes under the same name.
+        _person = ((_row.get("auth") or {}) if isinstance(_row.get("auth"), dict) else {}).get("person") or ""
+        _actor_token = set_actor(_person) if _person else None
+        _m_token = metering.start()
+        metering.register_job(job_id)   # so the heartbeat can enforce this run's budget
+        # Arm the SAME budget the heartbeat enforces as the run's IN-CONTEXT budget too.
+        # The heartbeat's cancel is the reliable kill for the coroutine, but a cancel
+        # cannot reach a synchronous loop the run dispatched into an executor thread —
+        # the birth job's intelligence step (one model call per table under
+        # `run_in_executor`) ran to completion with its spend metered and never enforced
+        # (measured 2026-09-22). The LLM funnel already calls `metering.check_budget()`
+        # after every call and the context executor carries this contextvar into the
+        # thread, so armed here the call that crosses the line is the LAST one, in any
+        # thread; BudgetExceeded is a BaseException, so it unwinds past the loop's
+        # fail-open `except Exception` and lands in the branch below. A job submitted
+        # from inside an ask's metered stream inherits the ASK's budget through the
+        # context copy — this re-arm replaces it with the job's own governance, which
+        # is the law inside the job and what the heartbeat reads. Best-effort: a resolve
+        # failure arms nothing and the heartbeat still enforces.
+        _b_token = None
+        try:
+            _gov, _ = self._resolve_governance(job_id)
+            _b_token = metering.set_budget(getattr(_gov, "token_budget", None),
+                                           getattr(_gov, "time_budget_s", None))
+        except Exception as _b_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_b_exc, "in-context budget arm is best-effort; the heartbeat still "
+                             "enforces", counter="metering")
+        _model_token = self._set_run_model(job_id)   # per-agent LLM model override (best-effort)
+        # Correlate background work (explorer, briefs, monitors, birth) — those
+        # never pass an ask door, so nothing else would bind them a trace and their
+        # spans would land uncorrelated. Only when none is bound: a deep /ask
+        # investigation submits its job from inside the ask stream and inherits
+        # that run's trace through the context copy, which must win over the job id.
+        _trace_cm = None
+        try:
+            from aughor import telemetry as _tel
+            if not _tel.current_trace_id():
+                _trace_cm = _tel.bind_trace(job_id)
+                _trace_cm.__enter__()
+        except Exception as _t_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_t_exc, "job trace binding is best-effort; the run proceeds",
+                     counter="obs.job_trace")
+        # Arc TC, TC-2 — the job is its own run, bound always (unlike the trace, which a deep analysis inherits): an
+        # edit or an audited action inside it names this job, and the Watcher's as a monitor's run.
+        _run_cm = None
+        try:
+            from aughor import telemetry as _tel
+            _run_cm = _tel.bind_run(job_id, "monitor" if _agent_id == "watcher" else "agent")
+            _run_cm.__enter__()
+        except Exception as _r_exc:
+            _run_cm = None
+            from aughor.kernel.errors import tolerate
+            tolerate(_r_exc, "job run binding is best-effort; the run proceeds", counter="obs.job_trace")
+        try:
+            await coro_factory()
+            final = JobState.SUCCEEDED
+            self._transition(job_id, JobState.SUCCEEDED)
+        except asyncio.CancelledError:
+            final = JobState.CANCELLED
+            self._transition(job_id, JobState.CANCELLED)
+            # Deliberately not re-raised: cancellation is an intended outcome,
+            # and this task is the top of its own stack.
+        except metering.BudgetExceeded as be:
+            # The in-context budget fired inside the run — in a thread the cancel could
+            # not reach, or in the coroutine between two heartbeats. Same terminal state,
+            # same event and the same reason string as the heartbeat's kill, so the
+            # reconcile and the Fleet view read ONE story whichever guard fired first.
+            final = JobState.CANCELLED
+            reason = f"budget exceeded: {be.reason}"
+            _stop_reasons.setdefault(job_id, reason)
+            logger.info("job %s exceeded %s in-context — cancelling (agent %s)",
+                        job_id, be.reason, _agent_id)
+            try:
+                self.ledger.emit("budget.exceeded", {"agent": _agent_id, "reason": be.reason},
+                                 job_id=job_id,
+                                 conn_id=(self.ledger.job_get(job_id) or {}).get("conn_id"))
+            except Exception:
+                logger.debug("budget.exceeded emit failed for job %s", job_id, exc_info=True)
+            self.ledger.job_update(job_id, error=reason)
+            self._transition(job_id, JobState.CANCELLED)
+        except Exception as exc:
+            final = JobState.FAILED
+            self._transition(job_id, JobState.FAILED, error=str(exc))
+            logger.error("job %s failed: %s", job_id, exc, exc_info=True)
+        finally:
+            # Flush the run's compute (tokens/queries/rows/time) onto the job row —
+            # for the Fleet view + Trust Receipt. Runs for every terminal state so a
+            # cancelled/failed run still records what it spent. Best-effort.
+            try:
+                _snap = metering.snapshot()
+                if _snap is not None:
+                    self.ledger.job_update(job_id, metrics=json.dumps(_snap, default=str))
+            except Exception as _m_exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_m_exc, "job metrics flush", counter="metering")
+            metering.unregister_job(job_id)
+            _stop_reasons.pop(job_id, None)
+            if _b_token is not None:
+                metering.clear_budget(_b_token)
+            metering.reset(_m_token)
+            if _model_token is not None:
+                from aughor.llm.provider import reset_run_model
+                reset_run_model(_model_token)
+            if _run_cm is not None:
+                try:
+                    _run_cm.__exit__(None, None, None)
+                except Exception as _r_exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_r_exc, "job run unbind", counter="obs.job_trace")
+            if _trace_cm is not None:
+                try:
+                    _trace_cm.__exit__(None, None, None)
+                except Exception as _t_exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_t_exc, "job trace unbind", counter="obs.job_trace")
+            _current_job.reset(_token)
+            if _charter_token is not None:
+                _current_charter.reset(_charter_token)
+            reset_org_id(_org_token)
+            if _actor_token is not None:
+                reset_actor(_actor_token)
+            hb.cancel()
+            self._tasks.pop(job_id, None)
+            if on_finish is not None:
+                try:
+                    on_finish(job_id, final)
+                except Exception:
+                    logger.warning("job %s on_finish hook failed", job_id, exc_info=True)
+
+    # ── cancellation ──────────────────────────────────────────────────────────
+
+    def cancel(self, job_id: str, reason: str = "") -> bool:
+        """Cancel a job. ``reason`` is what the run's own reconcile reports as the cause —
+        without one, the only honest thing it can say is that nothing recorded why."""
+        task = self._tasks.get(job_id)
+        if task is not None and not task.done():
+            if reason:
+                _stop_reasons.setdefault(job_id, reason)
+            task.cancel()
+            return True
+        # No live task (e.g. PENDING row from a dead process) — close the row.
+        return self._transition(job_id, JobState.CANCELLED)
+
+    def cancel_scope(self, *, conn_id: Optional[str] = None, canvas_id: Optional[str] = None) -> int:
+        """Cancel every active job in a scope — wired into canvas/connection
+        deletion so explorer tasks can't outlive their owner (the task-leak class)."""
+        if conn_id is None and canvas_id is None:
+            return 0
+        n = 0
+        why = "its connection was removed" if canvas_id is None else "its canvas was removed"
+        for job in self.ledger.jobs_where(states=list(JobState.ACTIVE),
+                                          conn_id=conn_id, canvas_id=canvas_id):
+            if self.cancel(job["id"], reason=why):
+                n += 1
+        # A connection scope also owns canvas jobs running on that connection.
+        if conn_id is not None and canvas_id is None:
+            for job in self.ledger.jobs_where(states=list(JobState.ACTIVE)):
+                if job.get("conn_id") == conn_id and job.get("canvas_id"):
+                    if self.cancel(job["id"], reason=why):
+                        n += 1
+        return n
+
+    # ── boot recovery (WCH-6) ─────────────────────────────────────────────────
+
+    def boot_recovery(self) -> list[dict]:
+        """At startup, fail the non-terminal jobs whose LEASE has lapsed and return
+        the exploration jobs among them so the caller can respawn from checkpoints.
+
+        The old rule — *every* non-terminal row belongs to a dead process — was only
+        sound while exactly one process ever ran (its own docstring said so). On a
+        shared database a second instance boots while the first is mid-exploration,
+        and blanket-failing would kill (then double-respawn) healthy work owned by a
+        living process. The heartbeat is the lease: a RUNNING job whose
+        ``heartbeat_at`` is fresher than the lease window is OWNED — left alone,
+        recorded as ``job.foreign`` so the skip is observable, never silent. A job
+        whose lease lapsed is an orphan wherever it ran, exactly as before.
+
+        PENDING/PAUSED rows have no heartbeat and no owner — still failed on sight:
+        nothing will ever pick them up (submit attaches the runner in-process), so
+        leaving them would recreate the orphaned-state class WCH-6 closed.
+        Idempotent: a clean ledger returns []."""
+        lease_s = _int_env("AUGHOR_JOB_LEASE_S", _STALE_SECONDS)
+        cutoff = datetime.now(timezone.utc).timestamp() - lease_s
+        resumable, orphaned, foreign = [], 0, 0
+        for job in self.ledger.jobs_where(states=list(JobState.ACTIVE)):
+            if job["state"] == JobState.RUNNING:
+                hb = job.get("heartbeat_at") or job.get("started_at") or job.get("created_at")
+                try:
+                    hb_ts = datetime.fromisoformat(hb).timestamp()
+                except (ValueError, TypeError):
+                    hb_ts = 0
+                if hb_ts >= cutoff:
+                    foreign += 1
+                    self.ledger.emit("job.foreign", {"kind": job["kind"], "heartbeat_at": hb},
+                                     conn_id=job.get("conn_id"), canvas_id=job.get("canvas_id"),
+                                     job_id=job["id"])
+                    continue   # live lease — another process owns this job
+            orphaned += 1
+            self.ledger.emit("job.orphaned", {"kind": job["kind"]},
+                             conn_id=job.get("conn_id"), canvas_id=job.get("canvas_id"),
+                             job_id=job["id"])
+            # INTERRUPTED, not FAILED: the process died holding this job. Nobody
+            # observed a failure, and the error rate must not be charged for a restart.
+            self._transition(job["id"], JobState.INTERRUPTED,
+                             error=f"lease lapsed (orphaned) — {UNCERTAIN_RESULT}")
+            if job["kind"] == "exploration":
+                resumable.append(job)
+        if orphaned or foreign:
+            logger.info("boot recovery: %d orphaned job(s) failed (%d exploration(s) resumable), "
+                        "%d foreign job(s) with live leases left running",
+                        orphaned, len(resumable), foreign)
+        return resumable
+
+    # ── the Supervisor ────────────────────────────────────────────────────────
+
+    def sweep_stale(self, *, stale_after: int = _STALE_SECONDS) -> int:
+        """Mark INTERRUPTED any RUNNING job whose heartbeat went silent and whose task
+        is gone — the in-process orphan case (task died without a terminal transition).
+
+        PENDING is swept too, on its created_at: a job submitted on a serverless
+        instance that froze before the task ever started leaves a PENDING row with
+        no heartbeat, no lease, and no living task anywhere — and because ``submit``
+        returns the existing job for any ACTIVE state under an idempotency key, that
+        one row blocked its automation on every later tick. boot_recovery fails
+        these on the next cold start, but the external-clock deployment sweeps HERE
+        (``/cron/tick``), which only looked at RUNNING — so the wedge outlived every
+        warm tick between boots."""
+        n = 0
+        cutoff = datetime.now(timezone.utc).timestamp() - stale_after
+        for job in self.ledger.jobs_where(states=[JobState.RUNNING, JobState.PENDING]):
+            if job["id"] in self._tasks:
+                continue
+            hb = job.get("heartbeat_at") or job.get("started_at") or job.get("created_at")
+            try:
+                hb_ts = datetime.fromisoformat(hb).timestamp()
+            except (ValueError, TypeError):
+                hb_ts = 0
+            if hb_ts < cutoff:
+                if self._transition(
+                        job["id"], JobState.INTERRUPTED,
+                        error=f"orphaned (stale heartbeat, no live task) — {UNCERTAIN_RESULT}"):
+                    n += 1
+        return n
+
+    def _resume_investigation_paused_explorers(self) -> int:
+        """Backstop for the paused-explorer leak: an explorer paused BY AN
+        INVESTIGATION (tagged ``_paused_by_investigation``) whose connection has
+        no running investigation anymore gets resumed. User-paused explorers
+        (stop endpoints) are never touched — pause intent belongs to the user."""
+        try:
+            from aughor.routers._shared import explorers, canvas_explorers
+            from aughor.db.history import list_investigations
+        except Exception:
+            return 0
+        candidates = [e for e in (*explorers.values(), *canvas_explorers.values())
+                      if getattr(getattr(e, "_status", None), "paused", False)
+                      and getattr(e, "_paused_by_investigation", False)]
+        if not candidates:
+            return 0
+        running_conns = {
+            r.get("connection_id") for r in list_investigations(limit=100)
+            if r.get("status") == "running"
+        }
+        n = 0
+        for e in candidates:
+            if getattr(e, "connection_id", None) not in running_conns:
+                try:
+                    e.resume()
+                    e._paused_by_investigation = False
+                    self.ledger.emit("explorer.resumed",
+                                     {"reason": "investigation gone (supervisor backstop)"},
+                                     conn_id=getattr(e, "connection_id", None),
+                                     canvas_id=getattr(e, "canvas_id", None))
+                    n += 1
+                except Exception:
+                    logger.warning("supervisor: explorer resume failed", exc_info=True)
+        return n
+
+    async def supervise_forever(self, *, interval: int = 30) -> None:
+        """The periodic supervisor — replaces the old boot-only stale sweep."""
+        tick = 0
+        while True:
+            await asyncio.sleep(interval)
+            tick += 1
+            try:
+                n = self.sweep_stale()
+                if n:
+                    logger.info("supervisor: failed %d stale orphaned job(s)", n)
+            except Exception:
+                logger.warning("supervisor: stale sweep failed", exc_info=True)
+            try:
+                self._resume_investigation_paused_explorers()
+            except Exception:
+                logger.warning("supervisor: paused-explorer backstop failed", exc_info=True)
+            try:
+                # Adopted onto this loop rather than given a timer of its own — the
+                # house rule, and the right cadence anyway: drift is only dangerous for
+                # as long as it goes unnoticed, so a 30s check bounds the window that
+                # the SIGBUS lives in. 23 os.stat calls; it costs nothing.
+                from aughor.db.backend import check_wal_drift
+                drifted = check_wal_drift()
+                if drifted:
+                    self.ledger.emit("store.wal_drift", {"stores": drifted})
+                    logger.error("supervisor: %d store(s) lost their WAL index under a "
+                                 "live mapping: %s", len(drifted), drifted)
+            except Exception:
+                logger.warning("supervisor: WAL drift check failed", exc_info=True)
+            if tick % 10 == 0:  # ~every 5 min — absorb the old boot-only sweep
+                try:
+                    from aughor.db.history import sweep_stale_running
+                    n = sweep_stale_running(max_age_minutes=60)
+                    if n:
+                        self.ledger.emit("investigations.swept", {"count": n})
+                        logger.info("supervisor: swept %d stale investigation(s)", n)
+                except Exception:
+                    logger.warning("supervisor: investigation sweep failed", exc_info=True)
+
+
+_kernel: Optional[JobKernel] = None
+
+
+def kernel() -> JobKernel:
+    """The process-wide job kernel (lazy — tests construct their own)."""
+    global _kernel
+    if _kernel is None:
+        _kernel = JobKernel()
+    return _kernel
+
+
+# The main asyncio loop, captured at app startup. Background schedulers run their
+# ticks on APScheduler THREADS (no running loop), so to submit a supervised kernel
+# job they bridge onto this loop with `asyncio.run_coroutine_threadsafe`. None until
+# startup captures it (and in tests) — callers must treat None as "no loop, run
+# inline" (WP-7).
+_main_loop: Optional[asyncio.AbstractEventLoop] = None
+
+
+def set_main_loop(loop: "asyncio.AbstractEventLoop") -> None:
+    """Record the app's running loop (called once from the lifespan startup)."""
+    global _main_loop
+    _main_loop = loop
+
+
+def main_loop() -> Optional["asyncio.AbstractEventLoop"]:
+    """The captured main loop, or None (no app loop — e.g. a unit test)."""
+    return _main_loop
+
+
+def submit_background_tick(
+    kind: str,
+    work_fn: Callable[[], Any],
+    *,
+    conn_id: Optional[str] = None,
+    org_id: Optional[str] = None,
+    idempotency_key: Optional[str] = None,
+    timeout: float = 10.0,
+) -> Optional[str]:
+    """Submit a scheduled background tick (monitor/brief) as a supervised, METERED kernel
+    job FROM A SCHEDULER THREAD (WP-7). ``work_fn`` is the synchronous unit of work
+    (open → run → persist); it runs inside the context-propagating executor, so the kernel
+    run's metering accumulator + Org binding reach the warehouse SQL it issues — the tick
+    then shows in Fleet/metering and counts against the agent's (Watcher/Briefer) budget.
+
+    Returns the job id, or ``None`` when there is no captured main loop (a unit test, or
+    before startup) — the caller then runs ``work_fn`` inline (the legacy path). Only the
+    *submit* is awaited (it is fast); the work itself runs asynchronously on the loop, so an
+    idempotency key prevents a slow tick from piling up on the next cron fire."""
+    # No live loop (pre-startup, a unit test, or mid reload/shutdown) → decline so the caller
+    # runs work_fn inline. `is_running()` guards against a stale global pointing at a dead loop,
+    # which would otherwise make run_coroutine_threadsafe raise and drop the tick entirely.
+    loop = main_loop()
+    if loop is None or not loop.is_running():
+        return None
+
+    async def _coro() -> None:
+        await asyncio.get_running_loop().run_in_executor(None, work_fn)
+
+    fut = asyncio.run_coroutine_threadsafe(
+        kernel().submit(kind, _coro, conn_id=conn_id, org_id=org_id or None,
+                        idempotency_key=idempotency_key),
+        loop,
+    )
+    return fut.result(timeout=timeout)
+
+
+def _live_or_flushed_metrics(job_id: str, ledger: Ledger) -> Optional[metering.RunMetrics]:
+    """A job's spend: the live accumulator when the run shares this process, else the
+    snapshot its heartbeat flushed onto the job row, else None.
+
+    This ordering is the budget story's load-bearing line. The registry in
+    kernel/metering.py is process-local by contract, and a supervisor that treats a
+    registry miss as "no spend" stops enforcing token budgets the moment job and
+    supervisor stop sharing a process — silently, behind healthy heartbeats, which is
+    the §5.2 defect class (docs/VERCEL_PLATFORM_DESIGN_2026-08-05.md). The flushed row
+    is at most one heartbeat stale, and a budget kill one beat late is enforcement;
+    a kill that never comes is not.
+
+    Lives here rather than in metering because the ledger is a parameter, not a
+    global: the kernel under test runs against `Ledger(tmp_path)`, and metering
+    guessing `Ledger.default()` would read a different store than the kernel writes.
+    """
+    m = metering.metrics_for_job(job_id)
+    if m is not None:
+        return m
+    try:
+        row = ledger.job_get(job_id) or {}
+        snap = row.get("metrics")
+        if isinstance(snap, str):
+            snap = json.loads(snap)
+        return metering.from_snapshot(snap) if snap else None
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "flushed-metrics read is fail-open; time budgets still enforce",
+                 counter="metering.flushed_read")
+        return None
+
+
+def budget_fraction_used(job_id: Optional[str] = None) -> Optional[float]:
+    """Fraction (0..1+) of the active job's token budget already consumed, or None
+    when there is no job / no token budget. A long-running agent can use this to
+    RESERVE headroom for a final, high-value phase instead of spending the whole
+    budget on earlier work and being hard-cancelled before it runs. Best-effort —
+    any resolution failure yields None (caller proceeds as if unbounded)."""
+    job_id = job_id or current_job_id()
+    if not job_id:
+        return None
+    try:
+        gov, _ = kernel()._resolve_governance(job_id)
+        budget = getattr(gov, "token_budget", None)
+        if not budget:
+            return None
+        # Live registry, then the heartbeat-flushed row — a registry miss must not
+        # read as "100% headroom" when the run lives in another process.
+        m = _live_or_flushed_metrics(job_id, kernel().ledger)
+        used = m.total_tokens if m else 0
+        return used / budget
+    except Exception:
+        logger.debug("budget_fraction_used resolve failed for %s", job_id, exc_info=True)
+        return None

@@ -1,0 +1,193 @@
+"""Unit tests for the build-time value_sql audit (aughor/business_profile/validate.py).
+
+Proves the audit drops the two real-path value_sql bugs — a chasm-fan-out ROAS
+(structural) and a conversion rate that reads 100% because its denominator was
+pre-filtered to converted carts (live boundary) — while keeping correct metrics.
+"""
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+from aughor.business_profile.validate import audit_value_sql, audit_chart_sql, audit_profile, stated_range
+
+# A chasm: attribution and invoices are each on the many-side of `order`.
+TC = {
+    "attribution": ["attribution_id", "order_id", "weight"],
+    "invoices":    ["invoice_id", "order_id", "revenue_gross"],
+    "orders":      ["order_id", "cart_id"],
+    "carts":       ["cart_id", "abandoned"],
+    "marketing_ledger": ["ledger_id", "spend_usd"],
+}
+
+
+class _Res:
+    def __init__(self, val):
+        self.rows = [] if val is None else [[str(val)]]
+        self.error = None
+        self.columns = ["v"]
+
+
+class FakeConn:
+    """A connection that binds anything and returns a fixed scalar — lets the audit
+    exercise its static guards + range/boundary check without a live warehouse."""
+    dialect = "duckdb"
+
+    def __init__(self, scalar=0.5):
+        self._scalar = scalar
+
+    def dry_run(self, _sql):
+        return (True, "")
+
+    def execute(self, _hid, _sql, sql_dialect=None):
+        return _Res(self._scalar)
+
+
+class TestRangeKind:
+    """The ranges the industry packages ship are measured in test_sane_range_reading.py; these are the
+    shapes a profile's model-written unit_or_range takes (read off a live deployment's profiles, 2026-09-17)."""
+
+    def test_bounded_ratio(self):
+        assert stated_range("ratio 0-1") == ("ratio01", 0.0, 1.0)
+        assert stated_range("[0.0, 1.0]") == ("ratio01", 0.0, 1.0)
+
+    def test_percent(self):
+        assert stated_range("percent 0-100") == ("pct100", 0.0, 100.0)
+
+    def test_the_measured_suffix_is_not_a_band(self):
+        # infer._calibrate_ranges appends the measured value to a range after the audit
+        assert stated_range("ratio 0–1 (measured ≈ 0.49)") == ("ratio01", 0.0, 1.0)
+        assert stated_range("EUR (positive magnitude) (measured ≈ 45,437,544)") == ("open", None, None)
+
+    def test_a_percent_gloss_leaves_a_ratio_a_ratio(self):
+        assert stated_range("0.0 to 1.0 (0% to 100%)") == ("ratio01", 0.0, 1.0)
+        assert stated_range("0.0 to 1.0 (ratio, not %)") == ("ratio01", 0.0, 1.0)
+
+    def test_unbounded_ratio_is_open(self):
+        assert stated_range("ratio 0-∞")[0] == "open"
+        assert stated_range("ratio 0-inf")[0] == "open"
+        assert stated_range("ratio 0+") == ("open", None, None)
+        assert stated_range("0 to 10,000,000+ (depending on category size)") == ("open", None, None)
+
+    def test_currency_is_open(self):
+        assert stated_range("USD") == ("open", None, None)
+
+    def test_a_unit_word_alone_states_no_bound(self):
+        # an Inventory Turnover of 5 was held to 0..1 by the word "ratio"
+        assert stated_range("ratio (units sold per unit avg. inventory)") == ("open", None, None)
+        assert stated_range("percent") == ("open", None, None)
+
+    def test_any_other_stated_band(self):
+        assert stated_range("1-5 scale (measured ≈ 4.08)") == ("band", 1.0, 5.0)
+        assert stated_range("ratio -1 to 1 (healthy: >0.2)") == ("band", -1.0, 1.0)
+        assert stated_range("ratio 0-1000 (USD per order)") == ("band", 0.0, 1000.0)      # was a 0..100 percent
+        assert stated_range("0 - 10,000,000,000 EUR") == ("band", 0.0, 10_000_000_000.0)  # was a 0..1 ratio
+
+    def test_a_hedged_band_is_typical(self):
+        # the guess F4 (infer._calibrate_ranges) names: held as a bound, it would flag a correct $537 AOV
+        assert stated_range("USD (human scale: 20–150)") == ("typical", 20.0, 150.0)
+        assert stated_range("ratio (e.g., 2–6)") == ("typical", 2.0, 6.0)
+        assert stated_range("units, typically 1-5 for specialty food (measured ≈ 6.65)") == ("typical", 1.0, 5.0)
+
+
+class TestStaticGuards:
+    def test_chasm_sum_roas_dropped(self):
+        # the real Attribution-Weighted ROAS bug: attribution⋈invoices both fan out order_id
+        sql = ("SELECT SUM(a.weight * i.revenue_gross) / NULLIF((SELECT SUM(spend_usd) "
+               "FROM marketing_ledger), 0) AS roas FROM attribution a "
+               "JOIN invoices i ON a.order_id = i.order_id")
+        ok, reason = audit_value_sql(sql, TC, FakeConn(2.0), "ratio 0-∞")
+        assert not ok and "grain bug" in reason
+
+    def test_clean_scalar_kept(self):
+        sql = "SELECT SUM(spend_usd) AS spend FROM marketing_ledger"
+        ok, _ = audit_value_sql(sql, TC, FakeConn(12345.0), "USD")
+        assert ok
+
+
+class TestRangeBoundary:
+    SQL = ("SELECT COUNT(DISTINCT o.order_id) * 1.0 / NULLIF(COUNT(DISTINCT c.cart_id), 0) "
+           "AS conv FROM carts c LEFT JOIN orders o ON c.cart_id = o.cart_id WHERE c.abandoned = 0")
+
+    def test_conversion_100pct_dropped(self):
+        # the abandoned=0 denominator bug → reads 1.0; degenerate boundary
+        ok, reason = audit_value_sql(self.SQL, TC, FakeConn(1.0), "ratio 0-1")
+        assert not ok and "boundary" in reason
+
+    def test_correct_conversion_kept(self):
+        ok, _ = audit_value_sql(self.SQL, TC, FakeConn(0.18), "ratio 0-1")
+        assert ok
+
+    def test_above_bound_dropped(self):
+        ok, reason = audit_value_sql(self.SQL, TC, FakeConn(1.36), "ratio 0-1")
+        assert not ok and "out of range" in reason
+
+    def test_zero_dropped(self):
+        ok, reason = audit_value_sql(self.SQL, TC, FakeConn(0.0), "ratio 0-1")
+        assert not ok
+
+    def test_high_but_not_boundary_kept(self):
+        # 99.7% is a plausible payment-success rate — must NOT be dropped
+        ok, _ = audit_value_sql("SELECT 0.997 AS r", TC, FakeConn(0.997), "ratio 0-1")
+        assert ok
+
+    def test_open_ended_zero_dropped(self):
+        # no card should read $0 / 0.0 for an open-ended metric
+        ok, reason = audit_value_sql("SELECT 0 AS r", TC, FakeConn(0.0), "USD")
+        assert not ok
+
+
+class TestChartSqlAudit:
+    TREND = ("SELECT date_trunc('week', order_date) AS wk, AVG(total_amount) aov "
+             "FROM orders GROUP BY 1 ORDER BY 1")
+    TC = {"orders": ["order_id", "order_date", "total_amount"]}
+
+    def _conn(self, rows):
+        class C:
+            dialect = "duckdb"
+            def dry_run(self, _s):
+                return (True, "")
+            def execute(self, _h, _s, sql_dialect=None):
+                r = _Res(0)
+                r.rows = rows
+                return r
+        return C()
+
+    def test_valid_series_kept(self):
+        ok, _ = audit_chart_sql(self.TREND, self.TC, self._conn([["2025-01-01", "42.1"], ["2025-01-08", "45.3"]]))
+        assert ok
+
+    def test_single_row_not_a_series(self):
+        ok, reason = audit_chart_sql(self.TREND, self.TC, self._conn([["2025-01-01", "42.1"]]))
+        assert not ok and "series" in reason
+
+    def test_all_zero_measure_degenerate(self):
+        ok, reason = audit_chart_sql(self.TREND, self.TC, self._conn([["a", "0"], ["b", "0"]]))
+        assert not ok and "degenerate" in reason
+
+    def test_all_null_measure_degenerate(self):
+        ok, reason = audit_chart_sql(self.TREND, self.TC, self._conn([["a", "NULL"], ["b", "NULL"]]))
+        assert not ok and "degenerate" in reason
+
+    def test_chasm_sum_series_dropped(self):
+        # a trend that fans out over a chasm is still wrong as a series
+        sql = ("SELECT date_trunc('week', a.ts) wk, SUM(a.weight * i.rev) v "
+               "FROM attribution a JOIN invoices i ON a.order_id = i.order_id GROUP BY 1")
+        tc = {"attribution": ["attribution_id", "order_id", "weight", "ts"],
+              "invoices": ["invoice_id", "order_id", "rev"]}
+        ok, reason = audit_chart_sql(sql, tc, self._conn([["a", "1"], ["b", "2"]]))
+        assert not ok and "grain bug" in reason
+
+
+class TestAuditProfile:
+    def test_blanks_in_place_and_reports(self):
+        good = SimpleNamespace(name="Spend", unit_or_range="USD",
+                               value_sql="SELECT SUM(spend_usd) FROM marketing_ledger")
+        bad = SimpleNamespace(name="Conversion", unit_or_range="ratio 0-1",
+                              value_sql=TestRangeBoundary.SQL)
+        profile = SimpleNamespace(north_star_metrics=[good, bad])
+        failures = audit_profile(profile, FakeConn(1.0), "marketing_ledger(spend_usd)\ncarts(cart_id)")
+        # FakeConn returns 1.0 for both → Spend(USD)=1.0 is fine (not boundary), kept;
+        # Conversion(ratio 0-1)=1.0 → boundary → blanked.
+        assert "Conversion" in failures
+        assert bad.value_sql == ""
+        assert good.value_sql  # untouched

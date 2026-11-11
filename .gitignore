@@ -1,0 +1,180 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+.env
+
+# uv
+.python-version
+
+# Data & secrets
+data/connections.db
+# The serving process's pid marker (db/serving.py). Runtime state of ONE machine —
+# meaningless anywhere else, and this repo is public.
+data/.serving.pid
+# The restart mutex (scripts/restart_api.py). Same story: one machine's runtime state.
+data/.restart.lock
+data/.hermes_key
+data/.aughor_key
+data/hermes.duckdb
+data/aughor.duckdb
+data/samples.duckdb
+data/history.db
+data/checkpoints.db
+data/checkpoints.db-shm
+data/checkpoints.db-wal
+data/connection_settings.json
+data/exploration_*.json
+data/episodes_*.jsonl
+# Ontology docs are REBUILT per run (the yaml carries a `built_at` stamp and a
+# per-run checksum), so a dev server writing them is not a change anyone wants to
+# review. The governed ontology artifacts a reviewer SHOULD see are the SHIPPED ones:
+# data/shipped/ontology_overrides/ (data/ontology_overrides/ is an install's own tree now —
+# nothing new is tracked there; test_seed_overlay_frozen) and data/shipped/ontology_column_config/.
+data/ontology_docs/
+# The context graph is a PROJECTION of the ledger, rebuilt on demand (the 2027 study §F; the
+# close-out, C3, 2026-10-05): its facts live in the Record, which keeps its own history, so the
+# file is generated state and nothing of it is tracked — the five graphs committed for the named
+# connections were untracked that day (`git rm --cached`; the files stay on disk and rebuild).
+data/context_graph/
+# The per-column config is an install's own tree (punch list 74, 2026-11-09): what the repository
+# ships — the Workspace's tables — is the seed in data/shipped/ontology_column_config/, reviewed
+# there, and everything under data/ontology_column_config/ is what THIS install saved, moved into
+# the data home by `aughor migrate-state`. Nothing in it is tracked (test_seed_overlay_frozen), so
+# it is ignored whole: it names one machine's connections and columns, and this repo is public.
+# (It was tracked for the named connections, with only the 8-hex ids of registered ones ignored —
+# which put shipped files in a tree the app rewrote, and none of an install's own in any backup.)
+data/ontology_column_config/
+data/ontology_cache.json
+data/schema_cache.json
+data/schema_profiles.json
+data/audit.db
+data/canvases.db
+data/evidence_ledger.db
+data/monitors.db
+data/mat_cache.duckdb
+data/sync_state_*.json
+data/api_sync/
+data/uploads/
+data/smoke_*.json
+# The glossary is stored in TWO files, split by the `auto_generated` marker that already drove
+# its merge precedence (see aughor/semantic/glossary.py):
+#   data/glossary.yaml            — hand-authored terms. TRACKED, and now small enough to review.
+#   data/glossary_generated.yaml  — the ontology autodoc's per-table output. Ignored below.
+# The autodoc appends an entry per table whenever a connection is explored, so before the split
+# merely RUNNING the app rewrote a tracked file (1,435 lines from one session on 2026-07-24) and
+# buried four real analyst notes in the churn. Tests were never the cause — conftest points
+# AUGHOR_GLOSSARY_PATH at a throwaway temp copy, and the sidecar follows it automatically.
+data/glossary_generated.yaml
+# The overlay (aughor/semantic/glossary.py): the seed ships in data/shipped/, data/glossary.yaml is
+# FROZEN, and this install's own entries — and the marker of their one-time conversion — live here.
+data/glossary.instance.yaml
+data/glossary.instance.converted.yaml
+
+# Claude Code internal state
+.claude/
+
+# Duplicate runtime data under web/
+web/data/
+
+# macOS
+.DS_Store
+
+# Node
+web/node_modules/
+web/.next/
+web/.env.local
+
+# The launcher's own files: a Node.js the installer downloaded when this computer had
+# none new enough, and the install and server logs that `aughor up` writes instead of
+# filling the terminal. Deleting it costs a re-download, never data.
+/.aughor/
+
+# IDEs
+.idea/
+.vscode/
+
+# Generated workspace data
+data/*.db
+data/*.json
+data/*.duckdb
+# SQLite WAL sidecars — every store now opens in WAL mode (REC-03), so any
+# data/*.db can spawn -wal/-shm/-journal companions. Transient; never version.
+data/*.db-wal
+data/*.db-shm
+data/*.db-journal
+# DuckDB write-ahead logs / sidecars (transient — never version these)
+data/*.duckdb.wal
+data/*.duckdb-wal
+data/*.duckdb.tmp
+*.duckdb.wal
+
+# Eval run artifacts (regenerable — durable outputs are the dataset/harness/FINDINGS)
+evals/results*.json
+evals/_log*.txt
+data/system.db
+data/system.db-shm
+data/system.db-wal
+# Recovery artifacts from a corrupt ledger (2026-08-14): `sqlite3 .recover` leaves a
+# `.corrupt.bak` of the original and a `.lost_and_found.sql` of rows it could not
+# attribute to a table. Both contain ledger CONTENT — investigation questions, SQL text,
+# artifact payloads — and this repository is PUBLIC, so a stray `git add -A` would
+# publish them. The ontology trees under data/ are unaffected: this pattern only matches the
+# system.db family.
+data/system.db.*
+
+# Runtime/session artifacts — auto-created backups from platform resets, purges and
+# quarantines; runtime finding-dismissal state; and eval output dumps. All disposable
+# or regenerable, none belong in the repo. (data/*.json already covers profile/exploration.)
+data/_*backup*/
+data/_stale_findings_backup_*/
+data/finding_dismissals.jsonl
+data/ontology_recommendations/
+# Arc OC-2 — an install's unpublished ontology changes; runtime state, never shipped.
+data/ontology_overrides_draft/
+# NOTE: data/ontology_overrides/ is deliberately NOT ignored — the human override overlay
+# (overrides.py), an install's own tree since the seed split: frozen, nothing new tracked; what
+# the repo ships is data/shipped/ontology_overrides/. The reviewable ontology artifacts are the
+# SHIPPED trees under data/shipped/, which are never ignored. data/ontology_column_config/ is
+# ignored above since its own seed split (2026-11-09), data/ontology_docs/ because it is rebuilt
+# per run, and data/context_graph/ since the 2027 study's close-out made it a projection of the
+# ledger. Ignoring a tree that still held shipped content once silently negated Waves C and E4
+# (PR #218) — read the store's docstring first, and ship through data/shipped/.
+evals/spider2_out/
+evals/bakeoff_out/
+evals/nightly_out/
+evals/spider2_afix/
+evals/spider2_cand/
+evals/spider2_cand_full/
+evals/spider2_proj/
+evals/spider2_misses_proj/
+evals/spider2_probes_smoke/
+evals/spider2_*_run.log
+evals/lsb_out/
+evals/llm_exp/
+/agents.db*
+
+# Wave O1 — per-connection vocabulary (synonyms, formats, value dictionaries).
+# TRACKED deliberately: a synonym is governed curation a reviewer should see in a diff,
+# same as data/ontology_overrides/. Listed here only to document that it is NOT ignored.
+!data/vocabulary/
+
+# DuckDB spills temp storage here during test runs — never commit it.
+.tmp/
+
+# Vercel CLI link state (machine-local project/org ids)
+.vercel/
+.vercel
+.env*
+.vercelignore
+.env.local
+
+# Imported skill packs — third-party prose brought in by `aughor skills import`.
+# Untracked on purpose: this repo is public, and redistributing a skill library inside
+# it is a deliberate decision, not a side effect of running an importer.
+data/packs/
+
+# A vitest run started from the repo root writes its cache here; there is no root package.
+/node_modules/
