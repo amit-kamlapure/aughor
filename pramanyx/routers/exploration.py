@@ -2212,8 +2212,12 @@ def read_briefing_edition(conn_id: str, request: Request = None, schema: str | N
         return {"built": False, "period": block, "reader": reader, "scope_key": scope_key,
                 **({"canvas": canvas} if canvas else {})}
     moved = {"lag_now": block.get("lag_days")} if kept.get("lag_days") != block.get("lag_days") else {}
+    from pramanyx.briefing import storylines as S
     from pramanyx.briefing.compose.write import as_it_stands
-    return {**as_it_stands(entry, conn_id), "built": True, "scope_key": scope_key, **moved,
+    stands = as_it_stands(entry, conn_id)
+    # the running account (2026-11-12): the edition's figures on the business and its storylines — a projection of
+    # the edition, the metric registry and the Record, computed on the read and stored nowhere
+    return {**stands, **S.for_edition(conn_id, schema, stands), "built": True, "scope_key": scope_key, **moved,
             **({"canvas": canvas} if canvas else {})}
 
 
@@ -2240,7 +2244,9 @@ def write_briefing_edition(conn_id: str, request: Request = None, schema: str | 
     except LookupError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     canvas = _canvas_said(conn_id, schema, asked_canvas, tables) if asked_canvas else None
-    return {**entry, "built": True, "scope_key": scope_key, **({"canvas": canvas} if canvas else {})}
+    from pramanyx.briefing import storylines as S
+    return {**entry, **S.for_edition(conn_id, schema, entry), "built": True, "scope_key": scope_key,
+            **({"canvas": canvas} if canvas else {})}
 
 
 class ReaderIn(BaseModel):

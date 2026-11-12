@@ -6,8 +6,11 @@
  * its own usual — a change drawn as the change. A segment behind fewer than 30 rows is drawn grey: too
  * few to call. The model never draws; the server never sends a picture, only the numbers.
  */
+import { resolveDeemph, resolveSeries } from "@/components/charts/palette";
+import { VegaChart } from "@/components/charts/vega/VegaChart";
 import { useMeasured } from "@/components/dashboards/cellBox";
 import type { EditionFigure } from "@/lib/api";
+import { lineMarkSpec, rangeBarsSpec } from "@/lib/briefingAccount";
 import { rangeWord, toneOf } from "@/lib/briefingEdition";
 import { withUniqueKeys } from "@/lib/listKeys";
 
@@ -31,50 +34,17 @@ const USUAL = "color-mix(in srgb, var(--t3) 16%, transparent)";
 
 const TONE: Record<string, string> = { good: "var(--grn4)", bad: "var(--amb4)", neutral: "var(--blue4)" };
 
-/** The figure's ranges as bars, the usual range shaded behind them. */
+/** The figure's ranges as bars, the usual range shaded behind them — a Vega-Lite spec (`rangeBarsSpec`), drawn by the
+ *  platform's chart engine under its own config, at the width it is shown at. */
 export function RangeBars({ figure, period }: { figure: EditionFigure; period: string }) {
-  const [box, W] = useDrawnWidth();
-  const pts = figure.series.filter(p => p.value !== null) as { label: string; start: string; value: number }[];
-  if (pts.length < 2) return null;
-  const u = figure.usual;
-  const h = 118, pad = { l: 48, r: 6, t: 8, b: 18 };
-  const values = pts.map(p => p.value).concat(u ? [u.low, u.high] : []);
-  const lo = Math.min(...values), hi = Math.max(...values);
-  const y0 = lo - (hi - lo) * 0.35, y1 = hi + (hi - lo) * 0.08 || hi + 1;
-  const Y = (v: number) => pad.t + (h - pad.t - pad.b) * (1 - (v - y0) / (y1 - y0 || 1));
-  const bw = (W - pad.l - pad.r) / pts.length;
-  const every = pts.length > 10 ? 3 : 2;
-  const tone = TONE[toneOf(figure)];
+  const series = resolveSeries();
+  const tone = { good: series[1], bad: series[3], neutral: series[0] }[toneOf(figure)] ?? series[0];
+  const spec = rangeBarsSpec(figure, { current: tone, rest: resolveDeemph() });
+  if (!spec) return null;
   return (
-    <div ref={box}><svg viewBox={`0 0 ${W} ${h}`} width="100%" role="img" data-testid="edition-range-bars"
-      aria-label={`${figure.label} by ${rangeWord(period)}, this ${rangeWord(period)} last`}>
-      {u && (
-        <>
-          <rect x={pad.l} y={Y(u.high)} width={W - pad.l - pad.r} height={Math.max(1, Y(u.low) - Y(u.high))}
-            fill={USUAL} data-testid="edition-usual-band" />
-          <text x={W - pad.r - 4} y={Y(u.high) + 12} textAnchor="end" fontSize={10.5} fill="var(--t3)">usual range</text>
-          <text x={pad.l - 4} y={Y(u.high) + 3} textAnchor="end" fontSize={10.5} fill="var(--t3)">{u.high_text}</text>
-          <text x={pad.l - 4} y={Y(u.low) + 3} textAnchor="end" fontSize={10.5} fill="var(--t3)">{u.low_text}</text>
-        </>
-      )}
-      {pts.map((p, i) => {
-        const last = i === pts.length - 1;
-        const x = pad.l + i * bw + bw * 0.18;
-        return (
-          <g key={`${p.label}-${p.start}`}>
-            <rect x={x} y={Y(p.value)} width={bw * 0.64} height={Math.max(1, h - pad.b - Y(p.value))} rx={2}
-              fill={last ? tone : "var(--chart-deemph)"} data-current={last ? "true" : undefined}>
-              <title>{dayMonth(p.start)}</title>
-            </rect>
-            {(i % every === (pts.length - 1) % every) && (
-              <text x={x + bw * 0.32} y={h - 5} textAnchor="middle" fontSize={10.5} fill={last ? "var(--t1)" : "var(--t3)"}>
-                {dayMonth(p.start)}
-              </text>
-            )}
-          </g>
-        );
-      })}
-    </svg></div>
+    <div role="img" data-testid="edition-range-bars" aria-label={`${figure.label} by ${rangeWord(period)}, this ${rangeWord(period)} last`}>
+      <VegaChart spec={spec} tier={2} height={132} />
+    </div>
   );
 }
 
@@ -186,37 +156,12 @@ export function Multiples({ series, fmt }: { series: { name: string; points: { x
   );
 }
 
-/** A line over the periods read, with one mark where something changed. */
+/** A line over the periods read, with one mark where something changed — a Vega-Lite spec (`lineMarkSpec`). */
 export function LineMark({ points, fmt, mark }: { points: { x: string; v: number }[]; fmt: (v: number) => string;
                                                    mark?: { at: string; text: string } | null }) {
-  const [box, W] = useDrawnWidth();
-  if (points.length < 2) return null;
-  const h = 160, pad = { l: 48, r: 14, t: 14, b: 22 };
-  const vals = points.map(p => p.v), lo = Math.min(...vals), hi = Math.max(...vals);
-  const Y = (v: number) => pad.t + (h - pad.t - pad.b) * (1 - (v - lo) / (hi - lo || 1));
-  const X = (i: number) => pad.l + (W - pad.l - pad.r) * i / (points.length - 1);
-  const mi = mark ? points.findIndex(p => p.x === mark.at) : -1;
-  return (
-    <div ref={box}><svg viewBox={`0 0 ${W} ${h}`} width="100%" role="img" aria-label="line" data-testid="edition-line">
-      <text x={pad.l - 6} y={Y(hi) + 4} textAnchor="end" fontSize={10.5} fill="var(--t3)">{fmt(hi)}</text>
-      <text x={pad.l - 6} y={Y(lo) + 4} textAnchor="end" fontSize={10.5} fill="var(--t3)">{fmt(lo)}</text>
-      <polyline fill="none" stroke="var(--blue4)" strokeWidth={2} points={vals.map((v, i) => `${X(i)},${Y(v)}`).join(" ")} />
-      {points.map((p, i) => (
-        <g key={`${p.x}-${i}`}>
-          <circle cx={X(i)} cy={Y(p.v)} r={i === points.length - 1 ? 4 : 2.4} fill={i === points.length - 1 ? "var(--blue4)" : "var(--t3)"} />
-          {(i % 2 === 0 || i === points.length - 1) && <text x={X(i)} y={h - 5} textAnchor="middle" fontSize={10.5} fill="var(--t3)">{dayMonth(p.x)}</text>}
-        </g>
-      ))}
-      {mi >= 0 && mark && (
-        <g>
-          <line x1={X(mi)} x2={X(mi)} y1={pad.t} y2={h - pad.b} stroke="var(--b1)" strokeDasharray="3 3" />
-          {/* the label on whichever side of the line has room — a late mark's ran off the edge */}
-          <text x={mi > (points.length - 1) / 2 ? X(mi) - 5 : X(mi) + 5} y={pad.t + 10} fontSize={11} fill="var(--t2)"
-            textAnchor={mi > (points.length - 1) / 2 ? "end" : "start"}>{mark.text}</text>
-        </g>
-      )}
-    </svg></div>
-  );
+  const spec = lineMarkSpec(points, fmt, mark);
+  if (!spec) return null;
+  return <div role="img" aria-label="line" data-testid="edition-line"><VegaChart spec={spec} tier={2} height={170} /></div>;
 }
 
 /** A few totals against each other — a quarter against last year's. */

@@ -1237,6 +1237,18 @@ export async function setMetricTarget(name: string, connectionId: string, target
   return res.json();
 }
 
+/** Say who owns a metric (a team or a person), or with "" that nobody does — the owner and nothing else. The
+ *  Briefing's storylines stand on a metric and take its owner. */
+export async function setMetricOwner(name: string, connectionId: string, owner: string, schema?: string): Promise<Metric> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schema) q.set("schema", schema);
+  const res = await fetch(`${getApiBase()}/metrics/${encodeURIComponent(name)}/owner?${q}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ owner }),
+  });
+  if (!res.ok) throw await refused(res, "Setting the owner");
+  return res.json();
+}
+
 export async function getHealthScorecard(connId: string): Promise<ScorecardItem[]> {
   const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/health-scorecard`);
   if (!res.ok) throw await refused(res, "Reading the health scorecard");
@@ -8345,6 +8357,75 @@ export interface BriefingEdition {
   /** Read in a Data Canvas: the dataset's own edition (`own` false — a canvas on every table), or the canvas's own,
    *  with which of the guide's checks read only its tables and which are left out. */
   canvas?: EditionCanvas | null;
+  /** The running account (2026-11-12): every measured figure under the part of the business it reads on, in the
+   *  metric map's order. Computed on the read from the edition; absent on an edition that is not written. */
+  stages?: EditionStage[];
+  /** One storyline per part of the business where a figure left its usual range, and one per decision of the Record
+   *  the edition cites — each with its owner, its worth, its decision and its check, or which of them is missing. */
+  storylines?: EditionStoryline[];
+  /** The blocks no storyline holds (the lead is the page's opening and is in neither). */
+  rest?: string[];
+  /** A store the account could not read, with why — said, never an account that silently lacks its owners. */
+  account_unread?: Record<string, string>;
+}
+
+export interface EditionStage { id: string; name: string; order: number; figures: string[] }
+
+export interface StorylineDecision {
+  /** True when it is in the Record; false while it is only the edition's own proposal. */
+  taken: boolean;
+  text: string;
+  id?: string | null;
+  /** The edition's decision block it was proposed in, while nobody has taken it. */
+  block?: string;
+  question?: string;
+  decided?: string;
+  by?: string;
+  owner?: string;
+  review_on?: string;
+  /** Whether an expectation was booked before the fact — without one a review has nothing to score. */
+  expected?: boolean;
+  outcome?: string;
+  where?: string;
+}
+
+export interface StorylineTrail {
+  /** ISO day, or "" for what is still open. */
+  when: string;
+  kind: "read" | "analysis" | "decision" | "review" | "discussion" | "finding" | "open";
+  says: string;
+  source?: string;
+  now?: boolean;
+  open?: boolean;
+}
+
+export interface EditionStoryline {
+  id: string;
+  kind: "figures" | "decision";
+  stage: string;
+  stage_name: string;
+  /** The figures outside their usual range on this part of the business, the farthest first. */
+  figures: string[];
+  /** The figure the storyline stands on ("" for a decision's storyline), and its metric's name. */
+  anchor: string;
+  metric: string;
+  head: string;
+  /** False when the figure is read outside its usual range but the platform does not call it a move. */
+  called: boolean;
+  /** The anchor figure's own status: "provisional" or "to_date" while its range is still filling. */
+  status: string;
+  state: "new" | "developing" | "decided";
+  owner: string;
+  owner_from: "metric" | "decision" | "";
+  worth: { value: number | null; unit?: string; text?: string; says?: string; why?: string };
+  decision: StorylineDecision | null;
+  check: { state: "none" | "booked" | "unscored" | "reviewed"; on?: string; says: string };
+  trail: StorylineTrail[];
+  /** The edition's blocks this storyline holds, in the order they were written. */
+  blocks: string[];
+  /** A decision's storyline: the source it was read from. */
+  source?: string;
+  waits: boolean;
 }
 
 export interface EditionCanvas {

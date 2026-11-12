@@ -447,7 +447,7 @@ function BlockCard({ block: written, ctx }: { block: EditionBlock; ctx: Ctx }) {
 
 export function EditionBlocks({ blocks, sources, figures, drillColumns, currency, connectionId, schema, onCite, onDrill, onDrillBack,
                                 onDecide, drilling, trails, teams = NO_TEAMS, given = NONE_GIVEN, onGive, giving = "", onAsk,
-                                asking = "" }: {
+                                asking = "", shared }: {
   blocks: EditionBlock[];
   sources: Record<string, EditionSource>;
   figures: EditionFigure[];
@@ -469,8 +469,15 @@ export function EditionBlocks({ blocks, sources, figures, drillColumns, currency
   onAsk?: (card: string) => void;
   /** The part the ask is pointed at now. */
   asking?: string;
+  /** When one edition is drawn in several places (its storylines, then the rest): the control blocks' choices and
+   *  every block of the edition, held by the page — so a control in one place still fades the rows of a block that
+   *  listens to it in another. */
+  shared?: { controls: Record<string, string>; setControl: (id: string, v: string) => void; all: EditionBlock[] };
 }) {
-  const [controls, setControls] = useState<Record<string, string>>({});
+  const [own, setOwn] = useState<Record<string, string>>({});
+  const controls = shared?.controls ?? own;
+  const setControls = shared ? undefined : setOwn;
+  const every = shared?.all ?? blocks;
   const [keyTypes, setKeyTypes] = useState<Map<string, string>>(new Map());
   const wantsLinks = blocks.some(b => b.type === "table" && b.link);
   useEffect(() => {
@@ -482,10 +489,10 @@ export function EditionBlocks({ blocks, sources, figures, drillColumns, currency
   }, [wantsLinks, connectionId, schema]);
   const ctx: Ctx = useMemo(() => ({
     sources, figures: Object.fromEntries(figures.map(f => [f.id, f])), drillColumns, controls,
-    controlBlocks: Object.fromEntries(blocks.filter(b => b.type === "control").map(b => [b.id, b])),
-    setControl: (id, v) => setControls(c => ({ ...c, [id]: v })), currency, connectionId, schema, keyTypes,
+    controlBlocks: Object.fromEntries(every.filter(b => b.type === "control").map(b => [b.id, b])),
+    setControl: (id, v) => (shared ? shared.setControl(id, v) : setControls?.(c => ({ ...c, [id]: v }))), currency, connectionId, schema, keyTypes,
     onCite, onDrill, onDrillBack, onDecide, drilling, trails, teams, given, onGive, giving, onAsk, asking,
-  }), [sources, figures, drillColumns, controls, blocks, currency, connectionId, schema, keyTypes, onCite, onDrill, onDrillBack, onDecide,
+  }), [sources, figures, drillColumns, controls, every, shared, setControls, currency, connectionId, schema, keyTypes, onCite, onDrill, onDrillBack, onDecide,
        drilling, trails, teams, given, onGive, giving, onAsk, asking]);
   return <>{withUniqueKeys(blocks, b => b.id).map(([key, b]) => <BlockCard key={key} block={b} ctx={ctx} />)}</>;
 }

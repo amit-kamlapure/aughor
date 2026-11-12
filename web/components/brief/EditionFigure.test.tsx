@@ -4,6 +4,7 @@ import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { EditionFigure } from "@/lib/api";
+import { lineMarkSpec, rangeBarsSpec } from "@/lib/briefingAccount";
 import { Bridge, LineMark, Multiples, PairRows, RangeBars } from "./EditionFigure";
 
 const FIG = { id: "aov", label: "Average order", better: "up", current: 645,
@@ -13,11 +14,18 @@ const FIG = { id: "aov", label: "Average order", better: "up", current: 645,
 
 describe("EditionFigure", () => {
   it("draws each range that has a value, the range itself last, over its usual range", () => {
-    const { container } = render(<RangeBars figure={FIG} period="week" />);
-    const bars = container.querySelectorAll("rect:not([data-testid])");
-    expect(bars).toHaveLength(2);                                   // the range with no value is not drawn as zero
-    expect(bars[1].getAttribute("data-current")).toBe("true");
-    expect(screen.getByTestId("edition-usual-band")).toBeTruthy();
+    // a Vega-Lite spec since 2026-11-12: what is drawn is what the spec says, read here as data
+    const spec = rangeBarsSpec(FIG, { current: "#0a0", rest: "#999" })!;
+    const layers = spec.layer as { mark: { type: string }; encoding: { color: { condition: { test: string; value: string }; value: string } } }[];
+    const rows = (spec.data as { values: { value: number; last: boolean }[] }).values;
+    expect(rows.map(r => r.value)).toEqual([600, 645]);              // the range with no value is not drawn as zero
+    expect(rows.map(r => r.last)).toEqual([false, true]);
+    const bars = layers.find(l => l.mark?.type === "bar")!;
+    expect(bars.encoding.color).toEqual({ condition: { test: "datum.last", value: "#0a0" }, value: "#999" });
+    expect(JSON.stringify(spec.layer)).toContain('"low":566,"high":614');   // its usual range, behind the bars
+    expect(rangeBarsSpec({ ...FIG, series: FIG.series.slice(0, 2) }, { current: "", rest: "" })).toBeNull();   // one bar is no picture
+    render(<RangeBars figure={FIG} period="week" />);
+    expect(screen.getByTestId("edition-range-bars").getAttribute("aria-label")).toBe("Average order by week, this week last");
   });
 
   it("bridges a usual range to this one, each step coloured by its sign", () => {
@@ -56,24 +64,23 @@ describe("EditionFigure", () => {
     };
     const POINTS = [{ x: "2026-10-05", v: 0.33 }, { x: "2026-10-12", v: 0.15 }, { x: "2026-10-19", v: 0.04 }];
 
-    it("draws a full-width line at its shown width, so its labels keep their size", () => {
-      shownAt(770);
-      render(<LineMark points={POINTS} fmt={v => `${(v * 100).toFixed(1)}%`} mark={{ at: "2026-10-12", text: "returns still arriving" }} />);
-      expect(screen.getByTestId("edition-line").getAttribute("viewBox")).toBe("0 0 770 160");
-    });
-
-    it("draws a bridge and a figure's bars at their shown widths too", () => {
+    it("draws a bridge at its shown width, so its labels keep their size", () => {
       shownAt(640);
       render(<Bridge steps={[{ label: "Usual", value: 100, kind: "base" }, { label: "A", value: 20, kind: "delta" },
                              { label: "This week", value: 120, kind: "total" }]} fmt={v => String(v)} />);
       expect(screen.getByTestId("edition-bridge").getAttribute("viewBox")).toBe("0 0 640 210");
-      render(<RangeBars figure={FIG} period="week" />);
-      expect(screen.getByTestId("edition-range-bars").getAttribute("viewBox")).toBe("0 0 640 118");
     });
 
-    it("draws at its own width until the box is measured", () => {
+    it("words a line's axis and its one mark in the figure's own unit", () => {
+      const spec = lineMarkSpec(POINTS, v => `${(v * 100).toFixed(1)}%`, { at: "2026-10-12", text: "returns still arriving" })!;
+      const text = JSON.stringify(spec);
+      expect(text).toContain("33.0%");                                // the top of the axis, as the unit has it
+      expect(text).toContain("4.0%");
+      expect(text).toContain("returns still arriving");
+      expect(JSON.stringify(lineMarkSpec(POINTS, String))).not.toContain("rule");   // no mark, no rule
+      expect(lineMarkSpec(POINTS.slice(0, 1), String)).toBeNull();
       render(<LineMark points={POINTS} fmt={String} />);
-      expect(screen.getByTestId("edition-line").getAttribute("viewBox")).toBe("0 0 360 160");
+      expect(screen.getByTestId("edition-line")).toBeTruthy();
     });
   });
 });

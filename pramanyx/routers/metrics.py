@@ -922,6 +922,35 @@ def confirm_metric_entity(name: str, req: _MetricEntity, connection_id: str, sch
     return keyed.model_dump()
 
 
+class _MetricOwner(BaseModel):
+    """Who answers for a metric, and nothing else."""
+    owner: str = ""
+
+
+@router.put("/metrics/{name}/owner", dependencies=[gate(Capability.METRICS_DEFINE)])
+def set_metric_owner(name: str, req: _MetricOwner, connection_id: str, schema: Optional[str] = None):
+    """Say who owns a metric — a team or a person — or, with no name, that nobody does. The Briefing's storylines
+    stand on a metric and take its owner (`briefing/storylines.py`), so "Take it" and "Give it to a team" there
+    are this door. Its statement, status, version, unit and dates are untouched: a full edit re-sends the whole
+    definition, and re-sent date fields read as a person's confirmation. An owner is not something a stored Briefing
+    reads (`_BRIEFING_BLIND`), so no edition is restated."""
+    _require_own_organisation(connection_id)
+    from pramanyx import govern
+    govern.guard("metric.define", name)
+    existing = _addressed(name, connection_id, _dataset(schema))
+    if existing is None or existing.connection != connection_id:
+        raise HTTPException(status_code=404, detail=f"'{name}' has no definition of its own on connection "
+                                                    f"'{connection_id}' to give an owner")
+    owner = " ".join((req.owner or "").split())
+    if len(owner) > 120:
+        raise HTTPException(status_code=422, detail="an owner is a team's or a person's name — at most 120 characters")
+    owned = existing.model_copy(update={"owner": owner or None})
+    save_metric(owned)
+    _audit({"metric": name, "connection": connection_id, "schema_name": home_schema(owned),
+            "action": "owner_set" if owner else "owner_cleared", "owner": owner, "was": existing.owner or ""})
+    return owned.model_dump()
+
+
 @router.post("/metrics/{name}/promote", dependencies=[gate(Capability.METRICS_DEFINE)])
 def promote_metric(name: str, connection_id: str, schema: str):
     """Promote one dataset's definition to its whole CONNECTION (the user, 2026-10-07: datasets

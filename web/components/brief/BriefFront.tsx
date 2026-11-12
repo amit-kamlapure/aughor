@@ -79,6 +79,43 @@ export function rankedBy(measured: BriefingRangeMeasure[], lead: BriefingRangeMe
     .map(x => x.m);
 }
 
+export type FrontPart = "alert" | "short" | "lead" | "ranked" | "desk";
+const EVERY_PART: FrontPart[] = ["alert", "short", "lead", "ranked", "desk"];
+export interface FrontReads {
+  measures: { data: RangeMeasuresResponse | null; error?: string } | null;
+  desk: { data: BriefingDesk | null; error?: string } | null;
+}
+
+/** The front's two reads — the range's measured table and the desk — made once per range. ``off`` makes neither
+ *  (a canvas, or a Briefing that is turned off). */
+export function useBriefFront(connectionId: string, range: BriefingRange, schema?: string, workspaceId?: string, off = false): FrontReads {
+  const [measures, setMeasures] = useState<{ data: RangeMeasuresResponse | null; error?: string } | null>(null);
+  const [desk, setDesk] = useState<{ data: BriefingDesk | null; error?: string } | null>(null);
+  const rangeKey = JSON.stringify(range);
+
+  useEffect(() => {
+    if (off) return;
+    let alive = true;
+    setMeasures(null);
+    measureRange(connectionId, range, schema, workspaceId)
+      .then(d => { if (alive) setMeasures({ data: d }); })
+      .catch(e => { if (alive) setMeasures({ data: null, error: e instanceof Error ? e.message : "could not be read" }); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the range is read through its key
+  }, [connectionId, schema, workspaceId, rangeKey, off]);
+  useEffect(() => {
+    if (off) return;
+    let alive = true;
+    setDesk(null);
+    getBriefingDesk(connectionId, range, schema, workspaceId)
+      .then(d => { if (alive) setDesk({ data: d }); })
+      .catch(e => { if (alive) setDesk({ data: null, error: e instanceof Error ? e.message : "could not be read" }); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the range is read through its key
+  }, [connectionId, schema, workspaceId, rangeKey, off]);
+  return { measures, desk };
+}
+
 export function BriefFront({ connectionId, schema, workspaceId, range, leadMetric }: {
   connectionId: string;
   schema?: string;
@@ -87,28 +124,21 @@ export function BriefFront({ connectionId, schema, workspaceId, range, leadMetri
   /** The guide's first check's metric — the figure the guide puts first. */
   leadMetric?: string;
 }) {
-  const [measures, setMeasures] = useState<{ data: RangeMeasuresResponse | null; error?: string } | null>(null);
-  const [desk, setDesk] = useState<{ data: BriefingDesk | null; error?: string } | null>(null);
-  const rangeKey = JSON.stringify(range);
+  const reads = useBriefFront(connectionId, range, schema, workspaceId);
+  return <BriefFrontView reads={reads} connectionId={connectionId} leadMetric={leadMetric} />;
+}
 
-  useEffect(() => {
-    let alive = true;
-    setMeasures(null);
-    measureRange(connectionId, range, schema, workspaceId)
-      .then(d => { if (alive) setMeasures({ data: d }); })
-      .catch(e => { if (alive) setMeasures({ data: null, error: e instanceof Error ? e.message : "could not be read" }); });
-    return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the range is read through its key
-  }, [connectionId, schema, workspaceId, rangeKey]);
-  useEffect(() => {
-    let alive = true;
-    setDesk(null);
-    getBriefingDesk(connectionId, range, schema, workspaceId)
-      .then(d => { if (alive) setDesk({ data: d }); })
-      .catch(e => { if (alive) setDesk({ data: null, error: e instanceof Error ? e.message : "could not be read" }); });
-    return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- the range is read through its key
-  }, [connectionId, schema, workspaceId, rangeKey]);
+/** The front, drawn from reads already made. ``parts`` picks which of it to draw here (all of it by default): the
+ *  edition page draws the alert above its opening, the measured table behind the business line's other view and the
+ *  desk under the storylines. */
+export function BriefFrontView({ reads, connectionId, leadMetric, parts = EVERY_PART }: {
+  reads: FrontReads;
+  connectionId: string;
+  leadMetric?: string;
+  parts?: FrontPart[];
+}) {
+  const { measures, desk } = reads;
+  const has = (p: FrontPart) => parts.includes(p);
 
   const block = measures?.data?.period ?? null;
   // The range and the one before in their short words ("5–11 Oct"), the long ones on hover.
@@ -130,13 +160,13 @@ export function BriefFront({ connectionId, schema, workspaceId, range, leadMetri
   ].filter(Boolean).join(" ") : "";
 
   return (
-    <div data-testid="brief-front">
-      <ChromeStatus>
+    <div data-testid={parts === EVERY_PART ? "brief-front" : `brief-front-${parts.join("-")}`}>
+      {has("alert") && <ChromeStatus>
         {desk?.data && <span>Desk read {utcDayWords(desk.data.as_of, true)} · no model call</span>}
         {block && block.lag_days > 1 && <span>Data read {countNoun(block.lag_days, "day")} behind</span>}
-      </ChromeStatus>
+      </ChromeStatus>}
       {/* The range's honesty first, as the mockup opens: recent days still being redrawn are said before any figure. */}
-      {block && block.lag_days > 1 && (
+      {has("alert") && block && block.lag_days > 1 && (
         <div role="status" data-testid="brief-redrawn" className="aug-fs-sm"
           style={{ border: "1px solid var(--amb3)", background: "color-mix(in srgb, var(--amb3) 9%, transparent)",
             borderRadius: "var(--r3)", padding: "8px 12px", margin: "12px 0 0", color: "var(--t1)" }}>
@@ -145,7 +175,7 @@ export function BriefFront({ connectionId, schema, workspaceId, range, leadMetri
           {` — so the Briefing reads ${countNoun(block.lag_days, "day")} behind, and ${now} is the range it can stand behind.`}
         </div>
       )}
-      {short && (
+      {has("short") && short && (
         <Part title="In short" testid="brief-short-part"
           badges={<span className="aug-fs-xs" style={{ color: "var(--t3)", border: "1px solid var(--b1)", borderRadius: "var(--r1)", padding: "0 6px" }}
             title="Counted from the measured table and the desk — no model and no person wrote it">Computed</span>}>
@@ -153,7 +183,7 @@ export function BriefFront({ connectionId, schema, workspaceId, range, leadMetri
         </Part>
       )}
       {/* the lead figure */}
-      <section data-testid="brief-lead" style={{ border: "1px solid var(--b1)", borderRadius: "var(--r3)", background: "var(--bg-1)",
+      {has("lead") && <section data-testid="brief-lead" style={{ border: "1px solid var(--b1)", borderRadius: "var(--r3)", background: "var(--bg-1)",
         padding: "12px 14px", margin: "12px 0 0" }}>
         {measures === null ? (
           <p className="aug-fs-sm" style={{ color: "var(--t3)", margin: 0 }}>Measuring the range…</p>
@@ -191,10 +221,10 @@ export function BriefFront({ connectionId, schema, workspaceId, range, leadMetri
               verb={measures.data?.from_briefing ? "as the Briefing measured it," : "measured"} />
           </>
         )}
-      </section>
+      </section>}
 
       {/* every other figure, the largest change first */}
-      {block && (ranked.length > 0 || block.unmeasured.length > 0) && (
+      {has("ranked") && block && (ranked.length > 0 || block.unmeasured.length > 0) && (
         <Part testid="brief-ranked" title="Changes, ranked"
           kind={<span title={block.covers}>every approved metric for {now}, the largest change first</span>}
           badges={<Freshness state={measures?.data?.from_briefing ? "cached" : "live"} at={measures?.data?.measured_at}
@@ -233,7 +263,7 @@ export function BriefFront({ connectionId, schema, workspaceId, range, leadMetri
       )}
 
       {/* what the platform recorded lately, newest first, and what waits on a person — the desk's, never a model's */}
-      {desk === null ? (
+      {!has("desk") ? null : desk === null ? (
         <p className="aug-fs-sm" style={{ color: "var(--t3)", margin: "14px 0 0" }}>Reading the desk…</p>
       ) : desk.error ? (
         <p className="aug-fs-sm" style={{ color: "var(--amb4)", margin: "14px 0 0" }}>The desk could not be read — {desk.error}.</p>
