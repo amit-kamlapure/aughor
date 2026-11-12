@@ -1,7 +1,8 @@
 /**
  * The coworker's first screen and its Agents page. Under the question box: questions worth asking of one connection, the questions
  * asked lately, and a person's own agents. Everything on it is read from Pramanyx through this plugin's relay
- * (`lib/index.js`), and every item does one thing: it writes a question into the box. Nothing here asks anything
+ * (`lib/index.js`), and every item does one thing: it writes a question into the box. The connection is the one
+ * the conversation is filed under — the shell's own picker above the box — and the agent already knows it. Nothing here asks anything
  * by itself — a person reads the question and sends it.
  *
  * The shell has no place under the question box on a new conversation: its one slot on that screen sits in the
@@ -64,7 +65,7 @@ function Card({ title, empty, children }) {
     rows && rows.length ? h("div", { style: { display: "flex", flexDirection: "column", gap: 6 } }, rows) : h("div", { style: { ...quiet, fontSize: 12.5 } }, empty));
 }
 
-function Block({ inputActions }) {
+function Block({ inputActions, here }) {
   const [connections, setConnections] = useState(null);
   const [chosen, setChosen] = useState(remembered);
   const [questions, setQuestions] = useState(null);
@@ -85,15 +86,16 @@ function Block({ inputActions }) {
     return () => { live = false; };
   }, []);
 
+  const asked = (connections ?? []).some((c) => c.id === here) ? here : chosen;
   useEffect(() => {
-    if (!chosen) return undefined;
+    if (!asked) return undefined;
     let live = true;
     setQuestions(null);
-    read(`/suggestions?connection_id=${encodeURIComponent(chosen)}`)
+    read(`/suggestions?connection_id=${encodeURIComponent(asked)}`)
       .then((got) => { if (live) setQuestions(got.suggestions ?? []); })
       .catch(() => { if (live) setQuestions([]); });
     return () => { live = false; };
-  }, [chosen]);
+  }, [asked]);
 
   if (down) {
     return h("div", { style: { ...quiet, fontSize: 12.5, paddingTop: 14 } },
@@ -102,13 +104,19 @@ function Block({ inputActions }) {
   if (!connections) return null;
 
   const named = (id) => connections.find((c) => c.id === id)?.name || id;
-  // The agent is told which connection in the question itself: nothing else carries the choice to it yet.
-  const ask = (question, id) => inputActions?.setDraft?.(`${question} (on ${named(id)}, connection ${id})`);
+  // The connection this conversation is filed under, when it is one of the workspaces the host half makes for
+  // each connection. The agent has been told it in its instructions, so a question about it is written plainly.
+  // A question about ANOTHER connection still says which, in words, because nothing else would.
+  const settled = connections.some((c) => c.id === here) ? here : "";
+  const shown = settled || chosen;
+  const ask = (question, id) =>
+    inputActions?.setDraft?.(id === settled ? question : `${question} (on ${named(id)}, connection ${id})`);
 
   // Inset as the box above it is, so the block's edges meet the box's.
   const inset = "var(--dsh-composer-side-clearance, 14px)";
   return h("div", { style: { display: "flex", flexDirection: "column", gap: 12, padding: `16px ${inset} 0`, fontSize: 13 } },
-    h("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" } },
+    settled ? h("div", { style: quiet }, `Questions for ${named(settled)}. Choose another connection above the box.`)
+    : h("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" } },
       h("label", { htmlFor: "pramanyx-connection", style: quiet }, "Questions for"),
       h("select", {
         id: "pramanyx-connection", value: chosen,
@@ -117,7 +125,7 @@ function Block({ inputActions }) {
       }, connections.map((c) => h("option", { key: c.id, value: c.id }, c.name)))),
     h("div", { style: { display: "flex", flexDirection: "column", gap: 6 } },
       questions === null ? h("div", { style: quiet }, "Reading the questions worth asking…")
-        : questions.length ? questions.slice(0, QUESTIONS_SHOWN).map((q) => h(Row, { key: q.text, text: q.text, onPick: () => ask(q.text, chosen) }))
+        : questions.length ? questions.slice(0, QUESTIONS_SHOWN).map((q) => h(Row, { key: q.text, text: q.text, onPick: () => ask(q.text, shown) }))
           : h("div", { style: quiet }, "Pramanyx has no suggested questions for this connection yet.")),
     h("div", { style: { display: "flex", flexWrap: "wrap", gap: 12 } },
       h(Card, { title: "Asked lately", empty: "Nothing has been asked yet." },
@@ -147,7 +155,10 @@ function Home(props) {
     setBelow(place);
     return () => { place.remove(); setBelow(null); };
   }, []);
-  const block = h(Block, { inputActions: props.inputActions });
+  // The folder this conversation is filed under. The host half keeps one per connection, named by its id.
+  const folder = props.useSessions?.((sessions) => sessions.byId?.[props.sessionId]?.cwd) || "";
+  const filedUnder = /[\\/]connections[\\/]([A-Za-z0-9_-]+)[\\/]?$/.exec(folder)?.[1] ?? "";
+  const block = h(Block, { inputActions: props.inputActions, here: filedUnder });
   return h("span", { ref: here }, below ? createPortal(block, below) : inRow ? block : null);
 }
 

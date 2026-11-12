@@ -49,6 +49,10 @@ turned back on from the interface.
   runs, reworded. The one-list view is the shell's own option, chosen once on a first visit.
 - **The first screen.** Under the question box: questions worth asking of a chosen connection, the questions asked
   lately, and a person's own agents. Each row writes a question into the box; nothing is asked until it is sent.
+- **A workspace per connection.** At start, each Pramanyx connection gets a folder whose `AGENTS.md` names it, and
+  a workspace over that folder titled with the connection's name. The shell gives its agent that file before the
+  first question, so the shell's own picker above the question box chooses the connection and the agent is told
+  it in its instructions, not in the person's question.
 - **A read-only relay**, `/pramanyx/…` on the shell's own server, so the page can read Pramanyx without the API's
   allowed origins being changed. It relays four paths (`/connections`, `/suggestions`, `/agents/custom`,
   `/investigations`), GET and HEAD only, and answers 404 for anything else.
@@ -77,7 +81,8 @@ later layer owns that row.
   changes: the tab title (a literal in the shell's layout), the first screen's wording (written into the shell's
   dictionary, which cannot be added to), the block under the question box (the shell has no place there) and the
   ring (the shell's drawing has no slot).
-- The chosen connection reaches the agent as words at the end of the question. Nothing else carries it yet.
+- A connection added in Pramanyx appears here on the next start. The folder the shell was first started in stays
+  in the picker as a workspace of its own; a question asked there names its connection in words.
 - Reading the suggested questions is a cached read in Pramanyx; the first read for a connection costs a model call.
 - The light theme takes only the accent, the corners and the type. The app's light palette was not measured.
 - Source Sans 3 is used when it is installed; it is not bundled.
@@ -88,8 +93,13 @@ later layer owns that row.
   rename, archive and delete); pinned items.
 - **A schedule made here spends Pramanyx model calls unattended**, and Pramanyx's own setting for scheduled model
   work does not see it: the run arrives as an ordinary question over MCP.
-- **The coworker does not yet take its details from the app.** It has its own model key, every person is the one
-  MCP principal, and the connection is chosen again here. Nothing in the app leads to it.
+- **The coworker does not yet take its model from the app.** It has its own model key, which Pramanyx neither
+  meters nor caps. Pramanyx's model layer has the seams for a door (`resolve_binding`, `endpoint_for`, the
+  outbound door's caps); it is not built.
+- On an install where Pramanyx does not require identity, a question from here is the local operator's, the same
+  as in the app. Where identity is required, every person here is the one principal the MCP server was started
+  as.
+- Nothing in the app leads here, and light or dark is chosen again here.
 - The custom agents' card is untested live: asked for an agent by name, the model used `ask`.
 - The person's file panel is still on.
 - No test covers the card or the tool removal. The card was checked by eye on three real answers, one of them
