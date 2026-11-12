@@ -375,14 +375,18 @@ span.aug-atlas-board:hover { border-color: var(--atlas-lane-line); }
 
 /* the tour, industries, where it answers */
 .tour{padding-block:8px 72px}
-.video{display:block;position:relative;border:1px solid var(--b-subtle);border-radius:var(--r-panel);overflow:hidden;background:var(--primary)}
-.video video{display:block;width:100%;height:auto;aspect-ratio:16/9;background:var(--primary)}
-.video .play{cursor:pointer}
-.video.on .play,.video.on .dur{display:none}
-.video .play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:inline-flex;align-items:center;gap:10px;height:48px;padding:0 22px;border-radius:var(--r-control);background:var(--fill);color:var(--on-accent);font-weight:600;font-size:16px;border:1px solid var(--fill)}
-.video .play:hover{background:var(--fill-hover)}
-.video .play .i{width:18px;height:18px;fill:currentColor;stroke:none}
-.video .dur{position:absolute;right:12px;bottom:12px;height:22px;padding:0 7px;display:inline-flex;align-items:center;border-radius:var(--r-badge);background:var(--canvas);color:var(--t2);font-size:12.5px;border:1px solid var(--b-default)}
+.video{display:block;position:relative;border:1px solid var(--b-subtle);border-radius:var(--r-panel);overflow:hidden;background:var(--primary);color:var(--t1)}
+.video img,.video video{display:block;width:100%;height:auto;aspect-ratio:16/9;background:var(--primary)}
+.video .play{position:absolute;inset:0;display:grid;place-items:center;padding:0;border:0;margin:0;cursor:pointer;color:#fff;font:inherit;text-decoration:none;
+  background:linear-gradient(to top,rgba(17,17,19,.94) 0,rgba(17,17,19,.6) 24%,rgba(17,17,19,.52) 100%)}
+.video .disc{width:96px;height:96px;border-radius:50%;display:grid;place-items:center;background:rgba(17,17,19,.72);border:1.5px solid rgba(255,255,255,.55);transition:transform .15s,background .15s}
+.video .disc svg{width:34px;height:34px;fill:#fff;margin-left:5px}
+.video .play:hover .disc{transform:scale(1.06);background:var(--fill);border-color:var(--fill)}
+.video .play:hover .disc svg{fill:var(--on-accent)}
+.video .bar{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;gap:12px;padding:14px 18px;font-size:15px;font-weight:600}
+.video .bar .dur{margin-left:auto;font-weight:500;font-size:13px;color:rgba(255,255,255,.8);font-variant-numeric:tabular-nums}
+.video.on .play{display:none}
+@media (prefers-reduced-motion:reduce){.video .disc{transition:none}}
 .band{padding-block:72px;border-top:1px solid var(--b-subtle);display:grid;gap:28px}
 .band .copy .sub{margin:0}
 .ind{display:grid;grid-template-columns:minmax(0,4fr) minmax(0,8fr);gap:12px}
@@ -448,8 +452,7 @@ span.aug-atlas-board:hover { border-color: var(--atlas-lane-line); }
     <video id="tour-video" preload="none" playsinline poster="assets/tour-poster.jpg" aria-label="The 98-second tour of Pramanyx">
       <source src="assets/pramanyx-tour.mp4" type="video/mp4">
     </video>
-    <button class="play" type="button" id="tour-play"><svg class="i" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></svg>Watch the 98-second tour</button>
-    <span class="dur">1:38</span>
+    <button class="play" type="button" id="tour-play" aria-label="Play the 98-second tour"><span class="disc"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5l13 7.5-13 7.5z"/></svg></span><span class="bar"><span>Watch the 98-second tour</span><span class="dur">1:38</span></span></button>
   </div>
   <div class="cap">Every screen is the running product, filmed live on a synthetic dataset.</div>
 </section>
