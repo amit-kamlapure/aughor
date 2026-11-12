@@ -16,6 +16,11 @@ import { createPortal } from "react-dom";
 import { drawChart } from "./chart";
 
 const TOOL = "mcp__pramanyx__ask";
+/**
+ * The tools whose result is an answer: `ask`, and one `ask_<agent>` per custom agent, which answers through the
+ * same door in the same shape. The agents are a person's own and change, so their names cannot be listed here.
+ */
+const ANSWERS = /^mcp__pramanyx__ask(_[a-z0-9_]+)?$/;
 const ROWS_SHOWN = 50;
 
 /** The tool result's text, whichever of the shell's two shapes carries it. */
@@ -152,7 +157,15 @@ const TAIL = "data-pramanyx-answers";
  * into. The shell folds a finished turn's tool calls away twice over ("Completed", then "Called tools"), and an
  * answer nobody unfolds is an answer in name only.
  */
-function AnswerTail() {
+function AnswerTail(props) {
+  // A view is registered per exact tool name, and an agent's tool is named after the agent. The end of a turn is
+  // told the turn's calls, so it is where a name not yet seen gets its view.
+  useEffect(() => {
+    for (const step of props.turn?.steps ?? []) {
+      const blocks = step?.data?.entries?.get?.("assistant-step")?.value?.blocks ?? [];
+      for (const block of blocks) if (block?.kind === "tool-call") showAnswersOf(block.name);
+    }
+  });
   return h("div", { [TAIL]: "" });
 }
 
@@ -227,9 +240,18 @@ function Card(props) {
 export const inject = ["slots"];
 
 /** Take over the display of Pramanyx's `ask` tool. Every other tool keeps the shell's own row. */
+/** Give one tool the answer card, once. Set by `apply`; a name that is not an answer tool is left alone. */
+let showAnswersOf = () => {};
+
 export function apply(ctx) {
-  ctx.slots.inject("tool.call.toolview", () =>
-    ctx.slots.register({ name: "tool.call.toolview", key: TOOL }, AnswerCard));
+  const shown = new Set();
+  showAnswersOf = (name) => {
+    if (typeof name !== "string" || shown.has(name) || !ANSWERS.test(name)) return;
+    shown.add(name);
+    ctx.slots.inject("tool.call.toolview", () =>
+      ctx.slots.register({ name: "tool.call.toolview", key: name }, AnswerCard));
+  };
+  showAnswersOf(TOOL);
   ctx.slots.inject("conversation.chat.turnTail", () =>
     ctx.slots.register({ name: "conversation.chat.turnTail", id: "pramanyx-coworker-answer-card" }, AnswerTail));
 }

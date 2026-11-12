@@ -23,13 +23,20 @@ command -v pnpm >/dev/null 2>&1 || { echo "start: pnpm is not on PATH — the sh
 curl -fsS -o /dev/null --max-time 5 "$PRAMANYX_API_URL/health" \
   || { echo "start: no Pramanyx API at $PRAMANYX_API_URL — start it first" >&2; exit 1; }
 
-[ -f "$here/plugins/answer-card/lib/client.js" ] || "$here/build.sh"
+for plugin in "$here"/plugins/*/; do
+  [ -f "${plugin}lib/client.js" ] || { "$here/build.sh"; break; }
+done
 
 mkdir -p "$DSH_HOME" "$DSH_HOME/work"
 cd "$DSH_HOME/work"
 profile="$DSH_HOME/profiles/web"
 [ -f "$profile/package.json" ] || $DSH --profile web --dump-config >/dev/null
-grep -q '"pramanyx-coworker-answer-card"' "$profile/package.json" \
-  || $DSH plugin --profile web add "link:$here/plugins/answer-card"
+# Each plugin is installed into the profile once, as a link to this folder: the shell ships a plugin's browser half
+# only for a package the profile has installed.
+for plugin in "$here"/plugins/*/; do
+  plugin=${plugin%/}
+  name=$(node -p "require('$plugin/package.json').name")
+  grep -q "\"$name\"" "$profile/package.json" || $DSH plugin --profile web add "link:$plugin"
+done
 
 exec $DSH --profile web --patch "$here/profile.patch.yml" --no-open --port "${PORT:-3090}"
