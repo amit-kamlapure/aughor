@@ -31,7 +31,7 @@ import {
   KIND_LABEL, RULE_TONES, applyProposal, asksForAChange, filterWords, propose, proposeNewSheet, readGrounding, rowsWord,
   stageFile, undo, type Grounding, type Proposal, type ProposeOutcome, type RuleTone, type Sheet,
 } from "@/lib/sheets";
-import { useAughorChat } from "@/lib/useAughorChat";
+import { usePramanyxChat } from "@/lib/usePramanyxChat";
 
 type Entry =
   | { id: string; type: "ask"; words: string }
@@ -52,7 +52,7 @@ export function SheetChat({ sheet, viewId, viewRows, onClose, onApplied, onOpenS
 }) {
   const [sessionId] = useState(() => newSessionId());
   const focus = useMemo(() => ({ kind: "sheet", id: viewId ? `${sheet.id}:${viewId}` : sheet.id }), [sheet.id, viewId]);
-  const { messages, sendMessage, status, error } = useAughorChat({
+  const { messages, sendMessage, status, error } = usePramanyxChat({
     connectionId: "sheets", sessionId,
     // quick depth: an answer on the sheet, never a deep analysis from here; `focus` is the sheet on screen, read by
     // the server from its own stores — nothing about the sheet is sent from this panel.

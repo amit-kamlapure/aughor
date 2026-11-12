@@ -17,9 +17,9 @@ import json
 import duckdb
 import pytest
 
-from aughor.db.connection import open_connection
-from aughor.ontology import overrides as OV
-from aughor.ontology.models import EntityProperty, OntologyEntity, OntologyGraph
+from pramanyx.db.connection import open_connection
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.models import EntityProperty, OntologyEntity, OntologyGraph
 from tests.unit.test_object_bindings import GRAPH, ints, payment_type, seed
 
 CONN = "entity-merge-t"
@@ -64,9 +64,9 @@ def built_graph() -> OntologyGraph:
 
 @pytest.fixture
 def door(tmp_path, monkeypatch):
-    import aughor.db.connection as C
-    from aughor.ontology import store as ST
-    from aughor.util.json_store import KeyedJsonStore
+    import pramanyx.db.connection as C
+    from pramanyx.ontology import store as ST
+    from pramanyx.util.json_store import KeyedJsonStore
 
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
     monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
@@ -136,7 +136,7 @@ def test_a_duplicate_type_is_bound_onto_the_survivor_and_becomes_its_part_with_n
     assert saved[("entity", "Client")].fields["absorbed_into"] == "Customer"
     assert (saved[("entity", "Customer")].fields["bindings"]["clients"]["table"],
             saved[("entity", "Customer")].fields["bindings"]["clients"]["key"]) == ("clients", "client_id")
-    from aughor.ontology import store as ST
+    from pramanyx.ontology import store as ST
     ST.save_ontology(CONN, "ecommerce", "fp-rebuilt", built_graph())
     rebuilt = {t["object_type"]: t for t in client.get("/object-types", params=PARAMS).json()["object_types"]}
     assert rebuilt["client"]["absorbed_into"] == "customer"
@@ -201,7 +201,7 @@ def test_a_binding_the_survivor_holds_is_never_overwritten_and_a_table_it_binds_
 
 
 def test_a_type_merged_into_another_is_no_longer_offered_as_its_duplicate(door, client, monkeypatch):
-    import aughor.semantic.embedder as embedder
+    import pramanyx.semantic.embedder as embedder
 
     types = sorted(built_graph().entities.values(), key=lambda e: e.id)
     slot = {e.id: n for n, e in enumerate(types)}

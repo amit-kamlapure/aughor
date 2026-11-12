@@ -12,7 +12,7 @@ import asyncio
 
 import pytest
 
-from aughor.kernel.registries import execution_hooks as hooks
+from pramanyx.kernel.registries import execution_hooks as hooks
 
 
 @pytest.fixture(autouse=True)
@@ -42,8 +42,8 @@ def test_forwarder_carries_the_receipt_to_the_progress_sink():
     """End-to-end through the real registration: bootstrap's forwarder → the
     ContextVar sink → the self-tagged queue payload the SSE stream translates
     into a `guard_receipt` frame."""
-    from aughor.agent.bootstrap import _register_guard_receipt_forwarder
-    from aughor.agent.progress import clear_progress_sink, set_progress_sink
+    from pramanyx.agent.bootstrap import _register_guard_receipt_forwarder
+    from pramanyx.agent.progress import clear_progress_sink, set_progress_sink
 
     _register_guard_receipt_forwarder()
     loop = asyncio.new_event_loop()
@@ -78,18 +78,18 @@ def test_preflight_harden_reports_the_defan_it_adopts(monkeypatch):
     class _FF:
         hub_root, satellites = "orders", ["order_items"]
 
-    monkeypatch.setattr("aughor.sql.fanout.detect_fanout", lambda *a, **k: _FF())
-    monkeypatch.setattr("aughor.sql.fanout.defan", lambda sql, ff, dialect: "SELECT 2 -- rewritten")
-    monkeypatch.setattr("aughor.db.schema_render.parse_schema_tables",
+    monkeypatch.setattr("pramanyx.sql.fanout.detect_fanout", lambda *a, **k: _FF())
+    monkeypatch.setattr("pramanyx.sql.fanout.defan", lambda sql, ff, dialect: "SELECT 2 -- rewritten")
+    monkeypatch.setattr("pramanyx.db.schema_render.parse_schema_tables",
                         lambda s: {"orders": ["id"]})
-    monkeypatch.setattr("aughor.sql.safety.preflight_repair", lambda c, s, sc: (s, {}))
+    monkeypatch.setattr("pramanyx.sql.safety.preflight_repair", lambda c, s, sc: (s, {}))
 
     class _Conn:
         dialect = "duckdb"
         def dry_run(self, sql):
             return True, ""
 
-    from aughor.sql.executor import preflight_harden
+    from pramanyx.sql.executor import preflight_harden
     out = preflight_harden(_Conn(), "SELECT 1", "TABLE: orders\n  id  BIGINT")
     assert out == "SELECT 2 -- rewritten"
     assert received and received[0][0] == "fanout_defan"

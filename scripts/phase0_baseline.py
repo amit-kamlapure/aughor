@@ -36,14 +36,14 @@ def _days_ago(iso: str, days: int) -> bool:
 
 
 def _org() -> str:
-    from aughor.org.context import current_org_id
+    from pramanyx.org.context import current_org_id
     return current_org_id()
 
 
 # ── each row: a name, what the study's §A said, and a reader that returns (value, note) ──
 
 def asks() -> tuple[str, str]:
-    from aughor.db.history import list_investigations
+    from pramanyx.db.history import list_investigations
     rows = list_investigations(limit=1_000_000)
     deep = [r for r in rows if (r.get("kind") or "investigation") != "chat"]
     chats = [r for r in rows if r.get("kind") == "chat"]
@@ -54,7 +54,7 @@ def asks() -> tuple[str, str]:
 
 
 def people_asking() -> tuple[str, str]:
-    from aughor.db.history import _conn
+    from pramanyx.db.history import _conn
     c = _conn()
     cols = {r[1] for r in c.execute("PRAGMA table_info(investigations)").fetchall()}
     for col in ("user_id", "asked_by", "principal"):
@@ -69,8 +69,8 @@ def people_asking() -> tuple[str, str]:
 
 
 def declared_actions() -> tuple[str, str]:
-    from aughor.db.registry import list_connections
-    from aughor.routers.ontology import served_ontology_graph
+    from pramanyx.db.registry import list_connections
+    from pramanyx.routers.ontology import served_ontology_graph
     total, per = 0, []
     for conn in list_connections():
         cid = conn.get("id") if isinstance(conn, dict) else getattr(conn, "id", "")
@@ -90,13 +90,13 @@ def declared_actions() -> tuple[str, str]:
 
 
 def standing_grants() -> tuple[str, str]:
-    from aughor.actions.grants import list_grants
+    from pramanyx.actions.grants import list_grants
     grants = list_grants()
     return str(len(grants)), "standing grants (a person pre-authorised one action for one target)"
 
 
 def proposals() -> tuple[str, str]:
-    from aughor.actions.inbox import list_proposals
+    from pramanyx.actions.inbox import list_proposals
     rows = list_proposals()
     by = {}
     for p in rows:
@@ -106,7 +106,7 @@ def proposals() -> tuple[str, str]:
 
 
 def verdicts() -> tuple[str, str]:
-    from aughor.feedback.verdicts import list_verdicts
+    from pramanyx.feedback.verdicts import list_verdicts
     rows = list_verdicts(limit=1_000_000)
     by = {}
     for v in rows:
@@ -118,7 +118,7 @@ def verdicts() -> tuple[str, str]:
 
 
 def outcomes() -> tuple[str, str]:
-    from aughor.playbook.outcomes import load_all_outcomes
+    from pramanyx.playbook.outcomes import load_all_outcomes
     rows = load_all_outcomes()
     reviewed = [o for o in rows if getattr(o, "metric_after", None) is not None]
     return (f"{len(rows)} recorded, {len(reviewed)} with a second measurement",
@@ -126,14 +126,14 @@ def outcomes() -> tuple[str, str]:
 
 
 def departures() -> tuple[str, str]:
-    from aughor.govern.departure_store import summary_counts
+    from pramanyx.govern.departure_store import summary_counts
     counts = summary_counts(org_id=_org())
     return (", ".join(f"{k} {v}" for k, v in sorted(counts.items()) if isinstance(v, (int, float))) or "0",
             "the departures ledger: everything that left the platform, by state")
 
 
 def owners() -> tuple[str, str]:
-    from aughor.rbac.owners import list_owner_links, owner_inventory
+    from pramanyx.rbac.owners import list_owner_links, owner_inventory
     org = _org()
     links = list_owner_links(org)
     inventory = owner_inventory(org)
@@ -143,7 +143,7 @@ def owners() -> tuple[str, str]:
 
 
 def causal() -> tuple[str, str]:
-    from aughor.db.history import _conn
+    from pramanyx.db.history import _conn
     c = _conn()
     rows = c.execute("SELECT report_json FROM investigations WHERE (kind IS NULL OR kind = 'investigation') "
                      "AND report_json IS NOT NULL").fetchall()
@@ -164,7 +164,7 @@ def causal() -> tuple[str, str]:
 
 
 def approved_metrics() -> tuple[str, str]:
-    from aughor.semantic.metrics import list_metrics
+    from pramanyx.semantic.metrics import list_metrics
     ms = list_metrics()
     def _status(m):
         return (m.get("status") if isinstance(m, dict) else getattr(m, "status", None)) or ""
@@ -173,7 +173,7 @@ def approved_metrics() -> tuple[str, str]:
 
 
 def goldens() -> tuple[str, str]:
-    from aughor.evals.store import list_cases, list_suites
+    from pramanyx.evals.store import list_cases, list_suites
     suites = list_suites(limit=1000)
     n = 0
     for s in suites:
@@ -187,14 +187,14 @@ def goldens() -> tuple[str, str]:
 
 def gate_default() -> tuple[str, str]:
     import os
-    from aughor.govern.actions import approval_enabled
-    raw = os.environ.get("AUGHOR_ACTION_APPROVAL", "")
-    return ("on" if approval_enabled() else "OFF"), (f"AUGHOR_ACTION_APPROVAL={raw!r}; on by default since 2026-10-04")
+    from pramanyx.govern.actions import approval_enabled
+    raw = os.environ.get("PRAMANYX_ACTION_APPROVAL", "")
+    return ("on" if approval_enabled() else "OFF"), (f"PRAMANYX_ACTION_APPROVAL={raw!r}; on by default since 2026-10-04")
 
 
 def identity() -> tuple[str, str]:
-    from aughor.security.authz import require_identity_enabled
-    return ("on" if require_identity_enabled() else "off"), "AUGHOR_REQUIRE_IDENTITY=1 switches it on at start"
+    from pramanyx.security.authz import require_identity_enabled
+    return ("on" if require_identity_enabled() else "off"), "PRAMANYX_REQUIRE_IDENTITY=1 switches it on at start"
 
 
 ROWS: list[tuple[str, str, Callable[[], tuple[str, str]]]] = [

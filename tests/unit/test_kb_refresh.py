@@ -6,9 +6,9 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.playbook import builder, store
-from aughor.semantic import kb_retriever
-from aughor.semantic.kb_loader import KBEntry
+from pramanyx.playbook import builder, store
+from pramanyx.semantic import kb_retriever
+from pramanyx.semantic.kb_loader import KBEntry
 
 ENTRY = {
     "id": "ec_return_rate", "title": "Return Rate", "intent_tags": ["return rate"],
@@ -21,7 +21,7 @@ ENTRY = {
 @pytest.fixture()
 def playbook(tmp_path, monkeypatch):
     path = tmp_path / "playbook.json"
-    monkeypatch.setenv("AUGHOR_PLAYBOOK_PATH", str(path))
+    monkeypatch.setenv("PRAMANYX_PLAYBOOK_PATH", str(path))
     return path
 
 
@@ -90,15 +90,15 @@ def index(monkeypatch):
              "embedded": []}
     monkeypatch.setattr(kb_retriever, "KB_ENABLED", True)
     monkeypatch.setattr(kb_retriever, "KB_PATH", "")
-    monkeypatch.setattr("aughor.semantic.vector_store.collection_count", lambda c: len(state["stored"]))
-    monkeypatch.setattr("aughor.semantic.vector_store.scroll_payloads", lambda c, limit=10_000: list(state["stored"]))
+    monkeypatch.setattr("pramanyx.semantic.vector_store.collection_count", lambda c: len(state["stored"]))
+    monkeypatch.setattr("pramanyx.semantic.vector_store.scroll_payloads", lambda c, limit=10_000: list(state["stored"]))
     monkeypatch.setattr(kb_retriever, "_embed_and_upsert",
                         lambda entries: state["embedded"].extend(e.pattern_id for e in entries) or len(entries))
     return state
 
 
 def _packages(monkeypatch, *entries):
-    monkeypatch.setattr("aughor.semantic.kb_loader.load_package_kb_entries", lambda: list(entries))
+    monkeypatch.setattr("pramanyx.semantic.kb_loader.load_package_kb_entries", lambda: list(entries))
 
 
 def test_only_the_entries_that_changed_are_embedded_again(index, monkeypatch):
@@ -117,7 +117,7 @@ def test_an_empty_or_unreadable_index_is_left_to_its_first_use_and_says_so(index
     _packages(monkeypatch, _entry("ec_aov", "AOV"))
     index["stored"] = []
     assert "empty" in kb_retriever.refresh_changed()["why"]
-    monkeypatch.setattr("aughor.semantic.vector_store.collection_count", lambda c: 2)
+    monkeypatch.setattr("pramanyx.semantic.vector_store.collection_count", lambda c: 2)
     got = kb_retriever.refresh_changed()                                                # held, but none readable
     assert got["refreshed"] == 0 and "none could be read" in got["why"] and index["embedded"] == []
 

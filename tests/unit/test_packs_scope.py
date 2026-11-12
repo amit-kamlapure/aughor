@@ -20,9 +20,9 @@ import types
 import pytest
 import yaml
 
-from aughor.packs import scope as pack_scope
-from aughor.packs.loader import PROSE_FILE, load_pack
-from aughor.packs.promote import PromotionRefused, set_status
+from pramanyx.packs import scope as pack_scope
+from pramanyx.packs.loader import PROSE_FILE, load_pack
+from pramanyx.packs.promote import PromotionRefused, set_status
 
 
 def _write_pack(root, pack_id, *, scope=None, status="draft", partial=True,
@@ -41,8 +41,8 @@ def _write_pack(root, pack_id, *, scope=None, status="draft", partial=True,
 
 @pytest.fixture
 def packs_dir(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_PACKS_DIR", str(tmp_path))
-    monkeypatch.setenv("AUGHOR_IMPORTED_PACKS_DIR", str(tmp_path / "_none"))
+    monkeypatch.setenv("PRAMANYX_PACKS_DIR", str(tmp_path))
+    monkeypatch.setenv("PRAMANYX_IMPORTED_PACKS_DIR", str(tmp_path / "_none"))
     return tmp_path
 
 
@@ -101,7 +101,7 @@ def test_every_registered_connector_type_is_a_legal_engine_name():
     """The known-engine set is what tells a typo apart from an engine nobody has
     connected yet. If it drifts from the connector registry, activating a correct scope
     starts failing — so it is asserted against the registry itself, not a copy."""
-    from aughor.connectors.registry import REGISTRY
+    from pramanyx.connectors.registry import REGISTRY
 
     known = pack_scope.known_engines()
     missing = [t for t in REGISTRY.supported_types() if t not in known]
@@ -119,8 +119,8 @@ def test_unknown_engines_are_named_individually():
 
 def test_the_type_of_a_connection_is_readable_without_its_secret_key(monkeypatch):
     """`get_dsn` was the only way to ask, and it decrypts — so an install with no
-    `AUGHOR_SECRET_KEY` could not answer a question that has nothing to do with secrets."""
-    from aughor.db import registry
+    `PRAMANYX_SECRET_KEY` could not answer a question that has nothing to do with secrets."""
+    from pramanyx.db import registry
 
     def _boom(_v):
         raise RuntimeError("no secret key configured")
@@ -134,7 +134,7 @@ def test_an_unreadable_registry_means_unknown_not_a_crash(monkeypatch):
     """This is called to paint a roster. It must degrade, never take the roster down."""
     def _boom(_cid):
         raise RuntimeError("registry is gone")
-    monkeypatch.setattr("aughor.db.registry.get_conn_type", _boom)
+    monkeypatch.setattr("pramanyx.db.registry.get_conn_type", _boom)
 
     assert pack_scope.conn_type_of("c1") == ""
 
@@ -162,7 +162,7 @@ def test_an_all_star_roster_never_opens_the_registry(monkeypatch):
 # ── rung 1: the roster the model scans ───────────────────────────────────────────
 
 def test_the_roster_marks_an_out_of_scope_pack_unreadable(packs_dir, engine):
-    from aughor.agent import platform_tools as pt
+    from pramanyx.agent import platform_tools as pt
 
     _write_pack(packs_dir, "bigtable", scope=["engine:bigtable"], status="active")
     engine("duckdb")
@@ -178,7 +178,7 @@ def test_an_out_of_scope_pack_is_listed_but_costs_no_description(packs_dir, engi
     """Listed, because hiding it makes 'no pack for this' and 'no such pack' identical to
     anyone asking what is installed. Without a description, because rung 1 is scanned on
     every call and a paragraph about another engine can only mislead."""
-    from aughor.agent import platform_tools as pt
+    from pramanyx.agent import platform_tools as pt
 
     _write_pack(packs_dir, "bigtable", scope=["engine:bigtable"], status="active",
                 prose="Design a row key that avoids hotspotting.")
@@ -192,7 +192,7 @@ def test_an_out_of_scope_pack_is_listed_but_costs_no_description(packs_dir, engi
 
 
 def test_the_roster_serves_a_pack_scoped_to_this_engine(packs_dir, engine):
-    from aughor.agent import platform_tools as pt
+    from pramanyx.agent import platform_tools as pt
 
     _write_pack(packs_dir, "bq", scope=["engine:bigquery"], status="active",
                 prose="Partition before you scan.")
@@ -211,7 +211,7 @@ def test_read_pack_refuses_another_engines_pack_and_says_which(packs_dir, engine
     """The failure this gate exists for: prose that is confident, specific, and about a
     system the reader is not connected to — indistinguishable, once read, from prose that
     fits."""
-    from aughor.agent import platform_tools as pt
+    from pramanyx.agent import platform_tools as pt
 
     _write_pack(packs_dir, "spanner", scope=["engine:spanner"], status="active",
                 prose="Interleave child tables under their parent.")
@@ -227,7 +227,7 @@ def test_read_pack_refuses_another_engines_pack_and_says_which(packs_dir, engine
 def test_read_pack_distinguishes_wrong_engine_from_not_promoted(packs_dir, engine):
     """Two different problems. 'promote it' and 'that advice is for another engine' lead
     the reader to opposite next steps."""
-    from aughor.agent import platform_tools as pt
+    from pramanyx.agent import platform_tools as pt
 
     _write_pack(packs_dir, "draft-here", scope=["engine:duckdb"], status="draft")
     _write_pack(packs_dir, "wrong-engine", scope=["engine:spanner"], status="active")
@@ -238,7 +238,7 @@ def test_read_pack_distinguishes_wrong_engine_from_not_promoted(packs_dir, engin
 
 
 def test_read_pack_serves_the_body_when_the_engine_matches(packs_dir, engine):
-    from aughor.agent import platform_tools as pt
+    from pramanyx.agent import platform_tools as pt
 
     _write_pack(packs_dir, "bq", scope=["engine:bigquery"], status="active",
                 prose="Partition before you scan.")
@@ -255,7 +255,7 @@ def test_read_pack_serves_the_body_when_the_engine_matches(packs_dir, engine):
 def test_a_pack_for_another_engine_does_not_steer_a_plan(monkeypatch):
     """The binding gate does not catch this on its own: a role binds against whatever
     tables fit, and tables fit regardless of which engine holds them."""
-    from aughor.packs import intake
+    from pramanyx.packs import intake
 
     bq = types.SimpleNamespace(
         id="bq", manifest=types.SimpleNamespace(
@@ -271,7 +271,7 @@ def test_a_pack_for_another_engine_does_not_steer_a_plan(monkeypatch):
 def test_a_pack_for_this_engine_still_steers(monkeypatch):
     """The other half — a filter that removes everything passes the test above for the
     wrong reason."""
-    from aughor.packs import intake
+    from pramanyx.packs import intake
 
     bq = types.SimpleNamespace(
         id="bq", manifest=types.SimpleNamespace(
@@ -334,7 +334,7 @@ def test_promotion_preserves_the_scope_it_was_gated_on(packs_dir):
 # ── validation ───────────────────────────────────────────────────────────────────
 
 def test_validate_warns_about_a_scope_that_can_never_match(packs_dir):
-    from aughor.packs import validate_pack
+    from pramanyx.packs import validate_pack
 
     _write_pack(packs_dir, "typo", scope=["engine:bigqeury"])
     _write_pack(packs_dir, "nowhere", scope=[])
@@ -344,7 +344,7 @@ def test_validate_warns_about_a_scope_that_can_never_match(packs_dir):
 
 
 def test_validate_is_quiet_about_a_scope_that_can(packs_dir):
-    from aughor.packs import validate_pack
+    from pramanyx.packs import validate_pack
 
     _write_pack(packs_dir, "bq", scope=["engine:bigquery"])
 

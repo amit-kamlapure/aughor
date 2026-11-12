@@ -22,16 +22,16 @@ decoder-only LLM (whichever the operator configures — no model id ships) fills
 deterministic code does everything on both sides of that call. The "encoder" is non-parametric — code that
 decides what the model reads.
 
-The quick answer, stage by stage (`_answer_core`, `aughor/routers/investigations.py:1496`):
+The quick answer, stage by stage (`_answer_core`, `pramanyx/routers/investigations.py:1496`):
 
 | # | Stage | By | What happens |
 |---|---|---|---|
-| 1 | Route | code (one small model call only on a borderline question) | overview, clarify gate, quick or deep (`aughor/agent/ask_router.py`) |
-| 2 | Link | code | a keyword schema linker picks tables and columns within a budget by model tier (`aughor/tools/schema_linker.py`) |
+| 1 | Route | code (one small model call only on a borderline question) | overview, clarify gate, quick or deep (`pramanyx/agent/ask_router.py`) |
+| 2 | Link | code | a keyword schema linker picks tables and columns within a budget by model tier (`pramanyx/tools/schema_linker.py`) |
 | 3 | Assemble | code + embeddings | the Data Catalog (columns, five rows, value-verified joins), relationship cardinalities, governed metrics, the ontology's declared business terms, the values a question names resolved to real column values, trusted query templates, past corrections, few-shot SQL from earlier runs |
 | 4 | Generate | **model** | one call returns `{sql, headline, chart_type, intent, …}` (`_ChatAnswer`) |
-| 5 | Check and repair | code first, model last | sqlglot parse, fan-out rewrite, lint, identifier repair, literal binding, dry run; deterministic fixes before at most two model repairs (`aughor/sql/writer.py`) |
-| 6 | Execute | code | read-only enforced by parsing, safety checks, row security, a row cap (`aughor/db/connection.py`) |
+| 5 | Check and repair | code first, model last | sqlglot parse, fan-out rewrite, lint, identifier repair, literal binding, dry run; deterministic fixes before at most two model repairs (`pramanyx/sql/writer.py`) |
+| 6 | Execute | code | read-only enforced by parsing, safety checks, row security, a row cap (`pramanyx/db/connection.py`) |
 | 7 | Ground | code | the headline checked against the rows; caveats for known SQL traps |
 | 8 | Narrate | **model** | prose from at most 20 result rows |
 | 9 | Envelope | code | one structured answer every destination reads (CP-4) |
@@ -50,7 +50,7 @@ saw; today none does (§2).
   reads it as no tables at all (`parse_schema_tables` of the catalog → `{}`, reproduced), so identifier-case
   repair never runs on the default path and the SQL fixer loses its column lists. → **item 18**
 - The conversation agent needs tool calls, and the `anthropic` backend raises before any fallback
-  (`aughor/llm/provider.py:2040`, uncaught at `aughor/agent/tool_loop.py:178`): every quick `/ask` turn — the
+  (`pramanyx/llm/provider.py:2040`, uncaught at `pramanyx/agent/tool_loop.py:178`): every quick `/ask` turn — the
   Slack bot's, and since 2026-09-24 the web's two main buttons — errors on that backend. → **item 17**
 - The headline the model writes *before* its query runs streams to the screen as it is typed, numbers included
   (`headline_delta`, `investigations.py:2321`), and is replaced afterwards only on a flat contradiction.
@@ -66,11 +66,11 @@ is 5 human verdicts, none carrying SQL (2026-09-19). Why:
 
 - **Nobody can say "yes" from the chat.** The chat's feedback form writes only `correct` or `reject`
   (`web/components/ChatMessage.tsx`); the surface where most answers are given cannot produce an accepted example.
-- **The exported prompt is the answer's headline, not the question** (`aughor/learning/exporters.py:124`, `:151`).
+- **The exported prompt is the answer's headline, not the question** (`pramanyx/learning/exporters.py:124`, `:151`).
 - **No row carries the context the model saw** — connection, dialect, the schema slice, the resolved values. A
   model trained on these rows would learn question → SQL without ever seeing the data (§3).
 - **The gate report double-counts:** it sums `row_count` over every version of a dataset
-  (`aughor/learning/store.py:274`), so a corpus exported at 100 and again at 110 reads as 210.
+  (`pramanyx/learning/store.py:274`), so a corpus exported at 100 and again at 110 reads as 210.
 - **A typed correction becomes the "chosen" SQL without being run**, and conflicting verdicts on one answer are
   not reconciled.
 - **Rows cannot be joined:** history has no trace id, and the bridge that has one expires after 14 days, so a
@@ -94,7 +94,7 @@ fine-tuning plateaus. Before any export leaves the box: org scoping, a scrubber 
 → **item 23**
 
 **The half that works without training — and is broken in the same way.** Past SQL is reused at answer time as
-few-shot examples (`aughor/tools/prior_analyses.py`), but only deep runs feed it — never a quick answer or a chat
+few-shot examples (`pramanyx/tools/prior_analyses.py`), but only deep runs feed it — never a quick answer or a chat
 turn (`skip_index` for direct mode) — a rejected query is never evicted, nothing checks guards before indexing,
 and a dead vector store silently returns nothing. This is the self-improving loop that exists today.
 → **item 24**
@@ -113,9 +113,9 @@ large-context model) linked tables, relationship cardinalities, and the values a
 What does not:
 
 - **The profiler's statistics.** Distinct counts, null rates, ranges, quartiles, top values and the full value
-  sets of name-like columns are computed and cached (`aughor/tools/profiler.py`), then dropped: the Data Catalog
+  sets of name-like columns are computed and cached (`pramanyx/tools/profiler.py`), then dropped: the Data Catalog
   replaces the schema string they would ride (`investigations.py:1862`) and carries none of them
-  (`aughor/tools/data_catalog.py:101`).
+  (`pramanyx/tools/data_catalog.py:101`).
 - **Values, when choosing tables.** The linker ranks tables by their *names*; a question naming a value
   ("Ferrari") does not raise the table that holds it.
 - **Values on most warehouses.** Value resolution probes only columns whose name matches a keyword list (`name`,

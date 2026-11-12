@@ -6,7 +6,7 @@ real lever (per-unit reduction / volume) from chain figures instead of re-statin
 flat rate. These are prompt directives — this test guards them against accidental removal
 and confirms the template still formats with its placeholders intact.
 """
-from aughor.agent.prompts_explore import SYNTHESIZE_EXPLORATION_PROMPT
+from pramanyx.agent.prompts_explore import SYNTHESIZE_EXPLORATION_PROMPT
 
 
 def test_prompt_formats_with_all_placeholders():

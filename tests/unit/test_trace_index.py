@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.obs import session_log
+from pramanyx.obs import session_log
 
 
 @pytest.fixture()
@@ -114,7 +114,7 @@ def test_the_route_passes_every_filter_through(monkeypatch):
     capture already firing into a sink the route never set) cost a wave once already."""
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
 
     seen: dict = {}
 
@@ -143,7 +143,7 @@ def test_the_route_reports_the_match_count_and_its_window(monkeypatch):
     """A page of rows with no total cannot say whether anything is past it."""
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
 
     monkeypatch.setattr(session_log, "session_index", lambda **kw: {
         "rows": [run("t1")], "total": 87, "limit": 25, "offset": 0, "scanned_events": 4000})
@@ -160,7 +160,7 @@ def test_an_unknown_status_is_refused_rather_than_ignored(monkeypatch):
     the word this parameter accepted before the rename, answered 73 of 73."""
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
 
     monkeypatch.setattr(session_log, "session_index", lambda **kw: {
         "rows": [], "total": 0, "limit": 25, "offset": 0, "scanned_events": 4000})

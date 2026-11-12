@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The pieces the Catalog's right panel is built from (`aughor-v2/CLARITY.md`): the header line every selection opens
+ * The pieces the Catalog's right panel is built from (`pramanyx-v2/CLARITY.md`): the header line every selection opens
  * on, the one Tools menu, a state said as a mark and a word, bars that are shares of a whole, the list of tables —
  * and the tools that used to sit open in each panel (the Briefings switch, a connector's sync and files, the compiled
  * schema documents, the sample grid), moved here unchanged in what they do, to live behind Settings, Docs, a tab or

@@ -1,4 +1,4 @@
-"""Grain-correct ratio repair (aughor/sql/ratio_grain.py + investigate wiring).
+"""Grain-correct ratio repair (pramanyx/sql/ratio_grain.py + investigate wiring).
 
 The suppression caveat promised "a grain-correct recompute" for weeks; this is it.
 When the guards prove a per-segment cross-table ratio corrupt, the scan is rebuilt
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import duckdb
 
-from aughor.sql.ratio_grain import plan_grain_correct_scan, validate_totals
+from pramanyx.sql.ratio_grain import plan_grain_correct_scan, validate_totals
 
 METRIC_SQL = "SUM(refunds.refund_chf) / NULLIF(SUM(bookings.total_fare_chf), 0) * 100"
 
@@ -117,7 +117,7 @@ def test_orchestration_repairs_the_finding_in_place():
     rows replaced, SQL replaced with the correct query, caveat transparent and free
     of the 'fan-out' token (that phrase trips the synthesis damper for data that is
     now exact), unreachable sibling left for suppression."""
-    from aughor.agent.investigate import _repair_conditioned_ratio
+    from pramanyx.agent.investigate import _repair_conditioned_ratio
     c = _fixture()
     conn = _Shim(c)
     corrupt = {"columns": ["channel", "metric_total", "n"],
@@ -150,7 +150,7 @@ def test_suppressed_rows_are_redacted_from_synthesis_evidence():
     evidence log even under the hard don't-cite instruction — because the finding's raw
     rows were dumped verbatim. A suppressed finding's rows are redacted from the evidence;
     its SQL + caveat stay so synthesis knows what was attempted."""
-    from aughor.agent.investigate import _one_phase_evidence, _is_suppressed_finding
+    from pramanyx.agent.investigate import _one_phase_evidence, _is_suppressed_finding
     phase = {"phase_name": "Temporal", "findings": [
         {"title": "Single period", "sql": "SELECT ...", "error": None,
          "columns": ["period", "refund leakage rate (%)", "records"],

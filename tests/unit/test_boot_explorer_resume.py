@@ -25,8 +25,8 @@ import asyncio
 
 import pytest
 
-from aughor.explorer.models import ExplorationPhase
-from aughor.explorer.store import TERMINAL_PHASES, is_unfinished
+from pramanyx.explorer.models import ExplorationPhase
+from pramanyx.explorer.store import TERMINAL_PHASES, is_unfinished
 
 
 # ── the rule ─────────────────────────────────────────────────────────────────────
@@ -59,9 +59,9 @@ class _Canvas:
 
 def _boot(monkeypatch, phases: dict[str, str], canvases: dict | None = None) -> list[str]:
     """Run the real boot loop over `phases`, returning the canvas ids it spawned."""
-    from aughor.explorer import store as expl_store
-    from aughor.canvas import store as canvas_store
-    from aughor.routers import _shared
+    from pramanyx.explorer import store as expl_store
+    from pramanyx.canvas import store as canvas_store
+    from pramanyx.routers import _shared
 
     spawned: list[str] = []
 
@@ -77,7 +77,7 @@ def _boot(monkeypatch, phases: dict[str, str], canvases: dict | None = None) -> 
                         lambda cid: (canvases or {}).get(cid, _Canvas()))
     monkeypatch.setattr(_shared, "spawn_explorer", _spawn)
 
-    from aughor.api import _boot_canvas_explorers
+    from pramanyx.api import _boot_canvas_explorers
     asyncio.run(_boot_canvas_explorers())
     return spawned
 

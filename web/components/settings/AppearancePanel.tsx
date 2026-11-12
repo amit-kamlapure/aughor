@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Settings ▸ Appearance, redone to `aughor-v2/CLARITY.md`: two related cards on one row — the theme (dark or light)
+ * Settings ▸ Appearance, redone to `pramanyx-v2/CLARITY.md`: two related cards on one row — the theme (dark or light)
  * and the look (accent, grey, corners, scaling, `LookPanel`). It used to sit inline in `app/page.tsx` as a pair of
  * hand-styled buttons; the screen still owns the theme, so it hands the chosen one and its setter in, and choosing
  * calls that setter exactly as before (it writes the stored preference — `lib/themeSwitch.ts`).

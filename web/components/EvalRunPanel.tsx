@@ -1,6 +1,6 @@
 "use client";
 /**
- * Evals ▸ Runs — redone to `aughor-v2/CLARITY.md` (2026-10-13). A measurement is a BAND, never a point: repeated
+ * Evals ▸ Runs — redone to `pramanyx-v2/CLARITY.md` (2026-10-13). A measurement is a BAND, never a point: repeated
  * runs of one suite under one set-up are its replicates, so they fold into one row — ×N, the trend of every run, and
  * the score as its band ("79.5% ± 9.1 · 4 replicates"), or "no band" when it ran once. Four figures lead: runs, how
  * many set-ups have a band, how many held within the noise floor, how many runs did not finish. Each run, and each

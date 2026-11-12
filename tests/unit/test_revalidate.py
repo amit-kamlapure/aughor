@@ -6,7 +6,7 @@ real finding whose only problem is a runaway novelty score. Apply is opt-in.
 """
 import copy
 
-from aughor.explorer.revalidate import validate_insight, revalidate_state
+from pramanyx.explorer.revalidate import validate_insight, revalidate_state
 
 
 FABRICATED = {
@@ -113,7 +113,7 @@ class TestStalePlausibilityRejectsAreRetired:
             "finding": "Stockouts decrease as supplier lead time increases across all warehouses.",
             "sql": "SELECT w, AVG(stockouts) FROM inv GROUP BY w",
         }
-        from aughor.knowledge.triage import plausibility
+        from pramanyx.knowledge.triage import plausibility
         assert plausibility(confounded["finding"], confounded["sql"]).severity == "confound"
         assert validate_insight(confounded) is None
 

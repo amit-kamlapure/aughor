@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-import aughor.connectors.warehouse.bigquery as bq
+import pramanyx.connectors.warehouse.bigquery as bq
 
 
 def _job_config_calls() -> list[ast.Call]:

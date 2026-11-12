@@ -5,7 +5,7 @@ the distinct readings' labels become grounded option chips. The suspect filter g
 """
 from __future__ import annotations
 
-from aughor.agent.ambiguity_probe import (
+from pramanyx.agent.ambiguity_probe import (
     CandidateReading, assess_structural_ambiguity, is_structural_suspect,
 )
 

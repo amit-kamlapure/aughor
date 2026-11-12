@@ -203,7 +203,7 @@ export function toActionSpec(d: ActionDraft, takenIds: Iterable<string> = [], un
 
 // ── a draft kept in this browser — a convenience, never the record ───────────────────────────────────────────────────
 
-const KEY = (connectionId: string, schema?: string) => `aughor:action-draft:${connectionId}:${schema ?? ""}`;
+const KEY = (connectionId: string, schema?: string) => `pramanyx:action-draft:${connectionId}:${schema ?? ""}`;
 
 export function keepAction(connectionId: string, schema: string | undefined, d: ActionDraft): boolean {
   // The credential is never kept in the browser: a draft is a convenience, and a key in localStorage is a key leaked.

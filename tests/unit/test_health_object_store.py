@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from aughor.control_plane.object_store import TOKEN_ENV
+from pramanyx.control_plane.object_store import TOKEN_ENV
 
 
 def test_health_has_object_store_block(client: TestClient) -> None:

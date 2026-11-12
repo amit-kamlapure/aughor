@@ -14,8 +14,8 @@ import uuid
 
 import pytest
 
-from aughor.dashboards import pieces, validate as V, versions
-from aughor.dashboards.home import Home
+from pramanyx.dashboards import pieces, validate as V, versions
+from pramanyx.dashboards.home import Home
 from tests.unit.test_dashboard_canvas import ME, volumes  # noqa: F401 — the fixture, by name
 from tests.unit.test_dashboard_pieces import _graph
 
@@ -24,7 +24,7 @@ needs_rules = pytest.mark.skipif(shutil.which("node") is None or not V._BUNDLE.e
 
 
 def _flags(monkeypatch) -> None:
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: False)
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled", lambda name: False)
 
 
 @pytest.fixture
@@ -157,7 +157,7 @@ def _drawn() -> dict:
 
 
 def test_a_drawer_is_a_persons_wired_by_the_choice_it_opens_on_and_named_by_its_title(monkeypatch, no_edits):
-    from aughor.dashboards import wiring
+    from pramanyx.dashboards import wiring
     spec = _drawn()
     assert "drawer" in wiring.wired(spec)
     assert pieces.title_of("Drawer", spec["elements"]["drawer"]["props"]) == "Drawer · The order"

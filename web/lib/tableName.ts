@@ -1,6 +1,6 @@
 /**
  * tableName.ts — frontend mirror of the backend canonical primitive
- * (aughor/tools/table_names.py). Table names arrive from the API in more than one
+ * (pramanyx/tools/table_names.py). Table names arrive from the API in more than one
  * convention depending on which builder produced them:
  *
  *   bare                    "orders"

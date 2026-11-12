@@ -24,8 +24,8 @@ from typing import Any
 
 import pytest
 
-from aughor.automations.engine import CHART_GRID_KEY, _attach_chart, chart_grid
-from aughor.automations.models import Effect
+from pramanyx.automations.engine import CHART_GRID_KEY, _attach_chart, chart_grid
+from pramanyx.automations.models import Effect
 
 
 class _Bot:
@@ -99,8 +99,8 @@ def test_first_grid_wins_when_a_send_reads_two():
 # ── the attach ───────────────────────────────────────────────────────────────────
 
 def _patched(monkeypatch, *, svg: Any = "<svg/>", png: Any = b"PNG", calls: list) -> None:
-    import aughor.export.echarts as echarts
-    import aughor.slackbots.post as post
+    import pramanyx.export.echarts as echarts
+    import pramanyx.slackbots.post as post
     monkeypatch.setattr(echarts, "render_chart_svg", lambda *a, **k: svg)
     monkeypatch.setattr(echarts, "svg_to_png", lambda *a, **k: png)
     monkeypatch.setattr(post, "upload_file",
@@ -147,7 +147,7 @@ def test_a_raising_renderer_never_breaks_the_send(monkeypatch):
     """The message has already posted by the time this runs. An exception here would
     turn a delivered message into a dispatch_error and earn it a retry — a duplicate
     post caused entirely by the decoration."""
-    import aughor.export.echarts as echarts
+    import pramanyx.export.echarts as echarts
 
     def _boom(*a, **k):
         raise RuntimeError("node is gone")
@@ -189,7 +189,7 @@ def test_upload_is_three_hops_and_the_ticket_hop_is_form_encoded(monkeypatch):
     """Hop 1 rejects an application/json body and answers `invalid_arguments`, which
     says nothing about why. Asserting the content type here is what keeps a future
     tidy-up from making all three hops "consistently JSON" and breaking uploads."""
-    import aughor.slackbots.post as post
+    import pramanyx.slackbots.post as post
     seen: list = []
 
     def _urlopen(req, timeout=None):
@@ -216,7 +216,7 @@ def test_upload_is_three_hops_and_the_ticket_hop_is_form_encoded(monkeypatch):
 
 
 def test_a_refused_ticket_stops_before_the_bytes(monkeypatch):
-    import aughor.slackbots.post as post
+    import pramanyx.slackbots.post as post
     seen: list = []
 
     def _urlopen(req, timeout=None):
@@ -234,7 +234,7 @@ def test_a_refused_ticket_stops_before_the_bytes(monkeypatch):
     ({"data": b"x", "filename": "c.png", "channel_id": ""}, "no channel"),
 ])
 def test_refusals_are_typed_not_silent(kw, err):
-    import aughor.slackbots.post as post
+    import pramanyx.slackbots.post as post
     channel = kw.pop("channel_id", "C1")
     ok, info = post.upload_file("xoxb", channel, **kw)
     assert not ok and info["error"] == err
@@ -256,7 +256,7 @@ def test_only_one_label_against_one_magnitude_earns_the_fallback(columns, rows, 
     """The gate on the bar retry. Tier 1 refuses unknown types precisely because falling
     through to bar drew a `scatter` as a correctly-themed, entirely wrong bar chart — so
     the retry is allowed only for the shape a ranked bar cannot misrepresent."""
-    from aughor.automations.engine import _ranked_magnitudes
+    from pramanyx.automations.engine import _ranked_magnitudes
     assert _ranked_magnitudes(columns, rows) is expected
 
 
@@ -264,8 +264,8 @@ def test_a_refused_treemap_retries_as_a_ranked_bar(monkeypatch):
     """`auto` sends "top sellers by revenue" to a treemap, which the Vega-only headless
     renderer does not draw. Without this retry the flagship scheduled post — the one
     that prompted the whole feature — silently carries no picture."""
-    import aughor.export.echarts as echarts
-    import aughor.slackbots.post as post
+    import pramanyx.export.echarts as echarts
+    import pramanyx.slackbots.post as post
     asked: list = []
     calls: list = []
 
@@ -286,8 +286,8 @@ def test_a_refused_treemap_retries_as_a_ranked_bar(monkeypatch):
 def test_a_refused_scatter_is_not_retried_as_a_bar(monkeypatch):
     """The lie tier 1 exists to prevent. Three columns is not a ranked magnitude, so a
     null stays a null and the post carries no picture rather than a wrong one."""
-    import aughor.export.echarts as echarts
-    import aughor.slackbots.post as post
+    import pramanyx.export.echarts as echarts
+    import pramanyx.slackbots.post as post
     asked: list = []
     calls: list = []
     monkeypatch.setattr(echarts, "render_chart_svg",

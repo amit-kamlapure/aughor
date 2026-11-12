@@ -22,9 +22,9 @@ from __future__ import annotations
 import duckdb
 import pytest
 
-import aughor.agent.investigate as I
-from aughor.agent.prompts_investigate import IntakeOutput
-from aughor.db.connection import DuckDBConnection
+import pramanyx.agent.investigate as I
+from pramanyx.agent.prompts_investigate import IntakeOutput
+from pramanyx.db.connection import DuckDBConnection
 from dataclasses import dataclass, field
 
 
@@ -40,7 +40,7 @@ class _Metric:
     source: str = "catalog"
     verified: bool = True
     caveats: str = ""
-from aughor.tools.stats import mean_shift_significance
+from pramanyx.tools.stats import mean_shift_significance
 
 # ── Ground truth baked into the fixture (assert against these constants) ───────────
 _TRUE_GLOBAL_REFUND_RATE = 10.0        # SUM(refund_amount)=1000 / SUM(order_total)=10000 * 100
@@ -239,10 +239,10 @@ def test_p1_pin_runs_the_governed_formula_against_the_real_db(monkeypatch, gt_db
         sql="SUM(refunded_value) / NULLIF(SUM(order_total), 0) * 100",
         source="catalog", verified=True,
     )
-    monkeypatch.setattr("aughor.semantic.canonical.resolve_planning_metrics",
+    monkeypatch.setattr("pramanyx.semantic.canonical.resolve_planning_metrics",
                         lambda *a, **k: [governed])
     monkeypatch.setattr(I, "_provider", lambda role: _FakeProvider(_pin_intake()))
-    import aughor.agent.explore as ex
+    import pramanyx.agent.explore as ex
     monkeypatch.setattr(ex, "build_analysis_ledger", lambda state: "")
 
     st = {"question": "Why is the Fragrance refund rate so high?", "schema_context": _ORDERS_SCHEMA,
@@ -260,10 +260,10 @@ def test_p1_pin_fails_closed_when_governed_formula_does_not_run(monkeypatch, gt_
         sql="SUM(nonexistent_col) / NULLIF(SUM(order_total), 0) * 100",
         source="catalog", verified=True,
     )
-    monkeypatch.setattr("aughor.semantic.canonical.resolve_planning_metrics",
+    monkeypatch.setattr("pramanyx.semantic.canonical.resolve_planning_metrics",
                         lambda *a, **k: [governed])
     monkeypatch.setattr(I, "_provider", lambda role: _FakeProvider(_pin_intake()))
-    import aughor.agent.explore as ex
+    import pramanyx.agent.explore as ex
     monkeypatch.setattr(ex, "build_analysis_ledger", lambda state: "")
 
     st = {"question": "Why is the Fragrance refund rate so high?", "schema_context": _ORDERS_SCHEMA,

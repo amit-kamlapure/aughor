@@ -70,10 +70,10 @@ def is_human(spec: dict) -> bool:
 def main() -> int:
     import yaml
 
-    from aughor.ontology.business_rules import rule_entry, rule_fields
-    from aughor.ontology.models import BusinessRule, Process
-    from aughor.ontology.overrides import _EDITABLE, OntologyOverride
-    from aughor.ontology.processes import process_entry, process_fields
+    from pramanyx.ontology.business_rules import rule_entry, rule_fields
+    from pramanyx.ontology.models import BusinessRule, Process
+    from pramanyx.ontology.overrides import _EDITABLE, OntologyOverride
+    from pramanyx.ontology.processes import process_entry, process_fields
 
     written = 0
     for key, (snapshot, schema) in HOSTS.items():
@@ -100,7 +100,7 @@ def main() -> int:
             overrides.append(OntologyOverride(target_kind="rule", target_id=rid, fields=fields,
                                               binding={"rule": entry}, source=rule.get("origin") or "human",
                                               edited_at=stamp, note=note))
-        from aughor.ontology.models import OntologyGraph
+        from pramanyx.ontology.models import OntologyGraph
         for action in sorted(OntologyGraph.model_validate(g).declared_actions(), key=lambda a: a.id):
             aid = action.id
             fields = {k: v for k, v in action.model_dump(mode="json").items() if k in _EDITABLE["action"]}

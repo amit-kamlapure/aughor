@@ -10,7 +10,7 @@ dataset nobody tuned for.
 web-only fix) with the built-in browser. Every figure the product states is checked against ground
 truth computed locally with DuckDB over the raw files (`olist_truth.json`, figures below). Model spend
 on this instance was approved for the run. The API is running WITHOUT the cockpit flags and
-`AUGHOR_MODEL_PRICES` (the Mac rebooted at 22:18; the restart carried no env) — findings that depend on
+`PRAMANYX_MODEL_PRICES` (the Mac rebooted at 22:18; the restart carried no env) — findings that depend on
 either are marked so.
 
 ## Ground truth (DuckDB over the raw CSVs)
@@ -103,7 +103,7 @@ learned", program last_run "structure · complete" at 17:13.
   view is null; `CatalogScope` only shows the Empty line when `view` is exactly null/undefined, and no
   datasets read was re-issued for the new connection). A full reload brought it back.
 - **Gap 8 — the Catalog tree is org-wide, not workspace-wide.** In Olist (one connection) the tree lists
-  Workspace, then Aughor Ops, DuckDB, BigQuery, theLook and PostgreSQL; only the header figures
+  Workspace, then Pramanyx Ops, DuckDB, BigQuery, theLook and PostgreSQL; only the header figures
   ("Catalogs 1") honour the membership. A workspace is a filter on the numbers, not on what is shown.
 
 ### 5. Setting the layer (22:49)
@@ -119,7 +119,7 @@ have started" and an exploration job started at once (`add093fa094f`, "domain_in
   the Now page says "Nothing waits on you" and lists slots, departures and corrections; the only trace of
   the run is the header's "1 live" (which links to Agent Ops). The schema's own Overview says "Last
   explored Thu 22 Oct · 0 new findings" with no "running" state either.
-- Now's THE BRIEFING list is org-wide too (PostgreSQL, DuckDB, Aughor Ops, Workspace, theLook) inside the
+- Now's THE BRIEFING list is org-wide too (PostgreSQL, DuckDB, Pramanyx Ops, Workspace, theLook) inside the
   Olist workspace — Gap 8 again.
 - **Gap 10 — "Agent runs" says "No runs yet" while one is live.** The header says "1 live"; the rail's
   Agent runs page in the same workspace says "No runs yet · Ask a question". The explorer's run (10 model
@@ -380,7 +380,7 @@ attached, and the reasoning is sound (office_furniture 3.62–3.64 overall in th
   failed, deepseek 23.6K) · by role · by where in the code · DEEP RUNS listing both Olist questions with
   Open, the running one with Kill.
 - **Gap 33 — the install is unpriced and only this page says so, in small print.** "2% of calls priced" is the
-  consequence of the API restart without `AUGHOR_MODEL_PRICES` (section 0). Spend of a whole dataset's
+  consequence of the API restart without `PRAMANYX_MODEL_PRICES` (section 0). Spend of a whole dataset's
   exploration reads "$0.02". A reader of Home, Now or the Briefing never learns it.
 - **Gap 34 — three surfaces, three answers to "what ran?"** Agent Ops lists both deep runs; the rail's Agent
   runs page said "No runs yet" during the exploration; the canvas History says "Nothing asked on this canvas

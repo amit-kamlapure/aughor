@@ -1,10 +1,10 @@
 """Binding column-verify (#2) + eval runner/checker (Bet 2 runner) — 2026-06-27.
 
 verify_binding_columns confirms bound columns exist; run_pack_evals scores golden questions
-via an injected engine call (ask_fn). See aughor/packs/resolver.py, evalrunner.py.
+via an injected engine call (ask_fn). See pramanyx/packs/resolver.py, evalrunner.py.
 """
-from aughor.packs import verify_binding_columns, run_pack_evals, check_expectation
-from aughor.packs.models import Pack, PackManifest, PackEval
+from pramanyx.packs import verify_binding_columns, run_pack_evals, check_expectation
+from pramanyx.packs.models import Pack, PackManifest, PackEval
 
 TABLE_COLS = {"dim_customers": ["customer_id", "signup_ts"], "fct_orders": ["order_id", "order_ts", "customer_id"]}
 

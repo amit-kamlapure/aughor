@@ -9,9 +9,9 @@ facts now ride slots of their own — the phase's `verdict`, the finding's `stat
 `causal_checks.refutation.why` — and every reader of the bracket reads the slot first."""
 from __future__ import annotations
 
-import aughor.agent.investigate as I
-from aughor.agent.orchestrator import _phase_significance_signal, _states_normal_variance, phase_verdict
-from aughor.export.document import _build_ada
+import pramanyx.agent.investigate as I
+from pramanyx.agent.orchestrator import _phase_significance_signal, _states_normal_variance, phase_verdict
+from pramanyx.export.document import _build_ada
 
 
 def test_the_baseline_verdict_is_a_slot_with_the_sigma_the_bool_and_the_words():
@@ -44,7 +44,7 @@ def test_the_verdict_is_the_metrics_own_sigma_not_the_largest_of_any_column():
 
 def test_the_stats_layer_names_the_column_each_series_verdict_is_about():
     """Measured, not mocked: a 15-month table whose orders series swings more than its revenue."""
-    from aughor.tools.stats import analyze_query_result
+    from pramanyx.tools.stats import analyze_query_result
     months = [f"2025-{m:02d}-01" for m in range(7, 13)] + [f"2026-{m:02d}-01" for m in range(1, 10)]
     revenue = [690634, 601766, 708531, 704142, 801634, 767236, 752303, 652868, 789062, 730124, 699489, 764794, 655349, 627935, 721755]
     orders = [1100, 1000, 1150, 1120, 1300, 1250, 1200, 1050, 1280, 1180, 1120, 1240, 1060, 1063, 1500]

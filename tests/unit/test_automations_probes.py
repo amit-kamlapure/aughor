@@ -23,14 +23,14 @@ from types import SimpleNamespace
 import duckdb
 import pytest
 
-from aughor.automations.engine import run_automation
-from aughor.automations.models import Automation, Condition, Effect, EffectOutcome
-from aughor.automations.probes import (
+from pramanyx.automations.engine import run_automation
+from pramanyx.automations.models import Automation, Condition, Effect, EffectOutcome
+from pramanyx.automations.probes import (
     commit_fired_baselines,
     current_version,
     evaluate_source_condition,
 )
-from aughor.automations.store import (
+from pramanyx.automations.store import (
     delete_automation,
     get_probe_baseline,
     get_runs,
@@ -166,7 +166,7 @@ def _automation(conn_id, conds, **kw):
 @pytest.fixture
 def wired(duck, monkeypatch, request):
     """Route open_connection_for at the automation's conn to the in-memory DuckDB."""
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: duck)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda cid: duck)
     return duck
 
 
@@ -211,7 +211,7 @@ def test_unversionable_table_fails_open_with_the_reason(wired, request):
 
 @pytest.fixture
 def flag_on(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled",
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled",
                         lambda n: n == "automations.source_probes")
 
 

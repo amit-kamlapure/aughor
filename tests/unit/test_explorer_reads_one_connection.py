@@ -8,9 +8,9 @@ import asyncio
 
 import pytest
 
-from aughor.db import registry
-from aughor.playbook import retriever as PB
-from aughor.playbook.models import PlaybookEntry
+from pramanyx.db import registry
+from pramanyx.playbook import retriever as PB
+from pramanyx.playbook.models import PlaybookEntry
 
 
 @pytest.fixture
@@ -21,7 +21,7 @@ def federated(tmp_path):
 
 
 def test_a_federated_connection_is_not_explored_and_says_why(federated):
-    from aughor.routers._shared import explorer_refusal, kickoff_exploration, spawn_explorer
+    from pramanyx.routers._shared import explorer_refusal, kickoff_exploration, spawn_explorer
     fed, member = federated
     why = explorer_refusal(fed)
     assert "federated" in why and explorer_refusal(member) == ""
@@ -31,7 +31,7 @@ def test_a_federated_connection_is_not_explored_and_says_why(federated):
 
 def test_the_start_and_restart_doors_refuse_a_federated_connection_before_anything_is_wiped(client, federated,
                                                                                             monkeypatch):
-    import aughor.routers.exploration as EX
+    import pramanyx.routers.exploration as EX
     fed, _ = federated
     wiped = []
     monkeypatch.setattr(EX, "_purge_exploration_state", lambda conn_id: wiped.append(conn_id) or [])
@@ -44,16 +44,16 @@ def test_the_start_and_restart_doors_refuse_a_federated_connection_before_anythi
 
 
 def test_a_canvas_on_a_federated_connection_is_refused_before_its_state_is_wiped(client, federated, monkeypatch):
-    import aughor.routers.exploration as EX
-    from aughor.canvas.models import CanvasScope
-    from aughor.canvas.store import create_canvas
+    import pramanyx.routers.exploration as EX
+    from pramanyx.canvas.models import CanvasScope
+    from pramanyx.canvas.store import create_canvas
     fed, _ = federated
     canvas = create_canvas("two in one", [CanvasScope(connection_id=fed)])
     episodes = EX.episodes_dir() / f"episodes_canvas_{canvas.id}.jsonl"
     episodes.parent.mkdir(parents=True, exist_ok=True)
     episodes.write_text('{"phase": "profile"}\n')
     emptied = []
-    monkeypatch.setattr("aughor.explorer.store.save_canvas", lambda canvas_id, state: emptied.append(canvas_id))
+    monkeypatch.setattr("pramanyx.explorer.store.save_canvas", lambda canvas_id, state: emptied.append(canvas_id))
     for door in ("restart", "resume"):
         answer = client.post(f"/exploration/canvas/{canvas.id}/{door}")
         assert answer.status_code == 200, (door, answer.text)

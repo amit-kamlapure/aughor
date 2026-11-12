@@ -12,14 +12,14 @@ A measurement instrument that cannot fail is not measuring.
 """
 from __future__ import annotations
 
-from aughor.evals.equivalence import (
+from pramanyx.evals.equivalence import (
     SCENARIOS,
     Comparison,
     DeterministicEquivalenceEvaluator,
     ensure_suite,
     equivalence_target,
 )
-from aughor.evals.evaluator import EvalCase, EvalObservation
+from pramanyx.evals.evaluator import EvalCase, EvalObservation
 
 
 def _obs(**meta) -> EvalObservation:
@@ -70,7 +70,7 @@ def test_unknown_scenario_is_an_error_not_an_empty_pass():
 def test_every_registered_scenario_has_a_case_in_the_suite():
     """The suite is built from SCENARIOS, so a scenario added without a case would silently
     never run — the pass rate would be over a smaller corpus than the suite claims."""
-    from aughor.evals import store
+    from pramanyx.evals import store
 
     suite_id = ensure_suite()
     covered = {(c.get("expected") or {}).get("scenario") for c in store.list_cases(suite_id)}
@@ -81,7 +81,7 @@ def test_ensure_suite_is_idempotent():
     first, second = ensure_suite(), ensure_suite()
     assert first == second
 
-    from aughor.evals import store
+    from pramanyx.evals import store
     scenarios = [(c.get("expected") or {}).get("scenario") for c in store.list_cases(first)]
     assert len(scenarios) == len(set(scenarios)), "re-running duplicated the corpus"
 
@@ -97,8 +97,8 @@ def test_monitor_scenario_reports_a_real_disagreement(monkeypatch):
     comparison would be decorative. (It used to break the LEGACY half — that half was
     deleted with the legacy schedulers, Wave 4 2026-08-06.)
     """
-    from aughor.monitors.runner import MonitorRun
-    monkeypatch.setattr("aughor.monitors.runner.check_monitor",
+    from pramanyx.monitors.runner import MonitorRun
+    monkeypatch.setattr("pramanyx.monitors.runner.check_monitor",
                         lambda m, db, suppress=True: MonitorRun())
     comparison = SCENARIOS["monitor_alert_via_engine"]()
     assert not comparison.equivalent

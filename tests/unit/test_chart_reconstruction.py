@@ -19,7 +19,7 @@ import pytest
 pytest.importorskip("pdfplumber")
 pytest.importorskip("reportlab")
 
-from aughor.knowledge.charts import as_markdown, reconstruct  # noqa: E402
+from pramanyx.knowledge.charts import as_markdown, reconstruct  # noqa: E402
 
 #: One page, one chart, laid out the way a business deck lays one out.
 _TITLE_TOP = 60.0
@@ -187,7 +187,7 @@ def test_a_recovered_chart_survives_the_suppression_filter():
     — its header names the column. Emitted any other way, the very figures just
     recovered would be held straight back out of the index as unattributed.
     """
-    from aughor.knowledge.documents import numeric_run_lines
+    from pramanyx.knowledge.documents import numeric_run_lines
 
     markdown = as_markdown(reconstruct(_page(lambda at: _chart(at, [98, 104, 70, 65, 37]))))
 

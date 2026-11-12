@@ -5,7 +5,7 @@
  *
  * Before a deep analysis reads a question, its business terms are resolved against the DECLARED ontology — a
  * promise, the lag between two stages, a rule, the moment a stage is reached — and the analysis starts from the type
- * the definition is kept per, testing the drivers the declared links reach (`aughor/ontology/framing.py`). This block
+ * the definition is kept per, testing the drivers the declared links reach (`pramanyx/ontology/framing.py`). This block
  * says what each word was read as, so a reader can see — and challenge — the definition the numbers below were
  * computed under. It renders nothing when the question reached nothing declared.
  */

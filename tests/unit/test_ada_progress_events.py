@@ -12,9 +12,9 @@ import asyncio
 import contextvars
 import types
 
-import aughor.agent.investigate as I
-from aughor.agent import progress
-from aughor.routers import investigations as R
+import pramanyx.agent.investigate as I
+from pramanyx.agent import progress
+from pramanyx.routers import investigations as R
 
 
 def _run(coro):
@@ -104,7 +104,7 @@ def test_parallel_execute_serial_fallback_still_emits(monkeypatch):
         def __exit__(self, *a): return False
     monkeypatch.setattr(I, "ContextThreadPoolExecutor", _BoomPool, raising=False)
     # ContextThreadPoolExecutor is imported inside the function; patch at its source too.
-    monkeypatch.setattr("aughor.kernel.concurrency.ContextThreadPoolExecutor", _BoomPool)
+    monkeypatch.setattr("pramanyx.kernel.concurrency.ContextThreadPoolExecutor", _BoomPool)
 
     queries = [_query("by brand"), _query("by category")]
     I._parallel_execute_safe(_StubConn(), "decompose", queries, cap=8)

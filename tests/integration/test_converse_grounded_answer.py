@@ -32,7 +32,7 @@ def one_query_turn(monkeypatch):
     including the `rows` frame the chart is drawn from and the guard now reads."""
     rows = [["ZRH-LHR", 28], ["GVA-LHR", 42], ["ZRH-CDG", 35]]
 
-    from aughor.agent import converse_tools as ct
+    from pramanyx.agent import converse_tools as ct
     real = ct.converse_tools
 
     def _tools(connection_id, **kwargs):
@@ -52,7 +52,7 @@ def one_query_turn(monkeypatch):
                 emit("rows", {"rows": rows})
             return {"columns": ["route_id", "n_flights"], "rows": rows}
 
-        from aughor.agent.tool_loop import ToolSpec
+        from pramanyx.agent.tool_loop import ToolSpec
         specs.append(ToolSpec(name="run_sql", description="Run a guarded query.",
                               parameters={"type": "object",
                                           "properties": {"sql": {"type": "string"}}},
@@ -67,7 +67,7 @@ def test_a_fabricated_table_never_reaches_the_headline(
         client, builtin_conn_id, one_query_turn, faux_llm, monkeypatch):
     """The live case, end to end: the model queries, then writes numbers the result
     does not contain. The turn must not present them."""
-    from aughor.llm.faux import FauxToolCall
+    from pramanyx.llm.faux import FauxToolCall
 
     faux_llm.set_responses([
         FauxToolCall(payload={"sql": "SELECT route_id, count(*) FROM flights GROUP BY 1"},
@@ -103,7 +103,7 @@ def test_a_fabricated_table_never_reaches_the_headline(
 def test_a_faithful_answer_is_untouched(
         client, builtin_conn_id, one_query_turn, faux_llm, monkeypatch):
     """The guard removes false claims; it must not disturb a true one."""
-    from aughor.llm.faux import FauxToolCall
+    from pramanyx.llm.faux import FauxToolCall
 
     faithful = "GVA-LHR leads with 42 flights, then ZRH-CDG at 35 and ZRH-LHR at 28."
     faux_llm.set_responses([

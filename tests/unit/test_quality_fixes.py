@@ -1,10 +1,10 @@
 """Regression tests for the post-assessment quality fixes (2026-06-08):
 A) headline grounding, B) missing-column repair diagnosis, C) unsafe-metric guard.
 Each locks a concrete bug found by reading real outputs."""
-from aughor.routers.investigations import (
+from pramanyx.routers.investigations import (
     _ground_headline, _apply_currency, _is_time_series, _narrator_sample,
 )
-from aughor.agent.investigate import (
+from pramanyx.agent.investigate import (
     _missing_column_hint, _unsafe_metric_sql, _safe_metric_fallback,
     _build_grounded_schema, _filter_schema,
 )
@@ -214,7 +214,7 @@ def test_grounded_schema_falls_back_safely_on_garbage():
 
 # ── ADA grounding: date-column resolution ─────────────────────────────────────
 def test_resolve_hallucinated_date_column_to_joinable_table():
-    from aughor.agent.investigate import _resolve_date_column
+    from pramanyx.agent.investigate import _resolve_date_column
     r, changed = _resolve_date_column(
         "analytics.invoices.invoice_date", "analytics.invoices", _SCHEMA + """
 TABLE: analytics.orders2  (1 rows)
@@ -224,7 +224,7 @@ TABLE: analytics.orders2  (1 rows)
 
 
 def test_resolve_leaves_valid_date_column_untouched():
-    from aughor.agent.investigate import _resolve_date_column
+    from pramanyx.agent.investigate import _resolve_date_column
     r, changed = _resolve_date_column("analytics.orders.order_ts", "analytics.orders", _SCHEMA, [])
     assert not changed and r == "analytics.orders.order_ts"
 
@@ -252,7 +252,7 @@ Sample (5 rows):
 
 
 def test_resolver_handles_data_catalog_markdown_format():
-    from aughor.agent.investigate import _typed_columns, _resolve_date_column
+    from pramanyx.agent.investigate import _typed_columns, _resolve_date_column
     typed = _typed_columns(_CATALOG)
     assert ("order_ts", "TIMESTAMP") in typed.get("analytics.orders", [])
     assert "order_id" not in [c for c, _ in typed.get("analytics.orders", []) if c == "ORD-1"]  # sample rows ignored
@@ -262,7 +262,7 @@ def test_resolver_handles_data_catalog_markdown_format():
 
 # ── Latency: skip narrator when a phase has no usable data ─────────────────────
 def test_has_usable_data():
-    from aughor.agent.investigate import _has_usable_data
+    from pramanyx.agent.investigate import _has_usable_data
     class R:
         def __init__(self, err, n): self.error=err; self.row_count=n
     q=object()

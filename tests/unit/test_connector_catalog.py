@@ -1,4 +1,4 @@
-"""``aughor/connectors/catalog.json`` is GENERATED from the registry and committed, so
+"""``pramanyx/connectors/catalog.json`` is GENERATED from the registry and committed, so
 a tool can read the connector plane without importing this package — which also means it
 can drift. The first test fails the moment the registry moves without a regeneration;
 the others pin the properties consumers rely on (coverage, secrets) to the registry
@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-CATALOG = REPO / "aughor" / "connectors" / "catalog.json"
+CATALOG = REPO / "pramanyx" / "connectors" / "catalog.json"
 
 _spec = importlib.util.spec_from_file_location(
     "_gen_catalog", REPO / "scripts" / "gen_connector_catalog.py"
@@ -29,7 +29,7 @@ def test_catalog_matches_the_registry():
 
 
 def test_catalog_covers_every_registered_type():
-    from aughor.connectors.registry import DRIVERS, FORM_FIELDS, REGISTRY
+    from pramanyx.connectors.registry import DRIVERS, FORM_FIELDS, REGISTRY
 
     types = {t["type"] for t in _gen.build()["types"]}
     for source, expected in (
@@ -42,7 +42,7 @@ def test_catalog_covers_every_registered_type():
 
 
 def test_secret_fields_agree_with_the_registry():
-    from aughor.connectors.registry import secret_field_keys
+    from pramanyx.connectors.registry import secret_field_keys
 
     for entry in _gen.build()["types"]:
         flagged = {f["key"] for f in entry["fields"] if f.get("secret")}

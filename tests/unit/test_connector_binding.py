@@ -24,9 +24,9 @@ import sqlite3
 
 import pytest
 
-from aughor.connectors.base import Connector
-from aughor.db.signing import SIGNATURE
-from aughor.db.connection import DatabaseConnection
+from pramanyx.connectors.base import Connector
+from pramanyx.db.signing import SIGNATURE
+from pramanyx.db.connection import DatabaseConnection
 
 
 class _FakeCursor:
@@ -150,10 +150,10 @@ def test_the_duckdb_backed_connectors_bind_through_their_own_handle():
     """Four classes, one driver, two different attribute names — and `MotherDuckConnection`
     is a sibling of `DuckDBConnection`, not a subclass, which is how capabilities have gone
     missing from these before."""
-    from aughor.connectors.api.gsheets import GoogleSheetsConnector
-    from aughor.connectors.federated import FederatedConnection
-    from aughor.connectors.file.s3 import S3Connection
-    from aughor.connectors.warehouse.motherduck import MotherDuckConnection
+    from pramanyx.connectors.api.gsheets import GoogleSheetsConnector
+    from pramanyx.connectors.federated import FederatedConnection
+    from pramanyx.connectors.file.s3 import S3Connection
+    from pramanyx.connectors.warehouse.motherduck import MotherDuckConnection
 
     assert _duckdb_style(MotherDuckConnection, "_conn") == ("SELECT $v", {"v": 3})
     for cls in (S3Connection, FederatedConnection, GoogleSheetsConnector):
@@ -161,7 +161,7 @@ def test_the_duckdb_backed_connectors_bind_through_their_own_handle():
 
 
 def test_mysql_binds_pyformat_over_a_dict_cursor():
-    from aughor.connectors.warehouse.mysql import MySQLConnection
+    from pramanyx.connectors.warehouse.mysql import MySQLConnection
 
     cur = _FakeCursor(rows=[{"a": 1}], cols=("a",))
     conn = _bare(MySQLConnection, _conn=type("H", (), {"cursor": lambda _s: cur})())
@@ -173,7 +173,7 @@ def test_mysql_binds_pyformat_over_a_dict_cursor():
 
 
 def test_snowflake_binds_pyformat():
-    from aughor.connectors.warehouse.snowflake import SnowflakeConnection
+    from pramanyx.connectors.warehouse.snowflake import SnowflakeConnection
 
     cur = _FakeCursor()
     conn = _bare(SnowflakeConnection, _conn=type("H", (), {"cursor": lambda _s: cur})())
@@ -186,10 +186,10 @@ def test_snowflake_binds_pyformat():
 def test_the_rest_mirrors_inherit_binding_from_one_place():
     """Stripe, HubSpot and Salesforce share `RestApiSync`'s DuckDB mirror. One hook covers
     all three — and a per-class hook would be three chances to forget one."""
-    from aughor.connectors.api.base_sync import RestApiSync
-    from aughor.connectors.api.hubspot import HubSpotConnector
-    from aughor.connectors.api.salesforce import SalesforceConnector
-    from aughor.connectors.api.stripe import StripeConnector
+    from pramanyx.connectors.api.base_sync import RestApiSync
+    from pramanyx.connectors.api.hubspot import HubSpotConnector
+    from pramanyx.connectors.api.salesforce import SalesforceConnector
+    from pramanyx.connectors.api.stripe import StripeConnector
 
     for cls in (StripeConnector, HubSpotConnector, SalesforceConnector):
         assert cls.param_style == "duckdb"
@@ -207,7 +207,7 @@ class _FakeBQJob:
 
 
 def _bq(params):
-    from aughor.connectors.warehouse.bigquery import BigQueryConnection
+    from pramanyx.connectors.warehouse.bigquery import BigQueryConnection
 
     sink = {}
     client = type("C", (), {"query": lambda _s, sql, job_config: (
@@ -232,7 +232,7 @@ def test_bigquery_binds_a_day_as_a_date_and_a_moment_as_a_timestamp():
 
 
 def test_a_bound_bigquery_read_says_each_column_s_type_as_an_unbound_one_does():
-    from aughor.connectors.warehouse.bigquery import BigQueryConnection
+    from pramanyx.connectors.warehouse.bigquery import BigQueryConnection
     field = type("F", (), {})
     sales, day = field(), field()
     sales.name, sales.field_type, sales.precision, sales.scale = "sales", "FLOAT", None, None
@@ -272,12 +272,12 @@ def test_the_bound_path_caps_at_the_same_row_count_as_execute():
     import re
     from pathlib import Path as _P
 
-    from aughor.connectors.file.sqlite import SQLiteConnection
-    from aughor.db.connection import MAX_ROWS
+    from pramanyx.connectors.file.sqlite import SQLiteConnection
+    from pramanyx.db.connection import MAX_ROWS
 
     assert SQLiteConnection.max_rows == MAX_ROWS
 
-    root = _P(__file__).resolve().parents[2] / "aughor" / "connectors"
+    root = _P(__file__).resolve().parents[2] / "pramanyx" / "connectors"
     checked = 0
     for module in root.rglob("*.py"):
         declared = re.search(r"^MAX_ROWS\s*=\s*([0-9_]+)", module.read_text(), re.MULTILINE)
@@ -299,7 +299,7 @@ def _connector_classes_in(path):
     import importlib
     import inspect
 
-    mod_name = "aughor.connectors" + str(path).split("aughor/connectors", 1)[1]
+    mod_name = "pramanyx.connectors" + str(path).split("pramanyx/connectors", 1)[1]
     mod_name = mod_name[:-3].replace("/", ".").replace(".__init__", "")
     try:
         mod = importlib.import_module(mod_name)
@@ -327,7 +327,7 @@ def test_sqlite_runs_a_bound_query_end_to_end(sqlite_db):
     """A real driver, a real file, a real result — the rung the fakes above cannot reach.
     sqlite3's named style is already `:name`, so this also proves the identity rendering
     is a rendering and not an oversight."""
-    from aughor.connectors.file.sqlite import SQLiteConnection
+    from pramanyx.connectors.file.sqlite import SQLiteConnection
 
     conn = SQLiteConnection(dsn=str(sqlite_db), connection_id="c1")
     result = conn.execute_with_params(
@@ -346,7 +346,7 @@ def test_a_bound_value_comes_back_as_data(sqlite_db):
     This connection is opened read-only, so a DROP would fail here whether binding worked
     or not — "the table is still there" would have proved the read-only flag, not the
     binding, which is the adjacent claim this test exists to avoid making."""
-    from aughor.connectors.file.sqlite import SQLiteConnection
+    from pramanyx.connectors.file.sqlite import SQLiteConnection
 
     probe = "Portugal'; DROP TABLE orders; --"
     conn = SQLiteConnection(dsn=str(sqlite_db), connection_id="c1")
@@ -366,7 +366,7 @@ def test_a_bound_value_comes_back_as_data(sqlite_db):
 def test_the_capability_the_base_still_refuses_is_a_decision(sqlite_db):
     """Exasol is deliberately left unbound. This holds the DECISION, so the day someone
     gives it a `param_style` they have to come here and say why it is now safe."""
-    from aughor.connectors.warehouse.exasol import ExasolConnection
+    from pramanyx.connectors.warehouse.exasol import ExasolConnection
 
     assert ExasolConnection.param_style is None
     assert ExasolConnection.execute_with_params is Connector.execute_with_params

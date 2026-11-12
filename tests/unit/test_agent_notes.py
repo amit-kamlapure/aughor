@@ -12,14 +12,14 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.ontology import agent_notes as AN
-from aughor.ontology import recommendations as REC
-from aughor.ontology.column_config import load_table_config, set_column_flags
+from pramanyx.ontology import agent_notes as AN
+from pramanyx.ontology import recommendations as REC
+from pramanyx.ontology.column_config import load_table_config, set_column_flags
 
 
 @pytest.fixture(autouse=True)
 def _stores(monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_COLUMN_CONFIG_ROOT", str(tmp_path / "colcfg"))
+    monkeypatch.setenv("PRAMANYX_COLUMN_CONFIG_ROOT", str(tmp_path / "colcfg"))
     monkeypatch.setattr(REC, "_ROOT", tmp_path / "recs")
 
 
@@ -106,7 +106,7 @@ def test_accept_note_ignores_non_note_recommendations():
 # ── the tool surface ──────────────────────────────────────────────────────────
 
 def test_the_tool_is_on_the_roster_and_bound_to_the_session():
-    from aughor.agent import platform_tools as PT
+    from pramanyx.agent import platform_tools as PT
     roster = {t.name: t for t in PT.platform_tools("c1", session_id="sess-9")}
     assert "propose_context_note" in roster
     desc = roster["propose_context_note"].description.lower()
@@ -118,7 +118,7 @@ def test_the_tool_is_on_the_roster_and_bound_to_the_session():
 def test_agent_notes_survive_a_defaults_refresh():
     # Before 2026-08-15 only source="human" was sticky — an agent note would have been
     # wiped by the next intelligence build.
-    from aughor.ontology.column_config import ensure_column_configs
+    from pramanyx.ontology.column_config import ensure_column_configs
     _propose()
     # A real profiler-shaped refresh (the "table.column" key shape defaults_from_profiles
     # reads) whose default policy for `amount` DIFFERS from the stored entry — the
@@ -152,7 +152,7 @@ def test_a_column_note_naming_a_governed_metric_is_staged(monkeypatch):
     catalogue = [SimpleNamespace(name="revenue", label="Revenue"),
                  SimpleNamespace(name="units_sold", label="Units Sold"),
                  SimpleNamespace(name="average_order_value_aov", label="Average Order Value (AOV)")]
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda connection_id=None: catalogue)
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda connection_id=None: catalogue)
 
     out = _propose(table="order_items", column="status",
                    note="revenue and units_sold are calculated excluding 'Cancelled' orders.",
@@ -171,7 +171,7 @@ def test_a_column_note_naming_a_governed_metric_is_staged(monkeypatch):
 def test_a_catalogue_that_cannot_be_read_leaves_notes_routed_as_before(monkeypatch):
     def _unreadable(connection_id=None):
         raise OSError("catalogue unreadable")
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", _unreadable)
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", _unreadable)
     assert _propose(note="revenue and units_sold are calculated excluding cancelled").action == "applied"
 
 

@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.evals.evaluator import EvalCase
-from aughor.evals.flag_batch_c_receipt import (
+from pramanyx.evals.evaluator import EvalCase
+from pramanyx.evals.flag_batch_c_receipt import (
     FLAGS, SCENARIO_PREFIX, SCENARIOS, receipt_target,
 )
 
@@ -41,7 +41,7 @@ def test_batch_c_behaviour_is_unconditional_or_still_default_on():
     """Batch C's graph and birth bundles were HARDWIRED 2026-08-02 — their flags are
     gone and the behaviour is permanent. The two migration flips still hold flags
     (they owe a legacy-path deletion first), and those must stay default-on."""
-    from aughor.kernel.flags import FLAG_DEFAULT, FLAG_ENV
+    from pramanyx.kernel.flags import FLAG_DEFAULT, FLAG_ENV
 
     for flag in FLAGS:
         if flag in FLAG_ENV:
@@ -59,7 +59,7 @@ def test_the_queue_is_named_and_migrations_are_empty():
     its removal left, 2026-08-28, when `ask.resume_stream` graduated on its
     delivered receipts: browser-soak reattach + interrupt-cancels-the-job. The
     receipt record lives on the GRADUATION_QUEUE tombstone in kernel/flags.py)."""
-    from aughor.kernel.flags import GRADUATION_QUEUE, MIGRATION
+    from pramanyx.kernel.flags import GRADUATION_QUEUE, MIGRATION
 
     # Arc CT-4 (ROADMAP §3.50), 2026-09-28: `dashboard.composed` — a Dashboards tab in the Data Canvas.
     # It adds no model call, so it has no grid to pass: it is queued on a receipt of USE, and

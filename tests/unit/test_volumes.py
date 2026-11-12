@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.org import using_org
-from aughor.files import (
+from pramanyx.org import using_org
+from pramanyx.files import (
     create_volume,
     delete_object,
     list_objects,
@@ -21,15 +21,15 @@ from aughor.files import (
 
 @pytest.fixture()
 def env(tmp_path, monkeypatch):
-    import aughor.metastore.store as ms_store
-    import aughor.files.store as vol_store
-    from aughor.control_plane import vending
+    import pramanyx.metastore.store as ms_store
+    import pramanyx.files.store as vol_store
+    from pramanyx.control_plane import vending
     monkeypatch.setattr(ms_store, "_DB_PATH", tmp_path / "metastore.db")
     monkeypatch.setattr(vol_store, "_DB_PATH", tmp_path / "volumes.db")
     root = tmp_path / "uploads"
     monkeypatch.setattr(vending, "STORAGE_ROOT", root)
     # a catalog must exist to create a volume under it
-    from aughor.metastore import upsert_catalog
+    from pramanyx.metastore import upsert_catalog
     upsert_catalog("cat1", name="Cat One", conn_id="cat1")
     return root
 
@@ -82,7 +82,7 @@ class TestObjects:
 class TestOrgScoping:
     def test_objects_are_tenant_pathed_by_org(self, env):
         root = env
-        from aughor.metastore import upsert_catalog
+        from pramanyx.metastore import upsert_catalog
         with using_org("acme"):
             upsert_catalog("cat1", name="Acme Cat", conn_id="cat1")
             vol = create_volume("cat1", "docs")

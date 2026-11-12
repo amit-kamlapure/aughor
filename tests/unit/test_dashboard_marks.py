@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.dashboards import marks as M
-from aughor.dashboards import pieces
-from aughor.dashboards.compose import default_spec
+from pramanyx.dashboards import marks as M
+from pramanyx.dashboards import pieces
+from pramanyx.dashboards.compose import default_spec
 from tests.unit.test_dashboard_pieces import _graph
 
 
@@ -39,7 +39,7 @@ def no_edits(monkeypatch):
 
 
 def test_a_mark_naming_a_segment_the_entity_declares_keeps_and_one_it_does_not_is_refused(monkeypatch, no_edits):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: False)
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled", lambda name: False)
     # `delivered_orders` is a verified segment the test graph declares on orders
     assert pieces.not_resolved("c", _spec({"segment": "delivered_orders", "tone": "good"}), graph=_graph()) == []
     said = pieces.not_resolved("c", _spec({"segment": "no_such_rule", "tone": "warn"}), graph=_graph())

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from aughor.hub.provenance import ContextPiece, Provenance
-from aughor.hub.ranker import rank
+from pramanyx.hub.provenance import ContextPiece, Provenance
+from pramanyx.hub.ranker import rank
 
 _NOW = datetime(2026, 9, 16, 12, 0, tzinfo=timezone.utc)
 

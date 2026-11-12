@@ -12,9 +12,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from aughor.packs.gate3 import expression_findings, run_gate3
-from aughor.packs.loader import PacksError, load_pack
-from aughor.packs.validate import validate_pack
+from pramanyx.packs.gate3 import expression_findings, run_gate3
+from pramanyx.packs.loader import PacksError, load_pack
+from pramanyx.packs.validate import validate_pack
 
 SHA = "a" * 64
 

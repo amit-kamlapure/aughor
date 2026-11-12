@@ -150,20 +150,20 @@ def load_rows(db_path: Path) -> tuple[list[dict], dict]:
     confident number about a sample nobody chose. The totals come from `site_stats`, which
     counts rather than lists.
     """
-    os.environ["AUGHOR_DECISIONS_DB"] = str(db_path)
-    # 🔴 And redirect every OTHER store too, BEFORE importing anything from `aughor`.
-    # Pointing `AUGHOR_DECISIONS_DB` alone is not enough: `resolve_db_path` resolves every other
-    # store relative to `AUGHOR_STATE_DIR`, so a harness run from the repo with a server live
+    os.environ["PRAMANYX_DECISIONS_DB"] = str(db_path)
+    # 🔴 And redirect every OTHER store too, BEFORE importing anything from `pramanyx`.
+    # Pointing `PRAMANYX_DECISIONS_DB` alone is not enough: `resolve_db_path` resolves every other
+    # store relative to `PRAMANYX_STATE_DIR`, so a harness run from the repo with a server live
     # maps into the same `data/` WAL indexes. The platform's own guard says what that costs —
     # "two processes mapped into one SQLite WAL index is the precondition for the SIGBUS in
     # walFindFrame that has killed this app repeatedly — a read-only connection counts, because
     # it maps the -shm too" — and it fired on the first run of this file, with an API serving.
     # `setdefault`, so an operator who has deliberately pointed the state dir keeps their choice.
     # Same discipline as `scripts/dump_openapi.py`: isolate before the import, not after.
-    if not os.environ.get("AUGHOR_STATE_DIR"):
+    if not os.environ.get("PRAMANYX_STATE_DIR"):
         import tempfile
-        os.environ["AUGHOR_STATE_DIR"] = tempfile.mkdtemp(prefix="aughor-jd4-battery-")
-    from aughor.learning import decisions
+        os.environ["PRAMANYX_STATE_DIR"] = tempfile.mkdtemp(prefix="pramanyx-jd4-battery-")
+    from pramanyx.learning import decisions
 
     stats = decisions.site_stats() or {}
     rows: list[dict] = []

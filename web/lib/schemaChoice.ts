@@ -9,7 +9,7 @@
  */
 import { setCurrentDataset } from "./orgSettings";
 
-const KEY = (connectionId: string) => `aughor_schema_choice:${connectionId}`;
+const KEY = (connectionId: string) => `pramanyx_schema_choice:${connectionId}`;
 
 export function rememberSchema(connectionId: string, schema: string | null | undefined): void {
   if (!connectionId || !schema) return;

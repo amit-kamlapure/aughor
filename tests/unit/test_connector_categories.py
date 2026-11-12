@@ -1,7 +1,7 @@
 """Every connector category the server can emit must be drawn somewhere.
 
 This is a SEAM test, and the seam is the one that already failed silently: the server
-groups connectors by `CATEGORIES` in `aughor/connectors/registry.py`, and the picker
+groups connectors by `CATEGORIES` in `pramanyx/connectors/registry.py`, and the picker
 (`web/components/AddDataPanel.tsx`) renders them by mapping over its own `CATEGORY_ORDER`.
 Nothing connected the two lists, so a category present on one side and absent from the
 other produced no error, no warning, and no tile.
@@ -21,7 +21,7 @@ whose failure mode is silence.
 """
 from __future__ import annotations
 
-from aughor.connectors.registry import CATEGORIES, REGISTRY
+from pramanyx.connectors.registry import CATEGORIES, REGISTRY
 
 
 def _registered_types() -> list[str]:

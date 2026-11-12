@@ -765,7 +765,7 @@ export function AgentSpend({ agent, range }: { agent: UserAgent; range?: TimeRan
       </div>
       <div className="aug-fs-sm" style={{ color: "var(--t2)" }}>
         Priced from each provider&apos;s published catalogue, or a rate the operator declared
-        (<code>AUGHOR_MODEL_PRICES</code>). A model nothing prices counts as unpriced, never as
+        (<code>PRAMANYX_MODEL_PRICES</code>). A model nothing prices counts as unpriced, never as
         free. Spend by model, role and call site, across every agent, is on the Overview.
       </div>
     </div>

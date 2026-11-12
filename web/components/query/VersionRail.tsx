@@ -21,7 +21,7 @@ import { MergeView } from "@codemirror/merge";
 import { EditorState } from "@codemirror/state";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
-import { aughorEditorTheme, aughorSyntaxHighlighting } from "@/components/query/editor/theme";
+import { pramanyxEditorTheme, pramanyxSyntaxHighlighting } from "@/components/query/editor/theme";
 import {
   listSavedQueryVersions, diffSavedQueryVersion, restoreSavedQuery,
   type SavedQueryVersion, type SavedQueryChange,
@@ -84,8 +84,8 @@ export function VersionRail({
     const before = versions[idx + 1];          // the one before it, newest-first
     if (!before) return;
     merge.current = new MergeView({
-      a: { doc: before.sql ?? "", extensions: [EditorState.readOnly.of(true), aughorEditorTheme, aughorSyntaxHighlighting] },
-      b: { doc: after.sql ?? "", extensions: [EditorState.readOnly.of(true), aughorEditorTheme, aughorSyntaxHighlighting] },
+      a: { doc: before.sql ?? "", extensions: [EditorState.readOnly.of(true), pramanyxEditorTheme, pramanyxSyntaxHighlighting] },
+      b: { doc: after.sql ?? "", extensions: [EditorState.readOnly.of(true), pramanyxEditorTheme, pramanyxSyntaxHighlighting] },
       parent: host.current,
       collapseUnchanged: { margin: 2, minSize: 4 },
       // Unified: this rail is narrow, and a side-by-side split inside it would give each

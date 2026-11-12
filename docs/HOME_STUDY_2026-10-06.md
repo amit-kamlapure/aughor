@@ -144,7 +144,7 @@ earlier run.
 
 - **Doors.**
   - The scheduled daily run exists. Its report carries the change label, the comparison basis and a summary.
-  - "Last visit" is kept by Now per browser (`aughor_now_last_seen`); Home keeps its own the same way, or per person
+  - "Last visit" is kept by Now per browser (`pramanyx_now_last_seen`); Home keeps its own the same way, or per person
     once there is one.
   - "Numbers you follow" needs a person (§3.8). Until then, it means the connection's daily runs.
 - **The warning is new code.** For each run, take the figure it used for its comparison day, and compare it with the

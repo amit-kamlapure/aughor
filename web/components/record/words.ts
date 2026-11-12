@@ -125,10 +125,10 @@ function signalTitle(full: string): string | null {
 
 /**
  * An inquiry's question as a row label. A scheduled run's question opens with the grounding code wrote for the model
- * (`aughor/automations/temporal.py`); the person's own question follows it. The Record keeps the first 500 characters
+ * (`pramanyx/automations/temporal.py`); the person's own question follows it. The Record keeps the first 500 characters
  * of a question, which a grounding block alone outruns — so the person's words are not in an inquiry opened before
  * 2026-10-13, and its row says what it is ("Scheduled daily run") rather than print the plumbing. Since then the Record
- * stores what was asked and marks the inquiry `scheduled` (`aughor/record/inquiry.py`): pass that flag.
+ * stores what was asked and marks the inquiry `scheduled` (`pramanyx/record/inquiry.py`): pass that flag.
  */
 export function inquiryLabel(question: string, scheduled = false): RowLabel {
   const full = (question ?? "").trim();

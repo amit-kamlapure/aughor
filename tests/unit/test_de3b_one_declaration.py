@@ -3,7 +3,7 @@ that fails when a copy drifts.
 
 Before: an engine was spread over fourteen to seventeen files, two web copies had drifted
 (MotherDuck, Exasol, Google Sheets and SQLite missing from the connection modal and the
-catalog tags). Now `aughor/connectors/declarations.py` holds one `EngineDeclaration` per
+catalog tags). Now `pramanyx/connectors/declarations.py` holds one `EngineDeclaration` per
 engine, and the registry's tables, the writer rules, the capability rows, the prompt's engine
 names, `catalog.json` and `web/lib/connectors.gen.ts` are derived from it. The receipt the
 plan asked for — one new engine as a single declaration, seen in the picker, the writer rules
@@ -19,8 +19,8 @@ from pathlib import Path
 
 import pytest
 
-from aughor.connectors import declarations as D
-from aughor.connectors.registry import (
+from pramanyx.connectors import declarations as D
+from pramanyx.connectors.registry import (
     CATEGORIES,
     DRIVERS,
     DSN_PREVIEWS,
@@ -76,7 +76,7 @@ def test_each_connector_class_says_what_its_declaration_says(decl):
 
 
 def test_the_two_built_ins_agree_with_their_declarations():
-    from aughor.db.connection import DuckDBConnection, PostgresConnection, connection_traits
+    from pramanyx.db.connection import DuckDBConnection, PostgresConnection, connection_traits
     assert DuckDBConnection.dialect == D.declaration("duckdb").dialect
     assert PostgresConnection.dialect == D.declaration("postgres").dialect
     for t in ("duckdb", "postgres", "bigquery", "exasol", "trino"):
@@ -87,9 +87,9 @@ def test_the_two_built_ins_agree_with_their_declarations():
 # ── the writer, the capability contract and the prompt read the declaration ─────────
 
 def test_writer_rules_capabilities_and_engine_names_are_derived():
-    from aughor.agent.sql_context import _ENGINE_NAMES
-    from aughor.db.capabilities import avoid_line, for_dialect
-    from aughor.db.dialects import _DIALECT_RULES, rules_for_dialect
+    from pramanyx.agent.sql_context import _ENGINE_NAMES
+    from pramanyx.db.capabilities import avoid_line, for_dialect
+    from pramanyx.db.dialects import _DIALECT_RULES, rules_for_dialect
 
     assert _DIALECT_RULES == D.derive_writer_rules()
     assert set(_DIALECT_RULES) == {"bigquery", "snowflake", "mysql", "exasol", "postgres", "trino", "tsql", "oracle", "clickhouse",
@@ -128,7 +128,7 @@ def test_one_new_declaration_reaches_every_derived_surface():
     zebra = D.EngineDeclaration(
         type="zebra", label="Zebra DB", category="warehouse", blurb="striped storage",
         dsn_preview="zebra://host", fields=(D.Field("host", "Host", "z"), D.Field("token", "Token", "", secret=True)),
-        drivers=("duckdb",), connector="aughor.connectors.warehouse.zebra:ZebraConnection",
+        drivers=("duckdb",), connector="pramanyx.connectors.warehouse.zebra:ZebraConnection",
         dialect="zebra", native_sql=True, writer_rules="ZEBRA DIALECT RULES",
         refuses_functions=frozenset({"STRIPES"}), support_tier="preview", badge="Preview", brand_color="#010203",
         connection_errors=("ZebraLostError",),
@@ -138,7 +138,7 @@ def test_one_new_declaration_reaches_every_derived_surface():
     t = D.derive_registry_tables(engines)
     assert t["CATEGORIES"]["zebra"] == "warehouse"
     assert t["FORM_FIELDS"]["zebra"][1] == {"key": "token", "label": "Token", "placeholder": "", "secret": True}
-    assert t["REGISTRATIONS"]["zebra"] == "aughor.connectors.warehouse.zebra:ZebraConnection"
+    assert t["REGISTRATIONS"]["zebra"] == "pramanyx.connectors.warehouse.zebra:ZebraConnection"
     assert D.derive_writer_rules(engines)["zebra"] == "ZEBRA DIALECT RULES"
     assert D.derive_refusals(engines)["zebra"] == (frozenset({"STRIPES"}), frozenset())
     assert D.derive_engine_names(engines)["zebra"] == "Zebra DB"
@@ -156,7 +156,7 @@ def test_trino_is_declared_once_and_everything_reads_it():
 
     d = D.declaration("trino")
     assert d.category == "warehouse" and d.badge == "Preview" and d.support_tier == "preview"
-    from aughor.connectors.warehouse.trino import TrinoConnection
+    from pramanyx.connectors.warehouse.trino import TrinoConnection
     assert TrinoConnection.dialect == "trino" and TrinoConnection.writes_native_sql is True
     assert getattr(TrinoConnection, "param_style", None) is None, "binds positionally: a visible refusal"
     # sqlglot speaks it: the platform's own DuckDB spelling transpiles into Trino's.
@@ -164,7 +164,7 @@ def test_trino_is_declared_once_and_everything_reads_it():
     assert "DATE_TRUNC('MONTH', d)" in out or "DATE_TRUNC('month', d)" in out
     # The door types its lost connection by the driver's exception name — a name the declaration
     # carries and `db/errors.py` derives, so DE-3d's typing holds for an engine declared later.
-    from aughor.db.errors import _CONNECTION_NAMES, _TIMEOUT_NAMES, classify_error
+    from pramanyx.db.errors import _CONNECTION_NAMES, _TIMEOUT_NAMES, classify_error
     exc = type("TrinoConnectionError", (Exception,), {})("coordinator unreachable")
     assert classify_error(exc) == "connection"
     assert {"ExaConnectionError", "ConnectionException", "InterfaceError"} <= _CONNECTION_NAMES
@@ -218,7 +218,7 @@ def test_trino_connector_runs_through_the_door_on_a_fake_driver(monkeypatch):
     fake.auth = types.SimpleNamespace(BasicAuthentication=lambda u, p: (u, p))
     monkeypatch.setitem(sys.modules, "trino", fake)
 
-    from aughor.connectors.warehouse.trino import TrinoConnection
+    from pramanyx.connectors.warehouse.trino import TrinoConnection
     conn = TrinoConnection("trino://coordinator:8080", meta={"user": "analyst", "catalog": "hive", "schema_name": "default"})
     assert conn.is_healthy()
     ok, msg = conn.test()
@@ -228,7 +228,7 @@ def test_trino_connector_runs_through_the_door_on_a_fake_driver(monkeypatch):
     assert not res.error, res.error
     assert res.columns == ["n", "s"] and res.rows == [["1", "a"], ["2", "NULL"]]
     # Arc NV-7: the driver receives the statement signed as the platform's own; the result keeps it as written
-    from aughor.db.signing import SIGNATURE
+    from pramanyx.db.signing import SIGNATURE
     assert log and log[-1].startswith(SIGNATURE) and "SELECT 1 AS n" in log[-1]
 
     lost = conn.execute("h2", "SELECT boom FROM t", internal=False)

@@ -52,7 +52,7 @@ _BLOCKING = _LLM_METHODS | _BLOCKING_HELPERS
 #: Anything that moves the call off the loop thread.
 _OFFLOADERS = {"to_thread", "run_in_executor"}
 
-_PACKAGE = pathlib.Path(__file__).resolve().parents[2] / "aughor"
+_PACKAGE = pathlib.Path(__file__).resolve().parents[2] / "pramanyx"
 
 
 def _callee(node: ast.Call) -> str | None:
@@ -181,7 +181,7 @@ def test_the_named_provider_methods_still_exist(method):
     This repo has been bitten by exactly that: #251's rename took a contract scanner from
     266 paths to 0 without failing anything.
     """
-    from aughor.llm.provider import LLMProvider
+    from pramanyx.llm.provider import LLMProvider
 
     assert hasattr(LLMProvider, method) or any(
         method in n for n in dir(LLMProvider)

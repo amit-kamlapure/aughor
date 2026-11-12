@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-import aughor.llm.provider as prov
-from aughor.knowledge.briefing import (
+import pramanyx.llm.provider as prov
+from pramanyx.knowledge.briefing import (
     BriefingCitation,
     BriefingNarrative,
     _build_user_prompt,
@@ -128,13 +128,13 @@ def test_generate_narrative_makes_exactly_one_llm_call(fake):
 # ── Recompose: the truncation backstop (Wave 3 / Layer 4.2b) ─────────────────
 
 def _truncation_error():
-    from aughor.llm.reliability import TRUNCATED, Diagnosis, StructuredOutputError
+    from pramanyx.llm.reliability import TRUNCATED, Diagnosis, StructuredOutputError
     return StructuredOutputError(Diagnosis(TRUNCATED, "hit the output token ceiling"))
 
 
 def test_is_truncation_reads_the_typed_diagnosis():
-    from aughor.knowledge.briefing import _is_truncation
-    from aughor.llm.reliability import (
+    from pramanyx.knowledge.briefing import _is_truncation
+    from pramanyx.llm.reliability import (
         SCHEMA_MISMATCH, Diagnosis, StructuredOutputError)
 
     assert _is_truncation(_truncation_error())

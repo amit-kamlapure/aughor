@@ -5,7 +5,7 @@ Regression: a workspace folds ecommerce + missimi, both with `orders`/`customers
 `products`. Bare-name matching leaked every ecommerce insight into the `missimi` view
 (and vice versa). Matching on the SCHEMA-QUALIFIED ref fixes it.
 """
-from aughor.routers.exploration import _tables_from_sql, _insight_refs, _refs_in_schema, _qualified_set
+from pramanyx.routers.exploration import _tables_from_sql, _insight_refs, _refs_in_schema, _qualified_set
 
 
 def test_tables_from_sql_returns_qualified_and_bare():

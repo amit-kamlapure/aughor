@@ -20,11 +20,11 @@ version of the "living context graph that compounds" (memory: `context-graph-clo
 
 ## 2 · What shipped
 
-### The store — `aughor/semantic/ambiguity_ledger.py`
+### The store — `pramanyx/semantic/ambiguity_ledger.py`
 A first-class `AmbiguityResolution` record `{connection_id, schema_scope, dim(kind,facet,subject),
 readings[], resolved_reading, resolved_sql, resolution_source(probe|user|verdict), evidence,
 question_fingerprint, created, use_count}`, on a SQLite store built to the **house idiom**
-(`resolve_db_path("AUGHOR_AMBIGUITY_LEDGER_DB", …)` + `tune` PRAGMAs + `run_migrations`), so the
+(`resolve_db_path("PRAMANYX_AMBIGUITY_LEDGER_DB", …)` + `tune` PRAGMAs + `run_migrations`), so the
 suite never touches live `data/` (the registry-wipe scar — conftest override added). Key
 properties, all unit-pinned:
 - **Idempotent burn-down** — a deterministic natural key `(org, connection, facet,
@@ -37,7 +37,7 @@ properties, all unit-pinned:
   metric), `ledger_stats` (the burn-down chart: resolved-by-source vs served_total),
   `purge_connections` (catalog-delete cascade).
 
-### The read path — `aughor/feedback/priors.py` (product)
+### The read path — `pramanyx/feedback/priors.py` (product)
 The ledger is now the **third plan-time prior**, alongside trusted queries and past corrections,
 in the existing P1 closed-loop module — and it **leads** the block (an explicit resolution beats
 an example). Injected everywhere `retrieve_priors`/`build_priors_section` is called, gated behind
@@ -74,7 +74,7 @@ probes/asks fall — is the moat demo.
 The missing half of the loop: capturing the user's *answer* to a clarify. When a `/ask` turn
 answers a clarify, the chosen reading rides back on the request and crystallizes as a
 `user`-source resolution (the highest autonomous authority — only a reviewer verdict outranks it):
-- `aughor/semantic/ambiguity_ledger.py::crystallize_user_choice` — maps the clarify kind to the
+- `pramanyx/semantic/ambiguity_ledger.py::crystallize_user_choice` — maps the clarify kind to the
   taxonomy (a term choice → AmbiValue, an interpretation → AmbiIntent), writes source `user`.
 - `AskRequest` gains `clarify_reading` / `clarify_subject` / `clarify_source`; `_stream_ask`
   crystallizes **before** answering (gated `closed_loop`), so the resolution is a prior on this
@@ -108,7 +108,7 @@ connection.
   **result preview** per reading (`= 68` vs `= 1131`), surfaced under each clarify chip
   (`ChatPanel.tsx`) so the divergence is visible — the design's "options ARE the candidate readings
   with their result previews." I4 already captures a soma choice (the chip text). The
-  `AUGHOR_SOMA_CLARIFY` flag stays **opt-in** (each structural-suspect deep turn costs one LLM
+  `PRAMANYX_SOMA_CLARIFY` flag stays **opt-in** (each structural-suspect deep turn costs one LLM
   call — flipping it on is a deliberate cost decision, left to the operator).
 - **Verdict → ledger bridge:** `record_verdict` crystallizes a `reject`/`correct` on a headlined
   finding as a **`verdict`-source** resolution (`crystallize_verdict`) — the highest authority,

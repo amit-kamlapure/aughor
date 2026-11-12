@@ -14,8 +14,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.automations.store import get_layout, set_layout
+from pramanyx.api import app
+from pramanyx.automations.store import get_layout, set_layout
 
 client = TestClient(app)
 
@@ -31,7 +31,7 @@ LAYOUT = {"__trigger": {"x": 0, "y": 60}, "step1": {"x": 320, "y": 120}}
 
 @pytest.fixture
 def flag_on(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled",
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled",
                         lambda n: n == "automations.engine")
 
 
@@ -97,7 +97,7 @@ def test_an_unarranged_automation_answers_with_an_empty_layout_not_a_404(flag_on
 def test_a_corrupt_layout_opens_the_canvas_instead_of_breaking_it():
     """A layout is a convenience. A row that cannot be parsed must degrade to the default
     arrangement, not to a canvas that refuses to draw."""
-    from aughor.automations import store
+    from pramanyx.automations import store
 
     with store._LOCK:
         conn = store._connect()
@@ -119,7 +119,7 @@ def test_a_corrupt_layout_opens_the_canvas_instead_of_breaking_it():
 
 def test_a_layout_that_is_not_an_object_is_refused_the_same_way():
     set_layout("odd-auto", "default", {})
-    from aughor.automations import store
+    from pramanyx.automations import store
 
     with store._LOCK:
         conn = store._connect()

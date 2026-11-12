@@ -21,26 +21,26 @@ import { csvFilename, type Grid, type TableRenderer } from "./artifacts.js";
 import type { ChartRenderer } from "./chart.js";
 import type {
   ApprovalPoster, ArrivalPoster, AskChunk, AskStream, DecisionPoster, FactChecker, TurnArtifacts, VerdictPoster,
-} from "./aughor.js";
+} from "./pramanyx.js";
 import { createTurnMap } from "./turnmap.js";
 
-export const BOT_USERNAME = "aughor";
+export const BOT_USERNAME = "pramanyx";
 
 const USAGE =
-  "Ask me a data question — e.g. “@aughor why did revenue dip last month?” " +
+  "Ask me a data question — e.g. “@pramanyx why did revenue dip last month?” " +
   "I answer from the connected warehouse, with a Trust Receipt behind every number.";
 
-/** HB-5 — the note verb: "@aughor note: carrier X was on strike last week" files the
+/** HB-5 — the note verb: "@pramanyx note: carrier X was on strike last week" files the
  *  sentence as a NOTE on the object this thread is about (the thread→object link HB-3
  *  filed), instead of asking a question. The COLON is the verb — "note that revenue
  *  dipped?" is prose and still asks. Deterministic; never a guess. */
 const NOTE_VERB = /^note:\s*/i;
 
-/** Idea 7 — the check verb: "@aughor check: <memo>" checks every number in the memo
+/** Idea 7 — the check verb: "@pramanyx check: <memo>" checks every number in the memo
  *  against the data instead of asking a question. The COLON is the verb, as for `note:`. */
 const CHECK_VERB = /^check:\s*/i;
 
-/** The decision-framework study §3.2 — the decide verb: "@aughor decide: pause paid social on Mytheresa — approvers
+/** The decision-framework study §3.2 — the decide verb: "@pramanyx decide: pause paid social on Mytheresa — approvers
  *  @ana @ben" books a decision from the thread, citing the answer the bot gave in it, and posts a decision CARD whose
  *  ✅ is the named approvers' approval — told apart from a ✅ on an answer, which is a verdict (TJ-4). */
 const DECIDE_VERB = /^decide:\s*/i;

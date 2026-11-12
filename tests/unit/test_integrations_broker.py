@@ -17,8 +17,8 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from aughor.integrations import broker, store
-from aughor.integrations.models import ProviderApp
+from pramanyx.integrations import broker, store
+from pramanyx.integrations.models import ProviderApp
 
 
 @pytest.fixture(autouse=True)
@@ -245,7 +245,7 @@ def test_a_consent_that_withholds_a_cards_scope_is_recorded_and_said(google_app,
     exchange["responses"][0]["scope"] = "email https://www.googleapis.com/auth/userinfo.email openid"
     conn = broker.complete(_state_of(url), "auth-code-1")
     assert conn.status == "active" and conn.withheld == DRIVE
-    from aughor.integrations.providers import get_provider
+    from pramanyx.integrations.providers import get_provider
     assert [p.name for p in get_provider("google").products_needing(conn.withheld)] == ["Google Drive comments"]
 
 

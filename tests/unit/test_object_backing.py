@@ -13,12 +13,12 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from aughor.db.connection import open_connection
-from aughor.ontology import models as M
-from aughor.ontology import overrides as OV
-from aughor.ontology.backing import apply_backing_measurements, entity_from_clause, measure_override_backings
-from aughor.ontology.models import Backing, OntologyEntity, OntologyGraph, OntologyRelationship, snake_name
-from aughor.ontology.validator import _entity_table, validate_semantics
+from pramanyx.db.connection import open_connection
+from pramanyx.ontology import models as M
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.backing import apply_backing_measurements, entity_from_clause, measure_override_backings
+from pramanyx.ontology.models import Backing, OntologyEntity, OntologyGraph, OntologyRelationship, snake_name
+from pramanyx.ontology.validator import _entity_table, validate_semantics
 
 REPO = Path(__file__).resolve().parents[2]
 LUX = REPO / "evals" / "ablation_luxexperience_ontology.json"
@@ -170,9 +170,9 @@ def test_a_human_backing_binds_by_dry_run_and_earns_verified_only_when_measured(
 
 
 def test_the_entity_route_accepts_a_backing_and_the_read_path_shows_it(tmp_path, monkeypatch, client):
-    from aughor.ontology import store as ST
-    from aughor.routers import ontology as R
-    from aughor.util.json_store import KeyedJsonStore
+    from pramanyx.ontology import store as ST
+    from pramanyx.routers import ontology as R
+    from pramanyx.util.json_store import KeyedJsonStore
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
     e = _entity()
     ST.save_ontology("cid", "crm", "fp", OntologyGraph(connection_id="cid", schema_name="crm", schema_fingerprint="fp", entities={"Customer": e}))
@@ -194,10 +194,10 @@ def test_a_keyed_select_is_previewed_against_the_type_set_and_withdrawn_back_to_
     how many rows it holds, whether its key is unique over them, and which of the type's properties it keeps, drops
     (the compiler reads every property from the backing, so a dropped one stops resolving) and adds. Withdrawn, the
     type reads its table again and its other edits stay; a declared type's backing is its declaration."""
-    import aughor.db.connection as C
-    from aughor.ontology import store as ST
-    from aughor.routers import ontology as R
-    from aughor.util.json_store import KeyedJsonStore
+    import pramanyx.db.connection as C
+    from pramanyx.ontology import store as ST
+    from pramanyx.routers import ontology as R
+    from pramanyx.util.json_store import KeyedJsonStore
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
     path = tmp_path / "wh.duckdb"
     con = duckdb.connect(str(path)); con.execute(_WH); con.close()

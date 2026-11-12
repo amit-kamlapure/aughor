@@ -6,7 +6,7 @@ or not handled at all. The study measured that once, by hand, and a measurement 
 build found nine sites the study's census had missed. So the census is now `docs/SQL_DOORS.json`, and this test
 holds the code to it:
 
-* the WALK finds every door call in `aughor/` — the population comes from the code, never from the file, so a new
+* the WALK finds every door call in `pramanyx/` — the population comes from the code, never from the file, so a new
   call fails here with the row to add;
 * a row whose site is gone fails too, so the file cannot drift into a list of things that used to be true;
 * where the code can say the classification itself, the code is the authority: a call that declares
@@ -32,8 +32,8 @@ REPO = Path(__file__).resolve().parents[2]
 CENSUS = REPO / "docs" / "SQL_DOORS.json"
 
 #: How a site's statement meets the engine's dialect — one definition, shared with the gate map a
-#: person reads (`aughor/govern/gate_map.py`, `GET /governance/gate-map`).
-from aughor.govern.gate_map import DIALECTS  # noqa: E402
+#: person reads (`pramanyx/govern/gate_map.py`, `GET /governance/gate-map`).
+from pramanyx.govern.gate_map import DIALECTS  # noqa: E402
 
 AUTHORS = {"platform", "model", "person", "stored", "door", "mixed"}
 
@@ -166,9 +166,9 @@ class _Walk(ast.NodeVisitor):
 
 
 def door_sites() -> dict[str, dict]:
-    """Every door call under `aughor/`, keyed as the census keys it."""
+    """Every door call under `pramanyx/`, keyed as the census keys it."""
     out: dict[str, dict] = {}
-    for path in sorted((REPO / "aughor").rglob("*.py")):
+    for path in sorted((REPO / "pramanyx").rglob("*.py")):
         rel = path.relative_to(REPO).as_posix()
         src = path.read_text(encoding="utf-8")
         walk = _Walk(src)
@@ -196,11 +196,11 @@ def census() -> dict[str, dict]:
 
 def test_the_walk_finds_the_doors(sites):
     """A walk that found nothing would pass every test below. These sites are the study's own examples."""
-    for key in ("aughor/sql/join_guard.py::_probe_overlap::execute::__domain_probe__",
-                "aughor/monitors/runner.py::_query::rows::__monitor__",
-                "aughor/routers/query.py::_query_run._work::execute::{_source}",
-                "aughor/agent/investigate.py::_execute_safe::execute_guarded::{phase_id}",
-                "aughor/semantic/metrics.py::compute_value::execute::__metric_value__"):
+    for key in ("pramanyx/sql/join_guard.py::_probe_overlap::execute::__domain_probe__",
+                "pramanyx/monitors/runner.py::_query::rows::__monitor__",
+                "pramanyx/routers/query.py::_query_run._work::execute::{_source}",
+                "pramanyx/agent/investigate.py::_execute_safe::execute_guarded::{phase_id}",
+                "pramanyx/semantic/metrics.py::compute_value::execute::__metric_value__"):
         assert key in sites, f"the walk no longer finds {key}"
     assert len(sites) > 150, f"the walk found {len(sites)} door calls; the study counted 150 warehouse sites"
 
@@ -294,7 +294,7 @@ def test_an_exception_is_a_reason(census):
 def test_the_gate_map_a_person_reads_is_the_same_census(tmp_path, census):
     """`GET /governance/gate-map` serves this file grouped, names the unguarded sites, counts each
     departure law's holds — and says so when the census is not on the install."""
-    from aughor.govern import gate_map as G
+    from pramanyx.govern import gate_map as G
     seen = G.statement_doors()
     assert seen["present"] and seen["sites"] == len(census)
     assert sum(r["sites"] for r in seen["by_dialect"]) == seen["sites"] == sum(r["sites"] for r in seen["by_door"])
@@ -304,5 +304,5 @@ def test_the_gate_map_a_person_reads_is_the_same_census(tmp_path, census):
     absent = G.statement_doors(tmp_path / "nowhere.json")
     assert absent["present"] is False and "not on this install" in absent["note"] and absent["sites"] == 0
     laws = G.departure_laws()["laws"]
-    from aughor.govern.departure import GUARDS
+    from pramanyx.govern.departure import GUARDS
     assert [row["guard"] for row in laws] == list(GUARDS) and all(row["label"] for row in laws)

@@ -1,0 +1,387 @@
+"""
+Auto-Seed Glossary — Milestone 1a+.
+
+When get_schema() encounters tables with no glossary entry, this module
+calls the LLM once per missing table to infer business descriptions from
+column names and sample values, then writes the results back to
+data/glossary.yaml marked auto_generated: true — in the section of the
+connection whose tables it read (the explorer does not look beyond its
+connection, the user's rule of 2026-09-14), never as a global entry.
+
+User-provided entries always take precedence — autoseed never overwrites
+an existing entry. The operation is idempotent: once a table is seeded
+(even auto-generated), it is never re-seeded unless manually deleted.
+
+Disable via env var: PRAMANYX_AUTOSEED=false
+"""
+from __future__ import annotations
+
+import logging
+import os
+import re
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
+from pramanyx.semantic.glossary import load_glossary, save_glossary
+
+logger = logging.getLogger(__name__)  # was referenced but never defined (latent NameError)
+
+_ENABLED = os.getenv("PRAMANYX_AUTOSEED", "true").lower() != "false"
+
+
+# ── LLM output schema ─────────────────────────────────────────────────────────
+
+class ColumnAnnotation(BaseModel):
+    name: str = Field(description="Exact column name as it appears in the schema")
+    description: str = Field(description="Plain-English business meaning of this column")
+    values: Optional[str] = Field(
+        default=None,
+        description="Known distinct values or range (e.g. 'delivered, shipped, canceled'). Only for categoricals or enums."
+    )
+    caveats: Optional[str] = Field(
+        default=None,
+        description="Data quality issues, business rules, or gotchas analysts must know (e.g. 'NULLs represent legacy rows'). Null if none."
+    )
+
+
+class TableAnnotation(BaseModel):
+    description: str = Field(
+        description="One or two sentence plain-English description of what this table contains and its purpose"
+    )
+    grain: str = Field(
+        description="What one row in this table represents (e.g. 'one row per order_id')"
+    )
+    columns: list[ColumnAnnotation] = Field(
+        description="Annotations for each column. Include every column from the schema."
+    )
+
+
+_SEED_SYSTEM = """\
+You are a senior data analyst annotating a database schema for a business intelligence tool.
+Given a table schema (column names, types, and sample values), infer the business meaning of
+the table and each column.
+
+Rules:
+- Be concise — one sentence per description
+- grain must precisely describe what one row represents
+- values: only populate for categorical/enum columns where you can see the distinct values
+- caveats: only if there is a real gotcha (e.g. NULLs, type issues, known data quality problems)
+- Infer from column names and sample values — do not hallucinate
+"""
+
+
+# ── Schema string parser ──────────────────────────────────────────────────────
+
+def _parse_table_blocks(schema_str: str) -> dict[str, str]:
+    """
+    Extract per-table schema blocks from a raw schema string.
+    Returns {table_name: schema_block_text}.
+    """
+    blocks: dict[str, str] = {}
+    current_table: str | None = None
+    current_lines: list[str] = []
+
+    for line in schema_str.splitlines():
+        m = re.match(r"^TABLE:\s+([\w.]+)", line)
+        if m:
+            if current_table and current_lines:
+                blocks[current_table] = "\n".join(current_lines)
+            current_table = m.group(1)
+            current_lines = [line]
+        elif current_table:
+            # Stop accumulating at SQL HINTS block
+            if line.startswith("SQL HINTS"):
+                blocks[current_table] = "\n".join(current_lines)
+                current_table = None
+                current_lines = []
+            elif line.strip() == "" and current_lines:
+                blocks[current_table] = "\n".join(current_lines)
+                current_table = None
+                current_lines = []
+            else:
+                current_lines.append(line)
+
+    if current_table and current_lines:
+        blocks[current_table] = "\n".join(current_lines)
+
+    return blocks
+
+
+_ROWS_RE = re.compile(r"\((\d[\d,]*)\s+rows\)")
+
+
+def _table_rows(block: str) -> int:
+    """The row count the TABLE: header carries, or -1 when the renderer said none."""
+    m = _ROWS_RE.search((block.splitlines() or [""])[0])
+    return int(m.group(1).replace(",", "")) if m else -1
+
+
+def eligible_tables(table_blocks: dict, cap: int) -> list[str]:
+    """The tables the Curator may seed under `cap`: the largest by row count, ties and
+    unknown counts in name order — the SAME "largest N" the profiler keeps, so what gets
+    words is what the explorer can see. Deterministic across rebuilds, which is what
+    makes the cap a cap on the CONNECTION and not a per-run allowance that creeps to
+    every table over successive builds."""
+    ranked = sorted(table_blocks, key=lambda t: (-_table_rows(table_blocks[t]), t))
+    return ranked[:max(0, int(cap))]
+
+
+def _max_tables() -> int:
+    """The Curator's `autoseed_max_tables` knob — Agent Ops / Spotlight set it."""
+    from pramanyx.kernel.agents import effective_limit
+    return effective_limit("curator", "autoseed_max_tables")
+
+
+def _block_columns(block: str) -> set[str]:
+    """Column names declared in a schema block — the `  <col>  <type>` detail lines
+    (skip the TABLE: header, `--` comments, and hint lines)."""
+    cols: set[str] = set()
+    for line in block.splitlines():
+        if line.startswith("TABLE:") or line.lstrip().startswith("--"):
+            continue
+        m = re.match(r"^  (\w+)\s+\S", line)
+        if m:
+            cols.add(m.group(1).lower())
+    return cols
+
+
+def _columns_drifted(stored: set[str], live: set[str]) -> bool:
+    """True when an auto-generated glossary entry's columns no longer match the live
+    table — the cross-warehouse contamination signature (a new connection's analytics.orders
+    inheriting a DELETED warehouse's columns). Jaccard overlap < 0.6 ⇒ stale ⇒ re-seed."""
+    if not stored or not live:
+        return False
+    overlap = len(stored & live) / len(stored | live)
+    return overlap < 0.6
+
+
+# ── Main entry point ──────────────────────────────────────────────────────────
+
+# "one row per order_id" / "One row per customer" / "one row per returned order_id" — a
+# grain claim that names a KEY the data can verify. The LLM's grain is a guess; when
+# it names a column, `COUNT(*) = COUNT(DISTINCT key)` is a fact.
+# Captures the whole noun phrase; the KEY is its LAST word ("returned order_id" →
+# order_id, "customer" → customer). A lazy per-word capture took "returned".
+_GRAIN_KEY = re.compile(r"\bone\s+row\s+per\s+((?:[a-z][a-z0-9_]*\s+){0,3}[a-z][a-z0-9_]*)", re.I)
+
+
+def verify_grain_claim(grain: str, table_fqn: str, columns: set[str], conn) -> str:
+    """Return the grain to STORE: the claim as written when the data agrees or cannot be
+    checked, or a data-verified correction when the claim names a key the table does not
+    hold uniquely.
+
+    The Superstore `returns` table was seeded "one row per returned order_id" — 800 rows
+    over 296 distinct order_ids. Every "how many orders were returned?" then wrote
+    COUNT(*) → 800 (reference: 296) because the schema TOLD the model each row was an
+    order (grid 2026-08-15, both cells). A false grain claim is worse than none: it turns
+    the fan-out guard's own signal off. So a grain is written to a seed only after a
+    ground-truth probe confirms it.
+    Deterministic, one bounded query, never raises."""
+    m = _GRAIN_KEY.search(grain or "")
+    if not m or conn is None:
+        return grain
+    phrase = m.group(1)
+    # A COMPOSITE grain ("one row per ticket per flight", "per platform-segment-year")
+    # is keyed by several columns at once; judging it on ONE swept word refuses a true
+    # claim (audit 2026-08-15: 3 of 9 "contradictions" were composites). Only a
+    # single-key claim is verifiable here.
+    tail = (grain or "")[m.end():]
+    if re.search(r"\bper\b|[-‑]", phrase) or re.match(r"\s*(?:per|and|[-‑])\b", tail):
+        return grain
+    # "one row per chunk of a review, identified by review_id" — the KEY is the
+    # 'identified by' column, not the noun phrase's last word.
+    idm = re.search(r"identified\s+by\s+([a-z][a-z0-9_]*)", grain or "", re.I)
+    lower_cols = {c.lower() for c in columns}
+    key = idm.group(1).lower() if idm else phrase.split()[-1].lower()
+    if idm and key not in lower_cols and not any(c in (f"{key}_id", f"{key}id") for c in lower_cols):
+        # The LLM named an "identified by" column that does not exist ("o_orderkey" on
+        # a Superstore table — a TPC-H name). Judge the noun instead ("order" → order_id);
+        # a phantom key must not launder a false grain (audit 2026-08-15: main.orders).
+        key = phrase.split()[-1].lower()
+    if key not in lower_cols:
+        # The claim's noun ("order") may not be a column ("order_id" is). Try the id form.
+        cand = next((c for c in columns if c.lower() in (f"{key}_id", f"{key}id")), None)
+        if cand is None:
+            return grain
+        key = cand
+    try:
+        n_rows, n_keys = conn.execute(
+            f'SELECT COUNT(*), COUNT(DISTINCT "{key}") FROM {table_fqn}').fetchone()
+    except Exception as exc:
+        from pramanyx.kernel.errors import tolerate
+        tolerate(exc, "grain-claim probe is best-effort; the seeded claim is stored unverified",
+                 counter="autoseed.grain_probe")
+        return grain
+    if not n_rows or n_keys is None or n_rows == n_keys:
+        return grain
+    return (f"{n_rows:,} rows over {n_keys:,} distinct {key} — NOT one row per {key} "
+            f"(a {key} can appear on several rows; count {key}s with COUNT(DISTINCT {key}), "
+            f"never COUNT(*)). Seeded claim was: {grain}")
+
+
+def seed_missing_tables(raw_schema: str, schema: str | None = None,
+                        connection_id: str | None = None, conn=None) -> bool:
+    """
+    Seed glossary entries for tables not yet in glossary.yaml.
+    Called by get_schema() before apply_glossary().
+    A model's words are written for ``connection_id`` alone; with no connection nothing is seeded.
+    Returns True if any new entries were written.
+    Never raises — failures are silent so schema load is never blocked.
+
+    ``schema`` scopes both the existence check and the written key, so seeding one schema
+    can no longer overwrite a same-named table in another. It is optional because the
+    signature was schema-blind; the only caller (``tools.schema.apply_schema_enrichment``)
+    always had it in scope.
+
+    ``connection_id`` joins ``schema`` to scope the fingerprint fast-path. Both are needed:
+    the fingerprint described structure only, so two schemas built from the same DDL shared
+    one "fully seeded" marker and the second skipped seeding entirely.
+    """
+    if not _ENABLED:
+        return False
+
+    try:
+        return _seed(raw_schema, schema, connection_id, conn)
+    except Exception:
+        return False
+
+
+def _seed(raw_schema: str, schema: str | None = None,
+          connection_id: str | None = None, conn=None) -> bool:
+    from pramanyx.llm.provider import get_provider
+    from pramanyx.semantic.glossary import CONNECTIONS_KEY, canonical_key, load_merged_glossary, lookup_table
+    from pramanyx.db.schema_cache import compute_fingerprint, is_complete, mark_complete, scope_key
+
+    # A model's words are written for the connection whose tables it read, or not at all: an entry naming no
+    # connection may describe another connection's table of the same name, and the explorer does not look beyond
+    # its connection (the user's rule, 2026-09-14).
+    if not connection_id:
+        return False
+
+    # Check what THIS connection reads — a person's words, dbt, and its own section — so we never re-seed a table it
+    # already has words for, and do seed one that only another connection (or no connection) has words for.
+    merged = load_merged_glossary(connection_id=connection_id).get("tables") or {}
+
+    # But write new entries only to the YAML file (not dbt manifest), in this connection's own section
+    glossary = load_glossary()
+    sections = glossary.get(CONNECTIONS_KEY) or {}
+    glossary[CONNECTIONS_KEY] = sections
+    section = sections.get(connection_id) or {}
+    sections[connection_id] = section
+    yaml_tables = section.get("tables") or {}
+    section["tables"] = yaml_tables
+    table_blocks = _parse_table_blocks(raw_schema)
+    # Resolve per schema rather than by exact key: the store holds BOTH bare and qualified
+    # keys (the connectors disagree on the TABLE: header), so an exact-set check re-seeded
+    # tables that were already covered under the other form — and then wrote the answer
+    # under a key another schema was reading.
+    missing = {t: b for t, b in table_blocks.items() if not lookup_table(merged, t, schema)}
+
+    # Schema-drift invalidation (F6): glossary is keyed by bare schema.table, so a new
+    # connection's `analytics.orders` used to inherit a DELETED warehouse's annotations
+    # (phantom columns + hallucinated enum values). Re-seed any AUTO-generated entry whose
+    # stored columns no longer match the live table. User-curated entries are never touched.
+    for t, block in table_blocks.items():
+        if t in missing:
+            continue
+        ent = lookup_table(yaml_tables, t, schema) or None
+        if not isinstance(ent, dict) or not ent.get("auto_generated"):
+            continue
+        if _columns_drifted(set((ent.get("columns") or {}).keys()), _block_columns(block)):
+            logger.info("autoseed: re-seeding %r — stored glossary columns drifted from live schema", t)
+            missing[t] = block
+
+    # The Curator's cap (a declared knob, not a constant): only the largest `cap` tables
+    # of the connection are ever seeded. The cut is said — in the log here, and by
+    # Spotlight's `platform_limits`, which reports the cap and where it bites.
+    cap = _max_tables()
+    if len(table_blocks) > cap:
+        eligible = set(eligible_tables(table_blocks, cap))
+        cut = sorted(t for t in missing if t not in eligible)
+        missing = {t: b for t, b in missing.items() if t in eligible}
+        if cut:
+            logger.info("autoseed: Curator limit autoseed_max_tables=%d keeps the largest %d of "
+                        "%d tables — %d unseeded table(s) skipped (no model call): %s%s",
+                        cap, cap, len(table_blocks), len(cut), ", ".join(cut[:10]),
+                        " …" if len(cut) > 10 else "")
+
+    # Largest tables first whether or not the cap bit: a run the budget ends mid-loop
+    # (BudgetExceeded below) has then annotated the tables that matter most.
+    missing = {t: missing[t] for t in eligible_tables(missing, len(missing))}
+
+    # Fast-path: schema fingerprint matches a previously fully-seeded schema. Scoped to THIS
+    # connection+schema — an unscoped hash meant a structurally identical sibling (or a dev
+    # copy of the same warehouse) counted as already seeded.
+    fp = compute_fingerprint(table_blocks, scope=scope_key(connection_id, schema))
+    if not missing and is_complete(fp):
+        return False  # identical schema, all tables already covered — skip LLM calls
+
+    if not missing:
+        mark_complete(fp)  # all tables covered by glossary — record and return
+        return False
+
+    provider = get_provider()
+    tables_meta: dict = yaml_tables   # this connection's own section
+    wrote_any = False
+    budget_hit: BaseException | None = None
+    from pramanyx.kernel.metering import BudgetExceeded
+
+    for table_name, schema_block in missing.items():
+        try:
+            annotation: TableAnnotation = provider.complete(
+                system=_SEED_SYSTEM,
+                user=f"Annotate this table:\n\n{schema_block}",
+                response_model=TableAnnotation,
+                temperature=0.1,
+            )
+
+            col_dict: dict = {}
+            for col in annotation.columns:
+                entry: dict = {"description": col.description}
+                if col.values:
+                    entry["values"] = col.values
+                if col.caveats:
+                    entry["caveats"] = col.caveats
+                col_dict[col.name] = entry
+
+            # A grain that names a key is verified against the data before it is
+            # stored — see verify_grain_claim. `table_name` is the TABLE: header, which
+            # is how the renderer names it and therefore how the connection resolves it.
+            grain = verify_grain_claim(annotation.grain, table_name,
+                                       _block_columns(schema_block), conn)
+            tables_meta[canonical_key(table_name, schema)] = {
+                "description": annotation.description,
+                "grain": grain,
+                "auto_generated": True,
+                "columns": col_dict,
+            }
+            wrote_any = True
+
+        except BudgetExceeded as exc:
+            # The run's budget fired on this call (a BaseException by design, so the
+            # fail-open branch below cannot swallow it). Stop HERE, save what was
+            # annotated, then re-raise: the tables already seeded must not be lost to
+            # the abort, and the abort must still reach the kernel.
+            budget_hit = exc
+            logger.info("autoseed: %s — stopping at %r; %d table(s) annotated this run are kept",
+                        exc.reason, table_name, sum(1 for _ in tables_meta))
+            break
+        except Exception as exc:
+            # Best-effort — a failed seed for one table never blocks the rest
+            from pramanyx.kernel.errors import tolerate
+            tolerate(exc, "a failed LLM seed for one table never blocks the rest", counter="autoseed.seed_table")
+            continue
+
+    if wrote_any:
+        save_glossary(glossary)
+        # If all tables are now covered, record the fingerprint so the next
+        # call with the same schema skips LLM calls entirely.
+        _after = load_merged_glossary(connection_id=connection_id).get("tables") or {}
+        remaining = {t for t in table_blocks if not lookup_table(_after, t, schema)}
+        if not remaining:
+            mark_complete(fp)
+
+    if budget_hit is not None:
+        raise budget_hit
+    return wrote_any

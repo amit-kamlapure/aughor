@@ -2,7 +2,7 @@
 
 Every test here drives the REAL provider stack — ``get_provider`` → ``complete()``
 → ``_complete_on`` → salvage/repair/failover decisions — with the network replaced
-by the scripted queue in ``aughor/llm/faux.py``. What is being pinned:
+by the scripted queue in ``pramanyx/llm/faux.py``. What is being pinned:
 
 * scripted responses serve in order, and the factory form hands the test the exact
   prompt the code built;
@@ -20,18 +20,18 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel
 
-from aughor.llm import faux
-from aughor.llm import provider as P
-from aughor.llm.faux import (
+from pramanyx.llm import faux
+from pramanyx.llm import provider as P
+from pramanyx.llm.faux import (
     CAPABLE_MODEL,
     FauxQuotaExhausted,
     FauxRateLimit,
     FauxResponsesExhausted,
     FauxTruncation,
 )
-from aughor.llm.profile import tier_for
-from aughor.llm.provider import get_provider
-from aughor.llm.reliability import (
+from pramanyx.llm.profile import tier_for
+from pramanyx.llm.provider import get_provider
+from pramanyx.llm.reliability import (
     SCHEMA_MISMATCH,
     TRUNCATED,
     UNPARSEABLE,
@@ -97,7 +97,7 @@ def test_exhaustion_never_reaches_the_fallback_chain(faux_llm, monkeypatch):
     """Even with a fully configured chain, an unscripted faux call must surface as
     itself — the chain answering in its place is the exact silent fall-through this
     backend exists to kill."""
-    monkeypatch.setenv("AUGHOR_FALLBACK_BACKENDS", "anthropic,gemini")
+    monkeypatch.setenv("PRAMANYX_FALLBACK_BACKENDS", "anthropic,gemini")
     monkeypatch.setattr(P, "_active_key", lambda backend: "not-a-real-key")
     assert P._should_failover(FauxResponsesExhausted("boom")) is False
     with pytest.raises(FauxResponsesExhausted):
@@ -171,7 +171,7 @@ def test_rate_limit_walks_the_retry_ladder_then_succeeds(faux_llm, monkeypatch):
 
 
 def test_quota_exhaustion_marks_the_cooldown_and_raises(faux_llm):
-    from aughor.llm.coordination import default as coordinator
+    from pramanyx.llm.coordination import default as coordinator
 
     faux_llm.set_responses([FauxQuotaExhausted()])
     with pytest.raises(Exception) as exc_info:

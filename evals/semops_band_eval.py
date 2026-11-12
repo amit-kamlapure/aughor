@@ -28,12 +28,12 @@ the operator when banding became unconditional (ROADMAP §3.65); it is kept here
 receipts were measured against, on the operator's own per-batch verdicts (`_filter_verdicts`), so it
 spends exactly what it spent there.
 
-**What this touches.** Before importing `aughor` it isolates every store the way a live drive does
+**What this touches.** Before importing `pramanyx` it isolates every store the way a live drive does
 (`scripts/dump_openapi._isolate_stores`), so no process but the running API opens `data/`. Models
-therefore resolve from the ENVIRONMENT (`AUGHOR_BACKEND`, `AUGHOR_FAST_NARRATOR_MODEL`,
-`AUGHOR_CODER_MODEL` and their keys, loaded with ``--env-file``) — or, to measure the models a
-deployment actually runs, from a COPY of its saved config named by ``AUGHOR_LLM_CONFIG_PATH`` (a JSON
-file, copied, never read in place; its keys decrypt with ``AUGHOR_SECRET_KEY`` from the env file).
+therefore resolve from the ENVIRONMENT (`PRAMANYX_BACKEND`, `PRAMANYX_FAST_NARRATOR_MODEL`,
+`PRAMANYX_CODER_MODEL` and their keys, loaded with ``--env-file``) — or, to measure the models a
+deployment actually runs, from a COPY of its saved config named by ``PRAMANYX_LLM_CONFIG_PATH`` (a JSON
+file, copied, never read in place; its keys decrypt with ``PRAMANYX_SECRET_KEY`` from the env file).
 The output names the backend and model each tier resolved to. Rows come from a file: fetch them once
 through the running API (see ``fetch_rows_sql``), never by opening a connection here.
 
@@ -42,7 +42,7 @@ Usage:
     # plan it — no model call
     uv run python evals/semops_band_eval.py --rows rows.json --dry-run
     # run it — model calls, the operator's spend
-    uv run python evals/semops_band_eval.py --rows rows.json --env-file ../aughor/.env \\
+    uv run python evals/semops_band_eval.py --rows rows.json --env-file ../pramanyx/.env \\
         --output evals/semops_band_results.json [--jev]
 """
 from __future__ import annotations
@@ -63,7 +63,7 @@ from typing import Any, Callable, Mapping, Optional, Sequence
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-#: What production passes (`aughor/routers/query.py`).
+#: What production passes (`pramanyx/routers/query.py`).
 DEFAULT_SAMPLE = 8
 #: The sampled arm's bar: sample disagreement above this re-runs every row on the champion.
 SAMPLED_ESCALATE = 0.20
@@ -285,7 +285,7 @@ class JevBackend:
         self.retries, self.backoff = retries, backoff
 
     def judge(self, state: str, questions: Sequence[Any]) -> dict:
-        from aughor.judgment.seam import NOUL, Answer, Noul
+        from pramanyx.judgment.seam import NOUL, Answer, Noul
         qs = list(questions)
         if not all(isinstance(q, Noul) for q in qs):
             raise ValueError("this harness sends Jev noul questions only")
@@ -359,7 +359,7 @@ def _sampled_filter(result: Any, predicate: str, *, role: str, champion_role: st
     champion re-runs every row. Returns what the harness reads of an operator's result."""
     from types import SimpleNamespace
 
-    from aughor.semops import operators as ops
+    from pramanyx.semops import operators as ops
 
     rows, ci = result.rows, result.columns.index("text")
     all_idx = list(range(len(rows)))
@@ -389,9 +389,9 @@ def run_arm(name: str, rows: Sequence[str], predicate: str, *, banded: bool,
     """One arm: `semantic_filter` as production runs it — or, for ``banded=False`` with a sample, the
     sampled baseline above — with `get_provider` answering the two tiers this arm names. ``cheap`` is a
     provider, or a :class:`JevBackend` for the Jev arm; ``champion`` is a provider."""
-    from aughor.agent.state import QueryResult
-    from aughor.judgment import seam
-    from aughor.semops import operators as ops
+    from pramanyx.agent.state import QueryResult
+    from pramanyx.judgment import seam
+    from pramanyx.semops import operators as ops
 
     arm = ArmResult(name, True)
     tiers = {role: cheap, ops.CHAMPION_ROLE: champion}
@@ -445,7 +445,7 @@ def run_reference(rows: Sequence[str], predicate: str, champion: Any, *,
                   batch: int = DEFAULT_BATCH) -> ArmResult:
     """The champion alone on every row, through the same operator with no cascade — the answer the
     sampled cascade converges to when it escalates."""
-    from aughor.semops import operators as ops
+    from pramanyx.semops import operators as ops
     return run_arm("reference", rows, predicate, banded=False, cheap=champion, champion=champion,
                    sample=0, batch=batch, role=ops.CHAMPION_ROLE)
 
@@ -485,7 +485,7 @@ def score_predicate(predicate: str, n: int, arms: Mapping[str, ArmResult], *, to
 # ── entry point ───────────────────────────────────────────────────────────────────────────────
 
 def _isolate() -> None:
-    """Every store off `data/` before `aughor` is imported — the live-drive isolation, reused."""
+    """Every store off `data/` before `pramanyx` is imported — the live-drive isolation, reused."""
     import importlib.util
     spec = importlib.util.spec_from_file_location("_dump_openapi", REPO / "scripts" / "dump_openapi.py")
     mod = importlib.util.module_from_spec(spec)
@@ -670,13 +670,13 @@ def main() -> None:
     if args.env_file:
         keys = _load_env_file(Path(args.env_file))
         print(f"loaded {len(keys)} key(s) from {args.env_file} (values not shown)")
-    from aughor.llm import provider as llm
-    from aughor.semops import operators as ops
+    from pramanyx.llm import provider as llm
+    from pramanyx.semops import operators as ops
     cheap, champion = llm.get_provider(ops.DEFAULT_ROLE), llm.get_provider(ops.CHAMPION_ROLE)
     cfg = llm.current_config()                    # the same effective view GET /llm/config serves
     models = {"backend": cfg.get("backend"), "cheap": (cfg.get("models") or {}).get(ops.DEFAULT_ROLE),
               "champion": (cfg.get("models") or {}).get(ops.CHAMPION_ROLE),
-              "config": os.environ.get("AUGHOR_LLM_CONFIG_PATH") or "(isolated: environment only)"}
+              "config": os.environ.get("PRAMANYX_LLM_CONFIG_PATH") or "(isolated: environment only)"}
     if args.champion:
         backend, _, model = args.champion.partition(":")
         if not backend or not model:

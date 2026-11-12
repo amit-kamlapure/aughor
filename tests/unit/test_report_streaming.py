@@ -15,8 +15,8 @@ import asyncio
 import contextvars
 import time
 
-from aughor.agent import progress
-from aughor.routers.investigations import _aiter_sync_with_progress
+from pramanyx.agent import progress
+from pramanyx.routers.investigations import _aiter_sync_with_progress
 
 
 def test_emitter_is_none_without_a_bound_sink():

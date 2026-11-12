@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Now — "what needs me, this week?" (the 2027 study §V, screen 2), laid out to CLARITY (`aughor-v2/CLARITY.md`).
+ * Now — "what needs me, this week?" (the 2027 study §V, screen 2), laid out to CLARITY (`pramanyx-v2/CLARITY.md`).
  *
  * Four figures (sent this week, waiting on you, held, corrected), then what waits on a person in amber with its
  * buttons on the row, then the week's slots as bars beside what lost one, then what was sent — the same send to
@@ -40,7 +40,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 
-const LAST_SEEN_KEY = "aughor_now_last_seen";
+const LAST_SEEN_KEY = "pramanyx_now_last_seen";
 const DEPARTURES_READ = 200;
 
 /** One connection's row of the organisation's Briefing. The API puts a kept Briefing's fields on the row itself

@@ -1,4 +1,4 @@
-"""Plane-conformance tests for the Capability plane (AL-02) — `aughor/pipeline`.
+"""Plane-conformance tests for the Capability plane (AL-02) — `pramanyx/pipeline`.
 
 The review's acceptance bar: "a new capability can be added by registering one impl + reusing the
 Trust/Semantic/Memory planes — no edits to Orchestration." So the tests prove (1) a toy capability
@@ -11,22 +11,22 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.pipeline import (
+from pramanyx.pipeline import (
     CapabilityRequest,
     get_capability,
     register_capability,
     registered_domains,
     run_capability,
 )
-from aughor.pipeline.builtins import SqlCapability
-from aughor.trust import Scope, Verdict
-from aughor.control_plane.contracts.execution import QueryResult
+from pramanyx.pipeline.builtins import SqlCapability
+from pramanyx.trust import Scope, Verdict
+from pramanyx.control_plane.contracts.execution import QueryResult
 
 
 @pytest.fixture
 def clean_registry():
     """Snapshot the global registry and restore it, so toy registrations don't leak across tests."""
-    from aughor.pipeline import registry as reg
+    from pramanyx.pipeline import registry as reg
     snapshot = dict(reg._PIPELINES)
     yield
     reg._PIPELINES.clear()
@@ -129,7 +129,7 @@ class _SchemaConn:
 
 
 def test_metadata_capability_returns_schema(clean_registry):
-    from aughor.pipeline.builtins import MetadataCapability
+    from pramanyx.pipeline.builtins import MetadataCapability
     assert "metadata" in registered_domains()
     assert isinstance(get_capability("metadata"), MetadataCapability)
     res = run_capability("metadata", CapabilityRequest(
@@ -147,7 +147,7 @@ def test_sql_capability_without_connection_is_a_clean_error(clean_registry):
 
 
 def test_sql_capability_on_real_duckdb_fixture(clean_registry, builtin_conn_id):
-    from aughor.db.connection import open_connection_for
+    from pramanyx.db.connection import open_connection_for
     db = open_connection_for(builtin_conn_id)
     try:
         res = run_capability("data", CapabilityRequest(

@@ -1,4 +1,4 @@
-"""Grain-of-intent check (aughor/sql/grain_intent.py) — precision-first detection.
+"""Grain-of-intent check (pramanyx/sql/grain_intent.py) — precision-first detection.
 
 Fixtures are REAL Spider2 Phase-0 miss questions (the 11 grain-bucket cases) plus
 previously-correct sentinel questions that must NOT fire — a false fire costs a wasted
@@ -6,7 +6,7 @@ repair round, so precision is the contract under test.
 """
 from __future__ import annotations
 
-from aughor.sql.grain_intent import check_result_grain, expected_grain
+from pramanyx.sql.grain_intent import check_result_grain, expected_grain
 
 
 # ── detection: the real grain-miss questions ─────────────────────────────────
@@ -105,7 +105,7 @@ def test_no_probe_no_per_entity_fire():
 # live path read either. Precision is the contract: every legitimate COUNT(*) below
 # must stay silent.
 
-from aughor.sql.grain_intent import count_star_over_finer_grain  # noqa: E402
+from pramanyx.sql.grain_intent import count_star_over_finer_grain  # noqa: E402
 
 _LINE_ITEM_COLS = ["row_id", "order_id", "order_date", "customer_id", "product_id", "sales"]
 

@@ -6,7 +6,7 @@ Origin: a user created a monitor from a finding whose query returned a single al
 row (a broken cross-dataset join) → "The query returned no data: 0 customers were found"
 → the monitor fired "No condition met" forever.
 """
-from aughor.explorer.verify import is_degenerate_result, has_fabricated_dimension, clamp_novelty
+from pramanyx.explorer.verify import is_degenerate_result, has_fabricated_dimension, clamp_novelty
 
 
 def test_all_null_single_row_is_degenerate():
@@ -72,7 +72,7 @@ def test_real_rows_not_degenerate():
 # keyword guess can't make. Origin: a "conversion 1.4138 by channel" card leaked.
 
 from types import SimpleNamespace as _NS
-from aughor.business_profile.validate import profile_metric_ranges as _ranges
+from pramanyx.business_profile.validate import profile_metric_ranges as _ranges
 
 _PROFILE = _NS(north_star_metrics=[
     _NS(name="Cart-to-Order Conversion Rate", unit_or_range="ratio 0-1"),

@@ -1,6 +1,6 @@
 """The Ambiguity Ledger (SOMA improvisation I1) — resolution that compounds per connection.
 
-Hermetic via the conftest `AUGHOR_AMBIGUITY_LEDGER_DB` override (points at a throwaway temp dir —
+Hermetic via the conftest `PRAMANYX_AMBIGUITY_LEDGER_DB` override (points at a throwaway temp dir —
 the suite never touches live `data/`). Each test uses its own connection_id so they're independent
 without teardown. What's pinned: idempotent burn-down (same dimension → one row), override-wins
 authority (verdict > user > probe), conservative token-overlap retrieval, per-connection scoping,
@@ -8,7 +8,7 @@ and the burn-down metric.
 """
 from __future__ import annotations
 
-from aughor.semantic.ambiguity_ledger import (
+from pramanyx.semantic.ambiguity_ledger import (
     AmbiguityResolution,
     Reading,
     build_resolution_block,
@@ -157,7 +157,7 @@ def test_record_verdict_bridges_to_the_ledger():
     """The live hook: a reject/correct verdict on a headlined finding crystallizes a
     verdict-source resolution; accept / no-headline write nothing. The bridge is
     always on (flag endgame Wave 5, 2026-08-06) — the verdict KIND is the gate."""
-    from aughor.feedback import verdicts
+    from pramanyx.feedback import verdicts
     purge_connections(["vb_conn"])
     verdicts.record_verdict("vb_conn", "inv1", "correct", note="use per-career totals",
                             headline="average total runs by strikers", corrected_sql="GROUP BY player")
@@ -200,7 +200,7 @@ def test_a_superseded_reading_is_kept_never_served_and_only_a_person_brings_it_b
     """theLook, 2026-10-02: two readings the intake had pinned itself defined total revenue and COGS as a count of
     units, and were served as settled. Retired, each keeps what it said and why; the intake pinning the same formula
     again does not bring it back — the mark, not the row's absence, is the authority."""
-    from aughor.semantic.ambiguity_ledger import supersede_resolution
+    from pramanyx.semantic.ambiguity_ledger import supersede_resolution
     cogs = dict(subject="definition of total cost of goods sold", reading="governed: units_sold")
     saved = save_resolution(_res("t_supersede", org_id="o", resolved_sql="COUNT(id)", **cogs))
     assert supersede_resolution(saved.id, "COGS is not a count of units", org_id="o")

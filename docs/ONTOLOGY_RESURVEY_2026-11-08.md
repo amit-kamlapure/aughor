@@ -8,7 +8,7 @@ study asks what a person would need before they declare a process, a promise or 
 code was read on this branch. No model call, no write, no setting changed. One door used, `GET
 /ontology/processes/candidates`, runs counting SQL against the warehouse; it writes nothing. Commands are given as
 paths. Each one is `curl -s http://127.0.0.1:8000<path>`. Other sessions had uncommitted edits in
-`aughor/routers/ontology.py` and `aughor/db/registry.py` during the study. Line numbers there are as read at 11:30
+`pramanyx/routers/ontology.py` and `pramanyx/db/registry.py` during the study. Line numbers there are as read at 11:30
 UTC, with the function named.
 
 ---
@@ -41,14 +41,14 @@ From 10-09 to 10-10, D rose by 11. That was one day of OC-5 to OC-9 receipts.
 | DuckDB `baef6c3e` · ecommerce · 1 process, 2 promises, 2 rules | 5 | Three files written 73 ms apart on 09-13 00:03:28, with the same ids as the shipped `key=olist` seed. |
 
 None of the 18 can be shown to be a person's. The census cannot show it either way:
-- A declaration's `source` defaults to `"human"` (`aughor/ontology/overrides.py:323`).
-- A process's `origin` defaults to `"human"` (`aughor/ontology/processes.py:237`).
-- Without sign-in, every request acts as the computer's login (`aughor/security/authz.py:153-190`). So every
+- A declaration's `source` defaults to `"human"` (`pramanyx/ontology/overrides.py:323`).
+- A process's `origin` defaults to `"human"` (`pramanyx/ontology/processes.py:237`).
+- Without sign-in, every request acts as the computer's login (`pramanyx/security/authz.py:153-190`). So every
   approval since 10-09 reads `amitkamlapure`, whether the user pressed it or an agent drove the screen.
 - The 10-10 baseline of 50 was built the same way: seeds, confirmed model proposals and the arc's receipts. The rule
   chose to count them (`PENDING.md`, the OC-4 line).
 
-**L by who made it.** The census on this branch splits Record claims by author (`aughor/ontology/census.py:119-131`).
+**L by who made it.** The census on this branch splits Record claims by author (`pramanyx/ontology/census.py:119-131`).
 The live API does not serve that split yet: `about_the_ontology_by` is absent from the 10:31 reading. Counted by hand
 from `/ledger/v1/claims?limit=1000`, which returned 1,000 of 1,047 claims:
 - 87 claims are about the ontology, the census's own figure. 52 were made by an agent (`agent:ua_aaeb9e07870a`), 35
@@ -98,14 +98,14 @@ withdrew a declaration.
   514 events from 07-02 to 11-05) shows no ontology withdrawal after 07-02, and no ontology change on any surviving
   scope between 10-10 20:00 and 10-12 02:00. It cannot speak for the removed ids: their rows were swept (next point).
 - **The removal's own approval is not in the journal.** A removal sweeps every row whose `conn_id` names the
-  connection, except `audit_log` and `session_events` (`aughor/db/purge.py:194-203`). The journal's approval rows
+  connection, except `audit_log` and `session_events` (`pramanyx/db/purge.py:194-203`). The journal's approval rows
   carry `conn_id`. So the removal is dated by the census readings, not by its own record.
 - **The declarations did not come back.** The new connection is PostgreSQL `dcc63d83`:
   - It was listed as not built on 10-12. From 10-13 it has had 33 entities on `luxexperience` and 0 declarations.
   - The repository still ships Lux's declarations under `data/shipped/ontology_overrides/key=luxexperience/` (`git
     ls-files`): 2 processes with 2 promises, 7 rules, 1 action, 3 links, 4 entities and 2 metrics.
   - A seed filed under a scope key reaches only a connection whose settings carry that key
-    (`aughor/ontology/overrides.py:117-139`, `scope_key_of` at `aughor/db/registry.py:379-386`).
+    (`pramanyx/ontology/overrides.py:117-139`, `scope_key_of` at `pramanyx/db/registry.py:379-386`).
   - `/connections/dcc63d83/settings` answers `{}`. It has no scope key.
 
 The rest of what 914df862 held was the OC-9 receipt of 10-10 (ROADMAP §3.56): a 7-day receipt promise, the
@@ -138,12 +138,12 @@ Received Date and Refund Completed Date. The last two are reached through the to
 | 5 | | What moves through it: *Return · 86,199* | "Choose what moves through the process." (`:120`) |
 | 6–11 | Stages | Three stages, each with a name and *When is it reached?*. *Add a stage* gives the third. | "Name stage n." · "Choose when an object reaches …" (`:122-127`) |
 | 12–13 | Promise on *Refunded* | *within days*, then `10` | Seven promise refusals (`:128-139`) |
-| — | | Waits 0.9 s (`ProcessDesigner.tsx:74`). The draft is counted by `POST /ontology/processes/preview` (`preview_declared_process`, `aughor/routers/ontology.py:2811-2854`). | 400 · 404 · 409, said under Stages |
+| — | | Waits 0.9 s (`ProcessDesigner.tsx:74`). The draft is counted by `POST /ontology/processes/preview` (`preview_declared_process`, `pramanyx/routers/ontology.py:2811-2854`). | 400 · 404 · 409, said under Stages |
 | 14 | Before you publish | Answers each ask: *They left the process* or *They really are late* | None. Unanswered asks turn the button into *Declare it anyway*. |
 | 15 | Header | **Review and publish** | — |
 | 16 | Review | **Declare the process**. This is `POST /ontology/processes`. | The guard first (`_declare_process_core`, `ontology.py:2877`). Then four 400s, a 404, a 409 and a 500 (`:2887-2913`). |
-| 17 | Approval dialog | **Approve**. Every ontology write is HIGH risk (`aughor/govern/actions.py:56`), and approving allowlists it for the whole connection (`:180-210`). | Closing the dialog: "Not approved" (`ProcessDesigner.tsx:83-88`) |
-| 18 | Designer | **Publish release n**. This is `POST /ontology/release/publish` (`ontology.py:722-739`). | The guard again. Then a 409 while any change is ERR, including any model proposal not yet confirmed (`aughor/ontology/release.py:225-228, 283-290`). |
+| 17 | Approval dialog | **Approve**. Every ontology write is HIGH risk (`pramanyx/govern/actions.py:56`), and approving allowlists it for the whole connection (`:180-210`). | Closing the dialog: "Not approved" (`ProcessDesigner.tsx:83-88`) |
+| 18 | Designer | **Publish release n**. This is `POST /ontology/release/publish` (`ontology.py:722-739`). | The guard again. Then a 409 while any change is ERR, including any model proposal not yet confirmed (`pramanyx/ontology/release.py:225-228, 283-290`). |
 
 **18 steps, or 14 using the *Suggested from your data* chips.** A chip sets a stage's name and moment in one press
 (`ProcessDesigner.tsx:192-205`). Two of the steps are governance acts, and either can refuse. The approval stands
@@ -155,7 +155,7 @@ until revoked:
 cannot be designed from Order on the PostgreSQL scope:
 - Order offers one moment, Order Date (146,364 orders).
 - `ship_date` lives on Shipment, and the designer follows to-one links only
-  (`aughor/ontology/process_design.py:111`).
+  (`pramanyx/ontology/process_design.py:111`).
 - From Shipment it works: Ship Date, and Order Date through the order, on 140,507 shipments.
 - A person who thinks "orders ship within two days" starts from the wrong entity and is not told which one to use.
 
@@ -180,7 +180,7 @@ declaration made in a designer.
 
 | Source | Where it waits | Offered | Accepted | Reached readers |
 |---|---|---:|---:|---:|
-| The business explorer: processes, rules, links, names, parts (`aughor/ontology/explorer.py`) | The Ontology's draft only | theLook 15 · Olist 10 · Lux PostgreSQL **0** | theLook 7 · Olist 9 | theLook's 7, before releases existed · Olist **0** |
+| The business explorer: processes, rules, links, names, parts (`pramanyx/ontology/explorer.py`) | The Ontology's draft only | theLook 15 · Olist 10 · Lux PostgreSQL **0** | theLook 7 · Olist 9 | theLook's 7, before releases existed · Olist **0** |
 | Warehouse-history candidates (Arc NV-3) | Agent Ops ▸ Attention (`ontology.py:4565`) | Lux 16 measures, 11-04 | 1 (`gmv_eur`, 11-05 09:14) · 15 rejected within 2 s at 10:29:50 | **0**. The one accepted sits in Lux's draft. |
 | Engine recommendations | Ontology ▸ Proposals | theLook 3 | 2 (a metric, a table note) | Not part of D |
 | Routing proposals | Ontology | 0 everywhere | — | — |
@@ -200,7 +200,7 @@ Sources: `/ontology/draft?…&ontology_view=draft` (read without the draft view,
 - **theLook: 6 proposals have waited 45 days.** Two parts and four link names from the 09-24 run are still
   *proposed*: neither confirmed nor withdrawn.
 - **Lux PostgreSQL: the explorer never ran.** The connection's birth runs the business explorer once on a scope
-  nobody has explored (`aughor/routers/_shared.py:274-326`).
+  nobody has explored (`pramanyx/routers/_shared.py:274-326`).
   - On 10-29 and 10-30 it hit the approval gate: `HTTPException: 428 … 'ontology.override', 'scope': 'dcc63d83'`.
   - The failure was tolerated as *"birth business-terms step failed; the rite stands without it"* (`_shared.py:321-326`;
     `/obs/logs?q=approval_required`).
@@ -256,7 +256,7 @@ whether anyone opened the page (see *Not measured*).
 ## 6 · Options
 
 Each option is written so that its falsifier is set before it is built. "A person" below means a request made
-outside any agent run, the stamp approvals already carry (`run_kind`, `aughor/actions/attribution.py:42-56`), until
+outside any agent run, the stamp approvals already carry (`run_kind`, `pramanyx/actions/attribution.py:42-56`), until
 sign-in exists. That reading needs option D.
 
 **A · Bring Lux's declarations back to the connection the person uses.**
@@ -345,7 +345,7 @@ Total: about 3.5–4.5 days, and one model call per scope, only when the person 
 - **Whether Lux's shipped declarations bind on `dcc63d83`.** That needs a compile against the PostgreSQL schema, or
   setting the scope key, which is a write. Only the candidates door was read (§3).
 - **The content of the two blocked birth runs** (`de4d344d5f4f`, `fe056e939312`). Reading a trace writes an access
-  audit row (`aughor/routers/obs.py:342-366`), so only the run log's search was read.
+  audit row (`pramanyx/routers/obs.py:342-366`), so only the run log's search was read.
 - **The removal of `914df862` and `b428fce7` as its own event.** Their rows were swept, so it is dated by the census
   readings.
 - **47 of the 1,047 Record claims.** The claims door returns at most 1,000. The count about the ontology, 87,

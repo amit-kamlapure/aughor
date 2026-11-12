@@ -14,11 +14,11 @@ import copy
 
 import pytest
 
-from aughor.packs import priors as P
-from aughor.packs.gate3 import run_gate3
-from aughor.packs.loader import load_pack
-from aughor.packs.roots import pack_dir
-from aughor.packs.validate import validate_loaded
+from pramanyx.packs import priors as P
+from pramanyx.packs.gate3 import run_gate3
+from pramanyx.packs.loader import load_pack
+from pramanyx.packs.roots import pack_dir
+from pramanyx.packs.validate import validate_loaded
 
 PACK = "b2b-saas"
 
@@ -70,7 +70,7 @@ def test_an_unread_source_keeps_the_package_a_draft(tmp_path):
     """The promotion door refuses `active` while a cited source is unread — the review IS reading them."""
     import shutil
 
-    from aughor.packs.promote import PromotionRefused, set_status
+    from pramanyx.packs.promote import PromotionRefused, set_status
     shutil.copytree(pack_dir(PACK), tmp_path / PACK)
     with pytest.raises(PromotionRefused) as exc:
         set_status(PACK, "active", packs_dir=tmp_path, actor="user:ana")
@@ -92,7 +92,7 @@ def test_the_priors_say_where_they_were_measured_or_say_none_and_the_templates_n
 
 
 def test_the_packages_terms_are_proposable_on_connect(pack):
-    from aughor.packs.connect import pack_terms
+    from pramanyx.packs.connect import pack_terms
     terms = {(t["subject_kind"], t["subject_id"], t["synonym"]) for t in pack_terms(pack)}
     assert ("metric", "net_revenue_retention", "nrr") in terms and ("metric", "monthly_recurring_revenue", "mrr") in terms
     assert all(k == "metric" for k, _, _ in terms)          # the objects' terms wait for a graph

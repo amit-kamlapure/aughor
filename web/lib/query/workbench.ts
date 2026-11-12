@@ -1,5 +1,5 @@
 /**
- * What the SQL editor's chrome says, decided apart from how it is drawn (`aughor-v2/CLARITY.md`): the result's
+ * What the SQL editor's chrome says, decided apart from how it is drawn (`pramanyx-v2/CLARITY.md`): the result's
  * figures line, an error said as a failure or a refusal, the guards' verdict as a chip, the Tools ▾ menus that hold
  * every action that left the toolbar, and the recent runs the start page lists — folded by statement.
  *
@@ -214,7 +214,7 @@ export function resultTools(s: {
 /** The statement a person ran, without the wrappers the platform put around it: the row cap
  *  (`SELECT * FROM (…) __q LIMIT n`, `… AS __q …` once translated — and every cap, where a capped statement reopened and
  *  run again was capped again), and inside it a dashboard piece's own — its sort, sum or buckets around the person's
- *  statement, which `aughor/dashboards/queries.py` (`_embed`) puts in word for word as `FROM (\n<statement>\n) AS q`.
+ *  statement, which `pramanyx/dashboards/queries.py` (`_embed`) puts in word for word as `FROM (\n<statement>\n) AS q`.
  *  Each is unwrapped only on that exact shape; anything else is left as written. */
 export function unwrapRunSql(sql: string): string {
   let run = (sql ?? "").trim();

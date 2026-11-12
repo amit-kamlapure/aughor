@@ -14,12 +14,12 @@ from datetime import date
 import duckdb
 import pytest
 
-import aughor.knowledge.briefing as briefing_mod
-import aughor.llm.provider as prov
-from aughor.automations.temporal import complete_period
-from aughor.briefing import ranges
-from aughor.business_profile.models import BusinessProfile, NorthStarMetric
-from aughor.knowledge.briefing import BriefingNarrative
+import pramanyx.knowledge.briefing as briefing_mod
+import pramanyx.llm.provider as prov
+from pramanyx.automations.temporal import complete_period
+from pramanyx.briefing import ranges
+from pramanyx.business_profile.models import BusinessProfile, NorthStarMetric
+from pramanyx.knowledge.briefing import BriefingNarrative
 
 SEP26 = date(2026, 9, 26)
 
@@ -114,7 +114,7 @@ class FakeNarrator:
 def narrator(monkeypatch, tmp_path):
     fake = FakeNarrator()
     monkeypatch.setattr(prov, "get_provider", lambda role=None: fake)
-    from aughor.util.json_store import KeyedJsonStore
+    from pramanyx.util.json_store import KeyedJsonStore
     store = KeyedJsonStore(tmp_path / "briefing_cache.json")
     monkeypatch.setattr(briefing_mod, "_store", lambda: store)
     return fake
@@ -125,14 +125,14 @@ def approved(monkeypatch, tmp_path):
     """c1's catalogue: an approved revenue (cancelled orders excluded), a draft that must not be
     measured; the profiler knows orders.created_at. Its own catalogue file — the suite's is
     session-wide, and rows written here would leak into every later test's read."""
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
-    from aughor.semantic.metrics import MetricDefinition, save_metric
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
+    from pramanyx.semantic.metrics import MetricDefinition, save_metric
     save_metric(MetricDefinition(name="revenue", connection="c1", label="Revenue", sql="SUM(amount)",
                                  tables=["orders"], filters=["status <> 'cancelled'"], unit="USD",
                                  status="approved", approved_by="test"))
     save_metric(MetricDefinition(name="aov", connection="c1", label="AOV", sql="AVG(amount)",
                                  tables=["orders"], status="draft"))
-    monkeypatch.setattr("aughor.tools.profile_cache.latest_profile_entry", lambda cid: {
+    monkeypatch.setattr("pramanyx.tools.profile_cache.latest_profile_entry", lambda cid: {
         "tables": {"orders": {"primary_timestamp": "created_at"}},
         "columns": {f"orders.{c}": {"table": "orders", "column": c, "dtype": d}
                     for c, d in (("created_at", "TIMESTAMP"), ("amount", "DOUBLE"), ("status", "VARCHAR"))}})
@@ -174,9 +174,9 @@ def test_two_custom_ranges_never_share_a_cache_entry(con, narrator, approved):
 def test_a_scheduled_briefing_is_its_periods_range_remeasured_at_the_send(con, narrator, approved, monkeypatch):
     """A weekly subscription sends the range Briefing of last week, judged line by line against its queries RE-RUN at
     the send (law 1): built, its headline figure leaves; late rows land, and the same figure is held."""
-    from aughor.briefing import delivery
-    from aughor.briefing.models import BriefSubscription
-    from aughor.knowledge import period_brief
+    from pramanyx.briefing import delivery
+    from pramanyx.briefing.models import BriefSubscription
+    from pramanyx.knowledge import period_brief
 
     monkeypatch.setattr(period_brief, "scope_inputs", lambda conn_id, schema=None: ({}, _profile()))
     monkeypatch.setattr(ranges, "resolve_for", lambda cid, preset=None, **kw: ranges.resolve_range(
@@ -198,7 +198,7 @@ def test_a_scheduled_briefing_is_its_periods_range_remeasured_at_the_send(con, n
 def test_the_route_reads_a_period_as_its_preset_and_refuses_a_bad_range_with_why():
     from fastapi import HTTPException
 
-    from aughor.routers import exploration
+    from pramanyx.routers import exploration
     assert exploration._range_spec_or_refuse("c1", "history", None, None, None, None) is None  # the standing one
     with pytest.raises(HTTPException) as bad:
         exploration._range_spec_or_refuse("c1", None, None, "2026-08-26", "2026-08-17", None)
@@ -213,8 +213,8 @@ def test_the_route_reads_a_period_as_its_preset_and_refuses_a_bad_range_with_why
 def test_dates_set_by_an_older_rule_are_rederived_and_a_persons_are_left_alone(approved, monkeypatch):
     """2026-09-26: the first live run saved every theLook metric as a flow on its table's main
     date; the fixed rule must be able to replace what it set — and never what a person set."""
-    from aughor.semantic import metric_time as mt
-    from aughor.semantic.metrics import MetricDefinition, get_metric, save_metric
+    from pramanyx.semantic import metric_time as mt
+    from pramanyx.semantic.metrics import MetricDefinition, get_metric, save_metric
     save_metric(MetricDefinition(name="shipped", connection="c1", label="Shipped", sql="COUNT(*)",
                                  tables=["orders"], filters=["shipped_at IS NOT NULL"],
                                  status="approved", approved_by="test", time_kind="flow",
@@ -222,10 +222,10 @@ def test_dates_set_by_an_older_rule_are_rederived_and_a_persons_are_left_alone(a
     save_metric(MetricDefinition(name="confirmed", connection="c1", label="Confirmed", sql="SUM(amount)",
                                  tables=["orders"], status="approved", approved_by="test",
                                  time_kind="flow", time_column="shipped_at", time_confirmed_by="Ana"))
-    import aughor.tools.profile_cache as pc
+    import pramanyx.tools.profile_cache as pc
     base = pc.latest_profile_entry("c1")
     base["columns"]["orders.shipped_at"] = {"table": "orders", "column": "shipped_at", "dtype": "TIMESTAMP"}
-    monkeypatch.setattr("aughor.tools.profile_cache.latest_profile_entry", lambda cid: base)
+    monkeypatch.setattr("pramanyx.tools.profile_cache.latest_profile_entry", lambda cid: base)
     said = mt.ensure_dates("c1")
     assert get_metric("shipped", connection_id="c1").time_column == "shipped_at"
     assert said["confirmed"] == "confirmed by Ana"
@@ -340,7 +340,7 @@ def test_a_metric_that_cannot_be_read_says_why_and_carries_no_series(con, approv
 def test_the_measures_route_hands_back_a_young_briefings_figures_and_measures_otherwise(monkeypatch):
     from datetime import datetime, timedelta, timezone
 
-    from aughor.routers import exploration
+    from pramanyx.routers import exploration
     monkeypatch.setattr(exploration, "_load_business_profile", lambda cid, schema: None)
     monkeypatch.setattr(ranges, "resolve_for", lambda cid, preset, **kw: ranges.resolve_range(
         preset, today=SEP26, lag_days=13, start=kw.get("start"), end=kw.get("end")))
@@ -380,15 +380,15 @@ def test_the_range_after_this_one_keeps_its_kind_and_its_step_back():
 
 
 def _share_metric():
-    from aughor.semantic.metrics import MetricDefinition, save_metric
+    from pramanyx.semantic.metrics import MetricDefinition, save_metric
     save_metric(MetricDefinition(name="done_share", connection="c1", label="Done share", unit="%",
                                  sql="100.0 * SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) / COUNT(*)",
                                  tables=["orders"], status="approved", approved_by="test"))
 
 
 def test_each_metric_is_expected_once_from_its_own_past_and_read_back_without_measuring(con, approved):
-    from aughor.briefing import expected
-    from aughor.record import claims as C
+    from pramanyx.briefing import expected
+    from pramanyx.record import claims as C
     _share_metric()
     spec, _ = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26, lag_days=13)
     seen = expected.expected_next("c1", spec, profile=_profile(), runner=_runner(con), today=SEP26)
@@ -426,8 +426,8 @@ def test_each_metric_is_expected_once_from_its_own_past_and_read_back_without_me
 
 
 def test_a_metric_that_cannot_be_read_is_not_predicted_and_says_why_and_a_range_to_date_is_never(con, approved):
-    from aughor.briefing import expected
-    from aughor.record import claims as C
+    from pramanyx.briefing import expected
+    from pramanyx.record import claims as C
 
     @contextlib.contextmanager
     def broken():
@@ -450,8 +450,8 @@ def test_a_metric_that_cannot_be_read_is_not_predicted_and_says_why_and_a_range_
 def test_a_briefings_prediction_is_scored_by_measuring_its_range_once_it_has_settled(con, approved):
     from datetime import datetime, timezone
 
-    from aughor.briefing import expected
-    from aughor.record import claims as C
+    from pramanyx.briefing import expected
+    from pramanyx.record import claims as C
     _share_metric()
     # its own range, so nothing another test booked is in the way: 10..19 August, then 20..29
     spec, _ = ranges.resolve_range(start=date(2026, 8, 10), end=date(2026, 8, 19), today=SEP26, lag_days=13)
@@ -479,8 +479,8 @@ def test_a_briefings_prediction_is_scored_by_measuring_its_range_once_it_has_set
 def test_a_count_over_a_window_with_no_rows_is_not_a_reading(con, approved):
     """Found on the scratch install, 2026-10-05: COUNT answers 0 for the months before the data began,
     and three such zeros put "0 to 961" on a metric that had read 800 every month it existed."""
-    from aughor.briefing import expected
-    from aughor.semantic.metrics import MetricDefinition, save_metric
+    from pramanyx.briefing import expected
+    from pramanyx.semantic.metrics import MetricDefinition, save_metric
     save_metric(MetricDefinition(name="orders_placed", connection="c1", label="Orders placed", sql="COUNT(*)",
                                  tables=["orders"], status="approved", approved_by="test"))
     # the data begins 2025-01-01: of the eight weeks ending 14 January 2025, six hold no row at all
@@ -532,7 +532,7 @@ def test_a_period_so_far_is_compared_with_the_same_days_of_the_one_before():
                                                (date(2026, 9, 1), date(2026, 9, 8)),
                                                (date(2026, 10, 1), date(2026, 10, 8))]
     assert ranges.later_spec(month) is None
-    from aughor.dashboards.host import TO_DATE, status_of
+    from pramanyx.dashboards.host import TO_DATE, status_of
     assert status_of(month) == TO_DATE
 
 
@@ -640,7 +640,7 @@ def test_every_range_reads_the_edge_and_live_data_resolves_as_before(monkeypatch
 def test_a_cohorts_earlier_ranges_are_read_at_one_age_unless_its_table_is_still_moving(con, approved):
     """Its as-of bounds the outcomes, not the rows they are divided by (theLook, measured 2026-11-04). The ledger and the
     Briefing's detail both print this: "so these comparisons are fair" sat above "Not at equal age" on theLook's two."""
-    from aughor.semantic.metrics import MetricDefinition, save_metric
+    from pramanyx.semantic.metrics import MetricDefinition, save_metric
     save_metric(MetricDefinition(name="reached", connection="c1", label="Reached", tables=["orders"], status="approved",
                                  sql="AVG(CASE WHEN created_at IS NOT NULL THEN 1.0 ELSE 0.0 END)", approved_by="test",
                                  time_column="orders.created_at", time_kind="cohort", outcome_column="orders.created_at",
@@ -657,8 +657,8 @@ def test_a_cohorts_earlier_ranges_are_read_at_one_age_unless_its_table_is_still_
 
 
 def test_a_cohorts_band_says_same_age_only_on_a_table_that_settles(con, approved):
-    from aughor.briefing import expected
-    from aughor.semantic.metrics import MetricDefinition, save_metric
+    from pramanyx.briefing import expected
+    from pramanyx.semantic.metrics import MetricDefinition, save_metric
     save_metric(MetricDefinition(name="reached", connection="c1", label="Reached", tables=["orders"], status="approved",
                                  sql="AVG(CASE WHEN created_at IS NOT NULL THEN 1.0 ELSE 0.0 END)", approved_by="test",
                                  time_column="orders.created_at", time_kind="cohort", outcome_column="orders.created_at",
@@ -684,8 +684,8 @@ def test_a_flows_earlier_ranges_are_not_said_to_be_read_at_one_age(con, approved
 def test_a_north_star_whose_definition_was_deprecated_is_not_asked_for_again(con, approved):
     """theLook's profile names Item Return Rate, deprecated as a second name for Return rate: "approve
     one" would ask for the duplicate back (2026-10-08)."""
-    from aughor.business_profile.models import NorthStarMetric
-    from aughor.semantic.metrics import get_metric, save_metric
+    from pramanyx.business_profile.models import NorthStarMetric
+    from pramanyx.semantic.metrics import get_metric, save_metric
     aov = get_metric("aov", connection_id="c1")
     save_metric(aov.model_copy(update={"status": "deprecated"}))
     stars = [NorthStarMetric(name=n, definition="-", maps_to="orders", why_it_matters="-", unit_or_range="$",
@@ -730,7 +730,7 @@ def test_a_trend_says_its_usual_range_by_the_briefings_own_definition(con, appro
 
 def test_a_usual_range_needs_enough_earlier_readings_and_a_figure_to_place(monkeypatch):
     spec, _ = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26, lag_days=13)
-    from aughor.briefing import guide as G
+    from pramanyx.briefing import guide as G
     monkeypatch.setattr(G, "current", lambda *a, **k: (None, None))
     assert ranges._usual_of("c1", None, spec, [1.0, 2.0, 3.0]) is None           # two earlier readings
     assert ranges._usual_of("c1", None, spec, [1.0, 2.0, 3.0, None]) is None     # no figure now
@@ -743,7 +743,7 @@ def test_a_usual_range_needs_enough_earlier_readings_and_a_figure_to_place(monke
 
 def test_a_guide_that_cannot_be_read_leaves_the_usual_range_on_its_defaults(monkeypatch):
     spec, _ = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26, lag_days=13)
-    from aughor.briefing import guide as G
+    from pramanyx.briefing import guide as G
 
     def broken(*a, **k):
         raise RuntimeError("no guide today")
@@ -754,7 +754,7 @@ def test_a_guide_that_cannot_be_read_leaves_the_usual_range_on_its_defaults(monk
 def test_what_was_not_measured_still_says_its_area_and_what_was_says_which_way_is_good(monkeypatch):
     from types import SimpleNamespace as NS
 
-    from aughor.semantic import metric_time as mt
+    from pramanyx.semantic import metric_time as mt
     spec, _ = ranges.resolve_range(start=date(2026, 8, 17), end=date(2026, 8, 26), today=SEP26, lag_days=13)
     def metric(name, status="approved"):
         return NS(name=name, label=name.title(), status=status, connection="c1", lineage=[], time_kind="flow", unit="EUR")
@@ -789,8 +789,8 @@ def test_a_measured_row_says_its_area_in_the_industrys_order_and_which_way_is_go
 def test_which_way_is_good_comes_from_the_guide_then_the_industrys_metrics(monkeypatch):
     from types import SimpleNamespace as NS
 
-    from aughor.briefing import guide as G
-    from aughor.semantic import metric_map as M
+    from pramanyx.briefing import guide as G
+    from pramanyx.semantic import metric_map as M
     pattern = NS(id="ec_gross_margin", title="Gross Margin", direction="up", proposable=True, intent_tags=(), area="margin_pricing")
     cost = NS(id="fin_cogs", title="Cost of Goods", direction="down", proposable=True, intent_tags=(), area="margin_pricing")
     either = NS(id="ec_orders", title="Orders Placed", direction="either", proposable=True, intent_tags=(), area="orders_sales")
@@ -814,8 +814,8 @@ def test_which_way_is_good_comes_from_the_guide_then_the_industrys_metrics(monke
 def test_a_direction_that_cannot_be_read_is_no_colour_and_never_a_failure(monkeypatch):
     from types import SimpleNamespace as NS
 
-    from aughor.briefing import guide as G
-    from aughor.semantic import metric_map as M
+    from pramanyx.briefing import guide as G
+    from pramanyx.semantic import metric_map as M
 
     def broken(*a, **k):
         raise RuntimeError("nothing readable")

@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.routers import _shared
+from pramanyx.routers import _shared
 
 
 @pytest.fixture
@@ -26,15 +26,15 @@ def emit_into(seen):
 @pytest.fixture
 def explorer(monkeypatch):
     calls = []
-    import aughor.routers.ontology as ontology
+    import pramanyx.routers.ontology as ontology
     monkeypatch.setattr(ontology, "explore_ontology",
                         lambda connection_id, schema_name=None: calls.append((connection_id, schema_name))
                         or {"run": {"id": "run123"}})
-    import aughor.licensing.resolver as resolver
+    import pramanyx.licensing.resolver as resolver
     monkeypatch.setattr(resolver, "has_capability", lambda cap, conn_id=None: True)
-    import aughor.ontology.drafts as drafts
+    import pramanyx.ontology.drafts as drafts
     monkeypatch.setattr(drafts, "load_draft", lambda conn, schema: SimpleNamespace(runs=[]))
-    import aughor.ontology.store as ontology_store
+    import pramanyx.ontology.store as ontology_store
     monkeypatch.setattr(ontology_store, "load_latest_ontology", lambda conn, schema=None: object())
     return calls
 
@@ -47,21 +47,21 @@ def test_it_explores_a_new_scope_once(monkeypatch, seen, explorer):
 
 
 def test_a_scope_already_explored_is_skipped_so_a_restart_spends_nothing(monkeypatch, seen, explorer):
-    import aughor.ontology.drafts as drafts
+    import pramanyx.ontology.drafts as drafts
     monkeypatch.setattr(drafts, "load_draft", lambda conn, schema: SimpleNamespace(runs=[object()]))
     assert _shared.run_business_terms("c1", "shop", emit_into(seen)) == "skipped"
     assert explorer == [] and seen[0][2]["reason"] == "the business explorer already ran on this scope"
 
 
 def test_a_plan_without_ontology_edits_is_skipped_and_says_why(monkeypatch, seen, explorer):
-    import aughor.licensing.resolver as resolver
+    import pramanyx.licensing.resolver as resolver
     monkeypatch.setattr(resolver, "has_capability", lambda cap, conn_id=None: False)
     assert _shared.run_business_terms("c1", "shop", emit_into(seen)) == "skipped"
     assert explorer == [] and "does not include ontology edits" in seen[0][2]["reason"]
 
 
 def test_a_failed_explorer_is_recorded_and_the_rite_stands(monkeypatch, seen, explorer):
-    import aughor.routers.ontology as ontology
+    import pramanyx.routers.ontology as ontology
 
     def refuse(connection_id, schema_name=None):
         raise RuntimeError("no model configured")
@@ -73,7 +73,7 @@ def test_a_failed_explorer_is_recorded_and_the_rite_stands(monkeypatch, seen, ex
 def test_no_ontology_built_yet_is_a_skip_not_a_failure(monkeypatch, seen, explorer):
     """The first real rite (2026-09-23): the intelligence step reported done on a build that was
     a skip, and the explorer refused with a 404 — recorded as a failure it was not."""
-    import aughor.ontology.store as ontology_store
+    import pramanyx.ontology.store as ontology_store
     monkeypatch.setattr(ontology_store, "load_latest_ontology", lambda conn, schema=None: None)
     assert _shared.run_business_terms("c1", "shop", emit_into(seen)) == "skipped"
     assert explorer == [] and seen[0][2]["reason"].startswith("no ontology is built on this scope yet")
@@ -83,8 +83,8 @@ def test_no_ontology_built_yet_is_a_skip_not_a_failure(monkeypatch, seen, explor
 def test_the_already_explored_check_reads_the_scope_the_explorer_writes(monkeypatch, seen, explorer):
     """A connection registered with a schema in its meta: the explorer files its run under that
     schema, so the skip must read it there — reading "default" never found the run (branch review)."""
-    import aughor.ontology.drafts as drafts
-    import aughor.routers.ontology as ontology
+    import pramanyx.ontology.drafts as drafts
+    import pramanyx.routers.ontology as ontology
     monkeypatch.setattr(ontology, "resolve_effective_schema", lambda conn, schema=None: schema or "shop")
     monkeypatch.setattr(drafts, "load_draft",
                         lambda conn, schema: SimpleNamespace(runs=[object()] if schema == "shop" else []))

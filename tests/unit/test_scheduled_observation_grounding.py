@@ -19,8 +19,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.automations import temporal
-from aughor.automations.models import Automation, Condition, Effect, EffectOutcome
+from pramanyx.automations import temporal
+from pramanyx.automations.models import Automation, Condition, Effect, EffectOutcome
 
 NOW = datetime(2026, 9, 6, 9, 0, tzinfo=timezone.utc)
 
@@ -67,7 +67,7 @@ def test_lag_is_clamped_never_trusted():
 
 @pytest.fixture()
 def runs_store(tmp_path, monkeypatch):
-    import aughor.automations.store as store
+    import pramanyx.automations.store as store
     monkeypatch.setattr(store, "_DB_PATH", tmp_path / "automations.db")
     store._init_schema()
     return store
@@ -79,7 +79,7 @@ def _run(store, automation_id, outcome, summary=""):
         effects = [EffectOutcome(kind="investigate", target="q", status="executed",
                                  data={"summary": summary})]
     store.append_run(
-        __import__("aughor.automations.models", fromlist=["AutomationRun"])
+        __import__("pramanyx.automations.models", fromlist=["AutomationRun"])
         .AutomationRun(automation_id=automation_id, outcome=outcome, effects=effects))
 
 
@@ -144,7 +144,7 @@ def _automation(conditions):
 
 
 def _capture_dispatch(monkeypatch):
-    import aughor.runners as runners
+    import pramanyx.runners as runners
     captured = {}
 
     def _fake(req, **kw):
@@ -157,7 +157,7 @@ def _capture_dispatch(monkeypatch):
 
 
 def test_scheduled_dispatch_is_grounded_and_target_stays_raw(runs_store, monkeypatch):
-    from aughor.automations.engine import _dispatch_investigate
+    from pramanyx.automations.engine import _dispatch_investigate
     captured = _capture_dispatch(monkeypatch)
     auto = _automation([Condition(kind="schedule", config={"cron": "0 9 * * *"})])
 
@@ -171,7 +171,7 @@ def test_scheduled_dispatch_is_grounded_and_target_stays_raw(runs_store, monkeyp
 
 
 def test_lag_setting_on_the_effect_config_is_honoured(runs_store, monkeypatch):
-    from aughor.automations.engine import _dispatch_investigate
+    from pramanyx.automations.engine import _dispatch_investigate
     captured = _capture_dispatch(monkeypatch)
     auto = _automation([Condition(kind="schedule", config={"cron": "0 9 * * *"})])
     auto.effects[0].config["observation_lag_days"] = 3
@@ -181,7 +181,7 @@ def test_lag_setting_on_the_effect_config_is_honoured(runs_store, monkeypatch):
 
 
 def test_unscheduled_automations_keep_a_byte_identical_question(runs_store, monkeypatch):
-    from aughor.automations.engine import _dispatch_investigate
+    from pramanyx.automations.engine import _dispatch_investigate
     captured = _capture_dispatch(monkeypatch)
     auto = _automation([Condition(kind="metric", config={"monitor_id": "m1"})])
 
@@ -190,7 +190,7 @@ def test_unscheduled_automations_keep_a_byte_identical_question(runs_store, monk
 
 
 def test_previous_summary_reaches_the_scheduled_prompt(runs_store, monkeypatch):
-    from aughor.automations.engine import _dispatch_investigate
+    from pramanyx.automations.engine import _dispatch_investigate
     captured = _capture_dispatch(monkeypatch)
     auto = _automation([Condition(kind="schedule", config={"cron": "0 9 * * *"})])
     _run(runs_store, auto.id, "fired", "Yesterday the source said 1,769.")
@@ -208,8 +208,8 @@ def test_previous_summary_reaches_the_scheduled_prompt(runs_store, monkeypatch):
 
 
 def test_the_previous_basis_is_quoted_and_a_definition_change_is_not_a_restatement(runs_store, monkeypatch):
-    from aughor.automations.models import AutomationRun
-    import aughor.db.history as history
+    from pramanyx.automations.models import AutomationRun
+    import pramanyx.db.history as history
 
     runs_store.append_run(AutomationRun(automation_id="daily", outcome="fired", effects=[
         EffectOutcome(kind="investigate", target="q", status="executed",
@@ -232,8 +232,8 @@ def test_the_previous_basis_is_quoted_and_a_definition_change_is_not_a_restateme
 
 
 def test_an_unreadable_previous_run_quotes_its_summary_alone(runs_store, monkeypatch):
-    from aughor.automations.models import AutomationRun
-    import aughor.db.history as history
+    from pramanyx.automations.models import AutomationRun
+    import pramanyx.db.history as history
 
     runs_store.append_run(AutomationRun(automation_id="daily2", outcome="fired", effects=[
         EffectOutcome(kind="investigate", target="q", status="executed",

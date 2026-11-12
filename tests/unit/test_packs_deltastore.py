@@ -1,13 +1,13 @@
 """Flywheel delta store (Bet 1 safe writeback, 2026-06-27).
 
 A steered+verified run proposes deltas here; a human accepts/dismisses (never auto-applied).
-Org-scoped, dedup'd. See aughor/packs/deltastore.py.
+Org-scoped, dedup'd. See pramanyx/packs/deltastore.py.
 """
 import pytest
 
-import aughor.packs.deltastore as ds
-from aughor.packs.flywheel import PackDelta
-from aughor.org.context import using_org
+import pramanyx.packs.deltastore as ds
+from pramanyx.packs.flywheel import PackDelta
+from pramanyx.org.context import using_org
 
 
 @pytest.fixture

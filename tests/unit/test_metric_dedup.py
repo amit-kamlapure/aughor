@@ -21,14 +21,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.semantic import metrics as M
-from aughor.semantic.metrics import (
+from pramanyx.semantic import metrics as M
+from pramanyx.semantic.metrics import (
     list_metrics,
     filter_metrics_to_schema,
     build_metrics_block,
     _dedupe_by_name,
 )
-from aughor.semantic.enforcement import check_metric_enforcement, enforcement_summary
+from pramanyx.semantic.enforcement import check_metric_enforcement, enforcement_summary
 
 _REAL_CATALOG = Path(M.__file__).parent.parent.parent / "data" / "shipped" / "metrics.json"
 

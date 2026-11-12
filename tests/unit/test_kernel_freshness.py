@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from aughor.kernel.freshness import (
+from pramanyx.kernel.freshness import (
     DEGRADED_STATES,
     FINGERPRINTS,
     LOGIC_VERSIONS,
@@ -39,7 +39,7 @@ SUMMARY = "TABLE: orders\n  id INT\n  total DEC\n-- a comment\nTABLE: items\n  i
 
 
 def test_golden_schema_cache_unscoped():
-    from aughor.db.schema_cache import compute_fingerprint
+    from pramanyx.db.schema_cache import compute_fingerprint
 
     assert compute_fingerprint(BLOCKS) == "1c23756f28e3926d"
 
@@ -47,7 +47,7 @@ def test_golden_schema_cache_unscoped():
 def test_golden_schema_cache_scoped():
     """The scope path is separately pinned — it is the one that fixed a real bug
     (two copies of one DDL sharing a 'seeded' marker)."""
-    from aughor.db.schema_cache import compute_fingerprint
+    from pramanyx.db.schema_cache import compute_fingerprint
 
     assert compute_fingerprint(BLOCKS, "conn1:main") == "e9ed0fd915c90474"
 
@@ -76,7 +76,7 @@ def test_golden_profile_cache_survives_logic_version_extraction():
     """
     import hashlib
 
-    from aughor.tools.profile_cache import PROFILE_LOGIC_VERSION, compute_schema_fingerprint
+    from pramanyx.tools.profile_cache import PROFILE_LOGIC_VERSION, compute_schema_fingerprint
 
     assert PROFILE_LOGIC_VERSION == "v10-text-dates-2000"
     assert compute_schema_fingerprint({"orders": 5, "items": 3}) == "a062984fa8c68947"   # v9 keyed "cb7435e153419446"
@@ -88,7 +88,7 @@ def test_golden_profile_cache_survives_logic_version_extraction():
 
 def test_golden_ontology_store_survives_function_extraction():
     """compute_ontology_fingerprint was lifted out of get_or_build_ontology verbatim."""
-    from aughor.ontology.store import compute_ontology_fingerprint
+    from pramanyx.ontology.store import compute_ontology_fingerprint
 
     class TP:
         def __init__(self, rc, gc):
@@ -100,7 +100,7 @@ def test_golden_ontology_store_survives_function_extraction():
 
 
 def test_golden_suggestions_cache():
-    from aughor.semantic.suggestions_cache import schema_fingerprint
+    from pramanyx.semantic.suggestions_cache import schema_fingerprint
 
     assert schema_fingerprint(SUMMARY) == "6ad28dac85c9c51a"
 
@@ -125,7 +125,7 @@ def _stub_ontology():
 
 def test_golden_graph_structural_after_single_pass_refactor():
     """structural_fingerprint now shares one pass with the per-table map; same bytes."""
-    from aughor.ontology.graph_freshness import structural_fingerprint, table_fingerprints
+    from pramanyx.ontology.graph_freshness import structural_fingerprint, table_fingerprints
 
     Ont, Ent, Prop = _stub_ontology()
     ont = Ont({
@@ -185,7 +185,7 @@ def test_differential_classify_matches_the_inline_decision_table(
 
 def test_differential_classify_through_graph_freshness_end_to_end():
     """The real entry point, not just the kernel — a dirty verdict on a data-only move."""
-    from aughor.ontology.graph_freshness import classify, structural_fingerprint
+    from pramanyx.ontology.graph_freshness import classify, structural_fingerprint
 
     Ont, Ent, Prop = _stub_ontology()
     ont = Ont({"Order": Ent(["orders"], {"id": Prop("id", "INT")})}, data_fp="d-new")
@@ -209,7 +209,7 @@ def test_classify_absent_current_wins_over_absent_prior():
 
 def test_graph_freshness_reexports_the_same_types_not_lookalikes():
     """A second, structurally-identical dataclass would silently break isinstance."""
-    from aughor.ontology import graph_freshness as gf
+    from pramanyx.ontology import graph_freshness as gf
 
     assert gf.FreshnessVerdict is FreshnessVerdict
 
@@ -257,7 +257,7 @@ def test_every_registered_fingerprint_resolves():
 
 
 def test_registry_lookup_computes_the_same_bytes_as_the_module():
-    from aughor.tools.profile_cache import compute_schema_fingerprint
+    from pramanyx.tools.profile_cache import compute_schema_fingerprint
 
     counts = {"orders": 5, "items": 3}
     assert fingerprint("profile_cache", counts) == compute_schema_fingerprint(counts)
@@ -269,7 +269,7 @@ def test_unknown_fingerprint_names_the_registered_ones():
 
 
 def test_logic_versions_resolve_live_not_a_stale_copy():
-    from aughor.ontology.enricher import ENRICHMENT_VERSION
+    from pramanyx.ontology.enricher import ENRICHMENT_VERSION
 
     assert logic_versions()["enrichment"] == ENRICHMENT_VERSION
     assert set(logic_versions()) == set(LOGIC_VERSIONS)
@@ -292,11 +292,11 @@ def test_staleness_and_content_fingerprints_are_distinguished():
 #: (the Python a new .venv gets) and `build_fingerprint` (whether the web app needs
 #: rebuilding) can never reach a freshness verdict. Registering either would enter a
 #: launcher setting in the inventory of producer logic.
-_RATCHET_SKIP = {REPO / "aughor" / "kernel" / "freshness.py", REPO / "aughor" / "installer.py"}
+_RATCHET_SKIP = {REPO / "pramanyx" / "kernel" / "freshness.py", REPO / "pramanyx" / "installer.py"}
 
 
 def _py_files():
-    for p in (REPO / "aughor").rglob("*.py"):
+    for p in (REPO / "pramanyx").rglob("*.py"):
         if "__pycache__" not in p.parts and p not in _RATCHET_SKIP:
             yield p
 
@@ -315,7 +315,7 @@ def test_ratchet_every_logic_version_constant_is_registered():
     unregistered = found - registered
     assert not unregistered, (
         f"unregistered producer-logic version(s): {sorted(unregistered)}. "
-        "Add them to LOGIC_VERSIONS in aughor/kernel/freshness.py — the inventory is the "
+        "Add them to LOGIC_VERSIONS in pramanyx/kernel/freshness.py — the inventory is the "
         "point of Wave V1."
     )
 
@@ -343,7 +343,7 @@ def test_ratchet_every_fingerprint_function_is_registered_or_allowlisted():
     unaccounted = found - registered - _FINGERPRINT_ALLOWLIST
     assert not unaccounted, (
         f"unregistered fingerprint function(s): {sorted(unaccounted)}. Register it in "
-        "FINGERPRINTS (aughor/kernel/freshness.py) as kind='staleness', or add it to "
+        "FINGERPRINTS (pramanyx/kernel/freshness.py) as kind='staleness', or add it to "
         "_FINGERPRINT_ALLOWLIST with the reason it is content-identity, not staleness."
     )
 
@@ -356,5 +356,5 @@ def test_ratchet_allowlist_has_not_grown():
 def test_kernel_stays_dependency_free():
     """The inventory resolves lazily by module path precisely so this kernel cannot form
     an import cycle with the stores it inventories."""
-    src = (REPO / "aughor" / "kernel" / "freshness.py").read_text()
-    assert "from aughor." not in src and "import aughor" not in src
+    src = (REPO / "pramanyx" / "kernel" / "freshness.py").read_text()
+    assert "from pramanyx." not in src and "import pramanyx" not in src

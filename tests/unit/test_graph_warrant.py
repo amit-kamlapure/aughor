@@ -12,10 +12,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.ontology.context_graph import (
+from pramanyx.ontology.context_graph import (
     ContextGraph, GraphEdge, GraphNode, Provenance, project_graph,
 )
-from aughor.ontology.graph_warrant import (
+from pramanyx.ontology.graph_warrant import (
     WARRANT_ORDER, audit, note_field, warrant_for, warrant_of_edge, warrant_of_node,
 )
 

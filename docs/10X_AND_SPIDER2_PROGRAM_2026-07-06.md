@@ -39,14 +39,14 @@ Companion prior art: [`SPIDER2_PROGRESS_AND_CHALLENGES_2026-06-28.md`](SPIDER2_P
   deliberately removed in the 2026-06-29 consolidation. Fix the doc; do NOT rebuild the old harness
   as-was (WS5 rebuilds a new one deliberately).
 - Four flags bypass `kernel/flags.py` (read `os.environ` directly, so no ledger override and no
-  Settings-UI toggle): `AUGHOR_CAUSAL_DRILL`, `AUGHOR_PREMISE_CHECK`, `AUGHOR_ASK_CLARIFY`,
-  `AUGHOR_CLOSED_LOOP`.
+  Settings-UI toggle): `PRAMANYX_CAUSAL_DRILL`, `PRAMANYX_PREMISE_CHECK`, `PRAMANYX_ASK_CLARIFY`,
+  `PRAMANYX_CLOSED_LOOP`.
 
 **Claims investigated and REFUTED (do not re-report in future sessions):**
 - "Dead feature flags" — false. All four suspects are wired: `capability.pipeline_live`
-  ([routers/query.py:512](../aughor/routers/query.py)), `trust.verify_facade` (query.py:458),
-  `semantic.contract_live` ([semantic/canonical.py:275](../aughor/semantic/canonical.py)),
-  `explorer.synthesis_incremental` ([explorer/agent.py:3621](../aughor/explorer/agent.py)).
+  ([routers/query.py:512](../pramanyx/routers/query.py)), `trust.verify_facade` (query.py:458),
+  `semantic.contract_live` ([semantic/canonical.py:275](../pramanyx/semantic/canonical.py)),
+  `explorer.synthesis_incremental` ([explorer/agent.py:3621](../pramanyx/explorer/agent.py)).
 - "Silent-swallow ratchet RED on main" — false; 4/4 contract tests pass at baseline 263/22.
 - The old memory note "2 TestRatchets RED on main" — stale, corrected 2026-07-05.
 
@@ -61,19 +61,19 @@ plan-LLM → SQL → interpret-LLM loop that blocks the next phase). The wave ex
 built and proven (explore waves 1.5×, PR #109; `ada.parallel_lenses`).
 
 Scope, in order:
-1. **P-A continuation — wave-parallelize the ADA phase flow** (`aughor/agent/investigate.py`;
+1. **P-A continuation — wave-parallelize the ADA phase flow** (`pramanyx/agent/investigate.py`;
    phase entry points ~2179 intake / ~2781 baseline / ~3048 decompose / ~3145 dimensional /
    ~3251 behavioral / ~4715 multilens). Independent phases run concurrently through
    `ContextThreadPoolExecutor` (NOT LangGraph `Send` — Send drops metering/budget contextvars,
    proven 2026-07-02). Synthesis stays last (true dependency). Flag: extend `explore.parallel_subq`
    pattern with a new `ada.parallel_phases` flag, default off.
 2. **P-B — parallelize the deep path's pre-flight retrievals.** The quick path already
-   `asyncio.gather`s 8 concurrent fetches ([routers/investigations.py:989-1000](../aughor/routers/investigations.py));
+   `asyncio.gather`s 8 concurrent fetches ([routers/investigations.py:989-1000](../pramanyx/routers/investigations.py));
    the deep intake does its consultations serially. Near-free, deterministic.
 3. **Caching:** memoize `unified_metric_grounding` output by (connection_id, schema-fingerprint,
    scope_schema) ~10-min TTL; pre-load/cache `load_latest_ontology` per connection; consider KB
    embedding cache keyed by (question-fingerprint, KB version). All invalidate on mutation.
-4. **LLM concurrency cap:** default 4 per endpoint ([llm/provider.py:322](../aughor/llm/provider.py)) —
+4. **LLM concurrency cap:** default 4 per endpoint ([llm/provider.py:322](../pramanyx/llm/provider.py)) —
    queues the parallel lenses. First check WHY 4 (throttle history: the Ollama Cloud endpoint hung
    after ~2.5h sustained load in June — resilience was added since). Make per-role configurable;
    raise only after a live A/B.
@@ -92,7 +92,7 @@ guard battery + repair":
 
 The join/filter/fanout guard blocks appear near-verbatim in each; guard fixes must land 3×; drift
 is why grain-prevention and honesty caveats run deep-only while the quick path lacks them (the
-guard-parity gap). The `aughor/trust` façade (AL-01, `trust.verify_live`) is the natural home.
+guard-parity gap). The `pramanyx/trust` façade (AL-01, `trust.verify_live`) is the natural home.
 
 Scope: extract one shared guard-battery/repair runner; repoint ONE path per commit (each green);
 add a **guard-parity conformance test** (a guard registered once provably fires on all three
@@ -244,7 +244,7 @@ clone stale (last pull 2026-01-30 — `git pull /Users/amitkamlapure/dev/Spider2
    queue that limited June to ~2.5h sessions. Request EARLY in Phase 0.
 5. **Traces are a submission requirement — Pramanyx's receipts already are that.** Run the harness
    THROUGH the receipt path; the submission package falls out of the product.
-6. **DivSkill's "residual skill optimization" ≈ Pramanyx's dormant `aughor/memory` skills +
+6. **DivSkill's "residual skill optimization" ≈ Pramanyx's dormant `pramanyx/memory` skills +
    playbook subsystem**: a small set of learned prompt policies optimized only on residual
    failures, selected by execution-equivalence + pairwise judge. Adapt using Pramanyx's OWN golden
    set + mined logs (NOT Spider gold — stays clean of the fine-tuning rule).
@@ -309,9 +309,9 @@ Each session, before working:
 - *2026-07-06 — program written; no execution started. Snowflake access + glm-5.2 (Ollama Cloud) confirmed by user. Next: WS4.*
 - **2026-07-06 — build session (branch `2026-07-06-10x-program`, 12 commits). WS4, WS3, WS2 COMPLETE; WS1 code done (A/B pending); WS5-P0 harness + full run done, scored.**
   - **WS4 (4 commits):** api.gen.ts regen 12,929→16,128 + offline `scripts/dump_openapi.py` + CI `codegen` drift gate · the 4 bypass flags (`ada.premise_check`/`ada.causal_drill`/`ask.clarify`/`closed_loop`) registered in `FLAG_ENV` w/ `FLAG_DEFAULT` preserving ask-clarify default-ON · 47 silent swallows → `tolerate()`, `SILENT_SWALLOW_BASELINE` 263→214 · FEATURES.md drift fixed.
-  - **WS3 (2 commits + baseline):** `tests/integration/test_golden_reference.py` hermetic CI gate (53/53) — standing it up fixed real scorer bugs (empty-result + unordered-row false docks) and 6 tie-nondeterministic golden records (sql024 scored 0.653 vs its OWN sql) · guard fire/repair counters (`aughor.stats.bump`, `guard.*` on defan/grain/join/filter/trust) · **live full-pipeline ratchet baseline pinned: mean 0.6551, exec 1.00, 420.6k tok** (model `glm-5.2:cloud` — the runtime config pins coder=glm-5.2, overriding the .env default) · protocol in `evals/README.md`.
-  - **WS2 (3 commits) — COMPLETE, with a scope judgement:** the three execute-with-guards paths were NOT force-unified — their POST-execute repair loops are legitimately divergent (ADA: id-arith + trust gate; explore: R3 + KB + triangulation + pitfalls; quick: B-7 + consistency + pitfalls), and merging them would degrade explore/quick. What WAS genuinely duplicated AND missing-in-parity is the PRE-execute deterministic hardening (de-fan → preflight-repair). Extracted to `aughor/sql/executor.py` (`execute_guarded` verbatim from ADA `_execute_safe` + the shared `preflight_harden`), wired into all three paths (explore + quick each GAINED de-fan + preflight they never had), enforced by `test_guard_parity_all_three_paths_share_the_hardening`. Import-boundary test keeps the runner below `aughor/agent`. +16 tests.
-  - **WS1 — SHIPPED + live-measured (1.23×, honest):** `ada.parallel_phases` wave (`aughor/agent/phase_waves.py`) runs baseline∥decompose∥dimensional concurrently with serial early-stop semantics applied post-hoc; behavioral stays serial (hard dep). 6 tests. Profiling REFUTED the metric-block/ontology caches (15ms/5ms warm) — not built. **Live A/B (real /investigate, luxexperience, n=1 each, isolated stores): serial 373s → wave 304s = 1.23×; both 14 LLM calls, same phase set + MEDIUM confidence = equal quality.** Below the 2× aspiration — the 3 parallelized phases are only part of the 14 calls; intake + synthesis are serial-by-necessity and dominate. A real, quality-neutral win but modest end-to-end; phase-level parallelism is not the dominant lever here (intake-internal + multilens + synthesis are). n=1 (temp-0 cloud noise possible); mechanism unit-test-proven.
+  - **WS3 (2 commits + baseline):** `tests/integration/test_golden_reference.py` hermetic CI gate (53/53) — standing it up fixed real scorer bugs (empty-result + unordered-row false docks) and 6 tie-nondeterministic golden records (sql024 scored 0.653 vs its OWN sql) · guard fire/repair counters (`pramanyx.stats.bump`, `guard.*` on defan/grain/join/filter/trust) · **live full-pipeline ratchet baseline pinned: mean 0.6551, exec 1.00, 420.6k tok** (model `glm-5.2:cloud` — the runtime config pins coder=glm-5.2, overriding the .env default) · protocol in `evals/README.md`.
+  - **WS2 (3 commits) — COMPLETE, with a scope judgement:** the three execute-with-guards paths were NOT force-unified — their POST-execute repair loops are legitimately divergent (ADA: id-arith + trust gate; explore: R3 + KB + triangulation + pitfalls; quick: B-7 + consistency + pitfalls), and merging them would degrade explore/quick. What WAS genuinely duplicated AND missing-in-parity is the PRE-execute deterministic hardening (de-fan → preflight-repair). Extracted to `pramanyx/sql/executor.py` (`execute_guarded` verbatim from ADA `_execute_safe` + the shared `preflight_harden`), wired into all three paths (explore + quick each GAINED de-fan + preflight they never had), enforced by `test_guard_parity_all_three_paths_share_the_hardening`. Import-boundary test keeps the runner below `pramanyx/agent`. +16 tests.
+  - **WS1 — SHIPPED + live-measured (1.23×, honest):** `ada.parallel_phases` wave (`pramanyx/agent/phase_waves.py`) runs baseline∥decompose∥dimensional concurrently with serial early-stop semantics applied post-hoc; behavioral stays serial (hard dep). 6 tests. Profiling REFUTED the metric-block/ontology caches (15ms/5ms warm) — not built. **Live A/B (real /investigate, luxexperience, n=1 each, isolated stores): serial 373s → wave 304s = 1.23×; both 14 LLM calls, same phase set + MEDIUM confidence = equal quality.** Below the 2× aspiration — the 3 parallelized phases are only part of the 14 calls; intake + synthesis are serial-by-necessity and dominate. A real, quality-neutral win but modest end-to-end; phase-level parallelism is not the dominant lever here (intake-internal + multilens + synthesis are). n=1 (temp-0 cloud noise possible); mechanism unit-test-proven.
   - **WS5-P0 — harness + full run done (scoring, NOT submission):** `evals/spider2.py` (product prompt + guards + closed-loop + external-knowledge docs + timestamped traces). Full 135 local SQLite: **135/135 exec-success; official evaluate.py 72/135 = 53.3%** (same model as June — **glm-5.2:cloud**; June ref 56.3% = glm-5.2 + a tuned ANSWER_SHAPE config, this run = the product prompt, so the ~3pt gap is prompt-config not model). Data-Share request DRAFTED (a locally drafted request (not in the repo)), NOT sent.
   - Suite 2588 green throughout; ruff 0; ratchets only-down.
 - **2026-07-06 (cont.) — PR #111 opened (WS4/WS3/WS2/WS1); WS5 Phase-0 CLOSED with a negative result.**

@@ -1,8 +1,8 @@
 """Unit tests for metric moves — north-star trends as brief candidates."""
-from aughor.knowledge.metric_moves import (
+from pramanyx.knowledge.metric_moves import (
     series_move, build_move_finding, compute_metric_moves,
 )
-from aughor.knowledge.triage import extract_change, impact_score, north_star_tokens
+from pramanyx.knowledge.triage import extract_change, impact_score, north_star_tokens
 
 
 # ── series_move (pure) ─────────────────────────────────────────────────────────
@@ -86,7 +86,7 @@ def test_euro_move_change_parses_through_currency():
 def test_degenerate_near_zero_move_is_dropped():
     # The live missimi bug: a repeat-rate trend of tiny fractions formats to "0% → 1%".
     # The +40% relative is an artifact of a near-zero base and must not surface.
-    from aughor.knowledge.metric_moves import is_degenerate_move
+    from pramanyx.knowledge.metric_moves import is_degenerate_move
     mv = series_move(["m", "v"], [["Jan 2022", 0.004], ["Jun 2022", 0.005], ["Dec 2022", 0.006]])
     assert mv is not None and mv.rel > 0.3          # +50% relative…
     assert is_degenerate_move(mv, "Repeat Purchase Rate", "ratio 0-1", "EUR")  # …but degenerate
@@ -94,7 +94,7 @@ def test_degenerate_near_zero_move_is_dropped():
 
 def test_real_repeat_move_not_degenerate():
     mv = series_move(*REPEAT_TREND)   # 0.05 → 0.15 (5% → 15%)
-    from aughor.knowledge.metric_moves import is_degenerate_move
+    from pramanyx.knowledge.metric_moves import is_degenerate_move
     assert not is_degenerate_move(mv, "Repeat Purchase Rate", "ratio 0-1", "EUR")
 
 

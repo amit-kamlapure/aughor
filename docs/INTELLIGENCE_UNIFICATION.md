@@ -28,8 +28,8 @@ asset you are in.
 
 All three read the **same data substrate**:
 - `data/exploration_{conn_id}.json` → `insights[]` (per-domain, novelty 1–5, with SQL) — produced
-  by `aughor/explorer/agent.py` Phase 8 (the curiosity loop).
-- computed `patterns` (`aughor/knowledge/patterns.py`) — cross-domain angle/entity/convergence.
+  by `pramanyx/explorer/agent.py` Phase 8 (the curiosity loop).
+- computed `patterns` (`pramanyx/knowledge/patterns.py`) — cross-domain angle/entity/convergence.
 - Qdrant `org_intelligence` — insights promoted via "Promote to Org →".
 
 | Surface | Component | What it is | LLM? | Scope (today) |

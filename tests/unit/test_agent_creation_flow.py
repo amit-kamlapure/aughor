@@ -93,7 +93,7 @@ def test_the_governing_fields_are_exactly_what_changes_an_answer():
     by `agent_brief_block`, the document scope, the pack pool and the ask bindings; the
     digest that decides whether an eval is still valid is computed over the same set, so
     the two definitions cannot drift apart."""
-    from aughor.custom_agents.models import GOVERNING_FIELDS
+    from pramanyx.custom_agents.models import GOVERNING_FIELDS
 
     assert set(GOVERNING_FIELDS) == {
         "instructions", "connection_id", "schema_scope", "doc_ids", "pack_ids",
@@ -110,9 +110,9 @@ def test_an_agent_with_no_documents_sees_none_rather_than_the_global_corpus():
     seam returns "" for that — so an agent created without documents sees FEWER than an
     ask with no agent at all. Pinned so the behaviour cannot change silently under a form
     that explains it."""
-    from aughor.custom_agents.context import activate_agent, agent_doc_ids, release_agent
-    from aughor.custom_agents.models import UserAgent
-    from aughor.knowledge.indexer import build_external_context_section
+    from pramanyx.custom_agents.context import activate_agent, agent_doc_ids, release_agent
+    from pramanyx.custom_agents.models import UserAgent
+    from pramanyx.knowledge.indexer import build_external_context_section
 
     assert agent_doc_ids() is None, "no agent active → unrestricted"
     token = activate_agent(UserAgent(id="ua_probe", name="Probe", doc_ids=[]))

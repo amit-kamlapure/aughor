@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from aughor.api import app
+from pramanyx.api import app
 
 client = TestClient(app)
 

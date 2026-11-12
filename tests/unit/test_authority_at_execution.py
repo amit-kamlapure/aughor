@@ -6,13 +6,13 @@ graduations and demotions that change who may run what were listed as subscribab
 """
 from __future__ import annotations
 
-from aughor.actions import authority as A
-from aughor.actions.executor import execute_kinetic_action
+from pramanyx.actions import authority as A
+from pramanyx.actions.executor import execute_kinetic_action
 from tests.unit.test_action_authority import _action, _conn, _recorder
 
 
 def test_a_cap_below_execute_refuses_the_run_approved_or_not_and_lifting_it_runs_it(monkeypatch):
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "0")
     conn, rec = _conn(), _recorder()
     A.set_ceiling("refund", conn, level=2, by="ana", why="prepare only, until finance signs off")
     capped = execute_kinetic_action(_action(), {"order_id": "1"}, actor="user:ana", scope=conn, dispatch=rec, approved=True)
@@ -24,8 +24,8 @@ def test_a_cap_below_execute_refuses_the_run_approved_or_not_and_lifting_it_runs
 
 
 def test_a_cap_at_approval_runs_nothing_unattended_on_a_standing_grant(monkeypatch):
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
-    monkeypatch.setattr("aughor.actions.grants.standing_grant_id", lambda action, params, scope: "grant-1")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "1")
+    monkeypatch.setattr("pramanyx.actions.grants.standing_grant_id", lambda action, params, scope: "grant-1")
     conn, rec = _conn(), _recorder()
     ran = execute_kinetic_action(_action(), {"order_id": "2"}, actor="agent", scope=conn, dispatch=rec)
     assert (ran.status, ran.granted_by) == ("executed", "grant-1")           # a person's grant on this very target
@@ -38,7 +38,7 @@ def test_a_cap_at_approval_runs_nothing_unattended_on_a_standing_grant(monkeypat
 
 
 def test_an_unreadable_record_leaves_the_approval_gate_to_decide_alone(monkeypatch):
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "0")
     def broken(action, scope, **k):
         raise RuntimeError("ledger locked")
     monkeypatch.setattr(A, "level_for", broken)
@@ -49,7 +49,7 @@ def test_an_unreadable_record_leaves_the_approval_gate_to_decide_alone(monkeypat
 
 def test_a_demotion_reaches_the_people_subscribed_to_it(monkeypatch):
     pushed: list = []
-    monkeypatch.setattr("aughor.record.subscriptions.notify",
+    monkeypatch.setattr("pramanyx.record.subscriptions.notify",
                         lambda kind, payload, conn_id="": pushed.append((kind, payload["text"], conn_id)))
     conn = _conn()
     A.demote("refund", conn, why="verification failed after execution")

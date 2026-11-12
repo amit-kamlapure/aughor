@@ -23,9 +23,9 @@ without surrendering the property that makes the read half trustworthy.
   declared actions** — never freeform.
 
 **IS NOT:**
-- **Not source-data writes.** The read-only gate ([`security/safety.py:86`](../aughor/security/safety.py),
-  [`sql/readonly.py`](../aughor/sql/readonly.py), enforced fail-closed at
-  [`db/connection.py:78`](../aughor/db/connection.py)) STAYS. A "kinetic action" is an *annotation*, a
+- **Not source-data writes.** The read-only gate ([`security/safety.py:86`](../pramanyx/security/safety.py),
+  [`sql/readonly.py`](../pramanyx/sql/readonly.py), enforced fail-closed at
+  [`db/connection.py:78`](../pramanyx/db/connection.py)) STAYS. A "kinetic action" is an *annotation*, a
   *side-effect* (notify/webhook/trigger), or a *governed read-template* — not an INSERT/UPDATE/DELETE.
   This is the safety property, kept.
 - **Not a new agent tool-calling runtime.** There is no LLM tool-registry today (the agent is a fixed
@@ -45,14 +45,14 @@ is net-new. Precisely:
 
 | Foundation | Reality today | file:line |
 |---|---|---|
-| `OntologyAction` | Read-side SQL-template shortcut (`ACTION:id()`→subquery). Has **typed params** (`ActionParameter`) but **no** side-effect / submission / mutation concept; all 5 `action_type`s are read-side | [`ontology/models.py:215`](../aughor/ontology/models.py), [`ontology/actions.py`](../aughor/ontology/actions.py) |
-| "ActionHub" | **Exists** — outbound webhook/slack/jira notify, SSRF-guarded, append-only logged, `Capability.ACTION_HUB`-gated. A *side-effect* surface, not DB write | [`actions/executor.py:82`](../aughor/notifications/executor.py) `fire_action`, [`routers/actions.py`](../aughor/routers/actions.py) |
-| `govern/actions.py` | **Exists** — graduated-approval dial (`classify`/`guard`/`audit`, risk enum, 428 flow). But only **3** `guard()` call sites, **9 of 12** `_RISK` actions unenforced, and **off unless `AUGHOR_ACTION_APPROVAL`** | [`govern/actions.py:128`](../aughor/govern/actions.py) |
-| Approvals API | **Exists** — `/approvals/allow\|revoke\|allowlist\|audit`, 428→allow→retry | [`routers/approvals.py:23`](../aughor/routers/approvals.py) |
-| RBAC | **Exists** — `Permission` enum + `policy.py` route→perm table, but inert unless identity on AND `Capability.RBAC_SSO`; AND-ed with licensing capability | [`rbac/policy.py:33`](../aughor/rbac/policy.py), [`rbac/deps.py:75`](../aughor/rbac/deps.py) |
-| Ontology YAML `actions:` block | **Does not exist.** Graph is JSON-cached; the only per-connection ontology YAML is the **overrides file-tree** (`data/ontology_overrides/{conn}/{schema}/{kind}/{id}.yaml`), parsed at [`overrides.py:151`](../aughor/ontology/overrides.py); its `TargetKind` has no "action" kind | — |
-| Ambiguity ledger (overlay template) | **Exists** — SQLite, per `(org_id,connection_id)`, `verify/verdicts.py` store idiom, **source-authority precedence** `_SOURCE_RANK={probe:1,user:2,verdict:3}` so machinery never clobbers a human. The exact shape to generalize | [`semantic/ambiguity_ledger.py:47`](../aughor/semantic/ambiguity_ledger.py) |
-| Side-effect primitives | **All exist** — `fire_action` (notify), `kernel().submit("investigation"\|"exploration")` (trigger), `deliver_subscription` (brief) | [`kernel/jobs.py:145`](../aughor/kernel/jobs.py) |
+| `OntologyAction` | Read-side SQL-template shortcut (`ACTION:id()`→subquery). Has **typed params** (`ActionParameter`) but **no** side-effect / submission / mutation concept; all 5 `action_type`s are read-side | [`ontology/models.py:215`](../pramanyx/ontology/models.py), [`ontology/actions.py`](../pramanyx/ontology/actions.py) |
+| "ActionHub" | **Exists** — outbound webhook/slack/jira notify, SSRF-guarded, append-only logged, `Capability.ACTION_HUB`-gated. A *side-effect* surface, not DB write | [`actions/executor.py:82`](../pramanyx/notifications/executor.py) `fire_action`, [`routers/actions.py`](../pramanyx/routers/actions.py) |
+| `govern/actions.py` | **Exists** — graduated-approval dial (`classify`/`guard`/`audit`, risk enum, 428 flow). But only **3** `guard()` call sites, **9 of 12** `_RISK` actions unenforced, and **off unless `PRAMANYX_ACTION_APPROVAL`** | [`govern/actions.py:128`](../pramanyx/govern/actions.py) |
+| Approvals API | **Exists** — `/approvals/allow\|revoke\|allowlist\|audit`, 428→allow→retry | [`routers/approvals.py:23`](../pramanyx/routers/approvals.py) |
+| RBAC | **Exists** — `Permission` enum + `policy.py` route→perm table, but inert unless identity on AND `Capability.RBAC_SSO`; AND-ed with licensing capability | [`rbac/policy.py:33`](../pramanyx/rbac/policy.py), [`rbac/deps.py:75`](../pramanyx/rbac/deps.py) |
+| Ontology YAML `actions:` block | **Does not exist.** Graph is JSON-cached; the only per-connection ontology YAML is the **overrides file-tree** (`data/ontology_overrides/{conn}/{schema}/{kind}/{id}.yaml`), parsed at [`overrides.py:151`](../pramanyx/ontology/overrides.py); its `TargetKind` has no "action" kind | — |
+| Ambiguity ledger (overlay template) | **Exists** — SQLite, per `(org_id,connection_id)`, `verify/verdicts.py` store idiom, **source-authority precedence** `_SOURCE_RANK={probe:1,user:2,verdict:3}` so machinery never clobbers a human. The exact shape to generalize | [`semantic/ambiguity_ledger.py:47`](../pramanyx/semantic/ambiguity_ledger.py) |
+| Side-effect primitives | **All exist** — `fire_action` (notify), `kernel().submit("investigation"\|"exploration")` (trigger), `deliver_subscription` (brief) | [`kernel/jobs.py:145`](../pramanyx/kernel/jobs.py) |
 
 **Naming collision to resolve up front:** three "action" concepts (`OntologyAction` read-templates,
 `ActionTrigger`/ActionHub webhooks, Wave K declared actions). Wave K introduces **`KineticAction`** as the
@@ -87,7 +87,7 @@ substrate lands.
 deterministic predicate over params + an **authored failure message string**), `side_effects:
 list[SideEffect]` (`notify`/`webhook`/`trigger_investigation`), `risk: ActionRisk`, `origin`. Parse a
 top-level `actions:` block by extending the overrides seam: add `"action"` to `TargetKind`
-([`overrides.py:50`](../aughor/ontology/overrides.py)), `_EDITABLE`, a `_apply_action` dispatch branch, and
+([`overrides.py:50`](../pramanyx/ontology/overrides.py)), `_EDITABLE`, a `_apply_action` dispatch branch, and
 carry it onto the graph via `store.overlay_human_overrides()`. Surface via `routers/ontology.py`
 (read-only list, mirroring `get_ontology_actions`).
 
@@ -109,7 +109,7 @@ no execution; (3) `govern.guard(action_id, scope)` — reuse the graduated dial,
 write; (6) audit every outcome (`action.kinetic` events). Wire the 9 currently-unenforced `_RISK` actions
 while here.
 
-**Flag** `kinetic.actions` + honours `AUGHOR_ACTION_APPROVAL` · **Tests** ~30 (side-effects faked;
+**Flag** `kinetic.actions` + honours `PRAMANYX_ACTION_APPROVAL` · **Tests** ~30 (side-effects faked;
 `fire_action`/`submit` injected) · **Decision gate:** a HIGH-risk action with no approval returns **428 +
 the authored failure/approval message**, writes an `audit=blocked` row, and performs **zero** side effects;
 after `POST /approvals/allow` the identical call executes exactly once and audits `approved`. A criterion
@@ -120,15 +120,15 @@ blocked or criterion-failed action, the gate fails.
 
 ## PR-K3 — The edits-as-overlay ledger
 
-**Scope.** New SQLite store `data/overlay_ledger.db` (env `AUGHOR_OVERLAY_LEDGER_DB`), org+connection-scoped,
-cloning the [`verify/verdicts.py`](../aughor/feedback/verdicts.py) idiom the ambiguity ledger already uses.
+**Scope.** New SQLite store `data/overlay_ledger.db` (env `PRAMANYX_OVERLAY_LEDGER_DB`), org+connection-scoped,
+cloning the [`verify/verdicts.py`](../pramanyx/feedback/verdicts.py) idiom the ambiguity ledger already uses.
 Record: `{org_id, connection_id, schema_scope, target (table / table.column / table.column + row-key),
 kind (annotation|correction), body, source, precedence_rank, created_at, last_used_at}`. Precedence via a
 `_SOURCE_RANK` copy (human > machine), override-wins merge modelled on
-[`orgsettings/store.py:42`](../aughor/orgsettings/store.py). **Read-time merge:** extend
-[`_attach_caveats` (`sql/executor.py:250`)](../aughor/sql/executor.py) with a **per-cell channel** (address
+[`orgsettings/store.py:42`](../pramanyx/orgsettings/store.py). **Read-time merge:** extend
+[`_attach_caveats` (`sql/executor.py:250`)](../pramanyx/sql/executor.py) with a **per-cell channel** (address
 by row-index + column, since `rows` is `list[list]`) and add a column/metric-grain hook in
-[`profile/store.py`](../aughor/business_profile/store.py) (which already transforms at read). Register a
+[`profile/store.py`](../pramanyx/business_profile/store.py) (which already transforms at read). Register a
 catalog-delete purge hook (mirror `ambiguity_ledger.purge_connections` in `agent/bootstrap.py`).
 
 **Flag** `kinetic.overlay` (default off) · **Tests** ~26 · **Decision gate:** an annotation written to
@@ -189,11 +189,11 @@ K1 (schema/YAML) ──▶ K2 (executor) ──▶ K4 (agent) ──▶ K5 (surf
 
 - **Read-only regression is the cardinal risk.** K2's `annotate`/`side_effect` dispatch must NEVER route to
   connection `execute()` with DML. Add a test asserting no kinetic path reaches a mutating statement, and
-  keep the [`sql/readonly.py`](../aughor/sql/readonly.py) gate in front of the `query` kind too.
-- **The one existing raw-DDL escape** — [`program_planner.py:169`](../aughor/agent/program_planner.py)
+  keep the [`sql/readonly.py`](../pramanyx/sql/readonly.py) gate in front of the `query` kind too.
+- **The one existing raw-DDL escape** — [`program_planner.py:169`](../pramanyx/agent/program_planner.py)
   (`CREATE OR REPLACE TEMP VIEW … WHERE 1=0` via a raw handle, data-free, in-memory) — is the sole path that
   skips the gate today. Wave K must not widen it; note it so a reviewer knows it's pre-existing.
-- **Governance is default-off.** Turning `AUGHOR_ACTION_APPROVAL` on changes behaviour for the 3 already-wired
+- **Governance is default-off.** Turning `PRAMANYX_ACTION_APPROVAL` on changes behaviour for the 3 already-wired
   `guard()` sites (connection.delete, ontology.override×2). Graduate deliberately, with the `capability`
   flag-graduation discipline.
 - **Determinism ceiling on K4** (same as Wave E): no seed, temp 0.1, Anthropic drops temperature, silent

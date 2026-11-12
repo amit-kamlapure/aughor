@@ -16,14 +16,14 @@ import hashlib
 import duckdb
 import pytest
 
-import aughor.licensing as _lic
-import aughor.rbac.resolver as _resolver
-import aughor.rbac.row_policy as rp
-import aughor.security.authz as _authz
-from aughor.db import matcache
-from aughor.db.connection import result_cache_tenancy
-from aughor.org.context import reset_org_id, reset_user_id, set_org_id, set_user_id
-from aughor.control_plane.contracts.execution import QueryResult
+import pramanyx.licensing as _lic
+import pramanyx.rbac.resolver as _resolver
+import pramanyx.rbac.row_policy as rp
+import pramanyx.security.authz as _authz
+from pramanyx.db import matcache
+from pramanyx.db.connection import result_cache_tenancy
+from pramanyx.org.context import reset_org_id, reset_user_id, set_org_id, set_user_id
+from pramanyx.control_plane.contracts.execution import QueryResult
 
 _VIEWER_ORG_POLICY = {"viewer": {"orders": "org_id = '{org_id}'"}}
 

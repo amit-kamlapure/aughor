@@ -10,7 +10,7 @@ import React from "react";
 import { brandMark } from "@/components/brandMarks";
 import { CONNECTORS } from "@/lib/connectors.gen";
 
-// DE-3b: the colour is one fact on each engine's declaration (`aughor/connectors/declarations.py`,
+// DE-3b: the colour is one fact on each engine's declaration (`pramanyx/connectors/declarations.py`,
 // via `lib/connectors.gen.ts`); the drawings below are hand-made and stay here.
 export const BRAND_COLORS: Record<string, string> = Object.fromEntries(
   Object.values(CONNECTORS).map(c => [c.type, c.brandColor]),

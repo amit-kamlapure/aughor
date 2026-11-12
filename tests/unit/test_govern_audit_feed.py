@@ -10,8 +10,8 @@ import pytest
 
 import pathlib
 
-import aughor.govern.audit_categories
-from aughor.govern.audit_categories import (
+import pramanyx.govern.audit_categories
+from pramanyx.govern.audit_categories import (
     AUDIT_TABLE_CATEGORY,
     CATEGORIES,
     GOVERNANCE_SHAPED_UNCATEGORIZED,
@@ -34,7 +34,7 @@ def test_every_mapped_kind_lands_in_a_known_category():
 
 
 def _emitted_kinds_in_tree() -> set[str]:
-    """Every event kind `aughor/` emits, discovered by parsing it.
+    """Every event kind `pramanyx/` emits, discovered by parsing it.
 
     Resolves module-level string constants as well as literals, because the guardrail
     sink emits `EVENT_KIND` rather than `"guardrail"` — a scanner that saw only literals
@@ -43,7 +43,7 @@ def _emitted_kinds_in_tree() -> set[str]:
     import ast
     from pathlib import Path
 
-    root = Path(__file__).resolve().parents[2] / "aughor"
+    root = Path(__file__).resolve().parents[2] / "pramanyx"
     kinds: set[str] = set()
     for f in root.rglob("*.py"):
         try:
@@ -108,14 +108,14 @@ def test_every_categorized_kind_has_a_sink_that_reads_it():
     instead of trusting that whoever edited one edited the other."""
     import re
 
-    src = (pathlib.Path(aughor.govern.audit_categories.__file__)).read_text()
+    src = (pathlib.Path(pramanyx.govern.audit_categories.__file__)).read_text()
     sinks_block = src.split("_SINKS: list[")[1].split("]\n")[0]
     read_by_sink = set(re.findall(r'_from_ledger\("([^"]+)"', sinks_block))
     # Session-event kinds ride dedicated readers, not `_from_ledger`. Taken from the MODULE,
     # not a set typed here: a hand-kept `{"llm_call"}` went red the moment a second
     # session-event kind arrived, which is a list beside its expectation going stale. The
     # readers themselves are proven to work by `test_each_session_event_kind_is_actually_read`.
-    from aughor.govern.audit_categories import SESSION_EVENT_KINDS
+    from pramanyx.govern.audit_categories import SESSION_EVENT_KINDS
     mapped = set(KIND_CATEGORY) - set(SESSION_EVENT_KINDS)
     assert mapped <= read_by_sink, (
         f"categorized but unreadable: {sorted(mapped - read_by_sink)} — KIND_CATEGORY "
@@ -178,7 +178,7 @@ def test_each_known_category_is_queryable():
 
 
 def test_the_feed_is_newest_first_and_respects_the_limit(monkeypatch):
-    import aughor.govern.audit_categories as AC
+    import pramanyx.govern.audit_categories as AC
 
     made = [AuditEvent(category="model_call", kind="llm_call", at=f"2026-07-{d:02d}")
             for d in (10, 28, 19)]
@@ -195,7 +195,7 @@ def test_an_unreadable_sink_degrades_the_feed_instead_of_failing_it(monkeypatch)
     feed — a governance surface returning nothing, indistinguishable from a quiet week.
     `feed` now guards each sink read itself.
     """
-    import aughor.govern.audit_categories as AC
+    import pramanyx.govern.audit_categories as AC
 
     def _broken(_n):
         raise RuntimeError("sink is down")
@@ -222,14 +222,14 @@ def test_events_serialize_for_a_response():
 def test_the_governance_routes_are_in_the_rbac_policy():
     """`policy.py` is the auditable map of the whole surface — a route that gated itself
     with a decorator would be invisible to anyone reading it."""
-    from aughor.rbac.policy import POLICY
+    from pramanyx.rbac.policy import POLICY
 
     for route in ("/usage", "/usage/cost-sql", "/audit/feed"):
         assert ("GET", route) in POLICY, f"{route} is not declared in the RBAC policy table"
 
 
 def test_the_governance_router_is_registered():
-    from aughor.api import app
+    from pramanyx.api import app
 
     paths = {r.path for r in app.routes}
     assert {"/usage", "/usage/cost-sql", "/audit/feed"} <= paths
@@ -246,7 +246,7 @@ def test_model_calls_are_read_from_the_session_log_not_the_generic_event_path():
     """
     import inspect
 
-    import aughor.govern.audit_categories as AC
+    import pramanyx.govern.audit_categories as AC
 
     src = inspect.getsource(AC._from_session_log)
     assert "session_events" in src
@@ -269,7 +269,7 @@ def test_every_sink_reports_a_real_timestamp():
     audit trail to answer *who, whose trace, and WHEN* — the third of which was blank on
     every row.
     """
-    import aughor.govern.audit_categories as ac
+    import pramanyx.govern.audit_categories as ac
 
     import inspect
 

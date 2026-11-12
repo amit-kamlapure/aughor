@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from aughor.agent.analyst import (
+from pramanyx.agent.analyst import (
     AnalystTurn,
     _attach_conclusion,
     _phase_payload,
@@ -114,7 +114,7 @@ def test_a_report_whose_turn_did_not_conclude_is_untouched():
 
 
 def test_a_describe_answer_takes_the_conclusions_own_headline():
-    from aughor.agent.investigate import _conclusion_as_answer
+    from pramanyx.agent.investigate import _conclusion_as_answer
     state = {"_analyst_conclusion": "The following table lists the categories:\n\n| a | b |\n|---|---|\n| 1 | 2 |",
              "_analyst_conclude": {"headline": "Jeans lead at $213.2K", "answer": "Jeans lead; Swim trails.",
                                    "gaps": "The data holds no cost.", "exhibits": [], "figures": []},

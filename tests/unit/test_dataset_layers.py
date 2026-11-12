@@ -11,7 +11,7 @@ import uuid
 
 import pytest
 
-from aughor.ontology import dataset_layers as L
+from pramanyx.ontology import dataset_layers as L
 
 
 @pytest.mark.parametrize("name, words", [

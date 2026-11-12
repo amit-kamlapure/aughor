@@ -1,6 +1,6 @@
 """The arc's close-out, C4 — a run proposed with its cost (the 2027 study §H) and the two weak signals
 §K named as missing: the settling lag itself changing and a declared process's early stages slowing
-(`aughor/record/inquiry.propose_run`, `aughor/record/signals.py`).
+(`pramanyx/record/inquiry.propose_run`, `pramanyx/record/signals.py`).
 
 What these hold: an inquiry a signal opened, or that woke, carries a proposed run with what it costs on
 THIS install — the median tokens and minutes of its own metered runs with their count, a dollar floor
@@ -16,11 +16,11 @@ import inspect
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from aughor.kernel.ledger import Ledger
-from aughor.record import claims as C
-from aughor.record import inquiry as I
-from aughor.record import signals as S
-from aughor.routers import record as R
+from pramanyx.kernel.ledger import Ledger
+from pramanyx.record import claims as C
+from pramanyx.record import inquiry as I
+from pramanyx.record import signals as S
+from pramanyx.routers import record as R
 
 NOW = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
 
@@ -45,7 +45,7 @@ def test_a_signal_opened_inquiry_proposes_its_run_with_what_it_costs_here(monkey
     _job(conn, 0, 1.0)                                    # the outer twin of a nested run: 0 tokens, left out
     _job(conn, 500_000, 20.0, state="FAILED")             # a failed run is not what a run costs
     _job(conn, 9_000, 1.0, kind="automation")             # another kind
-    monkeypatch.setattr("aughor.obs.session_log.recent_sessions",
+    monkeypatch.setattr("pramanyx.obs.session_log.recent_sessions",
                         lambda **kw: [{"conn_id": conn, "investigation_id": "inv1", "cost_usd": 0.12, "unpriced_calls": 0, "llm_calls": 4},
                                       {"conn_id": conn, "investigation_id": "inv2", "cost_usd": 0.20, "unpriced_calls": 0, "llm_calls": 5},
                                       {"conn_id": conn, "investigation_id": "inv3", "cost_usd": 0.05, "unpriced_calls": 2, "llm_calls": 3},
@@ -113,9 +113,9 @@ def test_the_settling_lag_moving_is_a_signal_that_opens_an_inquiry_and_a_small_m
     assert S.on_settling_sampled(conn, learned(7), learned(8)) is None
     events = Ledger.default().events(kind="inquiry.signal", conn_id=conn)
     assert events and events[0]["payload"]["signal"] == "settling_lag" and events[0]["payload"]["inquiry"]
-    from aughor.kernel.events import CATALOGUE
+    from pramanyx.kernel.events import CATALOGUE
     assert "inquiry.signal" in CATALOGUE
-    from aughor.settling import sampler
+    from pramanyx.settling import sampler
     assert "on_settling_sampled" in inspect.getsource(sampler.run_settling_samples_daily)
 
 
@@ -142,5 +142,5 @@ def test_an_early_stage_slowing_or_a_promise_breaking_more_opens_an_inquiry_and_
     assert len(opened) == 2 and {q.opened_by for q in opened} == {"process:order_to_delivery"}
     assert any("dispatched stage" in q.question for q in opened) and all(q.extra["proposed_run"]["proposed"] for q in opened)
     assert S.on_process_measured(conn, "order_to_delivery", None, {"measured": after}) == []
-    from aughor.ontology import processes
+    from pramanyx.ontology import processes
     assert "on_process_measured" in inspect.getsource(processes.measure_override_processes)

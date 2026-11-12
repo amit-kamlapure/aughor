@@ -1,10 +1,10 @@
 """The trust gate (§0.4) — what may consume a run (2026-06-27).
 
 Makes 'nothing consumes a run above its earned trust' executable: the flywheel may compound
-only verified runs; autonomy additionally needs reversibility. See aughor/feedback/gate.py.
+only verified runs; autonomy additionally needs reversibility. See pramanyx/feedback/gate.py.
 """
-from aughor.feedback import is_compoundable, can_act_autonomously
-from aughor.agent.state import VerificationManifest, VerificationCheck
+from pramanyx.feedback import is_compoundable, can_act_autonomously
+from pramanyx.agent.state import VerificationManifest, VerificationCheck
 
 
 def _manifest(coverage=1.0, earned=0.9, checks=None):

@@ -1,5 +1,5 @@
-"""Tests for the trigram-blocked value index (aughor/sql/value_index.py) and the high-cardinality
-filter-literal binding it powers (aughor/sql/join_guard._highcard_bind_warnings).
+"""Tests for the trigram-blocked value index (pramanyx/sql/value_index.py) and the high-cardinality
+filter-literal binding it powers (pramanyx/sql/join_guard._highcard_bind_warnings).
 
 Contract: approximate-match a guessed literal to its nearest real value via shingle blocking +
 similarity rerank, and (in the guard) bind ONLY a literal that is execution-confirmed absent from a
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from aughor.sql.value_index import ValueIndex
+from pramanyx.sql.value_index import ValueIndex
 
 
 def test_exact_match_scores_one():
@@ -47,8 +47,8 @@ def test_blocking_scales_finds_match_among_many():
 def test_highcard_binding_end_to_end_real_sqlite(tmp_path):
     """A filter on a high-cardinality (>50 distinct) name column with a misspelled literal is bound to
     the stored value — the path the ≤50-distinct enumeration deliberately skips."""
-    from aughor.connectors.file.sqlite import SQLiteConnection
-    from aughor.sql.join_guard import bind_filter_literals
+    from pramanyx.connectors.file.sqlite import SQLiteConnection
+    from pramanyx.sql.join_guard import bind_filter_literals
 
     db_file = tmp_path / "people.sqlite"
     seed = sqlite3.connect(str(db_file))
@@ -71,8 +71,8 @@ def test_highcard_binding_end_to_end_real_sqlite(tmp_path):
 
 def test_highcard_does_not_touch_a_real_value(tmp_path):
     """If the literal actually exists in the high-cardinality column, leave it alone (no spurious bind)."""
-    from aughor.connectors.file.sqlite import SQLiteConnection
-    from aughor.sql.join_guard import bind_filter_literals
+    from pramanyx.connectors.file.sqlite import SQLiteConnection
+    from pramanyx.sql.join_guard import bind_filter_literals
 
     db_file = tmp_path / "people2.sqlite"
     seed = sqlite3.connect(str(db_file))

@@ -42,13 +42,13 @@ symbolic graph but is not used to generate SQL — it is wasted."*
 
 Verified in two places:
 
-- **Agentic/investigate path** (`aughor/agent/nodes.py:382-449`, `execute_planned_queries`):
+- **Agentic/investigate path** (`pramanyx/agent/nodes.py:382-449`, `execute_planned_queries`):
   the planner (`plan_queries`, line 322) deliberately produces a `QueryPlanV2` with **no SQL**
   ("Do NOT write SQL" in its system prompt, line 362). Then `_gen_sql` (line 418) makes **one
   LLM call per query intent** via `WRITE_SQL_PROMPT`, passing `schema=_schema_ctx` (the
   schema-as-text) and a `dialect` string. Multiple intents are fanned out across a
   `ThreadPoolExecutor` (line 443-447).
-- **Quick/chat path** (`aughor/routers/investigations.py:295-317`, `_stream_chat`): builds
+- **Quick/chat path** (`pramanyx/routers/investigations.py:295-317`, `_stream_chat`): builds
   `CHAT_PROMPT` from `schema = db.get_schema()` (text) plus retrieved sections, then
   `get_provider("coder").complete(...)` returns `answer.sql`. SQL is, again, generated freehand.
 
@@ -57,7 +57,7 @@ from-text*. There is exactly one structured exception (§2.3 below).
 
 ### 2.2 "The ontology is a rich symbolic graph that already exists" — **TRUE, and richer than the advisory assumes**
 
-`aughor/ontology/models.py` already encodes nearly every primitive the proposed
+`pramanyx/ontology/models.py` already encodes nearly every primitive the proposed
 `synthesize_sql()` would need:
 
 | Advisory wants | Already in `OntologyGraph` |
@@ -79,7 +79,7 @@ consumes the graph**.
 There is exactly **one** place the ontology touches SQL generation today, and it is *opt-in
 for the model, not deterministic*:
 
-- `aughor/ontology/actions.py` + `nodes.py:399-454`: `build_actions_prompt_section()` lists
+- `pramanyx/ontology/actions.py` + `nodes.py:399-454`: `build_actions_prompt_section()` lists
   `ACTION:id()` tokens in the SQL-writer prompt; the model **may choose** to emit
   `ACTION:foo()`, and `expand_actions()` substitutes `action.sql_template` before execution.
 
@@ -93,13 +93,13 @@ for SQL only as optional, model-elected templates in one of two code paths."*
 Two further parallel-formula stores deserve flagging because they complicate any "single
 symbol table" story:
 
-- **Metrics catalog** (`aughor/semantic/metrics.py`, `data/metrics.json`,
+- **Metrics catalog** (`pramanyx/semantic/metrics.py`, `data/metrics.json`,
   `build_metrics_block()`): approved KPI SQL (MRR, CAC, …) injected as **text** into chat and
   fix prompts. This is a *second* source of canonical formulas, separate from
   `OntologyMetric.formula_sql`. A deterministic compiler would need these two reconciled or
   it will emit divergent SQL depending on path.
 - `OntologyMetric.formula_sql` is currently consumed only **post-hoc** by
-  `aughor/ontology/divergence.py` (`check_metric_consistency`, called in
+  `pramanyx/ontology/divergence.py` (`check_metric_consistency`, called in
   `nodes.py:731-743`) — i.e. to *detect* when the LLM's SQL diverged from the canonical
   formula, **after the fact**, never to *generate* the correct formula up front. This is the
   advisory's point in microcosm: we already have the canonical formula and we use it to grade
@@ -107,10 +107,10 @@ symbol table" story:
 
 ### 2.4 "The linter and inspector are baggage that a compiler makes unnecessary" — **PARTIALLY true; do not thrash them**
 
-- `aughor/sql/lint.py`: deterministic, AST-based (sqlglot) guards — `RATIO_AVG`,
+- `pramanyx/sql/lint.py`: deterministic, AST-based (sqlglot) guards — `RATIO_AVG`,
   `DIV_NO_NULLIF`, `NOT_IN_NULL`, `LIMIT_AS_TIME_FILTER`, `GROUP_BY_ORDINAL`. Wired pre-execution
   in chat (`investigations.py:318`) and used to trigger a `SqlWriter.fix`.
-- `aughor/sql/inspect.py`: an LLM (narrator) semantic check — "does this SQL actually answer
+- `pramanyx/sql/inspect.py`: an LLM (narrator) semantic check — "does this SQL actually answer
   the question?" — non-blocking, runs post-execution.
 
 The advisory's logic is "a compiler can't emit `AVG(a/b)` or an un-`NULLIF`'d divide, so the
@@ -171,7 +171,7 @@ remains for the fallback and for the planner's reasoning.
 | Canonical metric formulas | **Built twice** (`OntologyMetric.formula_sql` + metrics.json) | Reconcile the two stores |
 | Intent IR / Intent Parser | **Missing** | This is the real new work |
 | Deterministic Synthesizer | **Missing** (formulas used only to *audit*, via `divergence.py`) | The keystone |
-| Evidence Aggregator | **Partially** (Evidence Ledger `aughor/evidence/`, `tools/stats.py`, score_evidence) | Add deterministic verdict templating |
+| Evidence Aggregator | **Partially** (Evidence Ledger `pramanyx/evidence/`, `tools/stats.py`, score_evidence) | Add deterministic verdict templating |
 | Narrative Smoother | **Built** (narrator `synthesize_report`) | Reuse as-is |
 | Deterministic guards | **Built** (`lint.py`, `inspect.py`, ambiguity, divergence, verify) | Reframe as fallback floor; don't thrash |
 | Materialization / caching | **Built** (`db/matcache.py`, `kpi_daily`) | Wire compiler to prefer rollups |

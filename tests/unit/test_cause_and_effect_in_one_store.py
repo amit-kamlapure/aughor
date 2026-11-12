@@ -18,10 +18,10 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.agent import prompts_investigate as P
-from aughor.monitors import alert_summary as AS
-from aughor.ontology.impacts import impact_words
-from aughor.ontology.models import Impact, OntologyGraph
+from pramanyx.agent import prompts_investigate as P
+from pramanyx.monitors import alert_summary as AS
+from pramanyx.ontology.impacts import impact_words
+from pramanyx.ontology.models import Impact, OntologyGraph
 
 CONN = "conn-ed5"
 EDGE = {"id": "e1", "from_signal": "a sizing chart change", "to_signal": "returns rose", "weight": 3,
@@ -36,8 +36,8 @@ def files(tmp_path, monkeypatch):
     graph, proposals = tmp_path / "causal_graph.json", tmp_path / "causal_proposals.json"
     graph.write_text(json.dumps([EDGE]))
     proposals.write_text(json.dumps({"inv-1": [PROPOSAL]}))
-    monkeypatch.setenv("AUGHOR_CAUSAL_GRAPH_FILE", str(graph))
-    monkeypatch.setenv("AUGHOR_CAUSAL_PROPOSALS_FILE", str(proposals))
+    monkeypatch.setenv("PRAMANYX_CAUSAL_GRAPH_FILE", str(graph))
+    monkeypatch.setenv("PRAMANYX_CAUSAL_PROPOSALS_FILE", str(proposals))
     return graph, proposals
 
 
@@ -58,7 +58,7 @@ def declared(monkeypatch):
                    _impact("refund_lag", mechanism="validated", evidence="the decision to pre-pack, reviewed better"),
                    _impact("same_day", mechanism="formula", verified=None, formula="delivery = dispatch + transit"),
                    _impact("weekend_orders", verified=False, broke=0.2, kept=0.21))
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", lambda conn_id, schema_name=None: graph)
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology", lambda conn_id, schema_name=None: graph)
     return graph
 
 
@@ -66,8 +66,8 @@ def declared(monkeypatch):
 
 def test_the_proposed_causes_have_no_reader_or_writer_left():
     import importlib.util
-    assert importlib.util.find_spec("aughor.lifecycle.causal") is None
-    import aughor.agent.grounding as G
+    assert importlib.util.find_spec("pramanyx.lifecycle.causal") is None
+    import pramanyx.agent.grounding as G
     assert "causal" not in {key for key, *_ in G._BLOCKS}            # no prompt section reads the file
 
 
@@ -95,20 +95,20 @@ def test_an_alert_summary_names_only_the_impacts_the_store_holds(files, declared
 
 def test_a_summary_says_how_many_more_hold_and_has_no_section_when_none_is_declared(monkeypatch):
     many = _graph(*(_impact(f"up_{n}", broke=0.5 + n / 100) for n in range(7)))
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", lambda conn_id, schema_name=None: many)
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology", lambda conn_id, schema_name=None: many)
     section = AS.impacts_section(CONN)
     assert len(section.items) == AS.MAX_IMPACTS + 1
     assert section.items[-1] == "2 more declared impacts hold; the ontology's processes list every one"
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", lambda conn_id, schema_name=None: _graph())
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology", lambda conn_id, schema_name=None: _graph())
     assert AS.impacts_section(CONN) is None
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", lambda conn_id, schema_name=None: None)
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology", lambda conn_id, schema_name=None: None)
     assert AS.impacts_section(CONN) is None
 
 
 def test_an_impact_line_is_judged_on_its_own_at_departure_not_held_as_a_cause(monkeypatch):
-    from aughor.briefing import delivery
+    from pramanyx.briefing import delivery
     seen = []
-    monkeypatch.setattr("aughor.govern.departure.line_holds",
+    monkeypatch.setattr("pramanyx.govern.departure.line_holds",
                         lambda line, conn_id, declared=False: seen.append(line) or ([] if "kept" in line else ["no"]))
     brief = AS.AlertSummary(conn_id=CONN, period="week", generated_at="2026-10-24T00:00:00Z", sections=[
         AS.AlertSummarySection(title="Impacts", kind="impacts", items=["where it was kept: 18%", "a bare 42%"])])
@@ -139,7 +139,7 @@ def test_an_analysis_is_not_asked_for_causes_and_its_answer_widens_as_before():
 # ── the door that served the file ────────────────────────────────────────────────────────────────────────────────
 
 def test_the_causal_graph_door_says_where_the_answer_moved(files):
-    from aughor.api import app
+    from pramanyx.api import app
     client = TestClient(app)
     r = client.get(f"/connections/{CONN}/causal-graph")
     assert r.status_code == 410 and "GET /ontology/processes" in r.json()["detail"]

@@ -15,7 +15,7 @@ PATH = "/monitors/digest"
 
 @pytest.fixture(scope="module")
 def client():
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 

@@ -5,7 +5,7 @@ disk: the stdlib default executor does not copy contextvars, so every LLM and SQ
 dispatched into a thread saw `metering._current is None` and silently no-oped. The run
 looked clean. It measured almost nothing.
 
-`aughor.api._install_context_executor` fixes that by installing a
+`pramanyx.api._install_context_executor` fixes that by installing a
 `ContextThreadPoolExecutor` as the loop's default — but it is one line in a lifespan
 whose ORDER matters (it must precede any startup step that dispatches into a thread),
 and nothing protected it. Move it, drop it, or add an earlier threaded step, and cost
@@ -19,7 +19,7 @@ import asyncio
 
 import pytest
 
-from aughor.kernel import metering
+from pramanyx.kernel import metering
 
 
 def _record_in_thread():
@@ -54,7 +54,7 @@ def test_the_stdlib_executor_really_does_drop_metering():
 
 def test_the_installed_executor_carries_metering_into_threads():
     async def go():
-        from aughor.kernel.concurrency import ContextThreadPoolExecutor
+        from pramanyx.kernel.concurrency import ContextThreadPoolExecutor
         asyncio.get_running_loop().set_default_executor(
             ContextThreadPoolExecutor(thread_name_prefix="test-exec"))
         return await _measure()
@@ -72,7 +72,7 @@ def test_the_api_lifespan_installs_it_before_any_threaded_step():
     """
     import inspect
 
-    from aughor import api
+    from pramanyx import api
 
     src = inspect.getsource(api.lifespan) if hasattr(api, "lifespan") else None
     if src is None:                                   # renamed — find it by content

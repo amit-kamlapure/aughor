@@ -1,6 +1,6 @@
 # Architecture & Engineering Review — 2026-07-03
 
-A two-part senior review of Aughor (FastAPI backend + Next.js frontend) at commit `9c06aa3`, plus a visual before/after of the proposed layered architecture and report design.
+A two-part senior review of Pramanyx (FastAPI backend + Next.js frontend) at commit `9c06aa3`, plus a visual before/after of the proposed layered architecture and report design.
 
 Every finding was read first-hand in code and grep-verified. Two earlier false-positives are corrected inline in the documents (a "committed `.env`" — actually git-ignored and untracked; and "tsbuildinfo in git" — actually untracked).
 

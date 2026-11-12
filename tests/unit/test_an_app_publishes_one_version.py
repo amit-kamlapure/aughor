@@ -23,14 +23,14 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.cards.models import StoredCard
-from aughor.dashboards import cards, propose, sharing, validate as V, versions
-from aughor.dashboards.home import Home
-from aughor.kernel.ledger import Ledger
-from aughor.metastore.models import user_principal
-from aughor.org.context import using_org
-from aughor.rbac.groups import add_member, upsert_group
-from aughor.rbac.store import assign_role
+from pramanyx.cards.models import StoredCard
+from pramanyx.dashboards import cards, propose, sharing, validate as V, versions
+from pramanyx.dashboards.home import Home
+from pramanyx.kernel.ledger import Ledger
+from pramanyx.metastore.models import user_principal
+from pramanyx.org.context import using_org
+from pramanyx.rbac.groups import add_member, upsert_group
+from pramanyx.rbac.store import assign_role
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURE = REPO / "web" / "lib" / "dashboards" / "premise.fixture.json"
@@ -50,7 +50,7 @@ class Office:
         self.org = f"org{tag}"
         with using_org(self.org):
             # A REGISTERED connection: since Track A4 an id nothing holds is NOT_FOUND at every door.
-            from aughor.db.registry import add_connection
+            from pramanyx.db.registry import add_connection
             self.connection = add_connection(name=f"conn{tag}", conn_type="duckdb", dsn=f"/tmp/{tag}.duckdb", meta={})
             self.sales_id = upsert_group(self.org, f"sales-{tag}", "Sales team").id
             add_member(self.org, self.sales_id, user_principal(AMIT))
@@ -210,7 +210,7 @@ def test_versions_kept_before_app_versions_read_as_their_readers_read_them(monke
 
 @pytest.fixture(scope="module")
 def client():
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -234,12 +234,12 @@ def test_the_lifecycle_doors_read_an_apps_versions_and_refuse_to_write_one(clien
 # ── over HTTP ─────────────────────────────────────────────────────────────────────────────────
 
 def _as(org: str, user: str) -> dict:
-    return {"X-Aughor-Org": org, "X-Aughor-User": user}
+    return {"X-Pramanyx-Org": org, "X-Pramanyx-User": user}
 
 
 def test_over_http_a_reader_reads_the_published_version_and_the_owner_is_told_which(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    monkeypatch.setenv("AUGHOR_TIER", "enterprise")
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    monkeypatch.setenv("PRAMANYX_TIER", "enterprise")
     o = Office()
     q = {"connection_id": o.connection}
     assert o.keep().kept

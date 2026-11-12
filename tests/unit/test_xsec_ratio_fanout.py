@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import duckdb
 
-import aughor.agent.investigate as I
-from aughor.db.connection import DuckDBConnection
-from aughor.agent.prompts_investigate import PhasePlan, PhaseQueryPlan
+import pramanyx.agent.investigate as I
+from pramanyx.db.connection import DuckDBConnection
+from pramanyx.agent.prompts_investigate import PhasePlan, PhaseQueryPlan
 
 
 class _BoomProvider:

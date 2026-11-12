@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.ontology.business_rules import resolve_rule, rule_fields, rule_spec_problem
+from pramanyx.ontology.business_rules import resolve_rule, rule_fields, rule_spec_problem
 from tests.unit.test_object_processes import _isolated_overrides, db, declare_rule, graph, run  # noqa: F401
 
 #: A dashboard's set "Placed recently and shipped", as `segmentRule` flattens it with the author's window in place.
@@ -29,7 +29,7 @@ def test_a_kept_set_counts_the_objects_the_set_read_and_reads_as_its_segment(db,
     # the falsifier: the segment it names reads the very objects the set read
     assert run(db, {"object_type": "order", "segment": KEPT["id"], "measures": [{"agg": "count"}]}, graph) == [(held,)]
     # and says what it keeps as the set said it
-    from aughor.ontology.derived import rule_derivations
+    from pramanyx.ontology.derived import rule_derivations
     assert rule_derivations(rule).segments[0].description == "status = shipped; order_date in the last 1200 days"
 
 

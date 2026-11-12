@@ -1,10 +1,10 @@
 ---
-name: aughor
+name: pramanyx
 description: >
   Answer data and analytics questions through a running Pramanyx instance — governed,
   verified answers with Trust Receipts instead of hand-written SQL. Use when the user
   asks a question about their business data or warehouse and Pramanyx is reachable (an
-  `aughor` MCP server is connected, or a Pramanyx API is running); when the user wants a
+  `pramanyx` MCP server is connected, or a Pramanyx API is running); when the user wants a
   data source connected to Pramanyx; or when a Pramanyx answer was slow or wrong and needs
   debugging. Prefer Pramanyx's `ask` / `deep_analysis` / `get_metric` tools over writing
   SQL against the warehouse yourself.
@@ -22,21 +22,21 @@ answer you derive with your own SQL is plausible; an answer from Pramanyx is che
 ## Connect
 
 Pramanyx ships an MCP server that wraps the running REST API (default
-`http://127.0.0.1:8000` — start it with `uv run uvicorn aughor.api:app --port 8000`).
+`http://127.0.0.1:8000` — start it with `uv run uvicorn pramanyx.api:app --port 8000`).
 
 ```bash
-claude mcp add aughor --env AUGHOR_API_URL=http://127.0.0.1:8000 \
-  -- uv --directory /absolute/path/to/aughor run python -m aughor.mcp
+claude mcp add pramanyx --env PRAMANYX_API_URL=http://127.0.0.1:8000 \
+  -- uv --directory /absolute/path/to/pramanyx run python -m pramanyx.mcp
 ```
 
 Claude Desktop / Cursor use the same command in their `mcpServers` JSON;
-`python -m aughor.mcp --http` serves streamable-HTTP on `127.0.0.1:8765` instead of
-stdio. Environment: `AUGHOR_API_URL`, `AUGHOR_API_KEY` (sent as `X-Api-Key` when the API
-enforces one), `AUGHOR_MCP_TIMEOUT` (default 60s), `AUGHOR_MCP_DEEP_TIMEOUT` (default
+`python -m pramanyx.mcp --http` serves streamable-HTTP on `127.0.0.1:8765` instead of
+stdio. Environment: `PRAMANYX_API_URL`, `PRAMANYX_API_KEY` (sent as `X-Api-Key` when the API
+enforces one), `PRAMANYX_MCP_TIMEOUT` (default 60s), `PRAMANYX_MCP_DEEP_TIMEOUT` (default
 300s). Details: `docs/MCP_SERVER.md`.
 
 No MCP client? The REST API itself is the same governed surface — the schema is at
-`${AUGHOR_API_URL}/openapi.json`. Send the API key as the `X-Api-Key` header, never in a
+`${PRAMANYX_API_URL}/openapi.json`. Send the API key as the `X-Api-Key` header, never in a
 URL.
 
 ## Answer questions with the governed tools
@@ -86,7 +86,7 @@ cannot express, say so to the user rather than bypassing the governed path silen
 
 ## Connect a data source
 
-The machine-readable catalog at `aughor/connectors/catalog.json` lists every connector
+The machine-readable catalog at `pramanyx/connectors/catalog.json` lists every connector
 type with its config fields, which fields are secrets, the driver modules involved, the
 pip extra that provides them (`install`), and any environment variable honoured in place
 of a field. The live variant — `GET /connectors/types` — adds whether each driver is

@@ -1,0 +1,1376 @@
+"""Connection management — CRUD, schema, settings, files, freshness, process maps."""
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import re
+from pathlib import Path
+from typing import Optional
+
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile
+from pydantic import BaseModel, Field, field_validator
+
+from pramanyx.db.connection import open_connection, open_connection_for, open_connection_for_with_schema
+from pramanyx.db.registry import (
+    get_dsn,
+    add_connection,
+    delete_connection,
+    get_connection_settings,
+    list_connections,
+    update_connection_settings,
+)
+from pramanyx.routers._shared import (
+    explorers as _explorers,
+    explorer_tasks as _explorer_tasks,
+    get_schema_cached as _get_schema_cached,
+    invalidate_schema_cache as _invalidate_schema_cache,
+    kickoff_exploration as _kickoff_exploration,
+)
+from pramanyx.tools.schema import norm_type
+from pramanyx.security.authz import connection_owner_guard
+from pramanyx.licensing import Capability, gate
+
+logger = logging.getLogger(__name__)
+
+
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["connections"], dependencies=[Depends(connection_owner_guard)])
+
+class AddConnectionRequest(BaseModel):
+    name: str
+    conn_type: str
+    dsn: str = ""
+    schema_name: Optional[str] = None
+    meta: dict = {}
+    #: The workspace the caller is looking at. A connection is only visible to gates
+    #: that resolve through `accessible_catalog_ids()` once some workspace tracks it,
+    #: so creating one from a non-default workspace used to file it under Default and
+    #: leave the active catalogue empty. Omitted → the default workspace.
+    workspace_id: Optional[str] = None
+
+
+class InstructionsRequest(BaseModel):
+    text: str
+
+
+class _ConnectionSettings(BaseModel):
+    ontology_refresh_hours: Optional[int] = None
+    briefings_enabled: Optional[bool] = None
+    #: The exploration principles §7 — this connection's monthly budget for what the Explorer spends on its own
+    #: initiative, in model tokens; 0 clears it. The organisation's may also hold; the tighter does.
+    exploration_monthly_tokens: Optional[int] = Field(default=None, ge=0)
+    #: PENDING item 14 — the stable name shipped declarations are filed under
+    #: (`data/shipped/ontology_overrides/key=<scope_key>/…`); "" clears it.
+    scope_key: Optional[str] = None
+
+    @field_validator("scope_key")
+    @classmethod
+    def _scope_key(cls, v: Optional[str]) -> Optional[str]:
+        from pramanyx.db.registry import SCOPE_KEY_PATTERN
+        if v is None or v == "":
+            return v
+        v = v.strip().lower()
+        if not SCOPE_KEY_PATTERN.match(v):
+            raise ValueError("a scope key is lowercase letters, digits, '_' and '-' (at most 64), "
+                             "starting with a letter or digit")
+        return v
+
+
+# ── CRUD ──────────────────────────────────────────────────────────────────────
+
+@router.get("/connections")
+def get_connections(request: Request):
+    # Surface each connection's briefings opt-in so the Briefing workspace can list
+    # only enabled connections without an N+1 settings fetch. Briefings are opt-OUT:
+    # enabled unless explicitly turned off in Catalog.
+    # DATA-06: scope to the caller's org (from the authenticated principal — reliable
+    # here, unlike the contextvar). No-op in localhost mode (principal is None).
+    from pramanyx.security.authz import get_principal
+    _p = get_principal(request)
+    conns = list_connections(org_id=_p.org_id if _p else None)
+    # Sub-tenant gate. This list was the widest hole in the workspace boundary: every
+    # other surface that shows connections (catalog tree, canvases, monitors) filtered
+    # by workspace, while the registry list itself returned the whole org — so a
+    # workspace bound to one connection could still enumerate all nine. The workspace
+    # is ambient (X-Pramanyx-Workspace), so no caller has to remember to ask; `None`
+    # keeps the unscoped behaviour for background work and unaware clients.
+    from pramanyx.metastore import accessible_catalog_ids
+    _allowed = accessible_catalog_ids(None)
+    if _allowed is not None:
+        conns = [c for c in conns if c.get("id") in _allowed]
+    from pramanyx.db.connection import connection_traits
+    for c in conns:
+        s = get_connection_settings(c.get("id", ""))
+        c["briefings_enabled"] = s.get("briefings_enabled", True) is not False
+        # SE-0: dialect-aware clients need the connection's SQL surface. From class
+        # attributes only — no connection is opened on this list route.
+        c.update(connection_traits(c.get("conn_type", "")))
+    return conns
+
+
+@router.post("/connections/demo", status_code=201)
+async def seed_demo_connection():
+    """Provision the bundled demo dataset and return its connection.
+
+    Nothing is seeded at boot — a data platform should not fabricate 72,000 rows of
+    synthetic revenue on a fresh install nobody asked. That left `pramanyx seed` as the
+    only way in, which a user who never opens a terminal cannot find, so this is the
+    same opt-in over HTTP: the first-run funnel's "Explore the demo" calls it.
+
+    Idempotent by construction — `ensure_fixture_db` only writes when the file is
+    absent, so a second call returns the existing connection and never touches data
+    the user may have changed. `seeded` says which happened.
+    """
+    from pramanyx.demo.setup import ensure_fixture_db, fixture_db_path
+    from pramanyx.db.registry import BUILTIN_ID
+
+    existed = fixture_db_path().exists()
+    if not existed:
+        # Off the event loop: seeding is ~2s of CPU, and blocking here would stall
+        # every other request for its duration.
+        loop = asyncio.get_running_loop()
+        try:
+            await loop.run_in_executor(None, ensure_fixture_db)
+        except Exception as e:
+            logger.exception("demo seed failed")
+            raise HTTPException(status_code=500, detail=f"Could not seed the demo dataset: {e}")
+        if not fixture_db_path().exists():
+            raise HTTPException(status_code=500, detail="Demo seed reported success but wrote no file")
+
+    # The registry only advertises this connection once the file exists, so a caller
+    # that just seeded needs the schema cache cleared to see it as anything but empty.
+    _invalidate_schema_cache(BUILTIN_ID)
+    # Catalogs are derived from the registry at startup only, so a connection that
+    # appears afterwards is missing from the Catalog screen until the next restart —
+    # the demo would seed, be listed by /connections, and still not be browsable.
+    # The sync is idempotent and reads the registry, so this just adds the new one.
+    try:
+        from pramanyx.metastore import ensure_catalogs_for_connections
+        ensure_catalogs_for_connections()
+    except Exception as exc:
+        logger.warning("demo seeded but its catalog entry could not be created: %s", exc)
+    return {"id": BUILTIN_ID, "seeded": not existed,
+            "message": "Demo dataset ready" if existed else "Demo dataset created"}
+
+
+@router.post("/connections", status_code=201)
+async def create_connection(req: AddConnectionRequest,
+                            idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key")):
+    # Idempotent retry (API-03): a repeated POST with the same key returns the
+    # already-created connection instead of adding a duplicate (and skips the
+    # expensive connect test + a second explorer kickoff).
+    from pramanyx.util.idempotency import lookup, remember
+    prior = lookup("connection", idempotency_key)
+    if prior:
+        return {"id": prior, "message": "Connection added (idempotent replay)",
+                "test_result": "", "exploring": False}
+
+    combined_meta = {**req.meta}
+    if req.schema_name:
+        combined_meta["schema_name"] = req.schema_name
+
+    # Test the connection off the event loop — large files (e.g. 8GB DuckDB) can
+    # take 60+ seconds to open; blocking here would freeze all HTTP handling.
+    loop = asyncio.get_running_loop()
+    try:
+        def _test():
+            db = open_connection(req.conn_type, req.dsn, schema_name=req.schema_name, meta=combined_meta)
+            ok, msg = db.test()
+            db.close()
+            return ok, msg
+        ok, msg = await loop.run_in_executor(None, _test)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Connection failed: {e}")
+    if not ok:
+        raise HTTPException(status_code=400, detail=f"Connection test failed: {msg}")
+
+    conn_id = add_connection(name=req.name, conn_type=req.conn_type, dsn=req.dsn,
+                             meta=combined_meta, workspace_id=req.workspace_id)
+    remember("connection", idempotency_key, conn_id)
+
+    # Auto-onboarding: kick off schema exploration in the background so a brand-new
+    # connection becomes intelligent without a manual step. It's non-blocking (the
+    # heavy work runs as a background task), visible via GET /exploration/{id}/status,
+    # and cancellable via POST /exploration/{id}/stop.
+    explorer_started = False
+    try:
+        # A local-upload connection is born EMPTY (a workspace's own uploads space, made on its first
+        # upload); exploring it now would only record "nothing to read". The upload routes start the
+        # explorer when the first file lands.
+        if req.conn_type != "local_upload":
+            explorer_started = _kickoff_exploration(conn_id, auto=True)
+    except Exception:
+        logger.warning("create_connection: explorer kickoff failed for %s", conn_id, exc_info=True)
+
+    return {
+        "id": conn_id,
+        "message": "Connection added",
+        "test_result": msg,
+        "exploring": explorer_started,
+    }
+
+
+@router.post("/connections/{conn_id}/test")
+async def test_connection(conn_id: str):
+    """The connection answers — and, where the organisation reads warehouse history (Arc NV-5), whether this
+    engine's history is readable now, with the admin's step when it is not: the Test button is where a person looks."""
+    loop = asyncio.get_running_loop()
+    try:
+        def _test():
+            db = open_connection_for(conn_id)
+            try:
+                ok, msg = db.test()
+                readiness = None
+                if ok:
+                    from pramanyx.orgsettings.allows import allows
+                    if allows("read_query_history"):
+                        from pramanyx.db.query_history import check_query_history
+                        readiness = check_query_history(db).as_dict()
+                return ok, msg, readiness
+            finally:
+                db.close()
+        ok, msg, readiness = await loop.run_in_executor(None, _test)
+        out = {"ok": ok, "message": msg}
+        if readiness is not None:
+            out["message"] = f"{msg}. {readiness['sentence']}"
+            out["query_history"] = readiness
+        return out
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    except Exception as e:
+        return {"ok": False, "message": str(e)}
+
+
+@router.get("/connections/{conn_id}/prerequisites")
+async def connection_prerequisites(conn_id: str):
+    """Arc NV-5 — what a feature needs from this engine and whether it is there now: today the query history's
+    prerequisite (`pramanyx.db.query_history.check_query_history`), said with the admin's step and whether the platform
+    can take it itself. Read-only; no model call."""
+    loop = asyncio.get_running_loop()
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    def _work():
+        from pramanyx.db.query_history import check_query_history
+        try:
+            return {"connection_id": conn_id, "query_history": check_query_history(db).as_dict()}
+        finally:
+            try:
+                db.close()
+            except Exception as close_exc:
+                from pramanyx.kernel.errors import tolerate
+                tolerate(close_exc, "connections/prerequisites: best-effort connection close",
+                         counter="connections.prerequisites.close_failed", conn_id=conn_id)
+    return await loop.run_in_executor(None, _work)
+
+
+@router.post("/connections/{conn_id}/prerequisites/enable", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+async def enable_connection_prerequisite(conn_id: str):
+    """Arc NV-5 — provision the query history's prerequisite where the platform can: on Postgres, CREATE EXTENSION
+    pg_stat_statements once the library is preloaded. The one statement the platform writes to a warehouse — DDL, no
+    row touched — so it runs only while the organisation reads warehouse history (409 otherwise, saying where to turn
+    it on), is refused in words where the server setting is the admin's, and is journaled."""
+    from pramanyx.orgsettings.allows import WHERE, allows
+    if not allows("read_query_history"):
+        raise HTTPException(status_code=409, detail=f"Reading the warehouse's query history is off for this organisation; "
+                            f"nothing is provisioned for it. An admin turns it on under {WHERE}.")
+    loop = asyncio.get_running_loop()
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    def _work():
+        from pramanyx.db.query_history import check_query_history
+        try:
+            enabler = getattr(db, "enable_query_history", None)
+            if enabler is None:
+                before = check_query_history(db)
+                return {"ok": False, "enabled": False, "message": (
+                    "nothing the platform can provision on this engine" + (f" — needs {before.fix}" if before.fix else "")),
+                    "query_history": before.as_dict()}
+            ok, message = enabler()
+            after = check_query_history(db)
+            try:
+                from pramanyx.kernel.ledger import Ledger
+                Ledger.default().emit("connection.prerequisite_enabled",
+                                      {"prerequisite": "query_history", "engine": after.engine, "ok": ok,
+                                       "message": message[:300]}, conn_id=conn_id)
+            except Exception as emit_exc:
+                from pramanyx.kernel.errors import tolerate
+                tolerate(emit_exc, "the prerequisite journal is best-effort",
+                         counter="connections.prerequisites.journal", conn_id=conn_id)
+            return {"ok": ok, "enabled": ok and after.ok, "message": message, "query_history": after.as_dict()}
+        finally:
+            try:
+                db.close()
+            except Exception as close_exc:
+                from pramanyx.kernel.errors import tolerate
+                tolerate(close_exc, "connections/prerequisites/enable: best-effort connection close",
+                         counter="connections.prerequisites.close_failed", conn_id=conn_id)
+    return await loop.run_in_executor(None, _work)
+
+
+def _warm_profiles(conn_id: str, schema: Optional[str] = None) -> dict:
+    """The profiling stage of the heavy intelligence build, alone — parse tables,
+    infer FK hints the same way `_intelligence` does (so the cached profiles are
+    byte-identical to what the heavy build would produce and it cache-hits later),
+    then build-or-hit the profile cache, which persists the R5 entity-value
+    samples. Deterministic, no LLM. ``schema`` — one dataset of a connection that holds
+    several, profiled as its own entry (the profiles are keyed by the tables' fingerprint)."""
+    from pramanyx.tools.profile_cache import get_or_build_profiles
+    from pramanyx.tools.schema import parse_schema_tables
+    from pramanyx.tools.table_names import bare
+    db = open_connection_for_with_schema(conn_id, schema) if schema else open_connection_for(conn_id)
+    try:
+        base = db.get_schema()
+        table_cols = parse_schema_tables(base)
+        tables = [bare(t) for t in table_cols]
+        from pramanyx.tools.schema import join_map_for
+        jmap = join_map_for(db, table_cols, cache_key=conn_id)   # DE-3c: declared keys lead
+        fk_hints: dict[str, set] = {t: set() for t in tables}
+        for j in jmap.get("joins", []):
+            fk_hints.setdefault(j["t1"], set()).add(j["c1"])
+        tp, cp = get_or_build_profiles(db, conn_id, tables, fk_hints)
+        return {"tables": len(tp), "columns": len(cp)}
+    finally:
+        try:
+            db.close()
+        except Exception:
+            logger.debug("prewarm: connection close failed", exc_info=True)
+
+
+@router.post("/connections/{conn_id}/prewarm", status_code=202)
+async def prewarm_connection(conn_id: str, schema: Optional[str] = None):
+    """R5 deferred (closed) — the composer-open warm: preload the value index
+    and cache, i.e. build the profiles (and the persisted
+    entity-value samples entity resolution + the filter guard bind from) BEFORE
+    the first question. Runs as one supervised kernel job (kind `profile`, the
+    Curator charter) with an idempotency key, so composer-open spam can't stack
+    builds and a fresh cache makes the job a fast no-op. Skips (200-shaped 202)
+    when the Curator agent is disabled for the workspace — governance, not a flag.
+    """
+    try:
+        get_dsn(conn_id)   # raises KeyError for unknown ids; handles the builtins
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    from pramanyx.kernel.agents import is_enabled
+    from pramanyx.workspace.store import workspace_for_connection
+    if not is_enabled("curator", workspace_for_connection(conn_id)):
+        return {"submitted": False, "reason": "curator_disabled"}
+
+    import asyncio as _asyncio
+    from pramanyx.kernel.jobs import kernel
+
+    async def _job():
+        return await _asyncio.get_running_loop().run_in_executor(
+            None, lambda: _warm_profiles(conn_id, schema))
+
+    job_id = await kernel().submit(
+        "profile", _job, conn_id=conn_id,
+        idempotency_key=f"prewarm:{conn_id}" + (f":{schema}" if schema else ""),
+        payload={"prewarm": True, **({"schema": schema} if schema else {})},
+    )
+    return {"submitted": True, "job_id": job_id}
+
+
+@router.delete("/connections/{conn_id}", status_code=204)
+def remove_connection(conn_id: str):
+    # P4: connection delete triggers a cascade purge (profiles, investigations,
+    # briefings, monitors, packs, vectors, uploads) — the most destructive action in
+    # the platform. Gate it behind approval + audit before anything is torn down.
+    from pramanyx import govern
+    govern.guard("connection.delete", conn_id)
+    explorer = _explorers.pop(conn_id, None)
+    task = _explorer_tasks.pop(conn_id, None)
+    if explorer:
+        explorer.stop()
+    if task and not task.done():
+        task.cancel()
+    # Cancel every kernel job in this scope — including canvas explorations
+    # running on this connection, which the registry pops above don't cover.
+    try:
+        from pramanyx.kernel.jobs import kernel
+        kernel().cancel_scope(conn_id=conn_id)
+    except Exception:
+        logger.warning("Could not cancel kernel jobs for deleted connection %s",
+                       conn_id, exc_info=True)
+    _invalidate_schema_cache(conn_id)
+    try:
+        deleted = delete_connection(conn_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    # Cascade: a genuinely-deleted catalog takes its whole intelligence footprint
+    # (profiles, investigations, briefings, monitors, packs, vectors, uploads) with
+    # it. A *hidden* builtin (delete_connection → False) keeps its artifacts.
+    if deleted:
+        from pramanyx.db.purge import purge_connection_artifacts
+        purge_connection_artifacts(conn_id)
+
+
+@router.get("/connections/{conn_id}/residue")
+def removed_connection_residue(conn_id: str):
+    """What a REMOVED connection still left on disk — ``{place: count}``, read by the same census a delete ends with.
+    Empty once it is gone. Refused for a connection that exists: it is not residue while it is held."""
+    from pramanyx.db.purge import residue_of
+    from pramanyx.db.registry import is_registered
+    if is_registered(conn_id):
+        raise HTTPException(status_code=409, detail="the connection exists — nothing it holds is residue")
+    return {"connection_id": conn_id, "residue": residue_of(conn_id)}
+
+
+@router.post("/connections/{conn_id}/purge")
+def purge_removed_connection(conn_id: str):
+    """Clear what a REMOVED connection left behind — the platform's default on delete, for a connection removed
+    before it was (2026-10-11): everything it learned goes, keeping only the SQL audit log and the model-call log.
+    Behind the same approval as a delete, by the same scope; refused for a connection that exists (delete it, and
+    this follows). Returns what the census found before (``cleared``) and what, if anything, it finds after
+    (``residue``) — read from the disk, not from the stores' own counters, several of which say 1 whether or not
+    anything was there."""
+    from pramanyx import govern
+    from pramanyx.db.purge import purge_connection_artifacts, residue_of
+    from pramanyx.db.registry import is_registered
+    if is_registered(conn_id):
+        raise HTTPException(status_code=409, detail="the connection exists — delete it, and its purge follows")
+    govern.guard("connection.delete", conn_id)
+    before = residue_of(conn_id)
+    purge_connection_artifacts(conn_id)
+    return {"connection_id": conn_id, "cleared": before, "residue": residue_of(conn_id)}
+
+
+@router.post("/connections/{conn_id}/schemas/{schema}/purge")
+def purge_removed_schema(conn_id: str, schema: str):
+    """Clear what a REMOVED dataset of a connection left — its ontology trees, indexed documentation, metrics,
+    profile, exploration and the canvases and investigations it implies — as a schema delete now does by default
+    (2026-10-11), for a dataset removed before it did. Behind the same approval as a schema delete, by the same
+    scope. Refused while the dataset is still listed, and when the connection's datasets cannot be read just now
+    (it cannot be told removed)."""
+    from pramanyx import govern
+    from pramanyx.db.purge import INVALIDATED_NOT_COUNTED, purge_schema_artifacts
+    from pramanyx.db.registry import get_conn_type, is_registered
+    from pramanyx.routers.catalog import quick_schemas
+    if not is_registered(conn_id):
+        raise HTTPException(status_code=404, detail="no such connection — a removed connection is purged whole")
+    listed = quick_schemas(conn_id, get_conn_type(conn_id))
+    if listed is None:
+        raise HTTPException(status_code=503, detail="the connection's datasets could not be read just now")
+    if any(str(s.get("name")) == schema for s in listed):
+        raise HTTPException(status_code=409, detail="the dataset exists — remove it, and its purge follows")
+    govern.guard("connection.schema.delete", f"{conn_id}:{schema}")
+    counts = purge_schema_artifacts(conn_id, schema)
+    return {"connection_id": conn_id, "schema": schema,
+            "removed": {k: v for k, v in counts.items() if v and k not in INVALIDATED_NOT_COUNTED},
+            "invalidated": sorted(k for k in counts if k in INVALIDATED_NOT_COUNTED)}
+
+
+# ── Schema ────────────────────────────────────────────────────────────────────
+
+@router.get("/connections/{conn_id}/schema")
+async def connection_schema(conn_id: str):
+    loop = asyncio.get_running_loop()
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    try:
+        def _work():
+            s = _get_schema_cached(conn_id, db)
+            db.close()
+            return s
+        schema = await loop.run_in_executor(None, _work)
+        return {"schema": schema}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/connections/{conn_id}/schema/refresh")
+async def refresh_schema_cache(conn_id: str, timings: bool = False):
+    """Bust the server-side schema cache for a connection and return the fresh schema.
+
+    `?timings=1` also returns a per-stage breakdown of the rebuild. It is reported in
+    THIS response rather than through `/dev/stats` because that registry is
+    per-process and a serverless deployment answers from many instances — a counter
+    read around an 89-second refresh showed no change at all, having been served by
+    an instance that did none of the work. Timings from the same response come from
+    the instance that did it.
+    """
+    _invalidate_schema_cache(conn_id)
+    loop = asyncio.get_running_loop()
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    try:
+        def _work():
+            # Collection starts HERE, inside the worker: `run_in_executor` does not
+            # carry context into the thread, and every stage runs below this line.
+            from pramanyx.kernel.stage_timer import collect
+            with collect() as stages:
+                s = _get_schema_cached(conn_id, db)
+            db.close()
+            return s, dict(stages)
+        schema, stages = await loop.run_in_executor(None, _work)
+        out = {"ok": True, "schema": schema}
+        if timings:
+            out["timings"] = dict(sorted(stages.items(), key=lambda kv: -kv[1]))
+        return out
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/connections/{conn_id}/metadata")
+async def connection_declared_metadata(conn_id: str):
+    """DE-3c — the engine's declared metadata, typed: for each of columns, primary keys, foreign
+    keys and comments, whether this engine's read is supported, unsupported or unknown (and
+    why), plus the keys and comments it declares. An empty list from an engine that supports
+    keys means the schema declares none; from one that does not, that there is nothing to read."""
+    loop = asyncio.get_running_loop()
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    def _work():
+        from pramanyx.db.metadata import read_declared_metadata
+        from pramanyx.db.query_history import check_query_history
+        try:
+            out = read_declared_metadata(db, cache_key=conn_id).as_dict()
+            # Arc NV-5 — a fifth fact of the engine, probed rather than declared: whether its query history is readable.
+            out["query_history"] = check_query_history(db).as_dict()
+            return out
+        finally:
+            try:
+                db.close()
+            except Exception as close_exc:
+                from pramanyx.kernel.errors import tolerate
+                tolerate(close_exc, "connections/declared-metadata: best-effort connection close",
+                         counter="connections.declared_metadata.close_failed", conn_id=conn_id)
+    return await loop.run_in_executor(None, _work)
+
+
+@router.get("/connections/{conn_id}/schema/rich")
+async def connection_schema_rich(conn_id: str):
+    loop = asyncio.get_running_loop()
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    try:
+        from pramanyx.tools.schema import build_rich_schema
+        from pramanyx.db.type_overrides import get_table_overrides
+        def _work():
+            s = _get_schema_cached(conn_id, db)
+            # DE-3c: the engine's declared foreign keys lead the rich schema's joins and FK marks.
+            declared = None
+            try:
+                from pramanyx.db.metadata import declared_join_candidates, read_declared_metadata
+                from pramanyx.tools.schema import parse_schema_tables
+                declared = declared_join_candidates(read_declared_metadata(db, cache_key=conn_id), parse_schema_tables(s))
+            except Exception:
+                declared = None
+            db.close()
+            result = build_rich_schema(s, declared=declared)
+            # Apply user type overrides so the rich schema stays in sync
+            for table in result.get("tables", []):
+                tname = table.get("name", "")
+                overrides = get_table_overrides(conn_id, tname)
+                if overrides:
+                    for col in table.get("columns", []):
+                        if col.get("name") in overrides:
+                            col["type"] = overrides[col["name"]]
+            return result
+        return await loop.run_in_executor(None, _work)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/connections/{conn_id}/schema/mermaid")
+async def connection_schema_mermaid(conn_id: str):
+    loop = asyncio.get_running_loop()
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    try:
+        from pramanyx.tools.schema import build_mermaid_er
+        def _work():
+            s = _get_schema_cached(conn_id, db)
+            db.close()
+            return {"diagram": build_mermaid_er(s)}
+        return await loop.run_in_executor(None, _work)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Schema profile ────────────────────────────────────────────────────────────
+
+@router.get("/connections/{conn_id}/schema/profile")
+async def connection_schema_profile(conn_id: str):
+    """Return cached column/table profiles for the Schema Shape tab."""
+    loop = asyncio.get_running_loop()
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    try:
+        from pramanyx.tools.schema import parse_schema_tables
+        from pramanyx.tools.profile_cache import compute_schema_fingerprint, load_profiles
+
+        def _work():
+            schema_str = _get_schema_cached(conn_id, db)
+            table_cols = parse_schema_tables(schema_str)
+            col_counts = {t: len(cols) for t, cols in table_cols.items()}
+            fingerprint = compute_schema_fingerprint(col_counts)
+            result = load_profiles(conn_id, fingerprint)
+            db.close()
+            return result
+
+        cached = await loop.run_in_executor(None, _work)
+        if cached is None:
+            return {"available": False, "tables": [], "columns": []}
+        table_profiles, column_profiles = cached
+        return {
+            "available": True,
+            "tables": [tp.to_dict() for tp in table_profiles.values()],
+            "columns": [cp.to_dict() for cp in column_profiles.values()],
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Freshness ─────────────────────────────────────────────────────────────────
+
+@router.get("/connections/{conn_id}/freshness")
+async def connection_freshness(conn_id: str):
+    loop = asyncio.get_running_loop()
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    def _work():
+        from pramanyx.tools.schema import parse_schema_tables
+        _DATE_PAT = re.compile(
+            r"(_at|_date|_time|_ts|timestamp|created|updated|modified|inserted)$",
+            re.IGNORECASE,
+        )
+        try:
+            schema_str = db.get_schema()
+            table_cols = parse_schema_tables(schema_str)
+        except Exception:
+            db.close()
+            return {"freshness": None, "source": None}
+
+        max_ts: str | None = None
+        max_source: str | None = None
+        # Backtick engines read a double-quoted name as a string literal — every probe
+        # then errored into the except below and freshness reported null.
+        from pramanyx.db.quoting import ident_quote
+        q = ident_quote(db)
+        for table, cols in list(table_cols.items())[:12]:
+            date_cols = [c for c in cols if _DATE_PAT.search(c)][:1]
+            for col in date_cols:
+                try:
+                    result = db.execute("freshness", f'SELECT MAX({q}{col}{q}) AS max_ts FROM {q}{table}{q}', internal=True)
+                    if not result.error and result.rows and result.rows[0][0] not in (None, "NULL"):
+                        val = str(result.rows[0][0])
+                        if max_ts is None or val > max_ts:
+                            max_ts = val
+                            max_source = f"{table}.{col}"
+                except Exception:
+                    continue
+        db.close()
+        return {"freshness": max_ts, "source": max_source}
+
+    return await loop.run_in_executor(None, _work)
+
+
+# ── Table sample ──────────────────────────────────────────────────────────────
+
+@router.get("/connections/{conn_id}/tables/{table}/sample")
+async def table_sample(conn_id: str, table: str, limit: int = 100, schema: str = ""):
+    loop = asyncio.get_running_loop()
+    try:
+        open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    safe_table  = table.replace('"', '').replace('`', '').replace(';', '')
+    safe_schema = schema.replace('"', '').replace('`', '').replace(';', '') if schema else ""
+    _limit = int(limit)
+
+    def _work():
+        db = None
+        try:
+            db = open_connection_for(conn_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Connection not found")
+        try:
+            from pramanyx.db.quoting import qualified_table
+            ref = qualified_table(db, safe_table, safe_schema or None)
+            result = db.execute("sample", f"SELECT * FROM {ref} LIMIT {_limit}", internal=True)
+            error = result.error
+            if error and getattr(db, "_seed_failed", None):
+                # A failed seed materialization presents as "table does not exist" —
+                # surface the real cause instead of a bare binder error.
+                error = f"{error} (sample seed problem: {db._seed_failed})"
+            columns = result.columns
+            rows = [[str(v) if v is not None else None for v in row] for row in result.rows]
+            return {"columns": columns, "rows": rows, "row_count": len(rows), "error": error}
+        finally:
+            if db:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+
+    return await loop.run_in_executor(None, _work)
+
+
+@router.get("/connections/{conn_id}/tables/{table}/columns")
+async def table_columns(conn_id: str, table: str, schema: str = ""):
+    """Reliable per-table column list (name + type) via a direct query — the
+    same lightweight path as the sample reader, so Overview and Sample Data stay
+    in sync even when the heavy whole-connection rich schema is unavailable."""
+    loop = asyncio.get_running_loop()
+    safe_table = table.replace('"', "").replace('`', "").replace(";", "")
+    safe_schema = schema.replace('"', "").replace('`', "").replace(";", "") if schema else ""
+    ref = f'"{safe_schema}"."{safe_table}"' if safe_schema else f'"{safe_table}"'
+
+    def _work():
+        db = None
+        try:
+            db = open_connection_for(conn_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Connection not found")
+        try:
+            # For DuckDB we can use raw_execute to bypass _validate (which rejects
+            # DESCRIBE / PRAGMA) and avoid thread-safety issues by creating db in-thread.
+            from pramanyx.db.type_overrides import apply_overrides
+            # DuckDB-like connectors (including LocalUploadConnection) have dialect=duckdb
+            # and raw_execute to bypass validation for DESCRIBE / PRAGMA.
+            if getattr(db, 'dialect', '') == 'duckdb' and hasattr(db, 'raw_execute'):
+                # 1. DESCRIBE is the most reliable path for DuckDB/MotherDuck — it always
+                # returns concrete types (INTEGER, VARCHAR, TIMESTAMP, etc.) and works
+                # across attached databases, in-memory, and remote MotherDuck.
+                try:
+                    columns, rows, _ = db.raw_execute(f"DESCRIBE {ref}")
+                    if rows:
+                        cols = [{"name": r[0], "type": norm_type(str(r[1]))} for r in rows]
+                        return {"columns": apply_overrides(conn_id, safe_table, cols)}
+                except Exception:
+                    pass
+                # 2. PRAGMA table_info — SQLite-native, works everywhere DuckDB works.
+                try:
+                    columns, rows, _ = db.raw_execute(f"PRAGMA table_info({ref})")
+                    if rows:
+                        cols = [{"name": r[1], "type": norm_type(str(r[2]))} for r in rows]
+                        return {"columns": apply_overrides(conn_id, safe_table, cols)}
+                except Exception:
+                    pass
+                # 3. INFORMATION_SCHEMA.COLUMNS with current_database filter — standard SQL,
+                # but MotherDuck sometimes returns empty data_type here, so we only use it
+                # if it actually yields types.
+                try:
+                    where = f"table_name = '{safe_table}'"
+                    if safe_schema:
+                        where += f" AND table_schema = '{safe_schema}'"
+                    _, db_rows, _ = db.raw_execute("SELECT current_database()")
+                    if db_rows:
+                        current_db = str(db_rows[0][0]).replace("'", "''")
+                        where += f" AND table_catalog = '{current_db}'"
+                    columns, rows, _ = db.raw_execute(
+                        "SELECT column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS "
+                        f"WHERE {where} ORDER BY ordinal_position"
+                    )
+                    if rows:
+                        cols = [{"name": r[0], "type": norm_type(str(r[1]) if r[1] is not None else "")} for r in rows]
+                        if any(c["type"] for c in cols):
+                            return {"columns": apply_overrides(conn_id, safe_table, cols)}
+                except Exception:
+                    pass
+                # 3b. INFORMATION_SCHEMA.COLUMNS WITHOUT table_catalog filter.
+                try:
+                    where = f"table_name = '{safe_table}'"
+                    if safe_schema:
+                        where += f" AND table_schema = '{safe_schema}'"
+                    columns, rows, _ = db.raw_execute(
+                        "SELECT column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS "
+                        f"WHERE {where} ORDER BY ordinal_position"
+                    )
+                    if rows:
+                        cols = [{"name": r[0], "type": norm_type(str(r[1]) if r[1] is not None else "")} for r in rows]
+                        if any(c["type"] for c in cols):
+                            return {"columns": apply_overrides(conn_id, safe_table, cols)}
+                except Exception:
+                    pass
+                # 4. Final fallback: empty SELECT — use cursor description to recover types.
+                try:
+                    columns, rows, types = db.raw_execute(f"SELECT * FROM {ref} LIMIT 0")
+                    cols = [{"name": c, "type": norm_type(t) or ""} for c, t in zip(columns, types)]
+                    return {"columns": apply_overrides(conn_id, safe_table, cols)}
+                except Exception:
+                    pass
+            else:
+                # Non-DuckDB path: use standard execute (which validates SQL)
+                try:
+                    where = f"table_name = '{safe_table}'"
+                    if safe_schema:
+                        where += f" AND table_schema = '{safe_schema}'"
+                    res = db.execute(
+                        "columns",
+                        # Uppercase: required by BigQuery, folded by Postgres — the
+                        # lowercase form 404'd there and column types came back empty.
+                        "SELECT column_name, data_type FROM INFORMATION_SCHEMA.COLUMNS "
+                        f"WHERE {where} ORDER BY ordinal_position",
+                     internal=True)
+                    if res.rows:
+                        cols = [{"name": r[0], "type": norm_type(str(r[1]))} for r in res.rows]
+                        return {"columns": apply_overrides(conn_id, safe_table, cols)}
+                except Exception:
+                    pass
+                try:
+                    from pramanyx.db.quoting import qualified_table
+                    fq = qualified_table(db, safe_table, safe_schema or None)
+                    res = db.execute("columns", f"SELECT * FROM {fq} LIMIT 0", internal=True)
+                    cols = [{"name": c, "type": ""} for c in res.columns]
+                    return {"columns": apply_overrides(conn_id, safe_table, cols)}
+                except Exception:
+                    pass
+            return {"columns": []}
+        finally:
+            if db:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+
+    return await loop.run_in_executor(None, _work)
+
+
+
+
+class _AlterColumnRequest(BaseModel):
+    column: str
+    new_type: str
+
+
+@router.post("/connections/{conn_id}/tables/{table}/alter-column")
+async def alter_table_column(conn_id: str, table: str, body: _AlterColumnRequest, schema: str = ""):
+    """Alter the type of a single column. Best-effort for DuckDB/SQLite connectors."""
+    loop = asyncio.get_running_loop()
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    safe_table = table.replace('"', "").replace(";", "")
+    safe_schema = schema.replace('"', "").replace(";", "") if schema else ""
+    safe_col = body.column.replace('"', "").replace(";", "")
+    safe_type = body.new_type.replace(";", "")  # basic sanitisation
+    ref = f'"{safe_schema}"."{safe_table}"' if safe_schema else f'"{safe_table}"'
+
+    from pramanyx.db.type_overrides import set_override
+    set_override(conn_id, safe_table, safe_col, safe_type)
+    _invalidate_schema_cache(conn_id)
+
+    # Invalidate Qdrant investigation cache for this connection so old cached
+    # SQL (generated before the type change) is not replayed.
+    try:
+        from pramanyx.tools.prior_analyses import INVESTIGATIONS_COLLECTION
+        from pramanyx.semantic.vector_store import delete_by_filter
+        from qdrant_client.models import Filter, FieldCondition, MatchValue
+        filt = Filter(
+            must=[FieldCondition(key="connection_id", match=MatchValue(value=conn_id))]
+        )
+        deleted = delete_by_filter(INVESTIGATIONS_COLLECTION, filt)
+        if deleted:
+            print(f"[alter_column] cleared {deleted} cached investigations for {conn_id}")
+    except Exception:
+        pass
+
+    # For local_upload connections, update the sidecar so the type is applied
+    # on next load (each request creates a fresh in-memory DB from sidecars).
+    conn_type, _ = get_dsn(conn_id)
+    if conn_type == "local_upload":
+        from pramanyx.connectors.file.local_upload import _SIDECAR_SUFFIX, _safe_ident
+        from pramanyx.control_plane.vending import vend_storage
+        # Tenant-scoped storage via the control plane (same seam the connector uses).
+        upload_dir = vend_storage(conn_id).root
+        schema_dir = upload_dir / _safe_ident(safe_schema or "main", "main")
+        if schema_dir.exists():
+            for f in schema_dir.iterdir():
+                if not f.is_file() or f.name.endswith(_SIDECAR_SUFFIX):
+                    continue
+                sc = f.with_name(f"{f.name}{_SIDECAR_SUFFIX}")
+                if sc.exists():
+                    try:
+                        cfg = json.loads(sc.read_text())
+                        if cfg.get("table_name") == safe_table:
+                            cfg.setdefault("column_types", {})[safe_col] = safe_type
+                            sc.write_text(json.dumps(cfg, indent=2))
+                            break
+                    except Exception:
+                        pass
+
+    def _work():
+        refused: str
+        try:
+            # DuckDB syntax (best-effort; many connectors don't support ALTER COLUMN TYPE)
+            sql = f'ALTER TABLE {ref} ALTER COLUMN "{safe_col}" TYPE {safe_type}'
+            result = db.execute("alter_column", sql)
+            if not result.error:
+                return {
+                    "ok": True, "applied": True, "override_only": False, "sql": sql,
+                    "message": f"Column {safe_col} changed to {safe_type}.",
+                }
+            # DE-1 (ROADMAP §3.51) — the door's answer is the answer. A refused statement comes back as a result
+            # with an error, not a raise, and this route read only the raise: every door refuses an ALTER (Pramanyx
+            # writes nothing to a warehouse), so it answered `applied: true` whatever the engine said — the
+            # gate-map census row for this site, §3.49's leftover. A refusal takes the path a driver error took.
+            refused = result.error
+        except Exception as e:
+            refused = str(e)
+        try:
+            # For local_upload, the sidecar column_types were updated above, so the
+            # table is genuinely recreated with the new type on the next connection
+            # open. Re-register the file in the current ephemeral DB so it takes
+            # effect immediately too. This is a REAL type change.
+            if conn_type == "local_upload":
+                try:
+                    from pramanyx.connectors.file.local_upload import LocalUploadConnection
+                    if isinstance(db, LocalUploadConnection):
+                        schema_dir = db._schema_dir(safe_schema or "main")
+                        for f in schema_dir.iterdir():
+                            if not f.is_file() or f.name.endswith(_SIDECAR_SUFFIX):
+                                continue
+                            sc = f.with_name(f"{f.name}{_SIDECAR_SUFFIX}")
+                            if sc.exists():
+                                cfg = json.loads(sc.read_text())
+                                if cfg.get("table_name") == safe_table:
+                                    db._register_file(f, safe_table, safe_schema or "main", cfg.get("column_types", {}))
+                                    break
+                    return {
+                        "ok": True, "applied": True, "override_only": False, "sql": None,
+                        "message": f"Column {safe_col} changed to {safe_type} (applied on reload).",
+                    }
+                except Exception:
+                    logger.warning("local_upload type recreation failed for %s.%s", safe_table, safe_col, exc_info=True)
+            # Other connectors: the door refused the ALTER, or the engine cannot run it, and we cannot
+            # rewrite the source. We saved a DISPLAY-ONLY override (catalog shows the new type) but the
+            # underlying column type is unchanged and queries still use the real type.
+            # Be honest about this — do NOT claim the column was changed.
+            return {
+                "ok": True, "applied": False, "override_only": True, "sql": None,
+                "error": refused,
+                "message": (
+                    f"Saved a display override: the catalog will show {safe_col} as {safe_type}, "
+                    f"but Pramanyx does not change a column's type in the database (the statement was "
+                    f"refused: {refused}), so the database column is unchanged and queries still use "
+                    f"its real type."
+                ),
+            }
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+    return await loop.run_in_executor(None, _work)
+
+# ── Instructions ──────────────────────────────────────────────────────────────
+
+@router.get("/connections/{conn_id}/instructions")
+def get_instructions(conn_id: str):
+    from pramanyx.semantic.instructions import connection_instructions
+    return {"text": connection_instructions(conn_id)}
+
+
+@router.put("/connections/{conn_id}/instructions")
+def put_instructions(conn_id: str, req: InstructionsRequest):
+    from pramanyx.semantic.instructions import set_connection_instructions
+    set_connection_instructions(conn_id, req.text)
+    return {"ok": True}
+
+
+# ── Settings ──────────────────────────────────────────────────────────────────
+
+@router.get("/connections/{conn_id}/settings")
+def get_conn_settings(conn_id: str):
+    return get_connection_settings(conn_id)
+
+
+@router.put("/connections/{conn_id}/settings")
+def put_conn_settings(conn_id: str, body: _ConnectionSettings):
+    # Merge only the fields the caller actually sent (partial update) so toggling one
+    # setting — e.g. briefings_enabled — never clobbers another (ontology_refresh_hours).
+    return update_connection_settings(conn_id, body.model_dump(exclude_unset=True))
+
+
+# ── Files (local_upload connector) ────────────────────────────────────────────
+
+def _open_file_connector(conn_id: str, need: str):
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    if not hasattr(db, need):
+        raise HTTPException(status_code=400, detail="Connection is not a file connector")
+    return db
+
+
+def _max_upload_bytes() -> int:
+    """Per-file upload ceiling (MB) from PRAMANYX_MAX_UPLOAD_MB; default 512 MB."""
+    import os
+    try:
+        mb = int(os.getenv("PRAMANYX_MAX_UPLOAD_MB", "512"))
+    except ValueError:
+        mb = 512
+    return max(1, mb) * 1024 * 1024
+
+
+def _stage_upload(file: UploadFile):
+    """Write an UploadFile to a temp dir under its original name; return (tmp_dir, tmp_path).
+
+    Streams in chunks and enforces PRAMANYX_MAX_UPLOAD_MB so an oversized upload is
+    aborted (and its partial temp removed) before it can fill the disk — rather
+    than copying the whole stream first.
+    """
+    import shutil
+    import tempfile
+    original = Path(file.filename or "upload.csv").name
+    tmp_dir = Path(tempfile.mkdtemp())
+    tmp_path = tmp_dir / original
+    cap = _max_upload_bytes()
+    written = 0
+    try:
+        with tmp_path.open("wb") as out:
+            while chunk := file.file.read(1024 * 1024):
+                written += len(chunk)
+                if written > cap:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"file exceeds the {cap // (1024 * 1024)} MB upload limit",
+                    )
+                out.write(chunk)
+    except BaseException:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise
+    return tmp_dir, tmp_path
+
+
+#: Public: a file brought to Spreadsheets is received with the same cap (`pramanyx/routers/sheets.py`).
+stage_upload = _stage_upload
+
+
+def _rearm_exploration_after_upload(conn_id: str, schema: str | None) -> bool:
+    """Re-arm background schema-exploration after new tables land via upload.
+
+    On-connect exploration (create_connection) fires *before* any file is
+    uploaded, so a file connection's first real data never triggered intelligence
+    — profiling, join inference, ontology and BusinessProfile materialized only
+    lazily on the first question. This closes that gap: every upload re-arms
+    Scout, scoped to the schema that received the tables. ``auto=True`` keeps it
+    under Scout governance and self-skips when a run for that schema is already
+    active, so a burst of uploads can't stack runs. Best-effort — a re-arm
+    failure never fails the ingest that already succeeded.
+    """
+    try:
+        return _kickoff_exploration(conn_id, schema_name=schema or None, auto=True)
+    except Exception:
+        logger.warning("upload: explorer re-arm failed for %s", conn_id, exc_info=True)
+        return False
+
+
+@router.post("/connections/{conn_id}/files/analyze")
+async def analyze_connection_file(conn_id: str, file: UploadFile = File(...)):
+    """Inspect a file (columns, inferred types, type-mismatch suggestions, preview)
+    without ingesting it — drives the import review UI."""
+    import shutil
+    db = _open_file_connector(conn_id, "analyze_file")
+    tmp_dir, tmp_path = _stage_upload(file)
+    try:
+        loop = asyncio.get_running_loop()
+        info = await loop.run_in_executor(None, lambda: db.analyze_file(tmp_path))
+        info["filename"] = tmp_path.name
+        return info
+    except Exception as exc:
+        logger.exception("file analyze failed")
+        # The reason goes to the CALLER, not only the server log. "Analyze failed"
+        # was all the UI could ever say, so a user could not tell a non-UTF-8 CSV
+        # from a missing DuckDB extension from a genuinely corrupt file — and
+        # neither could anyone helping them without shell access to the logs.
+        # DuckDB's own messages are good ("This file is not utf-8 encoded", and it
+        # even suggests the fix); passing them through is strictly better than
+        # replacing them with nothing.
+        raise HTTPException(status_code=400, detail=f"Analyze failed: {exc}")
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+@router.post("/connections/{conn_id}/files", status_code=201)
+async def upload_file_to_connection(
+    conn_id: str,
+    file: UploadFile = File(...),
+    table_name: Optional[str] = Form(None),
+    schema_name: Optional[str] = Form(None, alias="schema"),
+    column_types: Optional[str] = Form(None),
+):
+    """Ingest a file as a table. Optional table_name, schema, and column_types
+    (a JSON object mapping column → cast type) configure the import."""
+    import shutil
+    db = _open_file_connector(conn_id, "ingest_file")
+    types: dict = {}
+    if column_types:
+        try:
+            parsed = json.loads(column_types)
+            if isinstance(parsed, dict):
+                types = parsed
+        except Exception:
+            raise HTTPException(status_code=400, detail="column_types must be valid JSON")
+    tmp_dir, tmp_path = _stage_upload(file)
+    try:
+        loop = asyncio.get_running_loop()
+        tname = await loop.run_in_executor(
+            None,
+            lambda: db.ingest_file(
+                tmp_path,
+                table_name=(table_name or None),
+                schema=(schema_name or "main"),
+                column_types=types,
+            ),
+        )
+        # New table on this connection → the conn-keyed schema cache is stale NOW,
+        # not at TTL expiry. Without this, the quick /ask path answered from a
+        # snapshot that predated the upload and silently dropped the new tables.
+        _invalidate_schema_cache(conn_id)
+        rearmed = _rearm_exploration_after_upload(conn_id, schema_name or "main")
+        return {
+            "table_name": tname,
+            "schema": schema_name or "main",
+            "filename": tmp_path.name,
+            "message": "File ingested",
+            "exploring": rearmed,
+        }
+    except TypeError:
+        # Connector without the extended signature — fall back to plain ingest.
+        tname = await asyncio.get_running_loop().run_in_executor(
+            None, lambda: db.ingest_file(tmp_path, table_name=(table_name or None))
+        )
+        _invalidate_schema_cache(conn_id)
+        rearmed = _rearm_exploration_after_upload(conn_id, schema_name or "main")
+        return {"table_name": tname, "filename": tmp_path.name,
+                "message": "File ingested", "exploring": rearmed}
+    except Exception:
+        logger.exception("file ingestion failed")
+        raise HTTPException(status_code=400, detail="Ingestion failed")
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+@router.post("/connections/{conn_id}/files/bulk", status_code=201)
+async def bulk_upload_files_to_connection(
+    conn_id: str,
+    files: list[UploadFile] = File(...),
+    schema_name: Optional[str] = Form(None, alias="schema"),
+):
+    """Ingest many files into a single schema in one request, with DuckDB's
+    inferred column types (no per-file review). One bad file doesn't sink the
+    batch — every file gets an independent ok/error result."""
+    import shutil
+    db = _open_file_connector(conn_id, "ingest_file")
+    target = schema_name or "main"
+    loop = asyncio.get_running_loop()
+
+    def _ingest_one(tmp_path: Path) -> str:
+        return db.ingest_file(tmp_path, table_name=None, schema=target)
+
+    results: list[dict] = []
+    for file in files:
+        tmp_dir, tmp_path = _stage_upload(file)
+        try:
+            tname = await loop.run_in_executor(None, lambda p=tmp_path: _ingest_one(p))
+            results.append({
+                "filename": tmp_path.name,
+                "table_name": tname,
+                "status": "ok",
+            })
+        except Exception as e:
+            results.append({
+                "filename": tmp_path.name,
+                "status": "error",
+                "error": str(e),
+            })
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    added = sum(1 for r in results if r["status"] == "ok")
+    rearmed = False
+    if added:
+        # New tables landed → drop the conn-keyed schema snapshot immediately
+        # (same staleness class as the single-file upload above).
+        _invalidate_schema_cache(conn_id)
+        # One re-arm for the whole batch (not per file) — the self-skip in
+        # kickoff_exploration would collapse duplicates anyway, but debouncing
+        # here keeps a 50-file bulk import from spawning 50 kickoff tasks.
+        rearmed = _rearm_exploration_after_upload(conn_id, target)
+    return {
+        "schema": target,
+        "results": results,
+        "added": added,
+        "failed": len(results) - added,
+        "exploring": rearmed,
+    }
+
+
+@router.get("/connections/{conn_id}/files")
+async def list_connection_files(conn_id: str):
+    loop = asyncio.get_running_loop()
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    if not hasattr(db, "list_files"):
+        return {"files": []}
+    return {"files": await loop.run_in_executor(None, db.list_files)}
+
+
+@router.delete("/connections/{conn_id}/files/{filename}", status_code=200)
+async def delete_connection_file(conn_id: str, filename: str, schema: str = "main"):
+    loop = asyncio.get_running_loop()
+    def _delete():
+        try:
+            db = open_connection_for(conn_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Connection not found")
+        if not hasattr(db, "delete_file"):
+            raise HTTPException(status_code=400, detail="Not a file connector")
+        try:
+            db.delete_file(filename, schema)
+        except TypeError:
+            db.delete_file(filename)
+        db.close()
+    await loop.run_in_executor(None, _delete)
+    return {"message": f"File '{filename}' removed"}
+
+
+@router.get("/connections/{conn_id}/schemas")
+async def list_connection_schemas(conn_id: str):
+    loop = asyncio.get_running_loop()
+    def _work():
+        db = _open_file_connector(conn_id, "list_schemas")
+        result = db.list_schemas()
+        db.close()
+        return result
+    return {"schemas": await loop.run_in_executor(None, _work)}
+
+
+class _SchemaCreate(BaseModel):
+    name: str
+
+
+@router.post("/connections/{conn_id}/schemas", status_code=201)
+async def create_connection_schema(conn_id: str, body: _SchemaCreate):
+    loop = asyncio.get_running_loop()
+    db = _open_file_connector(conn_id, "create_schema")
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Schema name is required")
+    schema = await loop.run_in_executor(None, lambda: db.create_schema(name))
+    return {"schema": schema, "message": "Schema created"}
+
+
+def _purge_schema_artifacts(conn_id: str, schema: str) -> None:
+    """Delete every derived artifact tied to a removed (connection, schema) — profile,
+    ontology, explorer findings, briefings/patterns, canvases, investigations + evidence,
+    monitors. Delegates to the schema-scoped cascade. Best-effort. (A whole-connection
+    delete goes through purge_connection_artifacts.)"""
+    from pramanyx.db.purge import purge_schema_artifacts
+    purge_schema_artifacts(conn_id, schema)
+
+
+@router.delete("/connections/{conn_id}/schemas/{schema}", status_code=200)
+async def delete_connection_schema(conn_id: str, schema: str):
+    """Remove a whole schema from a workspace connection — drops its DuckDB schema +
+    every backing upload file, then purges the schema's derived profile/exploration."""
+    # G1: declared HIGH in govern.actions since P4, and never enforced — dropping a schema
+    # takes its tables, its uploads and its derived artifacts with it, so it is gated on the
+    # same approval the connection delete below it has always required.
+    from pramanyx import govern
+    govern.guard("connection.schema.delete", f"{conn_id}:{schema}")
+    loop = asyncio.get_running_loop()
+    def _work():
+        db = _open_file_connector(conn_id, "drop_schema")
+        if not hasattr(db, "drop_schema"):
+            raise HTTPException(status_code=400, detail="Not a file connector")
+        try:
+            db.drop_schema(schema)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        finally:
+            db.close()
+    await loop.run_in_executor(None, _work)
+    _purge_schema_artifacts(conn_id, schema)
+    return {"message": f"Schema '{schema}' removed"}
+
+
+@router.delete("/connections/{conn_id}/tables/{table}", status_code=200)
+async def delete_connection_table(conn_id: str, table: str, schema: str = "main"):
+    """Remove a single table from a workspace connection — drops it from DuckDB and
+    deletes its backing upload file(s)."""
+    # G1: see delete_connection_schema — same declared-but-unenforced gap, one grain down.
+    from pramanyx import govern
+    govern.guard("connection.table.delete", f"{conn_id}:{schema}.{table}")
+    loop = asyncio.get_running_loop()
+    def _work():
+        db = _open_file_connector(conn_id, "delete_table")
+        if not hasattr(db, "delete_table"):
+            raise HTTPException(status_code=400, detail="Not a file connector")
+        try:
+            db.delete_table(table, schema)
+        finally:
+            db.close()
+    await loop.run_in_executor(None, _work)
+    return {"message": f"Table '{table}' removed"}
+
+
+@router.post("/connections/{conn_id}/restore-samples", status_code=200)
+async def restore_connection_samples(conn_id: str, schema: str | None = None):
+    """Undo a sample-schema removal — clear the removed-seed tombstone so the bundled sample
+    catalog re-materializes on the next request. Optional ``schema`` restores just one."""
+    loop = asyncio.get_running_loop()
+    def _work():
+        db = _open_file_connector(conn_id, "restore_seeds")
+        try:
+            db.restore_seeds(schema)
+        finally:
+            db.close()
+    await loop.run_in_executor(None, _work)
+    return {"message": "Sample data restored" + (f" ('{schema}')" if schema else "")}
+
+
+# ── Process map + causal graph ────────────────────────────────────────────────
+
+@router.get("/connections/{conn_id}/process-map/{entity_id}")
+def get_process_map(conn_id: str, entity_id: str, schema_name: str | None = None):
+    try:
+        from pramanyx.lifecycle.mapper import build_process_map
+        return build_process_map(entity_id, conn_id, schema_name).model_dump()
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.exception("process_map failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/connections/{conn_id}/causal-graph")
+def get_causal_graph(conn_id: str):
+    """Gone (Arc ED, ED-5; the user, 2026-10-24: "Impacts are the one store"). An empty list would read as "nothing bears
+    on anything"; the answer moved, and is said."""
+    raise HTTPException(status_code=410, detail=(
+        "What one promise does to another is a declared impact now, measured through the object door: read them "
+        "with GET /ontology/processes?connection_id=" + conn_id + " (its `impacts`)."))

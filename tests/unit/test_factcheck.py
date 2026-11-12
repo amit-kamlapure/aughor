@@ -6,8 +6,8 @@ says why. The whole is an answer envelope filed as a turn.
 """
 from __future__ import annotations
 
-from aughor.factcheck import Measurement, claims_in, factcheck
-from aughor.factcheck.check import CONTRADICTED, MEASURED, UNCHECKED, check_claim, claim_question
+from pramanyx.factcheck import Measurement, claims_in, factcheck
+from pramanyx.factcheck.check import CONTRADICTED, MEASURED, UNCHECKED, check_claim, claim_question
 
 MEMO = (
     "Board memo, September 2026. Revenue in August 2026 was $4.2M across 3 regions, up 12% on "
@@ -80,7 +80,7 @@ def test_the_unchecked_verdicts_each_say_why():
 # ── the document ─────────────────────────────────────────────────────────────────
 
 def test_the_document_becomes_an_envelope_and_is_filed_as_a_turn():
-    from aughor.db.history import get_investigation
+    from pramanyx.db.history import get_investigation
 
     memo = MEMO + " The return rate was 9% in August."
 
@@ -123,9 +123,9 @@ def test_no_claims_is_an_honest_envelope():
 def test_the_door_checks_pasted_text(monkeypatch):
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
 
-    monkeypatch.setattr("aughor.factcheck.check.default_measurer",
+    monkeypatch.setattr("pramanyx.factcheck.check.default_measurer",
                         lambda cid, schema=None, session_id="": _measure(4_190_000.0))
     client = TestClient(app)
     r = client.post("/factcheck", json={"text": "Revenue in August 2026 was $4.2M.", "connection_id": "c-door"})

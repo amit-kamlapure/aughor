@@ -31,10 +31,10 @@ import re
 
 import pytest
 
-from aughor.export import document as DOC
-from aughor.export import pdf as PDF
-from aughor.export import slides as SLIDES
-from aughor.agent import investigate as I
+from pramanyx.export import document as DOC
+from pramanyx.export import pdf as PDF
+from pramanyx.export import slides as SLIDES
+from pramanyx.agent import investigate as I
 
 
 def _finding_branch(src: str) -> str:
@@ -149,7 +149,7 @@ class TestTheMarkersCannotDrift:
         """The same arrangement `chart_vocab.JOB_TO_FORM` has with chartTypeInference.ts.
         A marker reworded on one side silently stops splitting on the other: the warning
         would then render as part of the z-score, in muted mono, on the Details row."""
-        from aughor.agent.investigate import READER_FACING_STAT_MARKERS
+        from pramanyx.agent.investigate import READER_FACING_STAT_MARKERS
         assert list(READER_FACING_STAT_MARKERS) == _web_markers()
 
     def test_each_marker_is_actually_emitted(self):
@@ -157,7 +157,7 @@ class TestTheMarkersCannotDrift:
         the producers, so this reads the source rather than trusting the constant."""
         import inspect
 
-        from aughor.agent import investigate as I
+        from pramanyx.agent import investigate as I
         src = inspect.getsource(I)
         for name in ("PARTIAL_PERIOD_MARKER", "EXPOSURE_CHECK_MARKER"):
             assert src.count(f"{{{name}}}") >= 1, (

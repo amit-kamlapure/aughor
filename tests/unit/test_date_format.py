@@ -1,6 +1,6 @@
 """Arc NV-1 — a text column's date notation is a fact about every value, or it is withheld and said.
 
-`aughor.tools.date_format`'s method: a winner parses EVERY distinct value with the year
+`pramanyx.tools.date_format`'s method: a winner parses EVERY distinct value with the year
 in [1900, 2099], candidates in specificity order, and DD/MM against MM/DD is refused rather than guessed. These tests
 pin the three verdicts — a notation, an ambiguity, nothing — and the builder's copy of them onto the property, which
 the ENTITY MODEL block prints. The profiler probe itself is exercised on an in-memory DuckDB below, so the fact is
@@ -11,7 +11,7 @@ from __future__ import annotations
 import duckdb
 import pytest
 
-from aughor.tools.date_format import (
+from pramanyx.tools.date_format import (
     CANDIDATES, MAX_DISTINCT, DateFormat, infer_date_format, looks_like_date_column,
 )
 
@@ -120,7 +120,7 @@ def test_an_unnamed_text_column_qualifies_only_by_its_values():
 
 @pytest.fixture
 def warehouse(tmp_path):
-    from aughor.db.connection import DuckDBConnection
+    from pramanyx.db.connection import DuckDBConnection
     path = tmp_path / "wh.duckdb"
     con = duckdb.connect(str(path))
     con.execute("CREATE TABLE bookings (booking_id INTEGER, booked_on VARCHAR, flown_on VARCHAR, note VARCHAR, fare DOUBLE)")
@@ -137,8 +137,8 @@ def warehouse(tmp_path):
 
 
 def test_the_profiler_writes_the_notation_and_the_builder_prints_it(warehouse):
-    from aughor.ontology.builder import extract_structural_ontology, render_ontology_annotations
-    from aughor.tools.profiler import build_column_profiles, build_table_profile
+    from pramanyx.ontology.builder import extract_structural_ontology, render_ontology_annotations
+    from pramanyx.tools.profiler import build_column_profiles, build_table_profile
 
     columns = [("booking_id", "INTEGER"), ("booked_on", "VARCHAR"), ("flown_on", "VARCHAR"), ("note", "VARCHAR"),
                ("fare", "DOUBLE")]
@@ -163,7 +163,7 @@ def test_the_profiler_writes_the_notation_and_the_builder_prints_it(warehouse):
 
 
 def test_a_profile_cached_before_nv1_reads_as_no_notation():
-    from aughor.tools.profiler import ColumnProfile
+    from pramanyx.tools.profiler import ColumnProfile
     cp = ColumnProfile.from_dict({"table": "t", "column": "c", "dtype": "VARCHAR", "semantic_type": "dimension"})
     assert cp.date_format == "" and cp.date_format_note == ""
     assert "date_format" in cp.to_dict()

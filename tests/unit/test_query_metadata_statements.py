@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.db.connection import _validate, is_metadata_statement
+from pramanyx.db.connection import _validate, is_metadata_statement
 
 _METADATA = ["EXPLAIN SELECT 1", "DESCRIBE brands", "DESC brands", "SHOW TABLES"]
 
@@ -70,5 +70,5 @@ def test_only_the_workbench_label_carries_the_capability():
     """The gate is the statement LABEL (a capability, not an audit exemption — GM-5 took that off the label) —
     so a caller cannot obtain the capability by choosing a different `source`, because
     `source` is a closed allow-list on the request model."""
-    from aughor.db.connection import _METADATA_LABELS
+    from pramanyx.db.connection import _METADATA_LABELS
     assert _METADATA_LABELS == {"query_workbench"}

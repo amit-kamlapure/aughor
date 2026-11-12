@@ -12,7 +12,7 @@ import re
 
 import pytest
 
-from aughor.tools.vocab import (
+from pramanyx.tools.vocab import (
     ALL_SETS,
     COUNTRY_NAMES,
     ISO3166_ALPHA2,
@@ -163,7 +163,7 @@ def test_this_module_publishes_no_concept_NAMES():
     that emits the witness, so a drifted copy cannot exist here to drift."""
     from pathlib import Path
 
-    source = (Path(__file__).resolve().parents[2] / "aughor" / "tools" / "vocab.py").read_text()
+    source = (Path(__file__).resolve().parents[2] / "pramanyx" / "tools" / "vocab.py").read_text()
     body = source.split('"""', 2)[-1]           # skip the module docstring
     offenders = re.findall(r'"([a-z_]+\.[a-z_]+)"', body)
     assert not offenders, f"vocab.py names concepts: {offenders}"

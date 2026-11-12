@@ -11,20 +11,20 @@ from __future__ import annotations
 
 import pytest
 
-from aughor import telemetry
-from aughor.agent.tool_loop import ToolSpec, run_tool_loop
-from aughor.kernel.ledger import Ledger
-from aughor.llm.faux import FauxToolCall, set_responses
-from aughor.llm.provider import LLMProvider
-from aughor.obs import prompt_window, session_log
+from pramanyx import telemetry
+from pramanyx.agent.tool_loop import ToolSpec, run_tool_loop
+from pramanyx.kernel.ledger import Ledger
+from pramanyx.llm.faux import FauxToolCall, set_responses
+from pramanyx.llm.provider import LLMProvider
+from pramanyx.obs import prompt_window, session_log
 
 _PARAMS = {"type": "object", "properties": {"sql": {"type": "string"}}}
 
 
 @pytest.fixture
 def provider(monkeypatch):
-    monkeypatch.delenv("AUGHOR_MAX_OUTPUT_TOKENS", raising=False)
-    monkeypatch.delenv("AUGHOR_TOOL_LOOP_STEPS", raising=False)
+    monkeypatch.delenv("PRAMANYX_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.delenv("PRAMANYX_TOOL_LOOP_STEPS", raising=False)
     return LLMProvider(backend="faux", role="coder")
 
 
@@ -108,9 +108,9 @@ def test_a_loop_outside_any_trace_writes_nothing(provider):
 def _one_run(provider, trace: str, *, verdict: str = "") -> str:
     """A whole run under one trace: request, two picks, a statement, a guard fire, a
     history row and (optionally) a person's verdict."""
-    from aughor.db.history import create_investigation
-    from aughor.feedback.verdicts import record_verdict
-    from aughor.security.audit import AuditLogger, GuardVerdicts
+    from pramanyx.db.history import create_investigation
+    from pramanyx.feedback.verdicts import record_verdict
+    from pramanyx.security.audit import AuditLogger, GuardVerdicts
     set_responses([FauxToolCall(payload={"sql": "SELECT 1"}, name="run_sql"), "answered"])
     with telemetry.bind_trace(trace):
         session_log.emit(session_log.USER_REQUEST, name="ask", conn_id="c1",
@@ -128,7 +128,7 @@ def _one_run(provider, trace: str, *, verdict: str = "") -> str:
 
 
 def test_trajectory_of_walks_every_store_the_trace_reaches(provider):
-    from aughor.obs.trajectory import trajectory_of
+    from pramanyx.obs.trajectory import trajectory_of
     inv_id = _one_run(provider, "tj2-walk", verdict="accept")
     t = trajectory_of("tj2-walk")
     assert t["question"] == "how many orders?" and t["conn_id"] == "c1" and t["ok"] in (True, 1)
@@ -147,7 +147,7 @@ def test_trajectory_of_walks_every_store_the_trace_reaches(provider):
 
 
 def test_step_payloads_are_withheld_on_an_ungated_read_and_served_on_a_gated_one(provider):
-    from aughor.obs.trajectory import trajectory_of
+    from pramanyx.obs.trajectory import trajectory_of
     prompt_window.open_window(calls=5, minutes=5, opened_by="test", reason="tj2")
     _one_run(provider, "tj2-gate")
     ungated = trajectory_of("tj2-gate")
@@ -161,8 +161,8 @@ def test_step_payloads_are_withheld_on_an_ungated_read_and_served_on_a_gated_one
 def test_an_unknown_trace_is_none_and_the_route_says_404(provider):
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
-    from aughor.obs.trajectory import trajectory_of
+    from pramanyx.api import app
+    from pramanyx.obs.trajectory import trajectory_of
     assert trajectory_of("nope-nope") is None
     client = TestClient(app)
     assert client.get("/traces/nope-nope/trajectory").status_code == 404
@@ -175,8 +175,8 @@ def test_an_unknown_trace_is_none_and_the_route_says_404(provider):
 def test_a_deep_runs_investigation_id_is_its_trace():
     """The deep path mints its trace from the investigation id; a row written before any
     trace was bound still joins by its own id."""
-    from aughor.db.history import by_trace, create_investigation
-    from aughor.obs.trajectory import trajectory_of
+    from pramanyx.db.history import by_trace, create_investigation
+    from pramanyx.obs.trajectory import trajectory_of
     inv_id = create_investigation("why did revenue fall?", "c1")
     assert [r["id"] for r in by_trace(inv_id)] == [inv_id]
     t = trajectory_of(inv_id)
@@ -185,7 +185,7 @@ def test_a_deep_runs_investigation_id_is_its_trace():
 
 
 def test_a_store_that_cannot_be_read_says_so(provider, monkeypatch):
-    from aughor.obs import trajectory as tj
+    from pramanyx.obs import trajectory as tj
     _one_run(provider, "tj2-down")
     monkeypatch.setattr(tj, "_guard_rows", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("locked")))
     t = tj.trajectory_of("tj2-down")
@@ -196,9 +196,9 @@ def test_a_store_that_cannot_be_read_says_so(provider, monkeypatch):
 # ── the harness ───────────────────────────────────────────────────────────────────────
 
 def test_an_eval_run_binds_a_trace_and_each_rollout_records_its_own():
-    from aughor.evals import store
-    from aughor.evals.evaluator import EvalObservation
-    from aughor.evals.runner import run_suite
+    from pramanyx.evals import store
+    from pramanyx.evals.evaluator import EvalObservation
+    from pramanyx.evals.runner import run_suite
     suite = store.create_suite("tj2-suite", target="ask", connection_id="c1")
     store.add_case(suite["id"], question="how many orders?")
 
@@ -219,9 +219,9 @@ def test_an_eval_run_binds_a_trace_and_each_rollout_records_its_own():
 def test_the_ask_target_reads_the_runs_trace_off_the_route_receipt(monkeypatch):
     import json
 
-    from aughor.evals.evaluator import EvalCase
-    from aughor.evals.targets import ask_target
-    from aughor.routers import investigations as inv
+    from pramanyx.evals.evaluator import EvalCase
+    from pramanyx.evals.targets import ask_target
+    from pramanyx.routers import investigations as inv
 
     async def _fake_stream(req, request):
         yield "data: " + json.dumps({"type": "route", "depth": "quick", "trace_id": "run-abc"}) + "\n\n"
@@ -229,7 +229,7 @@ def test_the_ask_target_reads_the_runs_trace_off_the_route_receipt(monkeypatch):
         yield "data: " + json.dumps({"type": "headline", "headline": "one"}) + "\n\n"
 
     monkeypatch.setattr(inv, "build_ask_stream", _fake_stream)
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: None)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda cid: None)
     obs = ask_target("c1")(EvalCase(id="k1", question="how many?"))
     assert obs.sql == "SELECT 1" and obs.meta["trace_id"] == "run-abc"
 
@@ -238,6 +238,6 @@ def test_the_route_receipt_carries_the_bound_trace():
     """The frame the harness reads: `route.trace_id` is the ambient run trace."""
     import inspect
 
-    from aughor.routers import investigations as inv
+    from pramanyx.routers import investigations as inv
     src = inspect.getsource(inv._stream_ask)
     assert '_route_ev["trace_id"] = _ambient() or ""' in src

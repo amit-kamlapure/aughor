@@ -4,7 +4,7 @@
 dimensions as names the model had been shown, so this catches a rare failure — which is why it
 fails OPEN wherever it could only be wrong: a false alarm buys a paid LLM retry.
 """
-from aughor.agent.investigate import _validate_intake_dimensions
+from pramanyx.agent.investigate import _validate_intake_dimensions
 
 SCHEMA = (
     "TABLE: thelook.order_items\n"

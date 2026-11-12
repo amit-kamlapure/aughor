@@ -6,7 +6,7 @@ is SERVED (never mirrored into a client), a bad dimension is a 400 in the store'
 words, and a delete of nothing is a 404 (an operator lifting a cap that isn't there
 should hear that, not "removed").
 
-Hermetic — `tests/conftest.py` points `AUGHOR_GOVERN_CAPS_DB` at a tempdir.
+Hermetic — `tests/conftest.py` points `PRAMANYX_GOVERN_CAPS_DB` at a tempdir.
 """
 from __future__ import annotations
 

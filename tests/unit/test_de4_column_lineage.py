@@ -13,9 +13,9 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-from aughor.db.schema_render import sqlglot_schema
-from aughor.sql.lineage import ColumnRef, column_lineage, sqlglot_dialect
-from aughor.trust.lineage_edges import column_edges, column_keys, columns_from_lineage, payload_columns
+from pramanyx.db.schema_render import sqlglot_schema
+from pramanyx.sql.lineage import ColumnRef, column_lineage, sqlglot_dialect
+from pramanyx.trust.lineage_edges import column_edges, column_keys, columns_from_lineage, payload_columns
 
 SCHEMA_TEXT = (
     "TABLE: ecommerce.orders  (5 rows)\n"
@@ -176,8 +176,8 @@ def test_no_statements_means_no_rows():
 # ── caveats per column ─────────────────────────────────────────────────────────────
 
 def test_a_column_caveat_rides_only_the_answers_that_read_the_column():
-    from aughor.quality.caveats import caveats_for_answer
-    from aughor.quality.results import Result, record
+    from pramanyx.quality.caveats import caveats_for_answer
+    from pramanyx.quality.results import Result, record
 
     record(Result(connection_id="de4", table_name="orders", column_name="status", rule_name="status_enum",
                   passed=False, detail="holds values outside the enumerated set"), org_id="default")
@@ -196,9 +196,9 @@ def test_a_column_caveat_rides_only_the_answers_that_read_the_column():
 
 
 def test_the_builder_receipt_carries_its_columns_and_the_public_receipt_shows_them():
-    from aughor.kernel.ledger import Ledger
-    from aughor.routers.query import _write_builder_receipt
-    from aughor.trust.receipt import build_public_receipt
+    from pramanyx.kernel.ledger import Ledger
+    from pramanyx.routers.query import _write_builder_receipt
+    from pramanyx.trust.receipt import build_public_receipt
 
     rid = _write_builder_receipt("de4-conn", "SELECT o.status, COUNT(*) AS n FROM ecommerce.orders o GROUP BY 1")
     assert rid
@@ -240,7 +240,7 @@ def _graph():
 
 
 def test_dependents_of_a_column_keep_what_read_it_and_what_was_never_traced():
-    from aughor.govern.lineage import dependents_of
+    from pramanyx.govern.lineage import dependents_of
 
     r = dependents_of(_graph(), "table:orders", column="status")
     by = {d.node_id: d for d in r.dependents}
@@ -250,7 +250,7 @@ def test_dependents_of_a_column_keep_what_read_it_and_what_was_never_traced():
 
 
 def test_without_a_column_every_dependent_is_reported_and_a_traced_site_names_its_columns():
-    from aughor.govern.lineage import dependents_of
+    from pramanyx.govern.lineage import dependents_of
 
     r = dependents_of(_graph(), "table:orders")
     by = {d.node_id: d for d in r.dependents}
@@ -260,7 +260,7 @@ def test_without_a_column_every_dependent_is_reported_and_a_traced_site_names_it
 
 
 def test_a_finding_node_carries_the_receipts_columns_only_when_it_has_them():
-    from aughor.ontology.context_graph import finding_node_data
+    from pramanyx.ontology.context_graph import finding_node_data
 
     assert "columns" not in finding_node_data({"id": "f", "sql": "x", "tables": ["t"]})
     assert finding_node_data({"id": "f", "sql": "x", "tables": ["t"], "columns": ["t.a"]})["columns"] == ["t.a"]

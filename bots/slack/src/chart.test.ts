@@ -23,7 +23,7 @@ describe("createChartRenderer", () => {
   it("asks the platform for the PNG — one rasterizer, the platform's", async () => {
     let seen: { url: string; body: unknown } | null = null;
     const render = createChartRenderer(
-      { AUGHOR_API_URL: "http://api.test", AUGHOR_API_KEY: "k", AUGHOR_CONNECTION_ID: "lux" },
+      { PRAMANYX_API_URL: "http://api.test", PRAMANYX_API_KEY: "k", PRAMANYX_CONNECTION_ID: "lux" },
       async (url, init) => {
         seen = { url: String(url), body: JSON.parse(String(init?.body)) };
         expect((init?.headers as Record<string, string>)["x-api-key"]).toBe("k");

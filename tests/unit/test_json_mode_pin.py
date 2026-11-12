@@ -14,7 +14,7 @@ from __future__ import annotations
 import instructor
 import pytest
 
-from aughor.llm import provider as P
+from pramanyx.llm import provider as P
 
 
 @pytest.fixture
@@ -133,7 +133,7 @@ def test_other_config_is_untouched_by_a_pin(clean_cfg):
 
 def test_the_ui_is_told_where_the_pin_actually_works(clean_cfg):
     """A control offered where it has no effect is worse than no control."""
-    from aughor.llm.provider import JSON_MODE_PINNABLE
+    from pramanyx.llm.provider import JSON_MODE_PINNABLE
     vended = P.current_config()["json_mode_backends"]
     assert vended == list(JSON_MODE_PINNABLE)
     assert "ollama" in vended

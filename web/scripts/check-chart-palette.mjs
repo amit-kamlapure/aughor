@@ -4,7 +4,7 @@
  *
  *  1. SYNC — the chart palette lives twice by necessity (CSS tokens for the
  *     browser, TS literals for headless renderers). Parse both and fail on any
- *     drift between web/aughor-v2/theme/tokens-v2.css (--chart-1..6,
+ *     drift between web/pramanyx-v2/theme/tokens-v2.css (--chart-1..6,
  *     --chart-deemph, --bg-2) and components/charts/palette.ts
  *     (CHART_SERIES / CHART_DEEMPH / CHART_SURFACE).
  *
@@ -23,7 +23,7 @@ import { validate } from "./validate_palette.mjs";
 import { radixNames, radixValueAt } from "./radix-tokens.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const css = readFileSync(join(root, "aughor-v2/theme/tokens-v2.css"), "utf8");
+const css = readFileSync(join(root, "pramanyx-v2/theme/tokens-v2.css"), "utf8");
 const ts = readFileSync(join(root, "components/charts/palette.ts"), "utf8");
 
 // ── parse the CSS tokens ──────────────────────────────────────────────────────

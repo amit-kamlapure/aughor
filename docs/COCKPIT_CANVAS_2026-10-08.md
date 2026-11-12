@@ -20,26 +20,26 @@ order. Nothing here is built.
 Cockpit → Tabs → Tab → Section → Card (`web/lib/cockpit/catalog.ts`, `MAY_HOLD`) — up to 8 tabs, 60
 cards, 200 elements (`web/lib/cockpit/rules.ts`). A Card names a card in the store by id and carries
 no figure and no SQL. A Section or a Card may be shown by a condition on the host's state; a Tab may
-not. The spec is accepted whole or refused whole, with sentences (`aughor/cockpit/validate.py`), by
+not. The spec is accepted whole or refused whole, with sentences (`pramanyx/cockpit/validate.py`), by
 the same rules the browser draws it with; a title a model wrote is held to the numerals law, a title
 a person wrote is theirs. Every keep is a version in the Ledger with who approved it, where it came
-from and a note (`aughor/cockpit/versions.py`); going back is a new version.
+from and a note (`pramanyx/cockpit/versions.py`); going back is a new version.
 
-**A card is a measured thing.** `aughor/dashboard/models.py` knows four kinds — `note`, `kpi`,
+**A card is a measured thing.** `pramanyx/dashboard/models.py` knows four kinds — `note`, `kpi`,
 `chart`, `watch` — and four sources: a finding pinned from the Briefing (door 1, its SQL re-run
 through the guard battery), a Query Builder query (door 2, the same battery), an approved metric
 (the composer), a watch. `note` exists in the model with a `body` and is drawn by nothing: no
 cockpit tile has a branch for it. Provenance on every card: the finding and receipt it came from,
 the metric and version it was made from, and since today the card that supersedes it.
 
-**One connection per cockpit.** `Home(connection_id, owner, cockpit_id)` (`aughor/cockpit/home.py`);
+**One connection per cockpit.** `Home(connection_id, owner, cockpit_id)` (`pramanyx/cockpit/home.py`);
 `cards.place` refuses a card of another connection. A cockpit may place the person's own cards and
 the connection's shared ones (`cards_of`). A reader who may not see a card's data sees the card
 standing and saying it is withheld (`ComposedCockpit`).
 
 **A model already drafts and edits a cockpit from words.** In the Briefing a person names an area and a
 model drafts one proposal — the cards to make and the spec that arranges them — which the person
-keeps whole or not at all (`aughor/cockpit/propose.py`, CT-5; `POST /cockpits/draft`, which spends
+keeps whole or not at all (`pramanyx/cockpit/propose.py`, CT-5; `POST /cockpits/draft`, which spends
 model calls). An edit is the same act, arriving as RFC 6902 operations against the version on screen
 (`web/lib/cockpit/patch.ts`, applied strictly: an operation does exactly what it says or the whole
 edit is refused). The model writes no SQL and states no figure; every new card names the record it
@@ -51,17 +51,17 @@ findings ledger, the full synthesis, where it was sent (taken off 2026-10-09: a 
 Ops › Departures, and the synthesis is the narrative and its citations), the person's pinned-cards strip. Its layout
 is code — which is why today's edits to it are the builder's and nobody else's. The per-person
 part is the pinned strip. A per-user preferences store exists already (`GET/PUT /me/preferences`,
-`aughor/db/user_prefs`; a cosmetic, self-scoped write with no capability gate) and holds nothing
+`pramanyx/db/user_prefs`; a cosmetic, self-scoped write with no capability gate) and holds nothing
 about the Briefing yet.
 
 **What the platform vouches for leaves through a gate.** A Briefing send is held on an ungrounded
-numeral or a causal claim (`aughor/govern/departure.py`); CT-6 names "the same spec to PDF, to an
+numeral or a causal claim (`pramanyx/govern/departure.py`); CT-6 names "the same spec to PDF, to an
 image card for Slack" as doors not yet scheduled. A static element on a cockpit will meet that gate
 the day a cockpit is sent.
 
 **Files and people.** Bytes go into a volume under the tenant's vended path with a metadata row
-(`aughor/files/ops.py`: `put_object`, `read_object`) — the home an image has. Groups, roles and
-role assignments exist (`aughor/rbac/`: `Group`, `Role`, `RoleAssignment`, `Permission`) — the
+(`pramanyx/files/ops.py`: `put_object`, `read_object`) — the home an image has. Groups, roles and
+role assignments exist (`pramanyx/rbac/`: `Group`, `Role`, `RoleAssignment`, `Permission`) — the
 addressees a published cockpit has.
 
 ## 2 · The four calls (the user, 2026-10-08, asked with options)

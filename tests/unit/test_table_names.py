@@ -1,10 +1,10 @@
-"""Unit tests for the canonical table-name primitive (aughor.tools.table_names).
+"""Unit tests for the canonical table-name primitive (pramanyx.tools.table_names).
 
 These pin the behaviour that previously had to be re-fixed three times: comparing
 schema-qualified names against bare names. If this module regresses, the ERD /
 ontology / multi-schema bugs come back.
 """
-from aughor.tools.table_names import (
+from pramanyx.tools.table_names import (
     TableRef, bare, leaf, qualify, resolve, resolve_in, same_table, schema_of, split_ref,
 )
 

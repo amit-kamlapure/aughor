@@ -5,7 +5,7 @@ assert the wiring (schema block present, grain rule toggled) without an LLM.
 """
 from __future__ import annotations
 
-import aughor.sql.inspect as I
+import pramanyx.sql.inspect as I
 
 
 class _StubProvider:

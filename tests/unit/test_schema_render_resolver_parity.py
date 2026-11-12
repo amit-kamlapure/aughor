@@ -17,8 +17,8 @@ from __future__ import annotations
 
 import duckdb
 
-from aughor.db.schema_render import render_raw_schema
-from aughor.semantic.answer_resolution import _parse_schema, resolve
+from pramanyx.db.schema_render import render_raw_schema
+from pramanyx.semantic.answer_resolution import _parse_schema, resolve
 
 
 def _demo_conn() -> duckdb.DuckDBPyConnection:

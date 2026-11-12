@@ -6,10 +6,10 @@ import types
 import pymysql
 import pytest
 
-from aughor.connectors.declarations import ENGINES, declaration
-from aughor.connectors.registry import build_connector
-from aughor.connectors.warehouse.wire import MySQLWireConnection
-from aughor.db.metadata import engine_type_of
+from pramanyx.connectors.declarations import ENGINES, declaration
+from pramanyx.connectors.registry import build_connector
+from pramanyx.connectors.warehouse.wire import MySQLWireConnection
+from pramanyx.db.metadata import engine_type_of
 
 
 class _Cursor:
@@ -85,15 +85,15 @@ def test_a_connection_answers_as_the_tile_that_opened_it(monkeypatch):
 
 def test_a_shared_class_opened_without_a_tile_answers_as_its_first():
     """Last-wins here would make every MySQL connection answer as Doris, and every Trino one as Starburst."""
-    from aughor.connectors.warehouse.mysql import MySQLConnection
-    from aughor.connectors.warehouse.trino import TrinoConnection
+    from pramanyx.connectors.warehouse.mysql import MySQLConnection
+    from pramanyx.connectors.warehouse.trino import TrinoConnection
 
     assert engine_type_of(MySQLConnection.__new__(MySQLConnection)) == "mysql"
     assert engine_type_of(TrinoConnection.__new__(TrinoConnection)) == "trino"
 
 
 def test_a_shared_dialect_keeps_its_first_engines_rules():
-    from aughor.connectors.declarations import by_dialect
+    from pramanyx.connectors.declarations import by_dialect
 
     assert by_dialect()["mysql"].type == "mysql"
     assert by_dialect()["trino"].type == "trino"
@@ -118,6 +118,6 @@ def test_only_what_passed_on_a_real_server_goes_without_a_badge():
 ])
 def test_a_lost_server_is_the_connections_fault_not_the_statements(said):
     """Read off servers restarted under an open connection. `sql` here sends the model off to rewrite SQL that was fine."""
-    from aughor.db.errors import CONNECTION, classify_error
+    from pramanyx.db.errors import CONNECTION, classify_error
 
     assert classify_error(Exception(said)) == CONNECTION

@@ -25,7 +25,7 @@ import asyncio
 
 import pytest
 
-from aughor.routers import catalog as catalog_router
+from pramanyx.routers import catalog as catalog_router
 
 
 # ── the connector's own value shapes ────────────────────────────────────────────
@@ -81,13 +81,13 @@ class _DB:
 @pytest.fixture
 def one_duckdb_connection(monkeypatch):
     """A single DuckDB catalog, with the metastore reconcile neutered."""
-    import aughor.metastore as ms
+    import pramanyx.metastore as ms
 
     monkeypatch.setattr(ms, "set_catalog_schemas", lambda *a, **k: 0)
     monkeypatch.setattr(ms, "accessible_catalog_ids", lambda ws: None)
     monkeypatch.setattr(catalog_router, "get_meta", lambda cid: {})
     monkeypatch.setattr(
-        "aughor.db.registry.list_connections",
+        "pramanyx.db.registry.list_connections",
         lambda *a, **k: [{"id": "c1", "name": "C1", "conn_type": "duckdb", "builtin": False}],
     )
 
@@ -184,18 +184,18 @@ def test_the_names_query_no_longer_selects_a_literal_zero(one_duckdb_connection)
 
 def test_uploads_report_unknown_without_paying_to_open_the_connection(monkeypatch):
     """The 9.56s open stays avoided; the placeholder stops posing as a measurement."""
-    import aughor.metastore as ms
+    import pramanyx.metastore as ms
 
     monkeypatch.setattr(ms, "set_catalog_schemas", lambda *a, **k: 0)
     monkeypatch.setattr(ms, "accessible_catalog_ids", lambda ws: None)
     monkeypatch.setattr(catalog_router, "get_meta", lambda cid: {})
     monkeypatch.setattr(
-        "aughor.db.registry.list_connections",
+        "pramanyx.db.registry.list_connections",
         lambda *a, **k: [{"id": "ws", "name": "Workspace",
                           "conn_type": "local_upload", "builtin": True}],
     )
     monkeypatch.setattr(
-        "aughor.connectors.file.local_upload.uploaded_tables",
+        "pramanyx.connectors.file.local_upload.uploaded_tables",
         lambda cid, meta: {"default": ["orders", "returns"]},
     )
 

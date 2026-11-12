@@ -12,7 +12,7 @@ import asyncio
 import pytest
 from fastapi import HTTPException
 
-from aughor.explorer import budget as B
+from pramanyx.explorer import budget as B
 
 
 def _standing(remaining, spent_out=False):
@@ -38,14 +38,14 @@ def test_a_spent_budget_refuses_until_the_person_says_run_it_anyway_and_records_
         def emit(self, kind, payload, **kw):
             emitted.append((kind, payload))
 
-    monkeypatch.setattr("aughor.kernel.ledger.Ledger.default", classmethod(lambda cls: _L()))
+    monkeypatch.setattr("pramanyx.kernel.ledger.Ledger.default", classmethod(lambda cls: _L()))
     assert B.person_run("wh", run_anyway=True, by="amit", what="start") is None
     assert emitted == [("exploration.budget_override", {"connection_id": "wh", "by": "amit", "what": "start",
                                                         "budget": _standing(0)["sentence"]})]
 
 
 def test_the_doors_answer_409_with_the_reason_and_pass_the_cap_through(monkeypatch):
-    from aughor.routers import exploration as X
+    from pramanyx.routers import exploration as X
     monkeypatch.setattr(B, "standing", lambda c, now=None: _standing(-1, spent_out=True))
     with pytest.raises(HTTPException) as e:
         X._person_cap("wh", False, "start")
@@ -65,11 +65,11 @@ def test_the_doors_answer_409_with_the_reason_and_pass_the_cap_through(monkeypat
 
 
 def test_a_start_fanned_out_over_datasets_shares_the_cap(monkeypatch):
-    from aughor.routers import _shared
+    from pramanyx.routers import _shared
     monkeypatch.setattr(_shared, "explorer_refusal", lambda c: "")
     monkeypatch.setattr(_shared, "schemas_of_connection", lambda c: ["a", "b"])
-    monkeypatch.setattr("aughor.kernel.agents.is_enabled", lambda agent, ws: False)   # no birth rite
-    monkeypatch.setattr("aughor.workspace.store.workspace_for_connection", lambda c: None)
+    monkeypatch.setattr("pramanyx.kernel.agents.is_enabled", lambda agent, ws: False)   # no birth rite
+    monkeypatch.setattr("pramanyx.workspace.store.workspace_for_connection", lambda c: None)
     caps = []
 
     async def spawn(conn_id, **kw):

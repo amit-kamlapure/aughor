@@ -2,7 +2,7 @@
 
 /**
  * Security & Audit ▸ Gate map and Policies — "see every door in and out and what guards it" (the 2027 study §V,
- * screen 12), redone to `aughor-v2/CLARITY.md` (2026-10-13).
+ * screen 12), redone to `pramanyx-v2/CLARITY.md` (2026-10-13).
  *
  * The gate map is a map, so it opens on the picture: the places in the code that send a statement, the doors they go
  * through and the warehouse they reach; and the messages leaving the platform, through the departure gate's laws in the
@@ -404,7 +404,7 @@ export function PoliciesView({ onOpenSettings, onOpenSpend }: {
                 <div className="aug-fs-ui" style={SENTENCE}>Off: nobody is asked who they are, and every caller is treated as the owner.</div>
                 <div style={FACTS}>
                   <Chip title="Identity is turned on when the server starts — a restart, by design.">
-                    <span className="aug-mono">AUGHOR_REQUIRE_IDENTITY=1</span> turns it on
+                    <span className="aug-mono">PRAMANYX_REQUIRE_IDENTITY=1</span> turns it on
                   </Chip>
                 </div>
               </>
@@ -413,7 +413,7 @@ export function PoliciesView({ onOpenSettings, onOpenSpend }: {
         </Rule>
 
         <Rule name="The ledger"
-          action={<a href={`${getApiBase()}/ledger/v1/export`} download="aughor-ledger.jsonl" className="aug-fs-sm"
+          action={<a href={`${getApiBase()}/ledger/v1/export`} download="pramanyx-ledger.jsonl" className="aug-fs-sm"
             style={{ color: "var(--blue4)", whiteSpace: "nowrap" }}>Download</a>}>
           <div className="aug-fs-ui" style={SENTENCE}>
             Leaves as one file of JSON lines: every claim, decision, outcome, inquiry and mission as it stands.

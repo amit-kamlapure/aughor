@@ -6,7 +6,7 @@
  * the server stores them secretvault-encrypted and only ever reports whether a
  * key is set, so nothing sensitive round-trips back to the browser.
  *
- * Redone to `aughor-v2/CLARITY.md` (2026-10-12): what is in force first, as four figures — the provider, the roles
+ * Redone to `pramanyx-v2/CLARITY.md` (2026-10-12): what is in force first, as four figures — the provider, the roles
  * bound, the fallback, the keys — then what needs a person (a provider with no usable key, a role with no model, a
  * fallback that would be skipped, a bound model with no price), then the form: the provider and its roles beside the
  * fallback, and one Save with the tools beside it. The figures and "Needs you" read the SAVED configuration; the form
@@ -340,7 +340,7 @@ function ProviderForm({ p, busy, setBusy, onCancel, onDone }: {
         <Input id="llm-provider-key" type="password" autoComplete="off" value={key} disabled={dropKey}
           onChange={(e) => setKey(e.target.value)}
           placeholder={p?.key_state === "set" ? "•••••••••• (leave blank to keep)"
-            : p?.key_state === "unreadable" ? "re-paste the key, or restore AUGHOR_SECRET_KEY"
+            : p?.key_state === "unreadable" ? "re-paste the key, or restore PRAMANYX_SECRET_KEY"
             : "paste a key, or leave blank for an endpoint that takes none"} />
       </Field>
       {p && p.key_state !== "unset" && (
@@ -725,12 +725,12 @@ export function InferencePanel() {
     ),
     liveNeedsKey && liveKey === "unreadable" && (
       <NeedsRow key="key" testId="needs-key" title={`${label(live)}'s stored key cannot be decrypted`}
-        detail="AUGHOR_SECRET_KEY is missing or has changed since it was saved; the key itself may be fine."
+        detail="PRAMANYX_SECRET_KEY is missing or has changed since it was saved; the key itself may be fine."
         actions={<Button size="xs" variant="secondary" onClick={() => goTo("models-provider", "#llm-key")}>Re-paste</Button>} />
     ),
     liveAdded?.key_state === "unreadable" && (
       <NeedsRow key="added-key" testId="needs-key" title={`${liveAdded.name}'s stored key cannot be decrypted`}
-        detail="AUGHOR_SECRET_KEY is missing or has changed since it was saved; the key itself may be fine."
+        detail="PRAMANYX_SECRET_KEY is missing or has changed since it was saved; the key itself may be fine."
         actions={<Button size="xs" variant="secondary" onClick={() => setProviderDialog({ mode: "edit", p: liveAdded })}>
           Re-paste</Button>} />
     ),
@@ -847,7 +847,7 @@ export function InferencePanel() {
               {chain.length > 1 && `then ${chain.slice(1).map(label).join(" → ")}`}
               {!fb?.model && chain.length <= 1 && (chain.length ? "the built-in order" : "a failing primary fails the call")}
             </span>
-            {fb?.env_pinned && <Chip title="AUGHOR_FALLBACK_BACKENDS is set in the environment and overrides the choice below.">set by the environment</Chip>}
+            {fb?.env_pinned && <Chip title="PRAMANYX_FALLBACK_BACKENDS is set in the environment and overrides the choice below.">set by the environment</Chip>}
           </>} />
         <Figure label="Keys" value={`${keysUsable} of ${keyed.length}`} testId="fig-keys"
           sub={keysUnreadable.length
@@ -885,7 +885,7 @@ export function InferencePanel() {
                     value={keys[backend] ?? ""}
                     onChange={(e) => setKeys({ ...keys, [backend]: e.target.value })}
                     placeholder={keySet ? "•••••••••• (leave blank to keep)"
-                      : keyUnreadable ? "re-paste the key, or restore AUGHOR_SECRET_KEY"
+                      : keyUnreadable ? "re-paste the key, or restore PRAMANYX_SECRET_KEY"
                       : "paste API key"}
                   />
                 </Field>
@@ -920,7 +920,7 @@ export function InferencePanel() {
             {needsKey && (
               <Note tone={keyUnreadable ? "red" : undefined}>
                 {keyUnreadable
-                  ? "A key is stored but cannot be decrypted — AUGHOR_SECRET_KEY is missing or has changed since it was saved. The key itself may be perfectly good; the provider will reject it either way."
+                  ? "A key is stored but cannot be decrypted — PRAMANYX_SECRET_KEY is missing or has changed since it was saved. The key itself may be perfectly good; the provider will reject it either way."
                   : "Stored encrypted on the server (secretvault). Save before testing a new key."}
               </Note>
             )}
@@ -979,8 +979,8 @@ export function InferencePanel() {
         </div>
 
         {/* Fallback — where calls go when the primary refuses.
-            This used to be reachable only through AUGHOR_FALLBACK_BACKENDS /
-            AUGHOR_FALLBACK_MODEL_<BACKEND>: invisible from the product, so a deployment
+            This used to be reachable only through PRAMANYX_FALLBACK_BACKENDS /
+            PRAMANYX_FALLBACK_MODEL_<BACKEND>: invisible from the product, so a deployment
             nobody had set them on ran with a chain that had no model to dispatch with and
             silently skipped every link. An env pin still wins, and says so below. */}
         <div id="models-fallback" style={{ minWidth: 0 }}>
@@ -1027,7 +1027,7 @@ export function InferencePanel() {
             </Note>
             {fb?.env_pinned && (
               <Note tone="amber" testId="fallback-env-pinned">
-                <code style={MONO}>AUGHOR_FALLBACK_BACKENDS</code> is set in the environment and overrides the choice
+                <code style={MONO}>PRAMANYX_FALLBACK_BACKENDS</code> is set in the environment and overrides the choice
                 above — the chain shown is the one used. Unset it to steer the fallback from here.
               </Note>
             )}

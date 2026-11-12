@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.briefing.models import BriefSubscription
-from aughor.metastore.models import (
+from pramanyx.briefing.models import BriefSubscription
+from pramanyx.metastore.models import (
     agent_principal,
     domain_securable,
     group_principal,
@@ -26,11 +26,11 @@ from aughor.metastore.models import (
     thing_securable,
     user_principal,
 )
-from aughor.metastore.store import add_grant
-from aughor.rbac import groups as g
-from aughor.rbac import store as rbac_store
-from aughor.rbac.access import may, securable_chain
-from aughor.rbac.levels import (
+from pramanyx.metastore.store import add_grant
+from pramanyx.rbac import groups as g
+from pramanyx.rbac import store as rbac_store
+from pramanyx.rbac.access import may, securable_chain
+from pramanyx.rbac.levels import (
     EDIT,
     LADDER,
     MANAGE,
@@ -42,7 +42,7 @@ from aughor.rbac.levels import (
     level_covers,
     role_default_level,
 )
-from aughor.rbac.routing import owner_principal, route
+from pramanyx.rbac.routing import owner_principal, route
 
 
 # ── The ladder ────────────────────────────────────────────────────────────────

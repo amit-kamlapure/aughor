@@ -21,16 +21,16 @@ and once as `*` — and so appeared in LuxExperience's Metrics tab, whose wareho
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.semantic.metrics import GLOBAL_CONNECTION
+from pramanyx.semantic.metrics import GLOBAL_CONNECTION
 
 
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     """A registry in a temp file — these tests WRITE metrics."""
-    from aughor.semantic import metrics as m
+    from pramanyx.semantic import metrics as m
     monkeypatch.setattr(m, "_DEFAULT_PATH", tmp_path / "metrics.json", raising=False)
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.json"))
-    from aughor.api import app
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.json"))
+    from pramanyx.api import app
     with TestClient(app) as c:
         yield c
 

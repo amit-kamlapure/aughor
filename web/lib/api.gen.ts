@@ -854,7 +854,7 @@ export interface paths {
          *     ``suggested_goldens`` — suggestions, each stating what it still needs. A pack cannot
          *     supply a golden's reference SQL (it does not know your schema, and its evals are
          *     behavioural expectations rather than queries), so the template says so rather than
-         *     seeding a suite that would measure nothing. See :mod:`aughor.custom_agents.templates`.
+         *     seeding a suite that would measure nothing. See :mod:`pramanyx.custom_agents.templates`.
          */
         get: operations["list_agent_templates_agents_templates_get"];
         put?: never;
@@ -3372,7 +3372,7 @@ export interface paths {
          * @description Provision the bundled demo dataset and return its connection.
          *
          *     Nothing is seeded at boot — a data platform should not fabricate 72,000 rows of
-         *     synthetic revenue on a fresh install nobody asked. That left `aughor seed` as the
+         *     synthetic revenue on a fresh install nobody asked. That left `pramanyx seed` as the
          *     only way in, which a user who never opens a terminal cannot find, so this is the
          *     same opt-in over HTTP: the first-run funnel's "Explore the demo" calls it.
          *
@@ -3709,7 +3709,7 @@ export interface paths {
         /**
          * Connection Prerequisites
          * @description Arc NV-5 — what a feature needs from this engine and whether it is there now: today the query history's
-         *     prerequisite (`aughor.db.query_history.check_query_history`), said with the admin's step and whether the platform
+         *     prerequisite (`pramanyx.db.query_history.check_query_history`), said with the admin's step and whether the platform
          *     can take it itself. Read-only; no model call.
          */
         get: operations["connection_prerequisites_connections__conn_id__prerequisites_get"];
@@ -4490,7 +4490,7 @@ export interface paths {
          *     figures, a chart of its objects per day, a table of them and the actions declared on them — each measured through
          *     the object door, with a preview. Nothing is kept and no model is asked; the person ticks what they want and keeps
          *     it as any new dashboard is kept. Registered before ``/cockpits/{cockpit_id}``, which would otherwise take its path.
-         *     Arc OC-7 — read as the object doors read: an agent acting for the person (``X-Aughor-Acting-Agent``) reads only
+         *     Arc OC-7 — read as the object doors read: an agent acting for the person (``X-Pramanyx-Acting-Agent``) reads only
          *     what both may.
          */
         get: operations["propose_from_object_dashboards_from_object_get"];
@@ -12100,7 +12100,7 @@ export interface paths {
         /**
          * Get Autonomy
          * @description The connection's earned L0–L3 autonomy level, computed from reflection
-         *     signals (aughor.memory.trust).
+         *     signals (pramanyx.memory.trust).
          */
         get: operations["get_autonomy_ontology_autonomy_get"];
         put?: never;
@@ -12146,7 +12146,7 @@ export interface paths {
         /**
          * Mine Ontology Candidates
          * @description Arc NV-3 (ROADMAP §3.68) — read the warehouse's OWN query history and mine it into typed candidates: join edges
-         *     the join map lacks, recurring filter values, recurring named formulas (`aughor.ontology.candidates`). Each is
+         *     the join map lacks, recurring filter values, recurring named formulas (`pramanyx.ontology.candidates`). Each is
          *     EXPLAIN-bound on this connection before it is offered; the report states what was refused. Nothing is written:
          *     a candidate is a proposal for a person, and reaches no prompt until declared through the ontology's own doors.
          *
@@ -12965,7 +12965,7 @@ export interface paths {
          * Explore Ontology With Pack
          * @description 2026-10-10 — an industry pack proposes its STRUCTURE over the tables this scope holds: which tables are one
          *     object (an order and its lines), the verbs its found links are read with, a link it expects where both tables hold
-         *     the key, and the stages an object moves through (`aughor/packs/drafter.py`). It never proposes an object the data
+         *     the key, and the stages an object moves through (`pramanyx/packs/drafter.py`). It never proposes an object the data
          *     has no table for. No model call: the pack is read deterministically against the built graph. Every proposal goes
          *     through the explorer's own path — measured before it lands, written with `pack:<id>@<version>` provenance,
          *     PROPOSED until a person confirms it, never proposed again once withdrawn. The answer also lists the actions the
@@ -15434,7 +15434,7 @@ export interface paths {
          *     fail-open: one that can't run is simply omitted, never an error. This is the explicit,
          *     user-triggered version of the guards that run inline during answer generation.
          *
-         *     The battery itself lives in ``aughor.sql.validation`` (KI-0 extracted it so
+         *     The battery itself lives in ``pramanyx.sql.validation`` (KI-0 extracted it so
          *     trusted-query verification runs the SAME sequence rather than a drifting copy).
          */
         post: operations["query_validate_query_validate_post"];
@@ -18083,7 +18083,7 @@ export interface paths {
          * @description Mint the supervisor's key and return it ONCE, with the line to paste.
          *
          *     This exists because the first version of the fail-closed gate answered "set
-         *     AUGHOR_API_KEY and restart" — a shell export, a restart, and every other client
+         *     PRAMANYX_API_KEY and restart" — a shell export, a restart, and every other client
          *     locked out of the API to protect one route. Configuration the product requires has
          *     to be reachable from the product; a button that hands you the value is the smallest
          *     honest version of that.
@@ -18576,7 +18576,7 @@ export interface paths {
          * @description The copy-pasteable cost query against our own session log.
          *
          *     Served rather than only documented so it stays the same string the module computes
-         *     from — `aughor_ops` reads that table directly, and an agent writing its own SQL needs
+         *     from — `pramanyx_ops` reads that table directly, and an agent writing its own SQL needs
          *     column names that are real today, not as of whenever a doc was last edited.
          */
         get: operations["get_cost_sql_usage_cost_sql_get"];
@@ -19930,7 +19930,7 @@ export interface components {
          * @description One precondition on an automation firing. Combinable via ``Automation.condition_logic``.
          *
          *     ``schedule`` is a cron expression — the *only* condition monitors and briefs have today.
-         *     ``metric`` delegates to an existing :class:`~aughor.monitors.models.Monitor` (by id) so the six
+         *     ``metric`` delegates to an existing :class:`~pramanyx.monitors.models.Monitor` (by id) so the six
          *     already-tested alert conditions become available to any effect, not just to an alert.
          *     ``source_change`` fires when a table's cheap source version advanced (A3). ``entity_appears``
          *     fires when a new key shows up in a table.
@@ -20620,16 +20620,16 @@ export interface components {
          * @description What to do when the conditions hold — a reference to an existing primitive.
          *
          *     ``kinetic_action`` is the governed write: it runs through
-         *     :func:`~aughor.actions.executor.execute_kinetic_action`, inheriting submission criteria,
+         *     :func:`~pramanyx.actions.executor.execute_kinetic_action`, inheriting submission criteria,
          *     the graduated-approval gate and the audit trail unchanged. Wave A never bypasses it, which is
          *     why nothing above LOW risk can auto-fire from an automation either.
          *
-         *     ``monitor`` (Wave A5) runs an existing :class:`~aughor.monitors.models.Monitor`'s check and
+         *     ``monitor`` (Wave A5) runs an existing :class:`~pramanyx.monitors.models.Monitor`'s check and
          *     appends its alert — a faithful replay of the legacy monitor job, used when a monitor is *adopted*
          *     onto this engine. It is not authored by hand; it exists so a monitor can execute through the one
          *     engine instead of its own scheduler.
          *
-         *     ``agent_alert`` (VA-6) evaluates one :class:`~aughor.obs.agent_alerts.AgentAlertRule` and,
+         *     ``agent_alert`` (VA-6) evaluates one :class:`~pramanyx.obs.agent_alerts.AgentAlertRule` and,
          *     when it crosses, records the alert and delivers it. Sibling of ``monitor`` in every way that
          *     matters — an adopted object running through the one engine rather than a loop of its own —
          *     and different only in its subject: a monitor watches a warehouse metric on a connection,
@@ -20993,7 +20993,7 @@ export interface components {
          *     * **a string is not a list.** Python would happily iterate ``"EMEA"`` into four
          *       messages, one per character. A source that is text is a mistake with a loud symptom,
          *       so it is named as one.
-         *     * **a literal longer than** :data:`~aughor.automations.dataflow.MAX_FAN_OUT` **is
+         *     * **a literal longer than** :data:`~pramanyx.automations.dataflow.MAX_FAN_OUT` **is
          *       refused, never truncated.** These steps send messages; posting the first 50 of 500
          *       and dropping the rest silently is worse than refusing to post at all (`no silent
          *       caps` — say what was dropped, or do not drop).
@@ -26100,7 +26100,7 @@ export interface components {
          * LayoutRequest
          * @description `{alias: {x, y}}` — where each step sits on the Design canvas.
          */
-        aughor__routers__automations__LayoutRequest: {
+        pramanyx__routers__automations__LayoutRequest: {
             /** Layout */
             layout?: {
                 [key: string]: unknown;
@@ -26110,7 +26110,7 @@ export interface components {
          * ProposeRequest
          * @description DS-15 — what a person says, and which connection to ground it in.
          */
-        aughor__routers__automations__ProposeRequest: {
+        pramanyx__routers__automations__ProposeRequest: {
             /**
              * Conn Id
              * @description The connection the chain runs against.
@@ -26123,7 +26123,7 @@ export interface components {
             outcome: string;
         };
         /** LayoutRequest */
-        aughor__routers__cards__LayoutRequest: {
+        pramanyx__routers__cards__LayoutRequest: {
             /** Connection Id */
             connection_id: string;
             /** Layout */
@@ -26132,19 +26132,19 @@ export interface components {
             };
         };
         /** AskRequest */
-        aughor__routers__dashboards__AskRequest: {
+        pramanyx__routers__dashboards__AskRequest: {
             /** Schema Name */
             schema_name?: string | null;
             /** Words */
             words: string;
         };
         /** RestoreRequest */
-        aughor__routers__dashboards__RestoreRequest: {
+        pramanyx__routers__dashboards__RestoreRequest: {
             /** Version */
             version: number;
         };
         /** AcceptRequest */
-        aughor__routers__datasets__AcceptRequest: {
+        pramanyx__routers__datasets__AcceptRequest: {
             /**
              * Schemas
              * @default []
@@ -26157,7 +26157,7 @@ export interface components {
             tables: boolean;
         };
         /** GrantRequest */
-        aughor__routers__groups__GrantRequest: {
+        pramanyx__routers__groups__GrantRequest: {
             /** Level */
             level: string;
             /** Principal */
@@ -26174,7 +26174,7 @@ export interface components {
          *     overrides. The legacy `deep`/`insight_id` flags keep the dossier-drill and
          *     "Investigate deeper" escalations working through the one door.
          */
-        aughor__routers__investigations__AskRequest: {
+        pramanyx__routers__investigations__AskRequest: {
             /** Agent Id */
             agent_id?: string | null;
             /**
@@ -26275,7 +26275,7 @@ export interface components {
             surface: string;
         };
         /** AcceptRequest */
-        aughor__routers__kinetic__AcceptRequest: {
+        pramanyx__routers__kinetic__AcceptRequest: {
             /**
              * Actor
              * @default
@@ -26295,7 +26295,7 @@ export interface components {
             mint_grant: boolean;
         };
         /** ProposeRequest */
-        aughor__routers__kinetic__ProposeRequest: {
+        pramanyx__routers__kinetic__ProposeRequest: {
             /**
              * Actor
              * @default agent
@@ -26310,7 +26310,7 @@ export interface components {
          *     roster server-side, because a client that could state which declaration it was ratifying
          *     could ratify one the server never made.
          */
-        aughor__routers__mcpservers__GrantRequest: {
+        pramanyx__routers__mcpservers__GrantRequest: {
             /**
              * Granted By
              * @default
@@ -26323,12 +26323,12 @@ export interface components {
             note: string;
         };
         /** GrantRequest */
-        aughor__routers__metastore__GrantRequest: {
+        pramanyx__routers__metastore__GrantRequest: {
             /** Catalog Id */
             catalog_id: string;
         };
         /** RestoreRequest */
-        aughor__routers__record__RestoreRequest: {
+        pramanyx__routers__record__RestoreRequest: {
             /**
              * By
              * @default
@@ -26340,7 +26340,7 @@ export interface components {
             ref: string;
         };
         /** ProposeRequest */
-        aughor__routers__sheets__ProposeRequest: {
+        pramanyx__routers__sheets__ProposeRequest: {
             /** Words */
             words: string;
         };
@@ -26449,7 +26449,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["aughor__routers__groups__GrantRequest"];
+                "application/json": components["schemas"]["pramanyx__routers__groups__GrantRequest"];
             };
         };
         responses: {
@@ -28552,7 +28552,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["aughor__routers__investigations__AskRequest"];
+                "application/json": components["schemas"]["pramanyx__routers__investigations__AskRequest"];
             };
         };
         responses: {
@@ -29473,7 +29473,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["aughor__routers__automations__ProposeRequest"];
+                "application/json": components["schemas"]["pramanyx__routers__automations__ProposeRequest"];
             };
         };
         responses: {
@@ -29975,7 +29975,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["aughor__routers__automations__LayoutRequest"];
+                "application/json": components["schemas"]["pramanyx__routers__automations__LayoutRequest"];
             };
         };
         responses: {
@@ -31471,7 +31471,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["aughor__routers__cards__LayoutRequest"];
+                "application/json": components["schemas"]["pramanyx__routers__cards__LayoutRequest"];
             };
         };
         responses: {
@@ -34707,7 +34707,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["aughor__routers__dashboards__AskRequest"];
+                "application/json": components["schemas"]["pramanyx__routers__dashboards__AskRequest"];
             };
         };
         responses: {
@@ -34785,7 +34785,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["aughor__routers__dashboards__RestoreRequest"];
+                "application/json": components["schemas"]["pramanyx__routers__dashboards__RestoreRequest"];
             };
         };
         responses: {
@@ -37680,7 +37680,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["aughor__routers__datasets__AcceptRequest"];
+                "application/json": components["schemas"]["pramanyx__routers__datasets__AcceptRequest"];
             };
         };
         responses: {
@@ -41087,7 +41087,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["aughor__routers__kinetic__AcceptRequest"];
+                "application/json": components["schemas"]["pramanyx__routers__kinetic__AcceptRequest"];
             };
         };
         responses: {
@@ -41193,7 +41193,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["aughor__routers__kinetic__ProposeRequest"];
+                "application/json": components["schemas"]["pramanyx__routers__kinetic__ProposeRequest"];
             };
         };
         responses: {
@@ -43595,7 +43595,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["aughor__routers__mcpservers__GrantRequest"];
+                "application/json": components["schemas"]["pramanyx__routers__mcpservers__GrantRequest"];
             };
         };
         responses: {
@@ -44059,7 +44059,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["aughor__routers__metastore__GrantRequest"];
+                "application/json": components["schemas"]["pramanyx__routers__metastore__GrantRequest"];
             };
         };
         responses: {
@@ -54199,7 +54199,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["aughor__routers__record__RestoreRequest"];
+                "application/json": components["schemas"]["pramanyx__routers__record__RestoreRequest"];
             };
         };
         responses: {
@@ -56758,7 +56758,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["aughor__routers__sheets__ProposeRequest"];
+                "application/json": components["schemas"]["pramanyx__routers__sheets__ProposeRequest"];
             };
         };
         responses: {

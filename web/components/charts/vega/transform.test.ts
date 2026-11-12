@@ -4,7 +4,7 @@
  * The four post-processing ops move from a POST to /query/postproc into the chart's own
  * dataflow. That is only an improvement if the numbers are identical, so this does not check
  * the shape of the transform blocks — it RUNS them through Vega and compares every value
- * against a direct port of aughor/tools/postproc.py's semantics, edge cases included.
+ * against a direct port of pramanyx/tools/postproc.py's semantics, edge cases included.
  */
 
 import { describe, expect, it } from "vitest";
@@ -12,7 +12,7 @@ import * as vl from "vega-lite";
 import { View, parse } from "vega";
 import { resolveVegaSpec, type TransformSpec } from "@/components/charts/vega/resolveSpec";
 
-/** Reference implementations — a direct port of aughor/tools/postproc.py. */
+/** Reference implementations — a direct port of pramanyx/tools/postproc.py. */
 const ref = {
   pop: (v: (number | null)[]) =>
     v.map((cur, i) => {
@@ -77,7 +77,7 @@ const close = (a: (number | null)[], b: (number | null)[]) => {
 const days = (n: number) => Array.from({ length: n }, (_, i) => `2024-01-${String(i + 1).padStart(2, "0")}`);
 const table = (vals: (number | null)[]) => days(vals.length).map((d, i) => [d, vals[i]] as unknown[]);
 
-describe("declarative transforms match aughor/tools/postproc.py", () => {
+describe("declarative transforms match pramanyx/tools/postproc.py", () => {
   const plain: (number | null)[] = [100, 120, 90, 90, 150, 210, 60];
   const withNull: (number | null)[] = [100, null, 90, 120, null, 210, 60];
   const withZero: (number | null)[] = [0, 120, 90, 0, 150, 210, 60];

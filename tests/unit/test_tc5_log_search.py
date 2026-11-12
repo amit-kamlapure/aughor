@@ -12,12 +12,12 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.kernel.ledger import Ledger
+from pramanyx.kernel.ledger import Ledger
 
 
 @pytest.fixture()
 def client():
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 

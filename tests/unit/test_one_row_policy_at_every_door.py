@@ -13,10 +13,10 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.ontology import security_sql
-from aughor.org.context import reset_actor, set_actor
-from aughor.semantic.object_query import ObjectQuery, compile_object_query
-from aughor.sql.rls import EntityRule, PolicyRefused, apply_entity_rules
+from pramanyx.ontology import security_sql
+from pramanyx.org.context import reset_actor, set_actor
+from pramanyx.semantic.object_query import ObjectQuery, compile_object_query
+from pramanyx.sql.rls import EntityRule, PolicyRefused, apply_entity_rules
 from tests.unit.test_object_actions import CONN, ORDER, _Borrowed, db, graph  # noqa: F401 — fixtures by name
 from tests.unit.test_ontology_security import RETURNED, SHIPPED, secured  # noqa: F401 — fixtures by name
 
@@ -34,7 +34,7 @@ def as_reader(monkeypatch):
     tokens: list = []
 
     def _as(who: str) -> None:
-        monkeypatch.setenv("AUGHOR_LOCAL_USER", who)
+        monkeypatch.setenv("PRAMANYX_LOCAL_USER", who)
         tokens.append(set_actor(who))
     yield _as
     for t in reversed(tokens):
@@ -109,7 +109,7 @@ def test_with_nothing_declared_every_statement_reads_as_it_did(graph, db, as_rea
     n, result = _count(db)
     assert n == _every(db) and not result.caveats and "object-policy:Order" not in result.doors
     assert not db.execute("q", "SELECT SUM(total_amount) FROM orders").error
-    from aughor.db.connection import enforce_row_policy
+    from pramanyx.db.connection import enforce_row_policy
     assert enforce_row_policy(db, "q", COUNT) == (COUNT, None)
 
 
@@ -121,7 +121,7 @@ def test_a_schedule_and_the_platforms_own_statements_count_every_order(sql_door,
 
 
 def test_the_object_page_still_reads_its_row_and_masks_the_amount(sql_door, db, as_reader):  # noqa: F811
-    from aughor.semantic.object_instances import get_object
+    from pramanyx.semantic.object_instances import get_object
     as_reader("ana")
     page = get_object(sql_door, db, "order", ORDER)                           # O000123 is delivered: Ana's
     amount = next(p for p in page.properties if p["name"] == "total_amount")
@@ -129,7 +129,7 @@ def test_the_object_page_still_reads_its_row_and_masks_the_amount(sql_door, db, 
 
 
 def test_two_readers_never_share_a_cached_result(sql_door, as_reader, monkeypatch):
-    from aughor.db.connection import result_cache_tenancy
+    from pramanyx.db.connection import result_cache_tenancy
     assert result_cache_tenancy() is None                                     # no request: the key it always was
     as_reader("ana")
     ana = result_cache_tenancy()
@@ -141,7 +141,7 @@ def test_two_readers_never_share_a_cached_result(sql_door, as_reader, monkeypatc
 # ── edit history ────────────────────────────────────────────────────────────────
 
 def test_edit_history_is_read_as_the_reader_may(sql_door, db, as_reader, monkeypatch):  # noqa: F811
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda conn: _Borrowed(db))
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda conn: _Borrowed(db))
     refunded = str(db.execute("k", "SELECT order_id FROM orders WHERE status = 'refunded' LIMIT 1").rows[0][0])
     rows = [{"object_type": "order", "row_key": ORDER, "column": "total_amount", "body": "5", "previous": "4"},
             {"object_type": "order", "row_key": ORDER, "column": "review_flag", "body": "true", "previous": ""},
@@ -159,7 +159,7 @@ def test_edit_history_is_read_as_the_reader_may(sql_door, db, as_reader, monkeyp
 def test_edit_history_it_cannot_check_is_withheld_and_said(sql_door, as_reader, monkeypatch):
     def _down(conn):
         raise RuntimeError("warehouse down")
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", _down)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", _down)
     as_reader("ana")
     shown, withheld = security_sql.history_as_read(CONN, [{"object_type": "order", "row_key": ORDER,
                                                            "column": "status", "body": "x", "previous": ""}])
@@ -215,10 +215,10 @@ def test_a_table_whose_policy_cannot_be_applied_is_refused():
 def test_the_sql_editor_and_the_object_listing_agree_over_http(sql_door, db, client, monkeypatch):  # noqa: F811
     """The SQL editor's statement is narrowed through the request the middleware frames; the object listing's own
     statements (a `SELECT *` under its row policy) are left to it by its router's dependency, not refused."""
-    monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema=None: sql_door)
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda conn, *a, **k: _Borrowed(db))
-    monkeypatch.setattr("aughor.routers.query._check_conn_org", lambda request, conn: None)
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana")
+    monkeypatch.setattr("pramanyx.routers.ontology.served_ontology_graph", lambda conn, schema=None: sql_door)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda conn, *a, **k: _Borrowed(db))
+    monkeypatch.setattr("pramanyx.routers.query._check_conn_org", lambda request, conn: None)
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ana")
     shipped = _every(db, SHIPPED)
     listed = client.post("/objects/list", params={"connection_id": CONN, "schema_name": "ecommerce"},
                          json={"entity": "Order", "columns": ["status"], "limit": 200})
@@ -234,8 +234,8 @@ def test_the_sql_editor_and_the_object_listing_agree_over_http(sql_door, db, cli
 def test_a_process_that_never_loaded_the_policies_refuses_rather_than_runs_unfiltered(sql_door, db, as_reader):  # noqa: F811
     """The door reads the policies through a registry the agent fills at bootstrap. A host that forgot to fill it must
     not run a request's statement as if nothing were declared."""
-    from aughor.agent.bootstrap import _register_object_policies
-    from aughor.kernel.registries import object_policies
+    from pramanyx.agent.bootstrap import _register_object_policies
+    from pramanyx.kernel.registries import object_policies
     as_reader("ana")
     object_policies.clear()
     try:

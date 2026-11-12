@@ -4,7 +4,7 @@
  * A hosted deployment has no engine behind it — the Python API is local-first and does not
  * fit a serverless function. So in demo posture `getApiBase()` points here, and this handler
  * answers the read routes from a recording captured off a real backend
- * (`aughor/demo/record_api.py`). The visitor sees genuine completed work: the connection,
+ * (`pramanyx/demo/record_api.py`). The visitor sees genuine completed work: the connection,
  * its briefing, its curated deep analyses and its context graph — with no backend, no API
  * key and no spend. Generation was paid once; consumption is free.
  *

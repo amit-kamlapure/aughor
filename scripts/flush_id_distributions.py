@@ -14,7 +14,7 @@ import json
 import sys
 from pathlib import Path
 
-from aughor.tools.profiler import _KEY_PATTERN, _KEY_PATTERN_CAMEL
+from pramanyx.tools.profiler import _KEY_PATTERN, _KEY_PATTERN_CAMEL
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 APPLY = "--apply" in sys.argv

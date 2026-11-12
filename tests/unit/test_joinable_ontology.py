@@ -5,9 +5,9 @@ entirely — so the persisted (cross-process, reviewable) ontology never carries
 beyond the in-process catalog cache. This tests the pure overlay `apply_join_verifications`."""
 from __future__ import annotations
 
-from aughor.ontology.builder import apply_join_verifications, _edge_key
-from aughor.ontology.models import OntologyGraph, OntologyRelationship
-from aughor.sql.join_guard import VerifiedJoin
+from pramanyx.ontology.builder import apply_join_verifications, _edge_key
+from pramanyx.ontology.models import OntologyGraph, OntologyRelationship
+from pramanyx.sql.join_guard import VerifiedJoin
 
 
 def _rel(rid, fe, te, ft, fc, tt, tc, conf="inferred"):

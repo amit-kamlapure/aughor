@@ -2,7 +2,7 @@
 agent.handoff provenance journaled by run_analysis_phase."""
 import json
 
-from aughor.agent.handoff import (
+from pramanyx.agent.handoff import (
     EngineeredQuery,
     NarratorHandoff,
     SqlEngineerHandoff,
@@ -10,8 +10,8 @@ from aughor.agent.handoff import (
     emit_handoff,
     journal_phase_handoffs,
 )
-from aughor.kernel.agents import specialist
-from aughor.kernel.ledger import Ledger
+from pramanyx.kernel.agents import specialist
+from pramanyx.kernel.ledger import Ledger
 
 
 class _Q:

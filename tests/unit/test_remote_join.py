@@ -9,8 +9,8 @@ from pathlib import Path
 
 import duckdb
 
-from aughor.connectors.remote_join import batched_foreach_join
-from aughor.db.connection import DuckDBConnection
+from pramanyx.connectors.remote_join import batched_foreach_join
+from pramanyx.db.connection import DuckDBConnection
 
 
 def _duck(*stmts: str) -> DuckDBConnection:
@@ -237,7 +237,7 @@ def test_right_side_can_be_a_grounded_subquery():
 
 
 def test_join_exceeds_the_500_row_execute_cap():
-    from aughor.agent.state import QueryResult
+    from pramanyx.agent.state import QueryResult
     # a LEFT driver with 700 distinct keys, built directly (a capped execute() would truncate to 500)
     left = QueryResult(hypothesis_id="t", sql="", columns=["k"],
                        rows=[[str(i)] for i in range(700)], row_count=700)
@@ -285,7 +285,7 @@ def test_a_left_read_its_connection_cut_is_refused_rather_than_joined_from_part(
     """The join door's left read and the federated driver come from a connection that may cut them. A left side that
     counts more rows than it holds is refused, where it used to be joined with a PARTIAL note only the SQL carried
     (Arc ON leftovers, S2)."""
-    from aughor.control_plane.contracts.execution import QueryResult
+    from pramanyx.control_plane.contracts.execution import QueryResult
 
     right_conn = _duck(
         "CREATE TABLE customers (cust VARCHAR, name VARCHAR)",

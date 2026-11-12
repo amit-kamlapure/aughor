@@ -14,17 +14,17 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.llm import provider as P
-from aughor.llm.faux import CAPABLE_MODEL
-from aughor.llm.profile import profile_for, role_output_cap, tier_for
+from pramanyx.llm import provider as P
+from pramanyx.llm.faux import CAPABLE_MODEL
+from pramanyx.llm.profile import profile_for, role_output_cap, tier_for
 
 
 @pytest.fixture(autouse=True)
 def _no_env_override(monkeypatch):
     """The operator's env wins over every tier default — and this repo's own `.env`
-    sets AUGHOR_MAX_OUTPUT_TOKENS=8192, which would make every assertion below vacuous
+    sets PRAMANYX_MAX_OUTPUT_TOKENS=8192, which would make every assertion below vacuous
     by pinning the answer. Unset it so the TIERS are what is under test."""
-    monkeypatch.delenv("AUGHOR_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.delenv("PRAMANYX_MAX_OUTPUT_TOKENS", raising=False)
 
 
 # ── the baseline stays byte-identical ────────────────────────────────────────
@@ -77,7 +77,7 @@ def test_the_ceiling_follows_the_model_actually_being_called():
 def test_the_env_override_still_wins_outright(monkeypatch):
     """The operator's explicit number outranks every tier decision, in both
     directions — the pre-4.2a contract, unchanged."""
-    monkeypatch.setenv("AUGHOR_MAX_OUTPUT_TOKENS", "777")
+    monkeypatch.setenv("PRAMANYX_MAX_OUTPUT_TOKENS", "777")
     assert P._max_output_tokens("narrator", CAPABLE_MODEL) == 777
     assert profile_for("narrator", model=CAPABLE_MODEL).max_output_tokens == 777
 

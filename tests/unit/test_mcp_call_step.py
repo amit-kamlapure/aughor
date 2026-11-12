@@ -25,11 +25,11 @@ from pathlib import Path
 
 import pytest
 
-from aughor.automations.dataflow import validate_chain
-from aughor.automations.models import Automation, Condition, Effect
-from aughor.mcpservers import store
-from aughor.mcpservers.discover import discover
-from aughor.mcpservers.models import McpServer
+from pramanyx.automations.dataflow import validate_chain
+from pramanyx.automations.models import Automation, Condition, Effect
+from pramanyx.mcpservers import store
+from pramanyx.mcpservers.discover import discover
+from pramanyx.mcpservers.models import McpServer
 
 _FIXTURE_SERVER = Path(__file__).parent / "fixtures" / "mcp_fixture_server.py"
 CONN = "va9d"
@@ -123,7 +123,7 @@ def test_the_two_config_keys_are_required_at_construction():
 def test_the_step_runs_and_publishes_its_text(server):
     """The whole vertical: an allowlisted server, a discovered read-only tool, a chain step,
     the one door, a real subprocess, and a value a later step could bind to."""
-    from aughor.automations.engine import run_automation
+    from pramanyx.automations.engine import run_automation
 
     chain = _chain(server_id=server.id, tool="read_the_weather",
                    arguments={"city": "Lisbon"})
@@ -142,31 +142,31 @@ def test_the_step_runs_and_publishes_its_text(server):
 def test_the_published_keys_are_what_a_later_step_may_bind(server):
     """A step advertising a key the engine does not publish is a drawn edge that resolves
     to nothing at 07:00 — B1's whole argument."""
-    from aughor.automations.dataflow import PUBLISHED_KEYS
+    from pramanyx.automations.dataflow import PUBLISHED_KEYS
     assert set(PUBLISHED_KEYS["mcp_call"]) == {"text", "truncated"}
 
 
 def test_a_refused_call_is_TERMINAL_not_retried(server, monkeypatch):
     """`dispatch_error`, not `failed`. Retrying a refusal is a request against something
     that has already said no, forever."""
-    from aughor.automations.engine import run_automation
+    from pramanyx.automations.engine import run_automation
 
     chain = _chain(server_id=server.id, tool="read_the_weather", arguments={"city": "X"})
     # The roster is what the save checked; make the door refuse at run time the way a
     # re-discovery between save and run would.
-    monkeypatch.setattr("aughor.mcpservers.call.tool_named", lambda *a, **k: None)
+    monkeypatch.setattr("pramanyx.mcpservers.call.tool_named", lambda *a, **k: None)
     run = run_automation(chain, manual=True, persist=False)
     assert run.effects[0].status == "dispatch_error"
 
 
 def test_a_capped_call_is_FAILED_because_the_window_rolls_over(server, monkeypatch):
-    from aughor.automations.engine import run_automation
-    from aughor.govern.outbound import OutboundBlocked
+    from pramanyx.automations.engine import run_automation
+    from pramanyx.govern.outbound import OutboundBlocked
 
     def _blocked(*_a, **_k):
         raise OutboundBlocked("mcp", "outbound cap reached")
 
-    monkeypatch.setattr("aughor.govern.outbound.external_call", _blocked)
+    monkeypatch.setattr("pramanyx.govern.outbound.external_call", _blocked)
     chain = _chain(server_id=server.id, tool="read_the_weather", arguments={"city": "X"})
     run = run_automation(chain, manual=True, persist=False)
     assert run.effects[0].status == "failed"
@@ -175,9 +175,9 @@ def test_a_capped_call_is_FAILED_because_the_window_rolls_over(server, monkeypat
 def test_a_failed_call_publishes_NOTHING(server, monkeypatch):
     """A failed call's message is the server's error, not this tool's output. Publishing it
     would let a later step bind to a value that means something else entirely."""
-    from aughor.automations.engine import run_automation
+    from pramanyx.automations.engine import run_automation
 
-    monkeypatch.setattr("aughor.mcpservers.call.tool_named", lambda *a, **k: None)
+    monkeypatch.setattr("pramanyx.mcpservers.call.tool_named", lambda *a, **k: None)
     chain = _chain(server_id=server.id, tool="read_the_weather", arguments={"city": "X"})
     run = run_automation(chain, manual=True, persist=False)
     assert run.effects[0].data == {}
@@ -186,14 +186,14 @@ def test_a_failed_call_publishes_NOTHING(server, monkeypatch):
 # ── the palette tells the truth about this deployment ────────────────────────────
 
 def test_the_palette_dims_the_step_when_no_server_is_allowlisted():
-    from aughor.automations.palette import NEEDS_SETUP, entries
+    from pramanyx.automations.palette import NEEDS_SETUP, entries
     row = next(e for e in entries() if e["kind"] == "mcp_call")
     assert row["availability"] == NEEDS_SETUP
     assert "MCP servers" in row["reason"]
 
 
 def test_the_palette_lights_it_once_a_server_exists(server):
-    from aughor.automations.palette import READY, entries
+    from pramanyx.automations.palette import READY, entries
     row = next(e for e in entries() if e["kind"] == "mcp_call")
     assert row["availability"] == READY
 
@@ -201,7 +201,7 @@ def test_the_palette_lights_it_once_a_server_exists(server):
 def test_a_DISABLED_server_does_not_light_the_row(server):
     """Counting rows would have said otherwise — the distinction this module already draws
     for a revoked grant and a disabled Slack bot."""
-    from aughor.automations.palette import NEEDS_SETUP, entries
+    from pramanyx.automations.palette import NEEDS_SETUP, entries
     server.enabled = False
     store.save_server(server)
     row = next(e for e in entries() if e["kind"] == "mcp_call")
@@ -213,7 +213,7 @@ def test_a_DISABLED_server_does_not_light_the_row(server):
 def test_discovered_tools_appear_as_their_OWN_family(server):
     """Not as `mcp_tool`, which is what we SERVE. The two point in opposite directions and
     a flat family holding both would answer confidently and wrongly."""
-    from aughor.components import components
+    from pramanyx.components import components
 
     rows = {c.id: c for c in components() if c.family == "remote_tool"}
     assert f"remote_tool:{server.id}:read_the_weather" in rows
@@ -225,6 +225,6 @@ def test_discovered_tools_appear_as_their_OWN_family(server):
 
 
 def test_a_remote_tool_names_the_ONE_DOOR_as_its_governor(server):
-    from aughor.components import components
+    from pramanyx.components import components
     rows = [c for c in components() if c.family == "remote_tool"]
-    assert rows and all(c.governed_by == "aughor.mcpservers.call" for c in rows)
+    assert rows and all(c.governed_by == "pramanyx.mcpservers.call" for c in rows)

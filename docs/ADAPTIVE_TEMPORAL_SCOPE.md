@@ -1,7 +1,7 @@
 # Adaptive Temporal Scope — discovering *when matters*
 
 **Status:** Planned (design). **Owner area:** Explorer / Domain Intelligence / Briefings.
-**Replaces:** the fixed "last 12 months" window in `aughor/explorer/agent.py::_compute_time_window`.
+**Replaces:** the fixed "last 12 months" window in `pramanyx/explorer/agent.py::_compute_time_window`.
 
 ---
 

@@ -116,7 +116,7 @@ export const CHART_TYPE_LABEL: Record<ChartType | "auto", string> = {
 };
 
 /** CA-4 form-by-job: job token → the underscore engine hint its form renders as.
- *  MIRRORS aughor/agent/chart_vocab.py JOB_TO_FORM — the parity test walks both. */
+ *  MIRRORS pramanyx/agent/chart_vocab.py JOB_TO_FORM — the parity test walks both. */
 export const JOB_TO_ENGINE_HINT: Record<string, string> = {
   magnitude: "bar_horizontal", trend: "line", identity: "stacked_bar",
   change: "delta_bar", share: "stacked_bar", distribution: "histogram", relation: "scatter",

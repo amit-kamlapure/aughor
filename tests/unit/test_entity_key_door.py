@@ -10,7 +10,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from aughor.ontology.models import OntologyEntity, OntologyGraph
+from pramanyx.ontology.models import OntologyEntity, OntologyGraph
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -23,7 +23,7 @@ def _graph() -> OntologyGraph:
 
 
 def test_a_connections_key_reaches_the_entity_door_as_a_connections_not_an_organisations(monkeypatch):
-    from aughor.routers import ontology as R
+    from pramanyx.routers import ontology as R
     seen = {}
 
     def entity_door(entity_id, body, connection_id=None, schema_name=None, domain="left to its default"):
@@ -44,7 +44,7 @@ def test_no_door_calls_a_routed_function_leaving_a_query_parameter_to_its_defaul
     """Every routed function in the ontology router whose parameters default to ``Query(...)``: wherever another
     function CALLS it, each such parameter is passed by name. A default of ``Query(...)`` is a truthy object, never the
     value it documents."""
-    source = (REPO / "aughor" / "routers" / "ontology.py").read_text()
+    source = (REPO / "pramanyx" / "routers" / "ontology.py").read_text()
     tree = ast.parse(source)
     queried: dict[str, set[str]] = {}
     for fn in [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]:

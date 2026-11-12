@@ -13,8 +13,8 @@ from __future__ import annotations
 import pytest
 from fastapi import HTTPException
 
-from aughor.kernel.registries import resource_org as rreg
-from aughor.security.authz import Ownership, Principal, authorize_resource, check_owner, resolve_ownership
+from pramanyx.kernel.registries import resource_org as rreg
+from pramanyx.security.authz import Ownership, Principal, authorize_resource, check_owner, resolve_ownership
 
 ACME = Principal(user_id="amit", org_id="a4-acme")
 
@@ -65,8 +65,8 @@ def test_missing_shared_own_and_foreign_through_a_conn_resolver(probe_kind, monk
     table = {"mine": "conn-acme", "theirs": "conn-globex", "builtin": "workspace", "gone": "conn-deleted"}
     rreg.register_resource_conn_resolver(probe_kind, lambda rid: table.get(rid))
     orgs = {"conn-acme": "a4-acme", "conn-globex": "a4-globex"}
-    monkeypatch.setattr("aughor.db.registry.get_connection_org", lambda cid: orgs.get(cid))
-    monkeypatch.setattr("aughor.db.registry.is_registered", lambda cid: cid in orgs or cid == "workspace")
+    monkeypatch.setattr("pramanyx.db.registry.get_connection_org", lambda cid: orgs.get(cid))
+    monkeypatch.setattr("pramanyx.db.registry.is_registered", lambda cid: cid in orgs or cid == "workspace")
 
     assert resolve_ownership(probe_kind, "mine", ACME) is Ownership.OWNED
     assert resolve_ownership(probe_kind, "theirs", ACME) is Ownership.FOREIGN
@@ -94,15 +94,15 @@ def test_an_org_resolver_says_shared_with_an_empty_string_and_missing_with_none(
 
 
 def test_a_connection_that_is_not_here_is_not_found_and_a_builtin_is_shared(monkeypatch):
-    monkeypatch.setattr("aughor.db.registry.get_connection_org", lambda cid: None)
-    monkeypatch.setattr("aughor.db.registry.is_registered", lambda cid: cid == "workspace")
+    monkeypatch.setattr("pramanyx.db.registry.get_connection_org", lambda cid: None)
+    monkeypatch.setattr("pramanyx.db.registry.is_registered", lambda cid: cid == "workspace")
     assert resolve_ownership("connection", "workspace", ACME) is Ownership.SHARED
     assert resolve_ownership("connection", "never-added", ACME) is Ownership.NOT_FOUND
 
 
 def test_the_domain_carrier_is_the_ontologys_own_spelling():
     """authz spells the carrier itself (the platform must not import the agent); this keeps the two one."""
-    from aughor.ontology.overrides import DOMAIN_CARRIER as theirs
-    from aughor.security.authz import DOMAIN_CARRIER as ours
+    from pramanyx.ontology.overrides import DOMAIN_CARRIER as theirs
+    from pramanyx.security.authz import DOMAIN_CARRIER as ours
     assert ours == theirs
     assert resolve_ownership("connection", f"{ours}default", ACME) is Ownership.SHARED

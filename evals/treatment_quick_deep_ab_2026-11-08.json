@@ -2,7 +2,7 @@
  "what": "PENDING item 4 / ROADMAP 3.22 CP-3 — the paid quick-vs-deep comparison (punch list item 30). 22 real past asks on LuxExperience, each answered by the light body (depth quick: the conversation) and by the analyst (depth deep), each arm on its own fresh restore of the same backup; scored against SQL references by the rule in evals/treatment_quick_deep_rule_2026-11-08.json; then the CP-1 judge's tier against that score.",
  "measured_on": "2026-11-08",
  "connection": "LuxExperience dcc63d83 (Postgres, lux-postgres :5555); newest order 2026-11-07, 146,364 orders, unchanged before and after each arm",
- "install": "copies of ~/.aughor/state/backups/2026-11-08T094316Z served by this worktree (branch claude/punch-3-7) on :8013 with AUGHOR_DISABLE_SCHEDULERS=1; lsof on every server pid: 0 files under ~/.aughor/state",
+ "install": "copies of ~/.pramanyx/state/backups/2026-11-08T094316Z served by this worktree (branch claude/punch-3-7) on :8013 with PRAMANYX_DISABLE_SCHEDULERS=1; lsof on every server pid: 0 files under ~/.pramanyx/state",
  "rule_file": {
   "path": "evals/treatment_quick_deep_rule_2026-11-08.json",
   "sha256_as_written_before_the_run": "d98efa4134a884a4535c983e4f1a1ce0650d196ae4f0e65e3d1f62864a4443f6",
@@ -1480,7 +1480,7 @@
  "verdict": "CP-3 STAYS HELD, the rule's 'a_without_b'. (a) holds: deep beat quick on 7 of 16 valid asks (44 percent), 6 of 8 diagnostic and 1 of 8 descriptive, for about 1.8x the tokens; quick beat deep on 2 (L2, L10) and 7 tied. (b) fails: the judge's tier predicts those asks no better than chance (Fisher one-sided p = 0.4; it called 3 heavy, and 5 of the 7 asks where deep was worth it were called light). The next lever is the judge, not the router: its p_heavy and steps_implied carry the signal its argmax discards (exploratory AUC 0.865 / 0.907), but no better yet than a plain diagnostic-or-not rule. Every number is conditional: both arms ran on deepseek-v4.1-flash through the fallback (the Anthropic balance is spent), deep never answered 6 of 22 asks, and the light body's grounding check withheld 7 of its 22 answers.",
  "found_on_the_way_named_not_fixed": [
   "The install's Anthropic key is out of credit (first refusal 10:49Z on the copy; the live install's last Sonnet success was in the 09:54-10:54Z hour): the LIVE API now fails over to OpenRouter deepseek on every call.",
-  "After about 15 minutes of failing over on every call, the copy's API stopped failing over at all (11:20Z: Anthropic 400, no OpenRouter attempt) until it was restarted; cause not established (aughor/llm/provider.py, _complete_via_fallback / _fallback_provider).",
+  "After about 15 minutes of failing over on every call, the copy's API stopped failing over at all (11:20Z: Anthropic 400, no OpenRouter attempt) until it was restarted; cause not established (pramanyx/llm/provider.py, _complete_via_fallback / _fallback_provider).",
   "On the fallback the analyst's intake was refused for D6, D7 and D12 on both attempts ('fallback openrouter also failed (structured output unavailable: the request never reached the model (bad request))') with no OpenRouter request in the log.",
   "On deepseek-v4.1-flash the light body's grounding check withheld its prose on 7 of 22 turns ('I could not ground this answer in the query result').",
   "Quick D9 said 'this connection has no registered price_realization metric'; price_realization_rate is approved on dcc63d83.",

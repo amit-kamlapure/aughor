@@ -24,8 +24,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.automations.propose import ProposedChain, propose_chain
-from aughor.automations.store import list_automations
+from pramanyx.automations.propose import ProposedChain, propose_chain
+from pramanyx.automations.store import list_automations
 
 CONN = "ds15"
 
@@ -61,7 +61,7 @@ def _chain(**kw) -> ProposedChain:
 def _no_leftovers():
     """The automations store is session-scoped. Nothing here should save — and this
     fixture is also how the "nothing is saved" test can trust its own count."""
-    from aughor.automations.store import delete_automation
+    from pramanyx.automations.store import delete_automation
     for a in list_automations(conn_id=CONN):
         delete_automation(a.id)
     yield
@@ -242,7 +242,7 @@ def test_a_list_publishing_key_is_marked_as_one():
     has a standing lesson about. Seeding one makes the kind available, which is the only
     state in which the marker should appear at all.
     """
-    from aughor.semantic import trusted_queries as tq
+    from pramanyx.semantic import trusted_queries as tq
 
     tq.save_trusted(tq.TrustedQuery(id="tq_ds15", connection_id=CONN,
                                     question="which accounts churned?",

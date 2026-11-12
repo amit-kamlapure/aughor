@@ -1,4 +1,4 @@
-"""Tests for query-log mining (aughor/sql/query_log_miner.py).
+"""Tests for query-log mining (pramanyx/sql/query_log_miner.py).
 
 Contract: mine a list of historical SQL strings into DETERMINISTIC facts — observed join paths,
 filter value domains, named business formulas, column usage — ranked by frequency, with one-off
@@ -7,7 +7,7 @@ block is a schema-context comment the LLM can use the way value-verified join hi
 """
 from __future__ import annotations
 
-from aughor.sql.query_log_miner import mine_query_log, QueryLogFacts
+from pramanyx.sql.query_log_miner import mine_query_log, QueryLogFacts
 
 
 def test_mines_join_edges_with_alias_resolution_and_direction_normalized():

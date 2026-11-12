@@ -9,7 +9,7 @@ never costs confidence.
 """
 from types import SimpleNamespace
 
-from aughor.agent.investigate import (
+from pramanyx.agent.investigate import (
     _cap_confidence_on_trust_advisory,
     _reframe_on_pop_duration_mismatch,
     _POP_MISMATCH_SIGNATURE,

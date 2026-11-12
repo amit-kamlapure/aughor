@@ -17,8 +17,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.actions import inbox
-from aughor.ontology.models import ActionParameter, KineticAction, SubmissionCriterion
+from pramanyx.actions import inbox
+from pramanyx.ontology.models import ActionParameter, KineticAction, SubmissionCriterion
 
 
 def _action(**kw) -> KineticAction:
@@ -40,7 +40,7 @@ def _proposal(**kw) -> inbox.StagedProposal:
 
 @pytest.fixture
 def flag_on(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled",
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled",
                         lambda n: n == "automations.proposals")
 
 
@@ -50,7 +50,7 @@ def graph_of(monkeypatch):
     def _install(action):
         class _G:
             kinetic_actions = {action.id: action}
-        monkeypatch.setattr("aughor.ontology.store.load_latest_ontology",
+        monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology",
                             lambda cid, schema=None: _G())
     return _install
 
@@ -110,11 +110,11 @@ def test_accept_dispatches_exactly_once_under_a_double_accept(flag_on, graph_of)
         return {"ok": True}
 
     # First accept executes once (approved bypasses the approval gate).
-    import aughor.actions.executor as ex
+    import pramanyx.actions.executor as ex
     p = inbox.stage_proposal(_proposal(connection_id="conn-acc"))
 
     # Patch default_dispatch so the real executor path runs but the side effect is captured.
-    import aughor.actions.inbox as inbox_mod
+    import pramanyx.actions.inbox as inbox_mod
     orig = ex.default_dispatch
     ex.default_dispatch = rec_dispatch
     try:
@@ -142,7 +142,7 @@ def test_accept_still_enforces_submission_criteria(flag_on, graph_of):
     msg = "Refunds over the window need a manager."
     graph_of(_action(submission_criteria=[SubmissionCriterion(expr="order_id == '8821'", message=msg)]))
     calls: list = []
-    import aughor.actions.executor as ex
+    import pramanyx.actions.executor as ex
     orig = ex.default_dispatch
     ex.default_dispatch = lambda a, p, s="", **_k: calls.append(1)
     try:
@@ -193,8 +193,8 @@ def test_a_row_written_before_ds11_still_reads_as_a_declared_action(tmp_path,
     c.commit()
     c.close()
 
-    monkeypatch.setenv("AUGHOR_KINETIC_INBOX_DB", str(db))
-    mod = importlib.reload(importlib.import_module("aughor.actions.inbox"))
+    monkeypatch.setenv("PRAMANYX_KINETIC_INBOX_DB", str(db))
+    mod = importlib.reload(importlib.import_module("pramanyx.actions.inbox"))
     try:
         row = mod.get_proposal("old-1")
         assert row is not None
@@ -213,8 +213,8 @@ def test_a_row_written_before_ds11_still_reads_as_a_declared_action(tmp_path,
 def test_the_two_kinds_are_audited_under_the_names_they_are_gated_by():
     """One function spells it, because the call seam GATES on that exact string: two
     spellings would mean an allowlist entry permitting a name nothing checks."""
-    from aughor.actions.inbox import StagedProposal, gov_action_of
-    from aughor.integrations.operations import get_operation
+    from pramanyx.actions.inbox import StagedProposal, gov_action_of
+    from pramanyx.integrations.operations import get_operation
 
     declared = StagedProposal(connection_id="fixture", action_id="issue_refund")
     assert gov_action_of(declared) == "kinetic.issue_refund"

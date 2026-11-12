@@ -12,13 +12,13 @@ import ast
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-_ROOTS = ("aughor", "evals")
+_ROOTS = ("pramanyx", "evals")
 _RULE_NAMES = {"writer_rules", "_writer_rules", "dialect_rules"}
 
 #: A builder whose rules ride the schema its caller hands it — and the caller that must carry them.
 #: Empty since AO-1c (2026-10-03): the agent evaluation no longer builds a prompt of its own — it
 #: frames each golden on the production quick path (`answer_core(frame_only=True)`), whose builder
-#: is held below under `aughor/routers/investigations.py`.
+#: is held below under `pramanyx/routers/investigations.py`.
 _RIDES_THE_CALLER: dict[tuple[str, str], str] = {}
 
 
@@ -72,9 +72,9 @@ def test_the_scan_finds_the_builders_it_must_hold():
     # Four since AO-1c: `custom_agents/quality.py` stopped building its own prompt and rides
     # the quick path's (the one builder fewer is the point of that wave, not a loss of cover).
     assert len(builders) >= 4
-    assert {m for m, _ in builders} >= {"aughor/routers/investigations.py", "aughor/agent/benchmarks.py",
+    assert {m for m, _ in builders} >= {"pramanyx/routers/investigations.py", "pramanyx/agent/benchmarks.py",
                                         "evals/run_golden.py"}
-    assert "aughor/custom_agents/quality.py" not in {m for m, _ in builders}, (
+    assert "pramanyx/custom_agents/quality.py" not in {m for m, _ in builders}, (
         "the agent evaluation grew a prompt of its own again — it must frame on the production path")
 
 
@@ -103,7 +103,7 @@ def test_every_call_of_the_eval_generator_passes_the_rules():
 
 
 def test_the_eval_generator_leads_its_prompt_with_the_rules(monkeypatch):
-    from aughor.db.dialects import DUCKDB_RULES
+    from pramanyx.db.dialects import DUCKDB_RULES
     from evals import run_golden
 
     seen: dict = {}
@@ -113,7 +113,7 @@ def test_the_eval_generator_leads_its_prompt_with_the_rules(monkeypatch):
             seen["user"] = user
             return response_model(sql="SELECT 1")
 
-    monkeypatch.setattr("aughor.llm.provider.get_provider", lambda role: _Provider())
+    monkeypatch.setattr("pramanyx.llm.provider.get_provider", lambda role: _Provider())
     sql = run_golden.generate_sql_chat("How many orders?", "c1", "TABLE orders (id)", dialect_rules=DUCKDB_RULES)
     assert sql == "SELECT 1"
     assert seen["user"].startswith(DUCKDB_RULES) and "TABLE orders (id)" in seen["user"]

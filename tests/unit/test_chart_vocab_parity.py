@@ -2,7 +2,7 @@
 
 Three vocabularies used to disagree (quick prompt 13/14, deep Literals 8,
 renderer 22), so the deep path could never ask for a heatmap the renderer has
-always drawn. The registry (`aughor.agent.chart_vocab`) is the single source;
+always drawn. The registry (`pramanyx.agent.chart_vocab`) is the single source;
 these tests are the CI gate that keeps the seams honest — same spirit as the
 api.gen.ts drift check.
 """
@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 from typing import get_args
 
-from aughor.agent.chart_vocab import (
+from pramanyx.agent.chart_vocab import (
     CHART_JOBS,
     ENGINE_ONLY_HINTS,
     EXOTIC_SHAPES,
@@ -56,7 +56,7 @@ def test_deep_literals_match_the_registry():
     """Quick and deep offer the SAME vocabulary — the deep pydantic Literals (whose
     JSON-schema enum is what the model actually sees) must equal the registry plus
     'none' (deep-only: a finding may decline a chart)."""
-    from aughor.agent.prompts_investigate import PhaseFindingModel, PhaseQueryPlan
+    from pramanyx.agent.prompts_investigate import PhaseFindingModel, PhaseQueryPlan
     for model in (PhaseQueryPlan, PhaseFindingModel):
         lit = get_args(model.model_fields["chart_type"].annotation)
         assert set(lit) == set(MODEL_CHART_TYPES) | {"none"}, model.__name__
@@ -65,7 +65,7 @@ def test_deep_literals_match_the_registry():
 def test_quick_grammar_prompt_offers_the_registry():
     """The grammar prompt derives from the registry — every type appears, and each
     newly-opened type carries its data-shape annotation (offer-but-annotate)."""
-    from aughor.agent.prompts import chat_sql_system
+    from pramanyx.agent.prompts import chat_sql_system
     prompt = chat_sql_system(True)
     for t in MODEL_CHART_TYPES:
         assert f"'{t}'" in prompt, t
@@ -100,6 +100,6 @@ def test_dual_axis_stays_banned():
 def test_legacy_prompt_is_untouched():
     """CHAT_SQL_SYSTEM (benchmark + custom-agent paths) keeps the frozen 14-type
     legacy vocabulary — A5 changes the exhibit-grammar variant only."""
-    from aughor.agent.prompts import CHAT_SQL_SYSTEM
+    from pramanyx.agent.prompts import CHAT_SQL_SYSTEM
     assert "'treemap', 'heatmap', 'combo'" in CHAT_SQL_SYSTEM
     assert "histogram" not in CHAT_SQL_SYSTEM

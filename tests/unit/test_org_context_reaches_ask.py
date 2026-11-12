@@ -16,16 +16,16 @@ import inspect
 
 import pytest
 
-from aughor.orgsettings import org_context
-from aughor.orgsettings.models import OrgSettings
-from aughor.orgsettings.store import effective_settings  # noqa: F401  (patched below)
+from pramanyx.orgsettings import org_context
+from pramanyx.orgsettings.models import OrgSettings
+from pramanyx.orgsettings.store import effective_settings  # noqa: F401  (patched below)
 
 
 @pytest.fixture
 def declared(monkeypatch):
     """A workspace with real declared identity — patched at the resolver so the test
     never writes the live settings store."""
-    from aughor.orgsettings import store as S
+    from pramanyx.orgsettings import store as S
     monkeypatch.setattr(
         S, "effective_settings",
         lambda workspace_id=None: OrgSettings(
@@ -61,7 +61,7 @@ def test_the_reading_is_nameable(declared):
 def test_the_ask_path_asks_for_the_answer_framing():
     """The seam itself, pinned: the quick path must request its own framing rather
     than inheriting the brief's."""
-    from aughor.routers import investigations
+    from pramanyx.routers import investigations
 
     src = inspect.getsource(investigations)
     assert 'org_context(reading="this answer")' in src
@@ -70,7 +70,7 @@ def test_the_ask_path_asks_for_the_answer_framing():
 def test_the_org_note_is_carried_into_the_narrator_prompt():
     """Both halves must exist — building the block and then not sending it is the
     both-ends-exist-feature-doesn't trap."""
-    from aughor.routers import investigations
+    from pramanyx.routers import investigations
 
     src = inspect.getsource(investigations)
     assert 'f"{_org_note}"' in src, "the block is built but never reaches the prompt"
@@ -78,7 +78,7 @@ def test_the_org_note_is_carried_into_the_narrator_prompt():
 
 def test_a_failure_to_read_org_settings_never_breaks_an_answer():
     """Additive context: an answer stands without it."""
-    from aughor.routers import investigations
+    from pramanyx.routers import investigations
 
     src = inspect.getsource(investigations)
     assert "org context is additive; the answer stands without it" in src

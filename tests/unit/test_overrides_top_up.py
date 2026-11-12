@@ -18,9 +18,9 @@ from pathlib import Path
 
 import pytest
 
-from aughor.db import backups, home, migrate, state_classes
-from aughor.db.sqlite_util import resolve_db_path
-from aughor.doctor import FAIL, OK, WARN, _declarations
+from pramanyx.db import backups, home, migrate, state_classes
+from pramanyx.db.sqlite_util import resolve_db_path
+from pramanyx.doctor import FAIL, OK, WARN, _declarations
 
 NAME = "ontology_overrides"
 ENV = home.TOPPED_UP_ENTRIES[NAME]
@@ -50,7 +50,7 @@ def install(tmp_path, monkeypatch):
     monkeypatch.setenv(home.HOME_ENV, str(tmp_path / "home"))
     monkeypatch.delenv(ENV, raising=False)
     monkeypatch.setattr(home, "checkout_data", lambda: data)
-    monkeypatch.setattr("aughor.db.serving.serving_pid", lambda: None)
+    monkeypatch.setattr("pramanyx.db.serving.serving_pid", lambda: None)
     return data
 
 
@@ -62,7 +62,7 @@ def _migrated(data: Path) -> None:
 
 def _resolved(data: Path) -> Path:
     """Where the overrides module's default resolves, the way it resolves it."""
-    return resolve_db_path("AUGHOR_TEST_UNSET_OVERRIDES", data / NAME)
+    return resolve_db_path("PRAMANYX_TEST_UNSET_OVERRIDES", data / NAME)
 
 
 def _bytes(root: Path) -> dict[str, bytes]:
@@ -134,7 +134,7 @@ class TestMigratedBefore:
         assert _resolved(install) == install / NAME, "an un-moved tree must never resolve into an empty home"
         owing = migrate.owed()
         assert len(owing) == 1 and str(install / NAME) in owing[0] and "outside every backup" in owing[0]
-        with pytest.raises(migrate.MoveOwed, match="aughor migrate-state --yes"):
+        with pytest.raises(migrate.MoveOwed, match="pramanyx migrate-state --yes"):
             migrate.ensure_moved()
         said = _declarations()
         assert said.status == FAIL and "migrate-state" in said.fix
@@ -228,7 +228,7 @@ class TestMigratedBefore:
 
     def test_it_refuses_while_the_api_serves(self, install, monkeypatch):
         _migrated(install)
-        monkeypatch.setattr("aughor.db.serving.serving_pid", lambda: 4242)
+        monkeypatch.setattr("pramanyx.db.serving.serving_pid", lambda: 4242)
         out = migrate.top_up(NAME)
         assert out.status == "refused" and "4242" in out.reason
         assert not (home.state_home() / NAME).exists()
@@ -242,7 +242,7 @@ class TestMigratedBefore:
 
     def test_the_tombstone_moves_so_a_withdrawn_shipped_declaration_stays_withdrawn(self, install, monkeypatch,
                                                                                      tmp_path):
-        from aughor.ontology import overrides
+        from pramanyx.ontology import overrides
         _migrated(install)
         seed = tmp_path / "shipped"
         _write(seed / "c1/main/entity/Shipped.yaml", "target_kind: entity\ntarget_id: Shipped\n")
@@ -258,7 +258,7 @@ class TestMigratedBefore:
 
 def test_the_api_refuses_before_it_claims_the_state_dir():
     """The refusal comes before the state directory is claimed, so a refused start leaves no claim behind."""
-    from aughor import api
+    from pramanyx import api
     source = inspect.getsource(api._lifespan)
     assert 0 <= source.index("ensure_moved()") < source.index("claim()")
 
@@ -266,8 +266,8 @@ def test_the_api_refuses_before_it_claims_the_state_dir():
 def test_migrate_state_moves_on_a_migrated_install_and_says_already_after(install, monkeypatch):
     from click.testing import CliRunner
 
-    from aughor.cli import cli
-    monkeypatch.setenv("AUGHOR_SKIP_DOTENV", "1")
+    from pramanyx.cli import cli
+    monkeypatch.setenv("PRAMANYX_SKIP_DOTENV", "1")
     _migrated(install)
     runner = CliRunner()
     dry = runner.invoke(cli, ["migrate-state", "--from", str(install)])
@@ -282,19 +282,19 @@ def test_migrate_state_moves_on_a_migrated_install_and_says_already_after(instal
 def test_migrate_state_exits_non_zero_on_a_conflict(install, monkeypatch):
     from click.testing import CliRunner
 
-    from aughor.cli import cli
-    monkeypatch.setenv("AUGHOR_SKIP_DOTENV", "1")
+    from pramanyx.cli import cli
+    monkeypatch.setenv("PRAMANYX_SKIP_DOTENV", "1")
     _migrated(install)
     _write(home.state_home() / NAME / "c1/main/entity/Order.yaml", "something else\n")
     out = CliRunner().invoke(cli, ["migrate-state", "--from", str(install), "--yes"])
     assert out.exit_code == 1 and "Conflict." in out.output and "Order.yaml" in out.output
 
 
-def test_aughor_up_says_why_it_will_not_start_the_api(install, monkeypatch):
+def test_pramanyx_up_says_why_it_will_not_start_the_api(install, monkeypatch):
     from click.testing import CliRunner
 
-    from aughor.cli import cli
-    monkeypatch.setenv("AUGHOR_SKIP_DOTENV", "1")
+    from pramanyx.cli import cli
+    monkeypatch.setenv("PRAMANYX_SKIP_DOTENV", "1")
     _migrated(install)
     out = CliRunner().invoke(cli, ["up", "--api-only", "--no-browser"])
     assert out.exit_code == 1 and "will not start" in out.output and "migrate-state --yes" in out.output
@@ -309,7 +309,7 @@ NOW = datetime(2026, 11, 9, 12, 0, tzinfo=timezone.utc)
 def moved_state(install, monkeypatch):
     _migrated(install)
     assert migrate.top_up(NAME).status == "moved"
-    monkeypatch.setenv("AUGHOR_STATE_DIR", str(home.state_home()))
+    monkeypatch.setenv("PRAMANYX_STATE_DIR", str(home.state_home()))
     monkeypatch.setenv(backups.FREE_FLOOR_ENV, "0")
     return install
 
@@ -344,13 +344,13 @@ def test_elsewhere_names_the_tree_until_it_moves_and_not_after(install):
 
 def test_the_names_the_platform_keys_on_are_the_stores_own():
     """The platform names the trees rather than importing the ontology; each name and env var is the store's own."""
-    from aughor.ontology import column_config, overrides
+    from pramanyx.ontology import column_config, overrides
     src = inspect.getsource(overrides)
     assert f'resolve_db_path("{ENV}",' in src and f'/ "data" / "{NAME}")' in src
     assert column_config._DEFAULT_ROOT.resolve() == home.checkout_data() / "ontology_column_config"
-    assert '"AUGHOR_COLUMN_CONFIG_ROOT"' in inspect.getsource(column_config._root)
+    assert '"PRAMANYX_COLUMN_CONFIG_ROOT"' in inspect.getsource(column_config._root)
     assert {(n, v) for n, v, _ in backups._CHECKOUT_TREES} == {
-        (NAME, ENV), ("ontology_column_config", "AUGHOR_COLUMN_CONFIG_ROOT")}
+        (NAME, ENV), ("ontology_column_config", "PRAMANYX_COLUMN_CONFIG_ROOT")}
     assert [e.pattern for e in state_classes.CHECKOUT_ENTRIES] == [n for n, _, _ in backups._CHECKOUT_TREES]
 
 
@@ -380,7 +380,7 @@ class TestTheDoctor:
     def test_a_record_without_its_tree_fails_and_points_at_the_backups(self, moved_state):
         shutil.rmtree(home.state_home() / NAME)
         said = _declarations()
-        assert said.status == FAIL and "not there" in said.found and "aughor restore" in said.fix
+        assert said.status == FAIL and "not there" in said.found and "pramanyx restore" in said.fix
         assert migrate.top_up(NAME).status == "failed"
 
 

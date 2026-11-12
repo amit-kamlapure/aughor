@@ -16,7 +16,7 @@
  *     because the next read starts mid-JSON and simply fails to parse.
  */
 
-export type AughorFrame = { event: string; data: Record<string, unknown> };
+export type PramanyxFrame = { event: string; data: Record<string, unknown> };
 
 /**
  * Parse one SSE record (the text between blank lines) into a frame.
@@ -36,7 +36,7 @@ export type AughorFrame = { event: string; data: Record<string, unknown> };
  * does use it is not broken by this — but the payload's own `type` wins, being
  * the field the backend actually sets.
  */
-export function parseRecord(record: string): AughorFrame | null {
+export function parseRecord(record: string): PramanyxFrame | null {
   let sseEvent = "";
   const data: string[] = [];
   for (const line of record.split("\n")) {
@@ -62,9 +62,9 @@ export function parseRecord(record: string): AughorFrame | null {
 export class FrameBuffer {
   private buffer = "";
 
-  push(text: string): AughorFrame[] {
+  push(text: string): PramanyxFrame[] {
     this.buffer += text;
-    const out: AughorFrame[] = [];
+    const out: PramanyxFrame[] = [];
     let sep: number;
     while ((sep = this.buffer.indexOf("\n\n")) !== -1) {
       const record = this.buffer.slice(0, sep);
@@ -85,7 +85,7 @@ export class FrameBuffer {
 export async function* readFrames(
   body: ReadableStream<Uint8Array>,
   signal?: AbortSignal,
-): AsyncGenerator<AughorFrame> {
+): AsyncGenerator<PramanyxFrame> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   const frames = new FrameBuffer();

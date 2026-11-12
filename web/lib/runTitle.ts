@@ -2,7 +2,7 @@
  * runTitle — a human title for a run whose stored question carries machine grounding.
  *
  * PX-1 (§3.14): scheduled investigations are dispatched with a code-written grounding
- * block prepended to the question (`aughor/automations/temporal.py` — the observation
+ * block prepended to the question (`pramanyx/automations/temporal.py` — the observation
  * window, and sometimes the previous run's report). That text is FOR THE MODEL, and it
  * is correct there; five cards on one screen of Agent runs were titled
  * "[Scheduled-run context — written by code, not inferred] This is a scheduled daily

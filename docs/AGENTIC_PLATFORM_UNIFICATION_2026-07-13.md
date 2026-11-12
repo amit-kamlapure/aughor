@@ -34,7 +34,7 @@ subsystem; it was **unification + graduation**:
 | **Grounded** | ground-first | One deterministic resolution (entity + grain, measure-first) runs before generation, constrains it, speaks through the whole answer, abstains honestly on DB-confirmed absence | `ask.resolve_first` AUTO-elevated by default; inspect LLM call collapsed when resolution runs |
 | **Conversational** | CK plan | Token streaming, no dead air, arrival motion, then the AG-UI seam | CK-0.1 feel branch MERGED; CK-0.2 insight token streaming SHIPPED (`ask.stream_text`, dual-emit); CK-0.4 `ada.progress_events` default-ON. CK-0.3 (figure-first reorder) found MOOT — the success burst already lands figure-first (headline is coder-predicted, not narrator-late) |
 | **Intelligent by nature** | studies E3 | Tri-state Auto: the platform decides per run via deterministic triggers; receipts explain every activation; operator override always wins | `capabilities.auto` default-ON; AUTO_ELIGIBLE grew to 8 (added `ask.resolve_first`, `ada.pin_canonical_metric`); all receipt flags default-ON |
-| **Breeze to run** | (new; spicepod ops-ergonomics lesson, Study II Part B) | One command: clone → `uv run aughor up` → seeded fixture + API + web + honest LLM-readiness report | `aughor up` CLI; /health `llm` readiness; .env.example/README aligned with code defaults; no more kill -9 |
+| **Breeze to run** | (new; spicepod ops-ergonomics lesson, Study II Part B) | One command: clone → `uv run pramanyx up` → seeded fixture + API + web + honest LLM-readiness report | `pramanyx up` CLI; /health `llm` readiness; .env.example/README aligned with code defaults; no more kill -9 |
 | **Lose weight** | ground-first §deletion + studies E3/E5 | Delete what the resolution subsumes; remove superseded machinery; graduate-or-delete flags | `grain.feasibility` (superseded post-hoc verdict) fully removed; staged guard-deletion roadmap below |
 
 ## The graduation policy (the durable rule)
@@ -67,7 +67,7 @@ enough that nobody would turn it off, the flag (and any code path it replaced) i
    dual-emission (full-partial-text replace semantics; terminal `insight` event stays
    authoritative and self-healing) + frontend reducer/render (auto-reveal prose while streaming,
    arrival fade for post-done insight/followups).
-4. **Setup breeze** — `aughor up` (deps preflight, no-kill port handling, both processes, health
+4. **Setup breeze** — `pramanyx up` (deps preflight, no-kill port handling, both processes, health
    wait, honest LLM-readiness line), /health `llm` field, CORS 3210, `.env.example` un-trapped
    (code default is ollama, not groq), README quickstart at three steps, `start.sh` a shim.
 
@@ -119,7 +119,7 @@ regression corpus AND a real-traffic soak — one live session is not a soak. Se
 
 ## Verification playbook for this branch
 
-- `uv run --extra dev pytest` (hermetic; stores env-pointed by conftest) + `uv run ruff check aughor/`.
+- `uv run --extra dev pytest` (hermetic; stores env-pointed by conftest) + `uv run ruff check pramanyx/`.
 - Web: `npx tsc --noEmit && npm run build` + the three design gates (`lint:tokens`, `lint:format`,
   `lint:elements`).
 - Live (when a responsive LLM is configured): the luxexperience "month-wise sales for Mytheresa"

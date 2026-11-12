@@ -2,7 +2,7 @@
 
 An answer carried its guard receipts — what FIRED — and never which doors its statement went through. Every
 statement now carries ``QueryResult.doors``: the words each door said as the statement passed it
-(`aughor.db.doors`), stamped at the connection's entry. The answer envelope keeps them per statement, a tool-loop
+(`pramanyx.db.doors`), stamped at the connection's entry. The answer envelope keeps them per statement, a tool-loop
 step records them, and Spotlight's `explain` says them in plain words.
 
 What these pin: the path is the one the statement took (in order, refusals included); a step taken outside a
@@ -16,9 +16,9 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from aughor.control_plane.contracts.execution import QueryResult
-from aughor.db import doors as D
-from aughor.db.connection import DuckDBConnection
+from pramanyx.control_plane.contracts.execution import QueryResult
+from pramanyx.db import doors as D
+from pramanyx.db.connection import DuckDBConnection
 
 
 @pytest.fixture
@@ -53,7 +53,7 @@ def test_a_refusal_is_the_last_door(shop):
 
 
 def test_a_native_engine_says_it_translated(monkeypatch):
-    from aughor.connectors.warehouse.bigquery import BigQueryConnection
+    from pramanyx.connectors.warehouse.bigquery import BigQueryConnection
 
     conn = object.__new__(BigQueryConnection)
     conn._connection_id = "gm3-bq"
@@ -70,7 +70,7 @@ def test_a_native_engine_says_it_translated(monkeypatch):
 
 def test_a_step_outside_a_statement_is_credited_to_no_statement(shop):
     """A translation made to STORE a statement, outside any door, must not surface on the next statement's path."""
-    from aughor.db.dialects import sql_for_engine
+    from pramanyx.db.dialects import sql_for_engine
 
     class _BigQuery:
         dialect, writes_native_sql = "bigquery", True
@@ -82,7 +82,7 @@ def test_a_step_outside_a_statement_is_credited_to_no_statement(shop):
 def test_the_guard_battery_adds_its_guards_and_its_probes_stay_their_own(shop):
     """The join guard judges the answer by running probes of its own; those are separate statements with separate
     trails, so the answer's path lists the guard and never the probes' `internal`."""
-    from aughor.sql.executor import execute_guarded
+    from pramanyx.sql.executor import execute_guarded
 
     r = execute_guarded(shop, "SELECT o.status, SUM(i.price) AS total FROM orders o JOIN items i "
                               "ON o.order_id = i.order_id GROUP BY 1", query_id="answer")
@@ -94,7 +94,7 @@ def test_the_guard_battery_adds_its_guards_and_its_probes_stay_their_own(shop):
 
 
 def test_the_envelope_keeps_each_statements_doors_keyed_to_the_statement_that_ran():
-    from aughor.answer.envelope import fold_frames
+    from pramanyx.answer.envelope import fold_frames
 
     env = fold_frames([
         {"type": "sql", "sql": "SELECT a FROM t"},
@@ -109,7 +109,7 @@ def test_the_envelope_keeps_each_statements_doors_keyed_to_the_statement_that_ra
 
 
 def test_spotlight_says_the_doors_or_says_they_were_not_recorded(monkeypatch):
-    from aughor.agent import spotlight_explain as SE
+    from pramanyx.agent import spotlight_explain as SE
 
     envelope = {"provenance": {"doors": [{"sql": "SELECT 1", "doors": [
         "translated:duckdb→bigquery", "safety-checked", "audited", "guarded:join-domain"]}]}}
@@ -117,8 +117,8 @@ def test_spotlight_says_the_doors_or_says_they_were_not_recorded(monkeypatch):
                    "report": {"envelope": envelope}},
             "a0": {"id": "a0", "kind": "chat", "status": "complete", "question": "q",
                    "report": {"envelope": {"provenance": {}}}}}
-    monkeypatch.setattr("aughor.db.history.get_investigation", lambda i: rows.get(i))
-    monkeypatch.setattr("aughor.govern.departure_store.list_departures", lambda limit=500: [])
+    monkeypatch.setattr("pramanyx.db.history.get_investigation", lambda i: rows.get(i))
+    monkeypatch.setattr("pramanyx.govern.departure_store.list_departures", lambda limit=500: [])
     monkeypatch.setattr(SE, "_latest_verdict", lambda inv_id: None)
 
     said = SE.explain_object("c", {"kind": "analysis", "id": "a1"})
@@ -131,7 +131,7 @@ def test_spotlight_says_the_doors_or_says_they_were_not_recorded(monkeypatch):
 
 
 def test_a_step_record_and_the_trajectory_carry_the_doors():
-    from aughor.obs.trajectory import _step
+    from pramanyx.obs.trajectory import _step
 
     step = _step({"seq": 1, "payload": {"tool": "run_sql", "doors": ["safety-checked", "audited"]}}, gated=False)
     assert step["doors"] == ["safety-checked", "audited"]

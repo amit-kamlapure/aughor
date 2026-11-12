@@ -1,6 +1,6 @@
 """SP-7 (§3.11, the second movement) — a write drafted from a sentence waits for a person.
 
-The approval switch (`AUGHOR_ACTION_APPROVAL`) was off by default until 2026-10-04 (it is on by
+The approval switch (`PRAMANYX_ACTION_APPROVAL`) was off by default until 2026-10-04 (it is on by
 default since, with `0` as the kill switch), and with it off a declared write inside an armed
 chain runs unattended: the one kind of step a model could draft that
 changes the world with nobody looking. A chain a person builds by hand stays that person's
@@ -18,10 +18,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.actions.executor import execute_kinetic_action
-from aughor.automations.models import Automation, Condition, Effect
-from aughor.automations.propose import ProposedChain, propose_chain
-from aughor.ontology.models import ActionParameter, KineticAction, SideEffect
+from pramanyx.actions.executor import execute_kinetic_action
+from pramanyx.automations.models import Automation, Condition, Effect
+from pramanyx.automations.propose import ProposedChain, propose_chain
+from pramanyx.ontology.models import ActionParameter, KineticAction, SideEffect
 
 CONN = "sp7-writes"
 
@@ -49,7 +49,7 @@ def _recorder():
 def _switch_off(monkeypatch):
     """The gate switched OFF — the deployment default until 2026-10-04, and exactly when a
     drafted write used to run unattended. The hold under test must not depend on it."""
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "0")
 
 
 # ── the executor ──────────────────────────────────────────────────────────────────────
@@ -78,7 +78,7 @@ def test_a_person_accepting_it_runs_it():
 
 
 def test_a_standing_grant_still_satisfies_it(monkeypatch):
-    monkeypatch.setattr("aughor.actions.grants.standing_grant_id",
+    monkeypatch.setattr("pramanyx.actions.grants.standing_grant_id",
                         lambda action, params, scope: "grant-1")
     d = _recorder()
     r = execute_kinetic_action(_action(), {"amount": 5}, scope=CONN, dispatch=d,
@@ -90,7 +90,7 @@ def test_a_standing_grant_still_satisfies_it(monkeypatch):
 
 @pytest.mark.parametrize("marked", [True, False])
 def test_the_engine_passes_a_steps_mark_to_the_executor(monkeypatch, marked):
-    import aughor.automations.engine as engine
+    import pramanyx.automations.engine as engine
 
     seen: dict = {}
 
@@ -100,10 +100,10 @@ def test_the_engine_passes_a_steps_mark_to_the_executor(monkeypatch, marked):
         return SimpleNamespace(status="approval_required" if held else "executed",
                                message="", outcome={})
 
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology",
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology",
                         lambda conn_id, schema_name=None: SimpleNamespace(
                             kinetic_actions={"flag_order": _action()}, schema_name="s"))
-    monkeypatch.setattr("aughor.actions.executor.execute_kinetic_action", spy)
+    monkeypatch.setattr("pramanyx.actions.executor.execute_kinetic_action", spy)
     config = {"action_id": "flag_order", "params": {"amount": 5}}
     if marked:
         config["require_approval"] = True

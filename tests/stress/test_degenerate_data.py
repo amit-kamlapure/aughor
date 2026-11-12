@@ -11,9 +11,9 @@ import asyncio
 import duckdb
 import pytest
 
-from aughor.db.connection import DuckDBConnection
-from aughor.explorer.agent import SchemaExplorer
-from aughor.explorer.models import ExplorationPhase
+from pramanyx.db.connection import DuckDBConnection
+from pramanyx.explorer.agent import SchemaExplorer
+from pramanyx.explorer.models import ExplorationPhase
 
 
 def _make_db(tmp_path, name, ddl: list[str]):
@@ -27,8 +27,8 @@ def _make_db(tmp_path, name, ddl: list[str]):
 
 @pytest.fixture(autouse=True)
 def _hermetic_ledger(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "sys.db"))
-    from aughor.kernel.ledger import Ledger
+    monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "sys.db"))
+    from pramanyx.kernel.ledger import Ledger
     Ledger._instances.clear()
 
 

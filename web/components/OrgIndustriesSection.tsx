@@ -6,7 +6,7 @@
  * The question the installer asked, asked again: which industry packages this deployment reads.
  * "Every industry" keeps them all, and Pramanyx works out each connection's industry from its data.
  * "Only these" keeps the ticked ones: a connection whose industry is not among them reads only the
- * knowledge every industry shares. It is the same choice `aughor industries` changes — one file on the
+ * knowledge every industry shares. It is the same choice `pramanyx industries` changes — one file on the
  * server — and deployment-wide, so the panel shows it at app scope only.
  *
  * Saving can drop stored business profiles whose industry now resolves differently; each is rebuilt,

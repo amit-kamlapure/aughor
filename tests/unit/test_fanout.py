@@ -2,11 +2,11 @@
 
 Locks the existing multi-satellite chasm-trap detection AND the new single parent-measure
 fan-out case. High-precision contract: NEVER flag a correct query.
-See aughor/sql/fanout.py.
+See pramanyx/sql/fanout.py.
 """
 import pytest
 
-from aughor.sql.fanout import detect_fanout
+from pramanyx.sql.fanout import detect_fanout
 
 COLS = {
     "orders":       ["order_id", "customer_id", "order_total", "status", "order_ts"],
@@ -111,7 +111,7 @@ def _through(items_cte: str) -> str:
 
 
 def test_an_average_over_ctes_that_keep_their_rows_is_flagged_and_never_rewritten():
-    from aughor.sql.fanout import defan
+    from pramanyx.sql.fanout import defan
     f = detect_fanout(_through(_ITEMS), COLS)
     assert f is not None
     assert (f.kind, f.satellites, f.children, f.through_cte) == ("parent_fanout", ["orders"], ["order_items"], True)
@@ -148,7 +148,7 @@ def test_a_subquery_that_keeps_its_rows_is_read_the_same_way():
 # fan-out detectors watch row-multiplication across joins; this catches measure×key
 # WITHIN one table. High-precision: an id is never a legitimate multiplicand/SUM arg.
 
-from aughor.sql.fanout import measure_times_key_arithmetic as _idmath
+from pramanyx.sql.fanout import measure_times_key_arithmetic as _idmath
 
 
 def test_idmath_price_times_primary_key_is_flagged():
@@ -201,7 +201,7 @@ def test_idmath_windowed_and_distinct_excluded():
 # correct group rate is the RATIO OF SUMS SUM(freight)/SUM(price). The eval scar: Deep
 # derived freight-% as 1.48% via avg-of-ratios while Insight's ratio-of-sums gave 2.17%.
 
-from aughor.sql.fanout import avg_of_row_ratios as _avgratio
+from pramanyx.sql.fanout import avg_of_row_ratios as _avgratio
 
 
 def test_avgratio_flags_avg_of_division_by_column():
@@ -254,7 +254,7 @@ def test_a_direct_fk_to_a_primary_key_is_not_a_chasm():
     reader its exact totals were "inflated ... directional only" and needed "a grain-correct
     recompute". A guard that says correct numbers are wrong spends the reader's trust for nothing.
     """
-    from aughor.sql.fanout import sum_over_chasm_fanout, count_star_chasm_fanout
+    from pramanyx.sql.fanout import sum_over_chasm_fanout, count_star_chasm_fanout
 
     assert sum_over_chasm_fanout(_PK_JOIN, _THELOOK, "bigquery") is None
     assert count_star_chasm_fanout(_PK_JOIN, _THELOOK, "bigquery") is None
@@ -263,7 +263,7 @@ def test_a_direct_fk_to_a_primary_key_is_not_a_chasm():
 def test_the_genuine_two_fact_chasm_still_fires():
     """The demotion must be narrow. A real chasm joins its satellites on the HUB key
     (`order_id`), never on their own `id` — the ROAS scar this module was built for."""
-    from aughor.sql.fanout import sum_over_chasm_fanout
+    from pramanyx.sql.fanout import sum_over_chasm_fanout
 
     cols = {"orders": ["order_id", "user_id"],
             "order_items": ["id", "order_id", "sale_price"],

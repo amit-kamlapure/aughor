@@ -1,7 +1,7 @@
-"""Canonical time helpers — see aughor/util/time.py (consolidated from ~13 modules)."""
+"""Canonical time helpers — see pramanyx/util/time.py (consolidated from ~13 modules)."""
 from datetime import datetime, timedelta, timezone
 
-from aughor.util.time import now_iso, now_iso_z, age_hours
+from pramanyx.util.time import now_iso, now_iso_z, age_hours
 
 
 def test_now_iso_is_aware_offset():

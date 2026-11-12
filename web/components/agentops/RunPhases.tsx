@@ -22,7 +22,7 @@ const PHASE_HUE: Record<string, "positive" | "negative" | "caution" | "muted"> =
 };
 
 // Readable phase names for the graph node ids the backend returns in `topology`.
-// The IDS are the backend's (`aughor/agent/graph.py` compile order) and are frozen —
+// The IDS are the backend's (`pramanyx/agent/graph.py` compile order) and are frozen —
 // this maps them at RENDER only, so a node the map doesn't know still renders as its
 // raw id rather than disappearing. Covers all three branches (deep / explore / direct)
 // including the flag-gated parallel variants.

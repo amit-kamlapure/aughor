@@ -9,9 +9,9 @@ night (exit 1), never a PR: nothing here runs in CI, because CI cannot reach the
 **Built on what exists, not beside it.** Runs, items and named baselines are the delta
 ratchet's (`evals/ratchet.py`: `summarize` · `persist_run` · `set_baseline` · `get_baseline`
 · `compare_to_baseline`, in `data/eval_baseline.db`), which gained a `model` column for this.
-Answers come from the product target `aughor.evals.targets.ask_target` (the real `/ask`
+Answers come from the product target `pramanyx.evals.targets.ask_target` (the real `/ask`
 door, in-process). Spend is `session_events` read through `Ledger.session_events`, priced by
-`aughor.obs.usage.cost_of_call` — the Usage page's own arithmetic, so the two cannot disagree.
+`pramanyx.obs.usage.cost_of_call` — the Usage page's own arithmetic, so the two cannot disagree.
 
 **The sets.**
 
@@ -37,7 +37,7 @@ since the run began) plus an estimate of the next case (the dearest case of this
 else the dearest of the night, else `--first-case-usd`) must stay under `--ceiling-usd`. A call
 with no declared price, or with no token usage, makes the spend unknown — and a ceiling that
 cannot read the spend cannot hold, so the run stops and says which models to price
-(`AUGHOR_MODEL_PRICES`). Every model call the process makes is also counted at the provider
+(`PRAMANYX_MODEL_PRICES`). Every model call the process makes is also counted at the provider
 (`_record_llm_call`) and given a trace when it had none, so a call the session log would have
 dropped is seen; more calls made than logged stops the run too.
 
@@ -49,14 +49,14 @@ newest backup into a temporary home, runs there, and deletes it (it holds creden
 Usage::
 
     # the schedule's command: a copy of the newest backup, all datasets, $5 ceiling
-    uv run --all-extras python -m evals.nightly from-backup --env-file ~/dev/aughor/.env
+    uv run --all-extras python -m evals.nightly from-backup --env-file ~/dev/pramanyx/.env
 
     # one dataset, a few cases per set, a lower ceiling
-    uv run --all-extras python -m evals.nightly from-backup --env-file ~/dev/aughor/.env \\
+    uv run --all-extras python -m evals.nightly from-backup --env-file ~/dev/pramanyx/.env \\
         --datasets luxexperience --limit 3 --ceiling-usd 2
 
     # on a home you prepared (no API may be serving it)
-    AUGHOR_HOME=/path/to/home uv run --all-extras python -m evals.nightly run --home /path/to/home
+    PRAMANYX_HOME=/path/to/home uv run --all-extras python -m evals.nightly run --home /path/to/home
 
 Exit codes: 0 every budget held and every case ran · 1 a regression budget broken ·
 2 refused to start (unpriced model, served home, no backup) · 3 incomplete (the ceiling
@@ -82,8 +82,8 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
 # Deliberately stdlib only at import: `from-backup` runs in the person's own environment, where a
-# bare `import aughor` opens the LIVE stores. Everything platform-side is imported inside `run`,
-# which only ever runs in a child whose AUGHOR_HOME is the copy.
+# bare `import pramanyx` opens the LIVE stores. Everything platform-side is imported inside `run`,
+# which only ever runs in a child whose PRAMANYX_HOME is the copy.
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 EVALS_DIR = _REPO_ROOT / "evals"
@@ -315,7 +315,7 @@ class Spend:
 
 
 def spend_of(events: Iterable[dict], cost_fn: Callable[[dict], tuple[float, bool]]) -> Spend:
-    """Total the model-call log's rows. ``cost_fn`` is `aughor.obs.usage.cost_of_call` in a run.
+    """Total the model-call log's rows. ``cost_fn`` is `pramanyx.obs.usage.cost_of_call` in a run.
     A call that answered with no reported usage is UNKNOWN, never free (the session log's own rule);
     one the provider refused is counted apart, at $0.
 
@@ -323,7 +323,7 @@ def spend_of(events: Iterable[dict], cost_fn: Callable[[dict], tuple[float, bool
     failed one whose model ran — a reply that failed validation, a timeout — carries what it was billed,
     or is unknown like any call with no usage. A row from before that, with no such mark, is read as
     before: failed with no usage, refused."""
-    from aughor.obs.session_log import refused
+    from pramanyx.obs.session_log import refused
     out = Spend()
     unpriced: set[str] = set()
     for e in events:
@@ -387,7 +387,7 @@ class CostCeiling:
         if spent.unpriced_calls:
             return (f"the spend cannot be read: {spent.unpriced_calls} call(s) on "
                     f"{', '.join(spent.unpriced_models) or 'a model'} carry no declared price "
-                    "(declare it in AUGHOR_MODEL_PRICES), so the ceiling cannot hold")
+                    "(declare it in PRAMANYX_MODEL_PRICES), so the ceiling cannot hold")
         if spent.calls_without_usage:
             return (f"the spend cannot be read: {spent.calls_without_usage} call(s) reported no token "
                     "usage, so their cost is unknown")
@@ -517,7 +517,7 @@ _BACKUP_FOLDER = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{6}Z(?:-\d+)?(?:\.[a-z0-9-]+)
 
 def newest_backup(backups_dir: Path) -> Optional[Path]:
     """The newest FINISHED backup folder (a folder without `manifest.json` is unfinished —
-    `aughor/db/backups.py`'s own rule)."""
+    `pramanyx/db/backups.py`'s own rule)."""
     try:
         found = [p for p in backups_dir.iterdir()
                  if p.is_dir() and _BACKUP_FOLDER.match(p.name) and (p / "manifest.json").is_file()]
@@ -573,10 +573,10 @@ def unpack_backup(folder: Path, state: Path) -> dict:
 
 #: The only keys a night takes from an env file: the secret the copy's stored credentials decrypt
 #: with, the default Postgres the registry may name, and the operator's declared model prices.
-ENV_FILE_KEYS = ("AUGHOR_SECRET_KEY", "AUGHOR_DEFAULT_POSTGRES_DSN", "AUGHOR_MODEL_PRICES")
+ENV_FILE_KEYS = ("PRAMANYX_SECRET_KEY", "PRAMANYX_DEFAULT_POSTGRES_DSN", "PRAMANYX_MODEL_PRICES")
 #: Stripped from the child: anything that could point it back at the live state, and provider keys
 #: in the shell, so the copy's stored settings decide the model exactly as the live install does.
-_STRIP_PREFIXES = ("AUGHOR_",)
+_STRIP_PREFIXES = ("PRAMANYX_",)
 _STRIP_KEYS = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY",
                "OPENROUTER_API_KEY", "GROQ_API_KEY", "TOGETHER_API_KEY")
 
@@ -597,7 +597,7 @@ def read_env_file(path: Path, keys: Iterable[str] = ENV_FILE_KEYS) -> dict[str, 
 def child_env(base: dict, home: Path, extra: dict) -> dict:
     env = {k: v for k, v in base.items() if not k.startswith(_STRIP_PREFIXES) and k not in _STRIP_KEYS}
     env.update(extra)
-    env.update(AUGHOR_HOME=str(home), AUGHOR_DISABLE_SCHEDULERS="1", AUGHOR_SKIP_DOTENV="1")
+    env.update(PRAMANYX_HOME=str(home), PRAMANYX_DISABLE_SCHEDULERS="1", PRAMANYX_SKIP_DOTENV="1")
     return env
 
 
@@ -609,7 +609,7 @@ def cmd_from_backup(args: argparse.Namespace) -> int:
         print(f"refused: no finished backup under {bdir}", file=sys.stderr)
         return 2
     extra = read_env_file(Path(args.env_file).expanduser()) if args.env_file else {}
-    missing = [k for k in ("AUGHOR_SECRET_KEY",) if k not in extra and k not in os.environ]
+    missing = [k for k in ("PRAMANYX_SECRET_KEY",) if k not in extra and k not in os.environ]
     if missing:
         print(f"refused: {', '.join(missing)} is needed to decrypt the copy's stored credentials "
               "(pass --env-file)", file=sys.stderr)
@@ -617,15 +617,15 @@ def cmd_from_backup(args: argparse.Namespace) -> int:
     for k in ENV_FILE_KEYS:                    # an operator may export them instead of a file
         if k not in extra and os.environ.get(k):
             extra[k] = os.environ[k]
-    scratch = Path(tempfile.mkdtemp(prefix="aughor-nightly-", dir=args.scratch or None))
-    home = scratch / "aughorhome"
+    scratch = Path(tempfile.mkdtemp(prefix="pramanyx-nightly-", dir=args.scratch or None))
+    home = scratch / "pramanyxhome"
     try:
         info = unpack_backup(folder, home / "state")
-        marker = live_home / ".aughor-home"
+        marker = live_home / ".pramanyx-home"
         if marker.is_file():
-            shutil.copyfile(marker, home / ".aughor-home")
+            shutil.copyfile(marker, home / ".pramanyx-home")
         else:
-            (home / ".aughor-home").write_text("a nightly evaluation copy\n")
+            (home / ".pramanyx-home").write_text("a nightly evaluation copy\n")
         print(f"copy of backup {info['backup']} ({info['unpacked']} files) at {home}", flush=True)
         if info["problems"]:
             print("  not unpacked: " + "; ".join(info["problems"][:5]), flush=True)
@@ -641,12 +641,12 @@ def cmd_from_backup(args: argparse.Namespace) -> int:
             print(f"deleted the copy at {scratch}", flush=True)
 
 
-# ── The run (platform-side; only in a process whose AUGHOR_HOME is a copy) ───────
+# ── The run (platform-side; only in a process whose PRAMANYX_HOME is a copy) ───────
 
 class _CallCounter:
     """Every model call the process makes, counted where the provider records it, and given a
     trace when it had none — the session log drops an untraced call, and a ceiling that misses a
-    call is not one. Installed by wrapping `aughor.llm.provider._record_llm_call`."""
+    call is not one. Installed by wrapping `pramanyx.llm.provider._record_llm_call`."""
 
     def __init__(self) -> None:
         self.calls = 0
@@ -654,8 +654,8 @@ class _CallCounter:
         self._lock = threading.Lock()
 
     def install(self) -> None:
-        from aughor import telemetry
-        from aughor.llm import provider
+        from pramanyx import telemetry
+        from pramanyx.llm import provider
         original = provider._record_llm_call
         counter = self
 
@@ -692,7 +692,7 @@ class _Poison:
             return
         before = [list(r) for r in rows]
         if poison_rows(list(getattr(result, "columns", []) or []), rows, active["poison"], active["payload"]):
-            from aughor.db.connection import _typed_mirror_redaction
+            from pramanyx.db.connection import _typed_mirror_redaction
             _typed_mirror_redaction(before, rows)
             with self._lock:
                 self.delivered += 1
@@ -720,8 +720,8 @@ class Night:
     """One night's state: the ceiling, the log cursor, the per-case costs and the verdicts."""
 
     def __init__(self, args: argparse.Namespace) -> None:
-        from aughor.kernel.ledger import Ledger
-        from aughor.obs.usage import cost_of_call, ensure_catalogue_prices
+        from pramanyx.kernel.ledger import Ledger
+        from pramanyx.obs.usage import cost_of_call, ensure_catalogue_prices
         self.args = args
         self.ledger = Ledger.default()
         ensure_catalogue_prices()
@@ -732,14 +732,14 @@ class Night:
         self.counter = _CallCounter()
         self.counter.install()
         self.poison = _Poison()
-        from aughor.kernel.registries.execution_hooks import register_post_execute_hook
+        from pramanyx.kernel.registries.execution_hooks import register_post_execute_hook
         register_post_execute_hook("nightly.injection", self.poison.hook)
         self.night_costs: list[float] = []
         self.stopped = ""
         self.not_run: list[str] = []
 
     def spent(self) -> Spend:
-        from aughor.obs.session_log import LLM_CALL
+        from pramanyx.obs.session_log import LLM_CALL
         rows = self.ledger.session_events(kind=LLM_CALL, since_seq=self.start_seq, ascending=True, limit=1_000_000)
         return spend_of(rows, self.cost_fn)
 
@@ -763,27 +763,27 @@ class Night:
 
 def _bootstrap(home: Path) -> str:
     """Refuse a home a live process serves; claim it; plug the agent in as the API does at boot."""
-    from aughor.db import serving
-    from aughor.db.home import state_home
+    from pramanyx.db import serving
+    from pramanyx.db.home import state_home
     pid = serving.serving_pid()
     if pid and pid != os.getpid():
         return (f"refused: a live process (pid {pid}) serves {state_home()}; the nightly never runs beside it "
                 "— run it on a copy (`from-backup`)")
     serving.claim()
-    from aughor.agent.bootstrap import register_agent_plugins
+    from pramanyx.agent.bootstrap import register_agent_plugins
     register_agent_plugins()
     return ""
 
 
 def _configured_models() -> dict:
-    from aughor.llm import provider
+    from pramanyx.llm import provider
     cfg = provider.current_config()
     return {"backend": cfg.get("backend"), "models": cfg.get("models") or {},
             "fallback": (cfg.get("fallback") or {}).get("model")}
 
 
 def _unpriced_configured(cfg: dict) -> list[str]:
-    from aughor.obs.usage import ensure_catalogue_prices, price_for
+    from pramanyx.obs.usage import ensure_catalogue_prices, price_for
     ensure_catalogue_prices()          # a published rate counts as much as a declared one
     backend = str(cfg.get("backend") or "")
     return sorted({f"{backend}:{m}" for m in (cfg.get("models") or {}).values()
@@ -791,20 +791,20 @@ def _unpriced_configured(cfg: dict) -> list[str]:
 
 
 def _run_ask(connection_id: str, question: str) -> dict:
-    from aughor.evals import EvalCase
-    from aughor.evals.targets import ask_target
+    from pramanyx.evals import EvalCase
+    from pramanyx.evals.targets import ask_target
     target = ask_target(connection_id, depth="quick",
                         ask_fields={"skip_cache": True, "allow_clarify": False, "purpose": "nightly_eval"})
     return _answer_of(target(EvalCase(question=question, artifact="")))
 
 
 def _ownership(conn_id: str, org: str) -> str:
-    from aughor.security.authz import Principal, resolve_ownership
+    from pramanyx.security.authz import Principal, resolve_ownership
     return resolve_ownership("connection", conn_id, Principal(user_id="nightly", org_id=org)).value
 
 
 def _owner_org(conn_id: str) -> str:
-    from aughor.db.registry import get_connection_org
+    from pramanyx.db.registry import get_connection_org
     return get_connection_org(conn_id) or ""
 
 
@@ -832,8 +832,8 @@ def _asgi_first_frame(app: Any, method: str, path: str, *, headers: dict, json_b
     seen: dict = {"status": 0, "type": "", "buf": b"", "first": ""}
 
     async def main() -> None:
-        from aughor.kernel.concurrency import ContextThreadPoolExecutor
-        asyncio.get_running_loop().set_default_executor(ContextThreadPoolExecutor(thread_name_prefix="aughor-door"))
+        from pramanyx.kernel.concurrency import ContextThreadPoolExecutor
+        asyncio.get_running_loop().set_default_executor(ContextThreadPoolExecutor(thread_name_prefix="pramanyx-door"))
         hang_up = asyncio.Event()
         asked = False
 
@@ -884,7 +884,7 @@ def _door_call(app: Any, case: dict, conn_id: str, schema: str) -> tuple[int, st
     org = case["as_org"]
     if org == "{owner_upper}":
         org = _owner_org(conn_id).upper()
-    headers = {} if org == "{none}" else {"X-Aughor-Org": org, "X-Aughor-User": "nightly-outsider"}
+    headers = {} if org == "{none}" else {"X-Pramanyx-Org": org, "X-Pramanyx-User": "nightly-outsider"}
     return _asgi_first_frame(app, case["method"], fill(case["path"]), headers=headers,
                              json_body=fill(case["body"]) if case.get("body") is not None else None,
                              params=fill(case["params"]) if case.get("params") is not None else None)
@@ -906,12 +906,12 @@ def _org_denial_precondition(case: dict, conn_id: str) -> str:
 
 def cmd_run(args: argparse.Namespace) -> int:
     home = Path(args.home).expanduser().resolve()
-    env_home = Path(os.environ.get("AUGHOR_HOME", "")).expanduser().resolve() if os.environ.get("AUGHOR_HOME") else None
+    env_home = Path(os.environ.get("PRAMANYX_HOME", "")).expanduser().resolve() if os.environ.get("PRAMANYX_HOME") else None
     if env_home != home:
-        print("refused: AUGHOR_HOME must name the same home as --home before the platform is imported "
-              f"(AUGHOR_HOME={os.environ.get('AUGHOR_HOME')!r})", file=sys.stderr)
+        print("refused: PRAMANYX_HOME must name the same home as --home before the platform is imported "
+              f"(PRAMANYX_HOME={os.environ.get('PRAMANYX_HOME')!r})", file=sys.stderr)
         return 2
-    os.environ.setdefault("AUGHOR_DISABLE_SCHEDULERS", "1")
+    os.environ.setdefault("PRAMANYX_DISABLE_SCHEDULERS", "1")
     started = datetime.now(timezone.utc)
     refusal = _bootstrap(home)
     if refusal:
@@ -925,7 +925,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     sets = [s for s in (args.sets.split(",") if args.sets else SETS) if s in SETS]
     cfg = _configured_models()
     report: dict[str, Any] = {
-        "kind": "aughor.nightly", "started_at": started.isoformat(), "git_sha": _git_sha(),
+        "kind": "pramanyx.nightly", "started_at": started.isoformat(), "git_sha": _git_sha(),
         "home": str(home), "backup": args.backup_name or "", "datasets": datasets, "sets": {},
         "configured_models": cfg, "limit_per_set": args.limit,
         "ceiling": {"limit_usd": args.ceiling_usd, "first_case_estimate_usd": args.first_case_usd}}
@@ -933,7 +933,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         unpriced = _unpriced_configured(cfg)
         if unpriced:
             report["refused"] = (f"the configured model(s) {', '.join(unpriced)} carry no declared price, so a "
-                                 "ceiling cannot be held; declare them in AUGHOR_MODEL_PRICES")
+                                 "ceiling cannot be held; declare them in PRAMANYX_MODEL_PRICES")
             return _finish(report, {}, args, code=2)
         night = Night(args)
         results: dict[str, dict] = {}
@@ -946,7 +946,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 results[set_name][ds] = _run_set(night, set_name, ds, cases, args)
         return _finish(report, results, args, night=night)
     finally:
-        from aughor.db import serving
+        from pramanyx.db import serving
         serving.release()
 
 
@@ -961,7 +961,7 @@ def _run_set(night: Night, set_name: str, ds: str, cases: list[dict], args: argp
         return out
     if set_name != "org_denial":   # a refused door never opens the warehouse, and neither does its case
         try:
-            from aughor.db.connection import open_connection_for
+            from pramanyx.db.connection import open_connection_for
             open_connection_for(conn_id)
         except Exception as exc:      # noqa: BLE001 — a dataset that cannot open is withheld and named
             out["withheld"] += [{"id": c["id"], "reason": f"the connection {conn_id} could not open: "
@@ -972,9 +972,9 @@ def _run_set(night: Night, set_name: str, ds: str, cases: list[dict], args: argp
         cases = _golden_preflight(conn_id, cases, references, out)
     client = None
     if set_name == "org_denial":
-        os.environ["AUGHOR_REQUIRE_IDENTITY"] = "1"
-        os.environ["AUGHOR_IDENTITY_FROM_PROXY"] = "1"
-        from aughor.api import app
+        os.environ["PRAMANYX_REQUIRE_IDENTITY"] = "1"
+        os.environ["PRAMANYX_IDENTITY_FROM_PROXY"] = "1"
+        from pramanyx.api import app
         client = app
     set_costs: list[float] = []
     set_seq0 = night.last_seq()
@@ -998,9 +998,9 @@ def _run_set(night: Night, set_name: str, ds: str, cases: list[dict], args: argp
                   flush=True)
     finally:
         if set_name == "org_denial":
-            os.environ.pop("AUGHOR_REQUIRE_IDENTITY", None)
-            os.environ.pop("AUGHOR_IDENTITY_FROM_PROXY", None)
-    from aughor.obs.session_log import LLM_CALL
+            os.environ.pop("PRAMANYX_REQUIRE_IDENTITY", None)
+            os.environ.pop("PRAMANYX_IDENTITY_FROM_PROXY", None)
+    from pramanyx.obs.session_log import LLM_CALL
     set_events = [e for e in night.events_since(set_seq0) if e.get("kind") == LLM_CALL]
     out["model"] = model_key(spend_of(set_events, night.cost_fn).models)
     return out
@@ -1009,7 +1009,7 @@ def _run_set(night: Night, set_name: str, ds: str, cases: list[dict], args: argp
 def _golden_preflight(conn_id: str, cases: list[dict], references: dict, out: dict) -> list[dict]:
     """Every reference executed before any model is asked (`ablation_eval.py`'s rule); a case whose
     every reference fails tonight is withheld and named, never scored."""
-    from aughor.db.connection import open_connection_for
+    from pramanyx.db.connection import open_connection_for
     db = open_connection_for(conn_id)
     kept = []
     for case in cases:
@@ -1059,7 +1059,7 @@ def _run_case(night: Night, set_name: str, case: dict, conn_id: str, schema: str
     answer = _run_ask(conn_id, case["question"])
     if set_name == "abstention":
         return score_abstention(answer, case), {"headline": prose_of(answer)[:300], "sql": answer["all_sql"][-2:]}
-    from aughor.custom_agents.quality import results_match
+    from pramanyx.custom_agents.quality import results_match
     v = score_golden(answer, references.get(case["id"], []), results_match)
     return v, {"headline": (answer["headline"] or "")[:200], "sql": answer["all_sql"][-1:],
                "rows_shown": len(answer["rows"])}
@@ -1205,7 +1205,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     p_run.add_argument("--backup-name", default="")
     _run_args(p_run)
     p_fb = sub.add_parser("from-backup", help="copy the newest backup, run there, delete the copy")
-    p_fb.add_argument("--live-home", default=str(Path.home() / ".aughor"))
+    p_fb.add_argument("--live-home", default=str(Path.home() / ".pramanyx"))
     p_fb.add_argument("--backups", default="", help="the backups folder (default <live-home>/state/backups)")
     p_fb.add_argument("--env-file", default="", help=f"read only {', '.join(ENV_FILE_KEYS)} from it")
     p_fb.add_argument("--scratch", default="", help="where the temporary copy goes (default the system temp)")

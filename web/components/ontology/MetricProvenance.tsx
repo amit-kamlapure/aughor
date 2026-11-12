@@ -8,7 +8,7 @@
  * resolve quietly — it is a fact about the business, and the person reading the number is
  * entitled to see it along with the name of whoever is behind the one they got.
  *
- * The ordering it renders is not this component's opinion. `aughor/ontology/authority.py`
+ * The ordering it renders is not this component's opinion. `pramanyx/ontology/authority.py`
  * decides, and it puts VERIFICATION in a tier above authority: a formula that bound
  * against the live database outranks one that did not, no matter who wrote it or how many
  * teams rely on it. So the badge that matters most here is "verified", and an unverified

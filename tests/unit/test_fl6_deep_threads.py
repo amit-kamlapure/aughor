@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import uuid
 
-from aughor.db.history import (
+from pramanyx.db.history import (
     complete_investigation,
     create_investigation,
     fail_investigation,
@@ -24,7 +24,7 @@ from aughor.db.history import (
     reconstruct_session_history,
     save_chat_turn,
 )
-from aughor.db.purge import purge_chat_session_artifacts
+from pramanyx.db.purge import purge_chat_session_artifacts
 
 REPORT = {"headline": "Electronics leads", "phases": [{"phase_id": "p1", "findings": []}]}
 
@@ -97,13 +97,13 @@ def test_thread_delete_unfiles_deep_runs_rather_than_purging_them():
     assert get_session_turns(sid) == []
     assert all(s["session_id"] != sid for s in list_chat_sessions("c1"))
     # …but the RUN survives, unfiled — it still serves Fleet / agent history.
-    from aughor.db.history import get_investigation
+    from pramanyx.db.history import get_investigation
     row = get_investigation(inv)
     assert row is not None and row.get("status") == "complete"
 
 
 def test_deep_turn_restores_as_the_live_wire_shape():
-    from aughor.routers.investigations import _turn_to_ui_messages
+    from pramanyx.routers.investigations import _turn_to_ui_messages
 
     sid = _sid()
     _deep(sid, question="what drives the west?")
@@ -119,7 +119,7 @@ def test_deep_turn_restores_as_the_live_wire_shape():
 
 
 def test_a_failed_deep_turn_restores_as_its_question_and_an_honest_error():
-    from aughor.routers.investigations import _turn_to_ui_messages
+    from pramanyx.routers.investigations import _turn_to_ui_messages
 
     sid = _sid()
     _deep(sid, finish="failed")

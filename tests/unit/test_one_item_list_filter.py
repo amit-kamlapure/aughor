@@ -7,8 +7,8 @@ it is read; a longer one, or none, is refused in words that say what to write in
 """
 import pytest
 
-from aughor.ontology.models import EntityProperty
-from aughor.semantic.object_query import ObjectFilter, ObjectQueryRefused, _predicate
+from pramanyx.ontology.models import EntityProperty
+from pramanyx.semantic.object_query import ObjectFilter, ObjectQueryRefused, _predicate
 
 STATUS = EntityProperty(name="order_status", data_type="VARCHAR", semantic_type="dimension")
 

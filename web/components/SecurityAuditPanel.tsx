@@ -1,6 +1,6 @@
 "use client";
 /**
- * Security & Audit — redone to `aughor-v2/CLARITY.md` (2026-10-12): the figures first, then what needs a person,
+ * Security & Audit — redone to `pramanyx-v2/CLARITY.md` (2026-10-12): the figures first, then what needs a person,
  * then who ran the queries, then the checks themselves folded into a row per caller and outcome. The log's rows are
  * still all here — behind each group's Show, and behind "All rows" — with their SQL, errors and verdicts.
  *
@@ -807,7 +807,7 @@ function ActionApprovalsSection() {
             : decisions.length === 0 ? (
               <div className="aug-fs-sm" style={{ ...ROW, ...MUTED }}>
                 No high-risk action attempted yet.
-                <Chip title="AUGHOR_ACTION_APPROVAL=0 on the server switches the approval gate off">the gate is on unless the server switched it off</Chip>
+                <Chip title="PRAMANYX_ACTION_APPROVAL=0 on the server switches the approval gate off">the gate is on unless the server switched it off</Chip>
               </div>
             ) : (
               <>

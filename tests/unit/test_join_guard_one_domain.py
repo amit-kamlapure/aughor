@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import sqlglot
 
-from aughor.sql.join_guard import _join_sides, _one_domain, join_domain_check
+from pramanyx.sql.join_guard import _join_sides, _one_domain, join_domain_check
 
 #: The statement as the Agent ran it on BigQuery.
 COHORTS = """

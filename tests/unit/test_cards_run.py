@@ -10,20 +10,20 @@ import types
 
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.cards.models import StoredCard
-from aughor.cards.store import get_card, upsert_card
-from aughor.control_plane.contracts.execution import QueryResult
+from pramanyx.api import app
+from pramanyx.cards.models import StoredCard
+from pramanyx.cards.store import get_card, upsert_card
+from pramanyx.control_plane.contracts.execution import QueryResult
 
 client = TestClient(app)
 
 
 def _stub(monkeypatch, result):
     monkeypatch.setattr(
-        "aughor.db.connection.open_connection_for",
+        "pramanyx.db.connection.open_connection_for",
         lambda conn: types.SimpleNamespace(close=lambda: None),
     )
-    monkeypatch.setattr("aughor.sql.executor.execute_guarded", lambda db, sql, **kw: result)
+    monkeypatch.setattr("pramanyx.sql.executor.execute_guarded", lambda db, sql, **kw: result)
 
 
 def _card(**kw) -> StoredCard:

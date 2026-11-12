@@ -76,7 +76,7 @@ export async function splitStatements(sql: string): Promise<StatementRange[]> {
 /**
  * EXPLAIN / DESCRIBE / SHOW — read-only statements the workbench may run (SE-3 G).
  *
- * The pair of this lives in `aughor/db/connection.py` as `is_metadata_statement`, and
+ * The pair of this lives in `pramanyx/db/connection.py` as `is_metadata_statement`, and
  * the duplication is deliberate: this side decides whether to LINT, that side decides
  * whether to RUN, and there is no codegen across the boundary. Keep them in step —
  * the failure mode if they drift is cosmetic here (a squiggle under valid SQL) and
@@ -89,7 +89,7 @@ export function isMetadataStatement(sql: string): boolean {
 /**
  * SE-4 H — the `:name` parameters in a statement, first-appearance order, de-duped.
  *
- * A port of `_scan` in `aughor/sql/params.py`, and it must stay a faithful one: the
+ * A port of `_scan` in `pramanyx/sql/params.py`, and it must stay a faithful one: the
  * server decides what to BIND from its scanner, this decides what to ASK FOR from
  * this one, and a disagreement means either a chip with no parameter behind it or a
  * parameter with no chip — the second of which blocks the run.

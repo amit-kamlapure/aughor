@@ -1,4 +1,4 @@
-"""Unit tests for the semantic operators (aughor/semops) — text detection, filter, extract.
+"""Unit tests for the semantic operators (pramanyx/semops) — text detection, filter, extract.
 
 The LLM is replaced by a deterministic fake provider that parses the ``[index] text`` listing the
 operator builds and applies a test-supplied python rule, so these assert the operator *plumbing*
@@ -10,9 +10,9 @@ import re
 
 import pytest
 
-from aughor.agent.state import QueryResult
-from aughor.semops import operators as ops
-from aughor.semops.operators import (
+from pramanyx.agent.state import QueryResult
+from pramanyx.semops import operators as ops
+from pramanyx.semops.operators import (
     _Aggregation,
     _ExtractBatch,
     _ExtractedRow,

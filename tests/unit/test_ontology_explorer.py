@@ -17,10 +17,10 @@ import duckdb
 import pytest
 import yaml
 
-from aughor.db.connection import open_connection
-from aughor.ontology import drafts as DR
-from aughor.ontology import overrides as OV
-from aughor.ontology.explorer import (
+from pramanyx.db.connection import open_connection
+from pramanyx.ontology import drafts as DR
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.explorer import (
     BusinessDraft,
     compare_groupings,
     entity_key,
@@ -28,7 +28,7 @@ from aughor.ontology.explorer import (
     rule_key,
     source_catalogue,
 )
-from aughor.ontology.models import OntologyGraph
+from pramanyx.ontology.models import OntologyGraph
 from tests.unit.test_object_bindings import GRAPH, ints, seed
 
 CONN = "explorer-door-t"
@@ -109,9 +109,9 @@ def _isolated_trees(tmp_path, monkeypatch):
 
 @pytest.fixture
 def door(tmp_path, monkeypatch):
-    import aughor.db.connection as C
-    from aughor.ontology import store as ST
-    from aughor.util.json_store import KeyedJsonStore
+    import pramanyx.db.connection as C
+    from pramanyx.ontology import store as ST
+    from pramanyx.util.json_store import KeyedJsonStore
 
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
     ST.save_ontology(CONN, "ecommerce", "fp", OntologyGraph.model_validate(json.loads(GRAPH.read_text())))
@@ -152,7 +152,7 @@ def test_a_draft_is_measured_before_it_lands_and_what_survives_is_read_at_once(d
     assert run["said"] == {"entities": 2, "parts": 6, "links": 3, "processes": 2, "rules": 4}
     # the run's model call is recorded under the run's own trace — the session log drops an event with no trace, so an
     # untraced door spends where no Spend or Activity view can see it
-    from aughor.obs.session_log import recover_session
+    from pramanyx.obs.session_log import recover_session
     recorded = [e for e in recover_session(run["trace_id"]) if e.get("kind") == "llm_call"]
     assert [e.get("model") for e in recorded] == ["faux-coder"]
     outcome = {o["key"]: o for o in body["outcomes"]}
@@ -224,7 +224,7 @@ def test_a_draft_is_measured_before_it_lands_and_what_survives_is_read_at_once(d
     finally:
         conn.close()
     assert (fulfilled["path"], int(fulfilled["rows"][0][0])) == ("compiled", kept)
-    from aughor.routers.ontology import served_ontology_graph
+    from pramanyx.routers.ontology import served_ontology_graph
     with OV.viewing("draft"):                                          # the next run reads what this one declared
         catalogue = source_catalogue(served_ontology_graph(CONN, "ecommerce"))
     assert "process order_fulfilment on Order: placed → shipped → delivered (proposed by a model" in catalogue
@@ -346,8 +346,8 @@ def test_a_draft_the_model_could_not_give_writes_nothing(door, client, faux_llm)
 def test_a_table_already_bound_is_not_offered_again_as_a_data_proposal_whatever_its_qualifier():
     """Found on the live receipt: the builder proposes `luxexperience.order_items` and the explorer binds `order_items`,
     so the panel kept offering 'Bind' for four tables the draft had just bound."""
-    from aughor.ontology.models import Binding, Rollup
-    from aughor.semantic.object_types import describe_object_type, object_type_map
+    from pramanyx.ontology.models import Binding, Rollup
+    from pramanyx.semantic.object_types import describe_object_type, object_type_map
     graph = OntologyGraph.model_validate(json.loads(GRAPH.read_text()))
     order = graph.entities["Order"]
     order.bindings = [Binding(name="lines", kind="detail", table="order_items", key="order_id", source="model",
@@ -381,7 +381,7 @@ def test_a_list_a_local_model_sent_as_a_string_is_read_back():
 
 
 def test_the_binding_that_answered_is_recorded_not_merely_the_one_asked(faux_llm):
-    from aughor.llm.provider import answered_by, get_provider
+    from pramanyx.llm.provider import answered_by, get_provider
     faux_llm.set_responses([{"entities": [], "parts": [], "links": []}])
     before = answered_by()
     get_provider("coder").complete("system", "user", BusinessDraft)
@@ -591,8 +591,8 @@ def test_a_found_link_is_withdrawn_and_restored_over_http(door, client):
 
 
 def test_a_builder_found_binding_is_withdrawn_and_restored_over_http(door, client):
-    from aughor.ontology import store as ST
-    from aughor.ontology.models import Binding
+    from pramanyx.ontology import store as ST
+    from pramanyx.ontology.models import Binding
     graph = OntologyGraph.model_validate(json.loads(GRAPH.read_text()))
     graph.entities["Order"].bindings.append(Binding(name="lines", kind="detail", table="order_items", key="order_id",
                                                      source="proposed", verified=True))   # the data's, not a person's
@@ -631,7 +631,7 @@ def test_an_unreadable_record_refuses_the_run_before_the_model_call(door, client
 
 
 def test_a_second_exploration_of_a_scope_waits_for_the_first(door, client, faux_llm):
-    from aughor.routers.ontology import _exploration_lock
+    from pramanyx.routers.ontology import _exploration_lock
     faux_llm.set_responses([DRAFT])
     lock = _exploration_lock(CONN, "ecommerce")
     assert lock.acquire(blocking=False)             # a run already in flight — the birth rite's, say
@@ -645,7 +645,7 @@ def test_a_second_exploration_of_a_scope_waits_for_the_first(door, client, faux_
 
 
 def test_a_run_that_fails_part_way_is_recorded_so_a_restart_does_not_pay_again(door, client, faux_llm, monkeypatch):
-    import aughor.ontology.explorer as EX
+    import pramanyx.ontology.explorer as EX
     faux_llm.set_responses([DRAFT])
 
     def _dies(*_a, **_k):
@@ -658,8 +658,8 @@ def test_a_run_that_fails_part_way_is_recorded_so_a_restart_does_not_pay_again(d
     (run,) = DR.load_draft(CONN, "ecommerce").runs
     assert "the warehouse went away mid-run" in run.error
     # the birth rite skips a scope with any recorded run — exactly the check that never fired before
-    from aughor.routers._shared import run_business_terms
+    from pramanyx.routers._shared import run_business_terms
     seen: list = []
-    monkeypatch.setattr("aughor.licensing.resolver.has_capability", lambda cap, conn_id=None: True)
-    monkeypatch.setattr("aughor.routers.ontology.resolve_effective_schema", lambda conn, schema=None: "ecommerce")
+    monkeypatch.setattr("pramanyx.licensing.resolver.has_capability", lambda cap, conn_id=None: True)
+    monkeypatch.setattr("pramanyx.routers.ontology.resolve_effective_schema", lambda conn, schema=None: "ecommerce")
     assert run_business_terms(CONN, "ecommerce", lambda *a, **k: seen.append(a)) == "skipped"

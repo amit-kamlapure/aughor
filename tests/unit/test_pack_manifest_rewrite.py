@@ -1,5 +1,5 @@
 """The 2027 study's close-out, C9 — the platform writes into a pack's manifest without erasing what its
-author wrote (`aughor/packs/manifest.py`).
+author wrote (`pramanyx/packs/manifest.py`).
 
 What these hold: a rewrite changes exactly the keys asked for — in place, a block value removed with the line,
 a trailing comment kept, an absent key appended — and every other byte, comments first, stays; `yaml.safe_load`
@@ -12,7 +12,7 @@ import uuid
 
 import yaml
 
-from aughor.packs.manifest import rewrite_scalars, scalar
+from pramanyx.packs.manifest import rewrite_scalars, scalar
 
 MANIFEST = """id: banking
 name: Banking and lending
@@ -27,7 +27,7 @@ domains:
   - banking
   - lending
 status: draft   # gate 6
-source: aughor
+source: pramanyx
 """
 
 
@@ -35,7 +35,7 @@ def test_a_rewrite_changes_the_keys_asked_for_and_nothing_else():
     out = rewrite_scalars(MANIFEST, {"status": "active", "uploaded_by": "user:ana", "uploaded_at": "2026-10-05T10:00:00Z"})
     assert "# IP-4 (2026-09-17): drafted by the generator" in out
     assert "status: active   # gate 6\n" in out                    # in place, the trailing comment kept
-    assert out.endswith("source: aughor\nuploaded_by: user:ana\nuploaded_at: '2026-10-05T10:00:00Z'\n")
+    assert out.endswith("source: pramanyx\nuploaded_by: user:ana\nuploaded_at: '2026-10-05T10:00:00Z'\n")
     before, after = yaml.safe_load(MANIFEST), yaml.safe_load(out)
     before.update({"status": "active", "uploaded_by": "user:ana", "uploaded_at": "2026-10-05T10:00:00Z"})
     assert after == before
@@ -56,8 +56,8 @@ def test_a_block_value_is_replaced_whole_and_a_scalar_that_reads_as_another_type
 
 
 def test_the_promotion_door_keeps_the_authors_comments(tmp_path):
-    from aughor.packs.loader import PROSE_FILE
-    from aughor.packs.promote import set_status
+    from pramanyx.packs.loader import PROSE_FILE
+    from pramanyx.packs.promote import set_status
     d = tmp_path / "commented"
     d.mkdir()
     text = ("id: commented\nname: Commented\nversion: 1\n# why this pack exists, in the author's words\n"
@@ -71,9 +71,9 @@ def test_the_promotion_door_keeps_the_authors_comments(tmp_path):
 
 
 def test_the_kits_upload_keeps_the_uploaders_comments(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_IMPORTED_PACKS_DIR", str(tmp_path / "imported"))
-    from aughor.packs import kit as KIT
-    from aughor.packs.roots import imported_root
+    monkeypatch.setenv("PRAMANYX_IMPORTED_PACKS_DIR", str(tmp_path / "imported"))
+    from pramanyx.packs import kit as KIT
+    from pramanyx.packs.roots import imported_root
     pid = "kept-" + uuid.uuid4().hex[:6]
     manifest = (f"id: {pid}\nname: Kept\nversion: 1\n# the uploader's reason for this watch\nstatus: active\ndomains: [testing]\n")
     KIT.upload({"pack.yaml": manifest, "monitors/return_rate.yaml": "id: return_rate\nmetric: return_rate\nunmeasured: true\n"},

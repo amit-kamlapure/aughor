@@ -10,13 +10,13 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from aughor.api import app
+from pramanyx.api import app
 
 
 def test_single_tenant_by_default(monkeypatch):
     """Localhost / identity-off is the common case and must report False, or the UI
     would offer a per-org override that cannot differ from the deployment's."""
-    monkeypatch.delenv("AUGHOR_REQUIRE_IDENTITY", raising=False)
+    monkeypatch.delenv("PRAMANYX_REQUIRE_IDENTITY", raising=False)
     body = TestClient(app).get("/capabilities").json()
     assert body["multi_tenant"] is False
 
@@ -24,12 +24,12 @@ def test_single_tenant_by_default(monkeypatch):
 def test_multi_tenant_when_identity_is_enforced(monkeypatch):
     """With identity on, orgs are real and a per-org key is a genuine choice.
 
-    The request carries `X-Aughor-Org` because identity mode rejects an
+    The request carries `X-Pramanyx-Org` because identity mode rejects an
     unauthenticated caller outright — which is itself the point: the endpoint's answer
     is about the CALLER's world, not a global fact.
     """
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    res = TestClient(app).get("/capabilities", headers={"X-Aughor-Org": "acme"})
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    res = TestClient(app).get("/capabilities", headers={"X-Pramanyx-Org": "acme"})
     assert res.status_code == 200
     assert res.json()["multi_tenant"] is True
 
@@ -40,9 +40,9 @@ def test_the_signal_is_read_per_request_not_at_import(monkeypatch):
     the trap this repo has paid for before with flag reads."""
     client = TestClient(app)
 
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    on = client.get("/capabilities", headers={"X-Aughor-Org": "acme"})
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    on = client.get("/capabilities", headers={"X-Pramanyx-Org": "acme"})
     assert on.json()["multi_tenant"] is True
 
-    monkeypatch.delenv("AUGHOR_REQUIRE_IDENTITY")
+    monkeypatch.delenv("PRAMANYX_REQUIRE_IDENTITY")
     assert client.get("/capabilities").json()["multi_tenant"] is False

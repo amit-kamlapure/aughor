@@ -8,7 +8,7 @@ with that unit. These tests pin the derivation, the plan directive + summary tag
 """
 from __future__ import annotations
 
-import aughor.agent.investigate as inv
+import pramanyx.agent.investigate as inv
 
 
 # ── _canonical_grain ─────────────────────────────────────────────────────────────

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.govern.usage_caps import (
+from pramanyx.govern.usage_caps import (
     ACTIONS,
     METRICS,
     SCOPES,
@@ -150,7 +150,7 @@ def test_the_decision_carries_the_typed_error_class():
 def test_there_is_no_abort_path():
     """Enforcement is pre-flight ONLY. Killing an in-flight run destroys work the user
     already paid for and leaves a partial artifact claiming it completed."""
-    import aughor.govern.usage_caps as UC
+    import pramanyx.govern.usage_caps as UC
 
     assert not [n for n in dir(UC) if n in ("abort", "cancel", "kill", "revoke_running")]
 
@@ -160,28 +160,28 @@ def test_there_is_no_abort_path():
 def test_check_allows_when_no_caps_are_declared():
     """An org that declares no allowance is unaffected — which is what made hardwiring
     the flag safe."""
-    import aughor.govern.usage_caps as UC
+    import pramanyx.govern.usage_caps as UC
 
     assert UC.check(org_id="org-with-no-caps-declared").allowed
 
 
 def test_cap_enforcement_is_unconditional():
     """The flag was hardwired 2026-08-02; pinned so a re-introduced switch faces this."""
-    from aughor.kernel.flags import FLAG_ENV
+    from pramanyx.kernel.flags import FLAG_ENV
 
     assert "govern.usage_caps" not in FLAG_ENV
 
 
 class TestCapStore:
     def test_set_and_list(self):
-        from aughor.govern import cap_store
+        from pramanyx.govern import cap_store
 
         cap_store.set_cap("org", "*", "calls", 500, set_by="alice", org_id="o1")
         caps = cap_store.list_caps(org_id="o1")
         assert [(c.scope, c.metric, c.limit) for c in caps] == [("org", "calls", 500.0)]
 
     def test_a_cap_without_an_author_is_refused(self):
-        from aughor.govern import cap_store
+        from pramanyx.govern import cap_store
 
         with pytest.raises(ValueError, match="who set it"):
             cap_store.set_cap("org", "*", "calls", 5, set_by="")
@@ -193,7 +193,7 @@ class TestCapStore:
         ({"limit": -1}, "cannot be negative"),
     ])
     def test_malformed_caps_are_refused(self, kwargs, match):
-        from aughor.govern import cap_store
+        from pramanyx.govern import cap_store
 
         args = {"scope": "org", "subject": "*", "metric": "calls", "limit": 5.0,
                 "set_by": "alice", **kwargs}
@@ -201,7 +201,7 @@ class TestCapStore:
             cap_store.set_cap(**args)
 
     def test_replacing_a_cap_re_stamps_it(self):
-        from aughor.govern import cap_store
+        from pramanyx.govern import cap_store
 
         cap_store.set_cap("org", "*", "calls", 100, set_by="alice", org_id="o2")
         cap_store.set_cap("org", "*", "calls", 900, set_by="bob", org_id="o2")
@@ -211,21 +211,21 @@ class TestCapStore:
     def test_clear_removes_the_cap(self):
         """A retired cap that still read as present would keep refusing work after the
         operator lifted it."""
-        from aughor.govern import cap_store
+        from pramanyx.govern import cap_store
 
         cap_store.set_cap("org", "*", "calls", 100, set_by="alice", org_id="o3")
         assert cap_store.clear_cap("org", "*", "calls", cleared_by="alice", org_id="o3")
         assert cap_store.list_caps(org_id="o3") == []
 
     def test_orgs_do_not_see_each_others_caps(self):
-        from aughor.govern import cap_store
+        from pramanyx.govern import cap_store
 
         cap_store.set_cap("org", "*", "calls", 100, set_by="alice", org_id="iso-a")
         assert cap_store.list_caps(org_id="iso-b") == []
 
     def test_windows_are_independent_rows(self):
         """A daily and a monthly cap on the same metric are different policies."""
-        from aughor.govern import cap_store
+        from pramanyx.govern import cap_store
 
         cap_store.set_cap("org", "*", "calls", 100, window_hours=24, set_by="a",
                           org_id="o4")
@@ -245,7 +245,7 @@ def test_observed_usage_window_reads_the_real_timestamp_column(monkeypatch):
     row shaped exactly like `Ledger.session_events()` output."""
     from datetime import datetime, timezone
 
-    from aughor.govern import usage_caps as UC
+    from pramanyx.govern import usage_caps as UC
 
     class _FakeLedger:
         def session_events(self, **kw):
@@ -260,7 +260,7 @@ def test_observed_usage_window_reads_the_real_timestamp_column(monkeypatch):
             kind = kw.get("kind")
             return [r for r in rows if not kind or r["kind"] == kind]
 
-    import aughor.kernel.ledger as ledger_mod
+    import pramanyx.kernel.ledger as ledger_mod
     monkeypatch.setattr(ledger_mod.Ledger, "default", classmethod(lambda cls: _FakeLedger()))
 
     totals = UC.observed_usage(window_hours=24)

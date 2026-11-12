@@ -15,11 +15,11 @@ from __future__ import annotations
 
 import json
 
-from aughor.packs.knowledge import entry_industry, pack_play_source
-from aughor.playbook.builder import _load_all_pack_plays, _pack_play_entry, seed_from_packs
-from aughor.playbook.models import DATA_QUALITY_TAG
-from aughor.playbook.retriever import is_data_quality
-from aughor.playbook.store import list_entries
+from pramanyx.packs.knowledge import entry_industry, pack_play_source
+from pramanyx.playbook.builder import _load_all_pack_plays, _pack_play_entry, seed_from_packs
+from pramanyx.playbook.models import DATA_QUALITY_TAG
+from pramanyx.playbook.retriever import is_data_quality
+from pramanyx.playbook.store import list_entries
 
 
 def _empty(tmp_path):

@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.obs import session_log
+from pramanyx.api import app
+from pramanyx.obs import session_log
 
 client = TestClient(app)
 
@@ -35,13 +35,13 @@ def _emit_call(caller=None, prompt_tokens=100, completion_tokens=10, model="m-te
 
 
 def test_prompt_weight_round_trips_through_emit():
-    _emit_call(caller="aughor.agent.prompts_investigate:report_user_prompt",
+    _emit_call(caller="pramanyx.agent.prompts_investigate:report_user_prompt",
                prompt_tokens=3833, completion_tokens=900)
-    _emit_call(caller="aughor.agent.prompts_investigate:report_user_prompt",
+    _emit_call(caller="pramanyx.agent.prompts_investigate:report_user_prompt",
                prompt_tokens=3000, completion_tokens=800)
     out = session_log.prompt_weight()
     site = next(s for s in out["sites"]
-                if s["caller"] == "aughor.agent.prompts_investigate:report_user_prompt")
+                if s["caller"] == "pramanyx.agent.prompts_investigate:report_user_prompt")
     assert site["calls"] >= 2
     assert site["prompt_tokens"] >= 6833
     assert site["roles"].get("coder", 0) >= 2
@@ -49,10 +49,10 @@ def test_prompt_weight_round_trips_through_emit():
 
 
 def test_unreported_usage_is_counted_not_zeroed():
-    _emit_call(caller="aughor.test:usage_free_site",
+    _emit_call(caller="pramanyx.test:usage_free_site",
                prompt_tokens=None, completion_tokens=None)
     out = session_log.prompt_weight()
-    site = next(s for s in out["sites"] if s["caller"] == "aughor.test:usage_free_site")
+    site = next(s for s in out["sites"] if s["caller"] == "pramanyx.test:usage_free_site")
     assert site["calls_without_usage"] >= 1
     assert site["prompt_tokens"] == 0
     assert site["mean_prompt_tokens"] is None or site["calls"] > site["calls_without_usage"], \
@@ -67,7 +67,7 @@ def test_pre_attribution_events_fold_into_a_visible_bucket():
 
 
 def test_caller_attribution_walks_past_llm_plumbing():
-    from aughor.llm.provider import _caller_attribution
+    from pramanyx.llm.provider import _caller_attribution
 
     def _my_prompt_site():
         return _caller_attribution()
@@ -82,9 +82,9 @@ def test_live_provider_call_is_attributed(monkeypatch):
     sites."""
     from pydantic import BaseModel
 
-    from aughor import telemetry
-    from aughor.llm.faux import set_responses
-    from aughor.llm.provider import LLMProvider
+    from pramanyx import telemetry
+    from pramanyx.llm.faux import set_responses
+    from pramanyx.llm.provider import LLMProvider
 
     class _Out(BaseModel):
         ok: bool
@@ -103,12 +103,12 @@ def test_live_provider_call_is_attributed(monkeypatch):
 
 
 def test_prompt_weight_endpoint_serves_the_fold():
-    _emit_call(caller="aughor.test:endpoint_site", prompt_tokens=7)
+    _emit_call(caller="pramanyx.test:endpoint_site", prompt_tokens=7)
     r = client.get("/obs/prompt-weight")
     assert r.status_code == 200
     body = r.json()
     assert body["measured"] is True and "sites" in body
-    assert any(s["caller"] == "aughor.test:endpoint_site" for s in body["sites"])
+    assert any(s["caller"] == "pramanyx.test:endpoint_site" for s in body["sites"])
 
 
 def test_model_usage_endpoint_exists():

@@ -1,4 +1,4 @@
-"""Tests for the grain/fan-out guard (aughor/sql/grain_guard.py).
+"""Tests for the grain/fan-out guard (pramanyx/sql/grain_guard.py).
 
 Contract: fire ONLY on a probe-confirmed additive-aggregate-over-fan-out-join (so it can power a
 trust caveat / repair signal without ever flagging a correct query). Includes a real in-memory
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from aughor.sql.grain_guard import detect_fanout, fanout_caveat, FanoutRatioIssue
+from pramanyx.sql.grain_guard import detect_fanout, fanout_caveat, FanoutRatioIssue
 
 
 def _mock_probe(fanned_tables: dict):
@@ -87,7 +87,7 @@ def test_real_sqlite_fanout_detected():
 def test_wiring_plumbing_through_product_connector(tmp_path):
     """Proves the /query/validate wiring path: the product SQLiteConnection returns STRINGIFIED
     cells, and detect_fanout must coerce them — using the exact probe wrapper the endpoint uses."""
-    from aughor.connectors.file.sqlite import SQLiteConnection
+    from pramanyx.connectors.file.sqlite import SQLiteConnection
 
     db_file = tmp_path / "fan.sqlite"
     seed = sqlite3.connect(str(db_file))

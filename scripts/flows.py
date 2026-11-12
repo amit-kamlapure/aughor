@@ -5,7 +5,7 @@ smoke.py covers the read side (every GET). This drives a curated set of the
 write/background flows — connection knowledge-sync, semantic knowledge, metric
 create + validate, monitor create + trigger, document upload — and re-checks the
 Qdrant collections before/after, so we can confirm the three that start empty
-(aughor_documents / org_intelligence / aughor_connection_kb) actually populate
+(pramanyx_documents / org_intelligence / pramanyx_connection_kb) actually populate
 from their feature. Best-effort; uses clearly test-named records.
 
 Usage:  uv run python scripts/flows.py
@@ -22,9 +22,9 @@ BASE = "http://localhost:8000"
 QDRANT = "http://localhost:6333"
 CONN = "workspace"
 QCOLS = [
-    "aughor_investigations", "aughor_sql_examples", "sql_knowledge_base",
-    "aughor_documents", "org_intelligence", "aughor_schema",
-    "aughor_connection_kb", "schema_suggestions",
+    "pramanyx_investigations", "pramanyx_sql_examples", "sql_knowledge_base",
+    "pramanyx_documents", "org_intelligence", "pramanyx_schema",
+    "pramanyx_connection_kb", "schema_suggestions",
 ]
 
 
@@ -62,7 +62,7 @@ def qcounts():
 
 
 def multipart(fields, fname, fcontent, fctype="text/plain"):
-    boundary = "----aughorflows" + uuid.uuid4().hex
+    boundary = "----pramanyxflows" + uuid.uuid4().hex
     pre = "".join(
         f"--{boundary}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n"
         for k, v in fields.items()
@@ -131,7 +131,7 @@ def main():
 
     npass = sum(1 for _, ok in results if ok)
     print(f"\nflows: {npass}/{len(results)} ok")
-    print("note: aughor_connection_kb populates only for knowledge connectors "
+    print("note: pramanyx_connection_kb populates only for knowledge connectors "
           "(Confluence/Notion); org_intelligence populates when a canvas insight is "
           "promoted to org — both feature-gated, not failures.")
     return 0

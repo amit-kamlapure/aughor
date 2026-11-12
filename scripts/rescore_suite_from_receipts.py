@@ -1,6 +1,6 @@
 """Re-score a reference suite from the Trust-Receipt ledger with the CURRENT comparator.
 
-    AUGHOR_SYSTEM_DB=$PWD/data/system.db \\
+    PRAMANYX_SYSTEM_DB=$PWD/data/system.db \\
       .venv/bin/python scripts/rescore_suite_from_receipts.py <suite_id> <connection_id>
 
 Why: an eval run's `correct` verdicts are frozen at the comparator that was imported when
@@ -18,13 +18,13 @@ from __future__ import annotations
 import os
 import sys
 
-if not os.environ.get("AUGHOR_SYSTEM_DB"):
-    sys.exit("set AUGHOR_SYSTEM_DB (a bare script does not load conftest's isolation)")
+if not os.environ.get("PRAMANYX_SYSTEM_DB"):
+    sys.exit("set PRAMANYX_SYSTEM_DB (a bare script does not load conftest's isolation)")
 
-from aughor.custom_agents.quality import results_match  # noqa: E402
-from aughor.db.connection import open_connection_for  # noqa: E402
-from aughor.evals import store  # noqa: E402
-from aughor.kernel.ledger import Ledger  # noqa: E402
+from pramanyx.custom_agents.quality import results_match  # noqa: E402
+from pramanyx.db.connection import open_connection_for  # noqa: E402
+from pramanyx.evals import store  # noqa: E402
+from pramanyx.kernel.ledger import Ledger  # noqa: E402
 
 
 def main(argv: list[str]) -> int:

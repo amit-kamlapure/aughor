@@ -16,8 +16,8 @@ import hashlib
 import pytest
 import yaml
 
-from aughor.semantic import glossary as G
-from aughor.semantic.glossary import GlossaryStoreError
+from pramanyx.semantic import glossary as G
+from pramanyx.semantic.glossary import GlossaryStoreError
 
 BASELINE = {
     "tables": {
@@ -42,15 +42,15 @@ def layers(tmp_path, monkeypatch):
     monkeypatch.setattr(G, "_LEGACY_PATH", legacy)
     monkeypatch.setattr(G, "_LEGACY_BASELINE", base)
     monkeypatch.setattr(G, "_DEFAULT_PATH", inst)
-    monkeypatch.setenv("AUGHOR_HOME", str(tmp_path / "home"))           # no marker: nothing rehomes
-    monkeypatch.setenv("AUGHOR_GLOSSARY_SEED_PATH", str(seed))
-    monkeypatch.setenv("AUGHOR_GLOSSARY_PATH", str(inst))
+    monkeypatch.setenv("PRAMANYX_HOME", str(tmp_path / "home"))           # no marker: nothing rehomes
+    monkeypatch.setenv("PRAMANYX_GLOSSARY_SEED_PATH", str(seed))
+    monkeypatch.setenv("PRAMANYX_GLOSSARY_PATH", str(inst))
 
     class L:
         pass
     ns = L()
     ns.tmp, ns.seed, ns.base, ns.legacy, ns.inst = tmp_path, seed, base, legacy, inst
-    ns.unset = lambda: monkeypatch.delenv("AUGHOR_GLOSSARY_PATH")     # the production route
+    ns.unset = lambda: monkeypatch.delenv("PRAMANYX_GLOSSARY_PATH")     # the production route
     return ns
 
 
@@ -165,7 +165,7 @@ def test_an_unreadable_instance_is_an_error_and_is_left_alone(layers, body):
 
 
 def test_a_named_instance_path_never_reads_the_checkouts_file(layers):
-    """Kills: deriving from the frozen file while AUGHOR_GLOSSARY_PATH names an absent instance —
+    """Kills: deriving from the frozen file while PRAMANYX_GLOSSARY_PATH names an absent instance —
     on a developer's machine that is their live glossary."""
     dump(layers.legacy, {"tables": {"live_only": {"description": "developer's"}}})
     assert "live_only" not in (G.load_glossary().get("tables") or {})
@@ -181,7 +181,7 @@ def test_a_plain_glossary_at_a_named_path_reads_as_it_did_alone(layers):
 
 
 def test_the_shipped_files_are_never_a_write_target(layers, monkeypatch):
-    monkeypatch.setenv("AUGHOR_GLOSSARY_PATH", str(layers.seed))
+    monkeypatch.setenv("PRAMANYX_GLOSSARY_PATH", str(layers.seed))
     with pytest.raises(GlossaryStoreError, match="shipped"):
         G.update_table("x", description="y")
     with pytest.raises(GlossaryStoreError, match="shipped"):
@@ -210,10 +210,10 @@ def test_a_migrated_home_moves_the_instance_but_not_the_sidecar(tmp_path, monkey
     data.mkdir(parents=True)
     home = tmp_path / "home"
     home.mkdir()
-    (home / ".aughor-home").write_text("migrated")
-    monkeypatch.setenv("AUGHOR_HOME", str(home))
+    (home / ".pramanyx-home").write_text("migrated")
+    monkeypatch.setenv("PRAMANYX_HOME", str(home))
     monkeypatch.setattr(G, "_LEGACY_PATH", data / "glossary.yaml")
     monkeypatch.setattr(G, "_DEFAULT_PATH", data / "glossary.instance.yaml")
-    monkeypatch.delenv("AUGHOR_GLOSSARY_PATH")
+    monkeypatch.delenv("PRAMANYX_GLOSSARY_PATH")
     assert G._default_path() == home / "state" / "glossary.instance.yaml"
     assert G.generated_path() == data / "glossary_generated.yaml"

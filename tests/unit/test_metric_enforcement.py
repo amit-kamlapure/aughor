@@ -8,7 +8,7 @@ query is never mislabelled.
 """
 from types import SimpleNamespace
 
-from aughor.semantic.enforcement import (
+from pramanyx.semantic.enforcement import (
     check_metric_enforcement, enforcement_summary, corrective_directive, drift_count,
     enforce_gate, propose_undefined_metrics,
 )

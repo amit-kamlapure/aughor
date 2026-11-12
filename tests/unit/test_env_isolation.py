@@ -7,9 +7,9 @@ diagnosed.
 
 That is not hypothetical. `test_route_wide::test_ask_causal_question_pins_investigate_
 with_flag_on` was exactly this for weeks — recorded as "`.env`-dependent" with no
-mechanism. Measured 2026-08-24 by bisecting the suite: `aughor/api.py` calls
+mechanism. Measured 2026-08-24 by bisecting the suite: `pramanyx/api.py` calls
 `load_dotenv` at IMPORT, so ANY test that builds a TestClient pulled the developer's
-`.env` into the process; `.env`'s `AUGHOR_DEFAULT_POSTGRES_DSN` changed how a connection
+`.env` into the process; `.env`'s `PRAMANYX_DEFAULT_POSTGRES_DSN` changed how a connection
 id resolves, and the ask then died with "Connection 'c1' not found" before it reached the
 faked deep body. Four eval scripts under `evals/` do the same at import, so merely
 importing one from a test leaked it too.
@@ -31,17 +31,17 @@ REPO = Path(__file__).resolve().parents[2]
 #: Every module that loads `.env` as an import side effect. A new one belongs here with
 #: its guard, not in a list of exceptions.
 LOADERS = (
-    "aughor/api.py",
+    "pramanyx/api.py",
     "evals/ablation_eval.py",
     "evals/run_golden.py",
     "evals/spider2.py",
     "evals/spider2_diag.py",
     # A LIBRARY module, so this one leaked into the app itself rather than only into
     # tests that imported a script.
-    "aughor/semantic/kb_retriever.py",
+    "pramanyx/semantic/kb_retriever.py",
 )
 
-SKIP_FLAG = "AUGHOR_SKIP_DOTENV"
+SKIP_FLAG = "PRAMANYX_SKIP_DOTENV"
 
 
 def test_the_suite_declares_a_clean_environment():
@@ -60,7 +60,7 @@ def _load_dotenv_calls(tree: ast.AST) -> list[ast.Call]:
 
 def _guarded_by_flag(node: ast.AST) -> bool:
     """Does this `if` test read the skip flag — as a literal, or through the constant
-    `aughor/api.py` defines for it?"""
+    `pramanyx/api.py` defines for it?"""
     for c in ast.walk(node):
         if isinstance(c, ast.Constant) and c.value == SKIP_FLAG:
             return True
@@ -100,10 +100,10 @@ def test_the_loader_list_has_not_gone_stale():
 def test_nothing_new_loads_dotenv_unguarded():
     """The ratchet. A sixth loader must arrive with its guard, not quietly."""
     offenders = []
-    # `aughor/` and `evals/` only. `scripts/` holds standalone probes that are RUN, never
+    # `pramanyx/` and `evals/` only. `scripts/` holds standalone probes that are RUN, never
     # imported — loading `.env` is the entire reason they work at all (a bare script
     # without it 401s silently). The test below is what keeps that assumption true.
-    for root in ("aughor", "evals"):
+    for root in ("pramanyx", "evals"):
         for path in sorted((REPO / root).rglob("*.py")):
             rel = path.relative_to(REPO).as_posix()
             if rel in LOADERS:

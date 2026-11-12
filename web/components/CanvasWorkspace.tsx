@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * An open Data Canvas — its chrome redone to `aughor-v2/CLARITY.md` (2026-10-12). The conversation, the reports and
+ * An open Data Canvas — its chrome redone to `pramanyx-v2/CLARITY.md` (2026-10-12). The conversation, the reports and
  * the configuration panel are what the person made and are drawn as before; around them: one header line (the way
  * back, the name, what it is in a line, its facts as chips, the three views, a new conversation and one Tools menu),
  * a two-line landing in place of a block that repeated the header, the history with a question asked eleven times said

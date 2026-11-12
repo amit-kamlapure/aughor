@@ -17,10 +17,10 @@ import copy
 
 import pytest
 
-from aughor.ontology import compatibility as COMPAT
-from aughor.ontology import overrides as OV
-from aughor.ontology import release as R
-from aughor.ontology.overrides import OntologyOverride, delete_override, find_override, save_override, viewing
+from pramanyx.ontology import compatibility as COMPAT
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology import release as R
+from pramanyx.ontology.overrides import OntologyOverride, delete_override, find_override, save_override, viewing
 from tests.unit.test_object_processes import FULFILMENT, PARAMS, door  # noqa: F401 — `door` is a fixture
 
 CONN, SCHEMA = "release-t", "ecommerce"
@@ -28,14 +28,14 @@ CONN, SCHEMA = "release-t", "ecommerce"
 
 @pytest.fixture(autouse=True)
 def _isolated(tmp_path, monkeypatch):
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
     monkeypatch.setattr(OV, "_SEED_ROOT", tmp_path / "seed")
     monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     ledger = Ledger(str(tmp_path / "system.db"))
     monkeypatch.setattr(Ledger, "default", classmethod(lambda cls: ledger))
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")     # the gate is on by default since 2026-10-04
-    monkeypatch.setattr("aughor.automations.store.list_automations", lambda *a, **k: [])
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "0")     # the gate is on by default since 2026-10-04
+    monkeypatch.setattr("pramanyx.automations.store.list_automations", lambda *a, **k: [])
 
 
 def _in_force(ov: OntologyOverride) -> None:
@@ -124,7 +124,7 @@ def test_a_draft_copy_that_says_what_is_published_is_no_change(monkeypatch):
 
 
 def test_what_a_declaration_said_on_a_day_is_what_was_published_never_a_draft(monkeypatch):
-    from aughor.ontology import history as H
+    from pramanyx.ontology import history as H
     _in_force(_rule(["DE", "AT"]))
     save_override(CONN, SCHEMA, _rule(["DE", "AT", "CH"]))  # drafted, never in force
     states = [v["state"] for v in H.versions(CONN, SCHEMA, "rule", "dach")]
@@ -136,7 +136,7 @@ def test_what_a_declaration_said_on_a_day_is_what_was_published_never_a_draft(mo
 # ── the diff, publishing and what it restates ─────────────────────────────────────────────────
 
 def _book(text: str, *, metric: str = "", object_set: str = "") -> str:
-    from aughor.record.claims import Claim, Statement, Warrant, book, claim_key
+    from pramanyx.record.claims import Claim, Statement, Warrant, book, claim_key
     claim = Claim(kind="observation", tier="measured", statement=Statement(text=text, metric=metric,
                                                                            object_set=object_set, value=1.0),
                   warrants=[Warrant(kind="run", ref="rcpt-1")], as_of="2026-10-01")
@@ -146,7 +146,7 @@ def _book(text: str, *, metric: str = "", object_set: str = "") -> str:
 
 
 def test_a_meaning_change_names_what_it_touches_and_publishing_restates_it(monkeypatch):
-    from aughor.record.claims import latest
+    from pramanyx.record.claims import latest
     _in_force(_rule(["DE", "AT"]))
     touched = _book("DACH revenue was 1,744 on 1 October", object_set="dach")
     untouched = _book("total revenue was 9,000 on 1 October", metric="revenue")
@@ -167,14 +167,14 @@ def test_a_meaning_change_names_what_it_touches_and_publishing_restates_it(monke
 
 
 def test_publishing_is_refused_while_a_change_would_break_something(monkeypatch):
-    from aughor.automations.models import Automation, Condition, Effect
+    from pramanyx.automations.models import Automation, Condition, Effect
     _in_force(OntologyOverride(target_kind="process", target_id="order_fulfilment",
                                fields={"declared": True, **copy.deepcopy(FULFILMENT)}))
     watch = Automation(name="Delivery watch", conn_id=CONN,
                        conditions=[Condition(kind="promise_breached", config={"process": "order_fulfilment"})],
                        effects=[Effect(kind="investigate", config={"question": "why"})])
-    monkeypatch.setattr("aughor.automations.store.list_automations", lambda *a, **k: [watch])
-    monkeypatch.setattr("aughor.ontology.dependents._automations", lambda conn: [watch])
+    monkeypatch.setattr("pramanyx.automations.store.list_automations", lambda *a, **k: [watch])
+    monkeypatch.setattr("pramanyx.ontology.dependents._automations", lambda conn: [watch])
     monkeypatch.setattr(R, "_graph", lambda conn, schema: _fulfilment_graph())
     assert delete_override(CONN, SCHEMA, "process", "order_fulfilment")
     (row,) = R.changes(CONN, SCHEMA)
@@ -187,7 +187,7 @@ def test_publishing_is_refused_while_a_change_would_break_something(monkeypatch)
 
 
 def _fulfilment_graph():
-    from aughor.ontology.processes import process_fields, process_from_fields
+    from pramanyx.ontology.processes import process_fields, process_from_fields
     from tests.unit.test_object_processes import fresh_graph
     g = fresh_graph()
     g.processes["order_fulfilment"] = process_from_fields("order_fulfilment", process_fields(FULFILMENT))
@@ -205,8 +205,8 @@ def test_a_models_proposal_is_published_only_once_a_person_confirms_it(monkeypat
 
 
 def test_a_claim_names_the_release_it_was_computed_under(monkeypatch):
-    from aughor.record.claims import latest
-    monkeypatch.setattr("aughor.db.registry.get_meta", lambda conn: {"schema_name": SCHEMA})
+    from pramanyx.record.claims import latest
+    monkeypatch.setattr("pramanyx.db.registry.get_meta", lambda conn: {"schema_name": SCHEMA})
     save_override(CONN, SCHEMA, _rule(["DE"]))               # the scope's first change: release 1 is recorded
     pinned = latest(_book("pinned revenue was 1 on 1 October", metric="revenue"))
     assert pinned.definition_version == f"{CONN}/{SCHEMA}@1"
@@ -271,8 +271,8 @@ def test_a_draft_that_does_not_bind_cannot_be_published():
 # ── the doors, end to end ─────────────────────────────────────────────────────────────────────
 
 def test_through_the_doors_consumers_read_the_published_release(door, client, monkeypatch):  # noqa: F811
-    from aughor.record.claims import latest
-    monkeypatch.setattr("aughor.db.registry.get_meta", lambda conn: {"schema_name": "ecommerce"})
+    from pramanyx.record.claims import latest
+    monkeypatch.setattr("pramanyx.db.registry.get_meta", lambda conn: {"schema_name": "ecommerce"})
     conn = PARAMS["connection_id"]
     draft = {**PARAMS, "ontology_view": "draft"}
     assert client.post("/ontology/processes", params=PARAMS, json=FULFILMENT).status_code == 200
@@ -302,7 +302,7 @@ def test_through_the_doors_consumers_read_the_published_release(door, client, mo
 
 
 def _book_on(conn: str, text: str, *, metric: str) -> str:
-    from aughor.record.claims import Claim, Statement, Warrant, book, claim_key
+    from pramanyx.record.claims import Claim, Statement, Warrant, book, claim_key
     claim = Claim(kind="observation", tier="measured", statement=Statement(text=text, metric=metric, value=0.12),
                   warrants=[Warrant(kind="run", ref="rcpt-2")], as_of="2026-09-30")
     key = claim_key("release-door-t", text[:12])

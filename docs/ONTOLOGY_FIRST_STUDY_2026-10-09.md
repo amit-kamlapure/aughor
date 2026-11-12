@@ -155,7 +155,7 @@ things. Mapped onto what exists:
 
 | The user's word | What it means | In Pramanyx today | Gap |
 |---|---|---|---|
-| **Node** | a thing the business runs on | an object of an object type (`OntologyEntity`, `aughor/ontology/models.py:327`) — federated, read live | types are tables by construction (§5) |
+| **Node** | a thing the business runs on | an object of an object type (`OntologyEntity`, `pramanyx/ontology/models.py:327`) — federated, read live | types are tables by construction (§5) |
 | **Nature of the flow** | what kind of relation it is | a link: from, to, cardinality declared *and measured*, a business verb (`OntologyRelationship`, `models.py:484`) | 15 of 37 live links carry a verb |
 | **Forward and backward** | the relation read both ways | `api_name` and `reverse_api_name`; a declared link has a reverse name | none |
 | **Purpose of the flow** | why the relation exists — which process it carries | implicit: a process stage reaches its timestamp through a link path (`shipment.ship_date`) | not recorded on the link |
@@ -240,9 +240,9 @@ State as of `44dee14f`. BUILT means a door, a store and a consumer exist; PARTIA
 | Execution policy (transaction, retries, timeout, idempotency) | PARTIAL | inline in the request, one attempt (webhook 10 s, http 20 s); staging idempotent on `(org, run_id, call_id)` | |
 | Transactional outbox, worker, reconciliation | ABSENT | four separate SQLite commits (`inbox.py`, `overlay.py`, `grants.py`, `kernel/ledger.py`); `uncertain` is terminal | the job queue is in-process only (`kernel/queue.py:38-66`); Arc SR's jobs table is not on main |
 | Optimistic concurrency on objects | ABSENT | overlay is last-writer-wins by authority rank (`overlay.py:150-171`) | cockpit drafts carry `base_version` |
-| Declared state transitions on object types | ABSENT | lifecycle is mined (`aughor/lifecycle/mapper.py`), processes measured | enforced state machines exist only on platform artifacts (metric governance, proposals, jobs) |
+| Declared state transitions on object types | ABSENT | lifecycle is mined (`pramanyx/lifecycle/mapper.py`), processes measured | enforced state machines exist only on platform artifacts (metric governance, proposals, jobs) |
 | Audit | BUILT | `govern.audit` on every verdict; an Action ledger artifact per execution | no `object.changed` or `action.executed` event kind (`kernel/events.py`) |
-| Identity: user, group, agent, service | BUILT · off by default | `security/authz.py:38-52`; `service_principals.py` | enforcement is a no-op unless `AUGHOR_REQUIRE_IDENTITY=1` and the tier has `RBAC_SSO` (`rbac/deps.py:93,100`) |
+| Identity: user, group, agent, service | BUILT · off by default | `security/authz.py:38-52`; `service_principals.py` | enforcement is a no-op unless `PRAMANYX_REQUIRE_IDENTITY=1` and the tier has `RBAC_SSO` (`rbac/deps.py:93,100`) |
 | Securables include ontology things | PARTIAL | catalog, schema, table, artifact, metric, promise, process, rule, domain, automation, agent, canvas (`metastore/models.py:143-172`) | no object type, property, link, action, instance or cockpit |
 | Object (row) access · property access | ABSENT · ABSENT | `ROW_POLICIES = {}` (`rbac/row_policy.py:24`); clearances gate table-grade securables only (`govern/tags.py:190-193`) | |
 | Agent scoping | BUILT | MCP and service-principal gate read · run · act; default `run`, so an outside agent cannot accept or execute (`rbac/agent_gate.py:105-141`) | natural language never bypasses criteria |
@@ -315,7 +315,7 @@ Not fixed — the ask was a study. One entry each; D1 is proven, the rest are by
 *Update, later on 2026-10-09: D1–D3 are fixed in `742114d7` on this branch (local, not pushed) — the overlay keeps
 the three fields, the web form declares them, and a call with no answer is a recorded dispatch error. D4–D7 stand.*
 
-- **D1 (proven).** `_EDITABLE["action"]` (`aughor/ontology/overrides.py:198-203`) lacks `reversibility`,
+- **D1 (proven).** `_EDITABLE["action"]` (`pramanyx/ontology/overrides.py:198-203`) lacks `reversibility`,
   `verification`, `undo` and `parallel_safe`, so `_apply_action` drops them on every read. Hermetic run: a declaration
   with a verification read, an undo and `compensable` read back as `None`, `None` and `''`, and
   `authority.declaration_problem` then refuses the read-back action. Every stored side-effect action reads as L1,
@@ -506,7 +506,7 @@ not one source row.
    relation a person or the agent can `SELECT` from, expanded to the source at run time — is where the object
    platforms and the warehouse semantic views all landed. Here it is a **hypothesis to measure** on the ON-10 sets (raw ·
    framed · framed plus ontology SQL) before the agent gets it; `ACTION:` template tokens are a precedent for
-   expansion inside SQL (`aughor/ontology/actions.py`).
+   expansion inside SQL (`pramanyx/ontology/actions.py`).
 5. **Actions as typed tools.** One proposal tool per declared action, propose-only by default, under Pramanyx's
    authority ladder.
 
@@ -540,7 +540,7 @@ not one source row.
 
 - **A stable id per element**, separate from its name, so a rename is matched rather than read as delete-plus-add.
 - **History before releases.** Every save and withdrawal kept with its prior body. The repo already has a versioning
-  substrate — `aughor/kernel/lifecycle.py`: save ≠ publish, versions, diff, revert, serving saved queries, canvases,
+  substrate — `pramanyx/kernel/lifecycle.py`: save ≠ publish, versions, diff, revert, serving saved queries, canvases,
   cards and evals — and the ontology is not on it. *One store per concept* says put declarations there, with the YAML
   tree as export and import, not build a release store beside it.
 - **A release** is an immutable set of element versions for a scope, with the measured verdicts as of that moment and

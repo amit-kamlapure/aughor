@@ -14,10 +14,10 @@ from datetime import date
 import duckdb
 import pytest
 
-from aughor.briefing import edition as E
-from aughor.briefing import guide as G
-from aughor.briefing import ranges
-from aughor.semantic.metrics import MetricDefinition
+from pramanyx.briefing import edition as E
+from pramanyx.briefing import guide as G
+from pramanyx.briefing import ranges
+from pramanyx.semantic.metrics import MetricDefinition
 
 OCT29 = date(2026, 10, 29)
 
@@ -260,7 +260,7 @@ def test_a_figure_is_unsettled_by_the_tables_it_reads_however_they_are_spelled(s
 
 
 def test_a_range_is_told_which_tables_rewrite_their_history(monkeypatch):
-    import aughor.settling.store as settling
+    import pramanyx.settling.store as settling
     monkeypatch.setattr(settling, "connection_lag", lambda c: {"days": 29, "source": "beyond_horizon", "horizon": 28,
                                                               "still_moving": ["orders", "users"], "rewrites": ["orders"]})
     monkeypatch.setattr(ranges, "data_edge", lambda *a, **k: {"through": None, "from": None, "held_by": [], "tables": {}, "why": ""})

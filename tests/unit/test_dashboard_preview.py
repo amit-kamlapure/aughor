@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.ontology.security import previewing
+from pramanyx.ontology.security import previewing
 from tests.unit.test_object_actions import CONN, ORDER, db, graph  # noqa: F401 — fixtures by name
 from tests.unit.test_ontology_security import RETURNED, SHIPPED, _as, _listing, secured  # noqa: F401 — fixtures by name
 
@@ -18,7 +18,7 @@ from tests.unit.test_ontology_security import RETURNED, SHIPPED, _as, _listing, 
 @pytest.fixture
 def boss(secured):  # noqa: F811
     """One who may see every order the policies admit: in fulfilment and in support."""
-    from aughor.rbac.groups import add_member
+    from pramanyx.rbac.groups import add_member
     add_member("default", "fulfilment", "user:boss")
     add_member("default", "support", "user:boss")
     return secured
@@ -56,7 +56,7 @@ def test_a_preview_masks_what_the_group_may_not_read_even_when_its_previewer_may
 
 
 def test_a_group_no_policy_admits_previews_no_object_and_says_so(secured, db, monkeypatch):  # noqa: F811
-    from aughor.rbac.groups import upsert_group
+    from pramanyx.rbac.groups import upsert_group
     upsert_group("default", "marketing", "Marketing")
     _as(monkeypatch, "ben")
     with previewing("marketing"):
@@ -69,8 +69,8 @@ def test_a_group_no_policy_admits_previews_no_object_and_says_so(secured, db, mo
 def test_the_doors_preview_only_a_group_of_this_organisation(secured, monkeypatch):  # noqa: F811
     from fastapi import HTTPException
 
-    from aughor.ontology.security import reader
-    from aughor.routers.objects import AS_GROUP, _preview
+    from pramanyx.ontology.security import reader
+    from pramanyx.routers.objects import AS_GROUP, _preview
     _as(monkeypatch, "ben")
     with pytest.raises(HTTPException) as nope:
         _preview("no_such_group")
@@ -90,8 +90,8 @@ def test_a_request_previews_through_its_dependency_into_a_door_run_in_a_thread(s
     from fastapi import Depends, FastAPI
     from fastapi.testclient import TestClient
 
-    from aughor.ontology.security import reader
-    from aughor.routers.objects import preview_from_request
+    from pramanyx.ontology.security import reader
+    from pramanyx.routers.objects import preview_from_request
     _as(monkeypatch, "ben")
     app = FastAPI()
 

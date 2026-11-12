@@ -14,13 +14,13 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.automations.models import Automation, AutomationRun, Condition, Effect, EffectOutcome
-from aughor.automations.store import append_run, upsert_automation
+from pramanyx.automations.models import Automation, AutomationRun, Condition, Effect, EffectOutcome
+from pramanyx.automations.store import append_run, upsert_automation
 
 
 @pytest.fixture()
 def client():
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -105,7 +105,7 @@ def test_a_node_the_reader_may_not_see_says_not_permitted_and_stays(client, monk
     mine, theirs = _automation(conn_id, "Mine"), _automation(_conn(), "Theirs")
     _run(mine, "fired")
     _run(theirs, "error")
-    import aughor.security.authz as authz
+    import pramanyx.security.authz as authz
     monkeypatch.setattr(authz, "org_visible_conn_ids", lambda: {conn_id})
 
     rows = _rows(client, "")
@@ -124,7 +124,7 @@ def test_a_permission_check_that_cannot_run_withholds_and_says_why(client, monke
     def _broken():
         raise RuntimeError("registry down")
 
-    import aughor.security.authz as authz
+    import pramanyx.security.authz as authz
     monkeypatch.setattr(authz, "org_visible_conn_ids", _broken)
     rate = _rows(client, conn_id)[a.id]["failure_rate"]
     assert rate["state"] == "not_permitted"

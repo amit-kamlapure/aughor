@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.custom_agents.propose import (MAX_DRAFTED_GOLDENS, ProposedAgent,
+from pramanyx.custom_agents.propose import (MAX_DRAFTED_GOLDENS, ProposedAgent,
                                           ProposedGolden, propose_agent)
 
 CATALOGUE = [
@@ -179,7 +179,7 @@ def test_the_route_refuses_without_a_connection_and_never_reaches_a_model(client
                                                                          monkeypatch):
     """A refusal is an ANSWER to the question asked — 200 with a reason the flow renders
     as a step, not a 422 the form renders as the person's mistake."""
-    import aughor.custom_agents.propose as mod
+    import pramanyx.custom_agents.propose as mod
     monkeypatch.setattr(mod, "propose_agent",
                         lambda *a, **k: pytest.fail("must not draft without a connection"))
     body = client.post("/agents/custom/propose",

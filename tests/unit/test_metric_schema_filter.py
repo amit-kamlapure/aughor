@@ -11,7 +11,7 @@ Root causes, both in the global-metric machinery:
 """
 from types import SimpleNamespace
 
-from aughor.semantic.metrics import (
+from pramanyx.semantic.metrics import (
     MetricDefinition, _formula_columns, _metric_matches_schema, _apply_ontology_overlay,
 )
 
@@ -65,7 +65,7 @@ class TestMetricMatchesSchema:
 class TestOntologyOverlayKeepsCuratedCatalog:
     def _patch_ontology(self, monkeypatch, metrics):
         graph = SimpleNamespace(validated=True, metrics=metrics)
-        monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", lambda cid: graph)
+        monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology", lambda cid: graph)
 
     def test_unverified_DIFFERENT_formula_keeps_catalog(self, monkeypatch):
         # beautycommerce: catalog revenue=SUM(final_price_usd*quantity); ontology revenue=
@@ -97,7 +97,7 @@ class TestOntologyOverlayKeepsCuratedCatalog:
 # on a connection whose orders has order_value) leaked a missing-column formula into the
 # prompt. build_metrics_block now re-applies the schema filter after the overlay.
 def test_build_metrics_block_filters_overlay_injected_metric(monkeypatch):
-    from aughor.semantic import metrics as M
+    from pramanyx.semantic import metrics as M
     # schema has order_value, NOT total_amount (two-space col format the parser expects)
     schema = "TABLE: orders\n  order_id  BIGINT\n  order_value  DOUBLE\n"
     _tables, _cols = M._schema_tables_and_columns(schema)
@@ -111,7 +111,7 @@ def test_build_metrics_block_filters_overlay_injected_metric(monkeypatch):
 
 
 def test_build_metrics_block_keeps_overlay_metric_with_valid_columns(monkeypatch):
-    from aughor.semantic import metrics as M
+    from pramanyx.semantic import metrics as M
     schema = "TABLE: orders\n  order_id  BIGINT\n  order_value  DOUBLE\n"
     good = _m("revenue", "SUM(order_value)", tables=("orders",))  # valid column
     monkeypatch.setattr(M, "_apply_ontology_overlay", lambda ms, cid: list(ms) + [good])

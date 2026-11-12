@@ -1,5 +1,5 @@
 """Phase 2 of the 2027 study, P2-1 and P2-3 — the durable inquiry and the typed run verdict
-(`aughor/record/inquiry.py`).
+(`pramanyx/record/inquiry.py`).
 
 What these hold: a person's ask opens an inquiry, and a second ask on the same subject within a
 fortnight wakes it instead of doubling it; a completed run lands on its inquiry with its
@@ -20,11 +20,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.agent.state import Hypothesis
-from aughor.db.history import complete_investigation, create_investigation, fail_investigation
-from aughor.record import claims as C
-from aughor.record import inquiry as I
-from aughor.routers import record as R
+from pramanyx.agent.state import Hypothesis
+from pramanyx.db.history import complete_investigation, create_investigation, fail_investigation
+from pramanyx.record import claims as C
+from pramanyx.record import inquiry as I
+from pramanyx.routers import record as R
 
 NOW = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
 
@@ -35,7 +35,7 @@ def _conn():
 
 @pytest.fixture(autouse=True)
 def _lag(monkeypatch):
-    import aughor.settling.store as settling
+    import pramanyx.settling.store as settling
     monkeypatch.setattr(settling, "learned_lag_days", lambda conn_id: 3)
 
 
@@ -63,7 +63,7 @@ def test_the_subject_prefers_the_declared_metric():
 def test_a_scheduled_run_opens_its_inquiry_on_what_was_asked_not_on_the_grounding_in_front_of_it():
     """2026-10-13: the grounding filled the 500 stored characters, so the person's question never reached the Record,
     and every scheduled run's subject came from the same header words, so two different questions woke one inquiry."""
-    from aughor.automations.temporal import observation_note
+    from pramanyx.automations.temporal import observation_note
     conn, note = _conn(), observation_note(NOW, "0 9 * * *")
     asked = "What changed in theLook in the last day? Give me the top three findings with the numbers."
     q = I.open_inquiry(question=f"{note}\n\n{asked}", connection_id=conn, opened_by="person:ana", run_id="run-s1", now=NOW)
@@ -114,7 +114,7 @@ def test_a_completed_run_books_its_hypotheses_as_claims_and_leaves_the_inquiry_w
 
 
 def test_an_inquiry_on_a_source_never_seen_to_settle_does_not_wait_for_days_to_settle(monkeypatch):
-    monkeypatch.setattr("aughor.settling.store.connection_lag",
+    monkeypatch.setattr("pramanyx.settling.store.connection_lag",
                         lambda cid: {"days": 29, "source": "beyond_horizon", "still_moving": ["items"], "horizon": 28, "rewrites": ["items"]})
     conn = _conn()
     inv_id = create_investigation("Why did returns rise?", conn)
@@ -128,7 +128,7 @@ def test_an_inquiry_on_a_source_never_seen_to_settle_does_not_wait_for_days_to_s
 
 
 def test_a_settled_source_still_waits_for_days_to_settle(monkeypatch):
-    monkeypatch.setattr("aughor.settling.store.connection_lag",
+    monkeypatch.setattr("pramanyx.settling.store.connection_lag",
                         lambda cid: {"days": 3, "source": "learned", "still_moving": [], "horizon": 14, "rewrites": []})
     conn = _conn()
     inv_id = create_investigation("Why did margin fall?", conn)
@@ -228,7 +228,7 @@ def test_the_next_run_reads_back_refuted_hypotheses_refuses_them_and_says_so():
     caveat = I.refused_caveat(I.refused_for_run(second, conn))
     assert caveat.startswith("Not re-tested: 1 hypothesis the Record holds as already refuted")
     # the deep analysis's own report says it when it reaches a refuted cause again
-    from aughor.agent.investigate import _note_refuted_before
+    from pramanyx.agent.investigate import _note_refuted_before
     report = {"headline": "Late dispatch drove the returns", "data_gaps": [], "causal_checks": {"claims": []}}
     matched = _note_refuted_before(report, conn)
     assert matched and report["causal_checks"]["refuted_before"][0]["refuted_by"] == refuted[0].id
@@ -251,7 +251,7 @@ def test_the_heartbeat_wakes_a_waiting_inquiry_on_its_date_and_a_restated_claim_
     now_q = I.latest(q.key)
     assert now_q.state == "open" and now_q.next_check == "" and "2026-01-01" in now_q.woke[-1]["why"]
     assert not any(x.key == q.key for x in I.due(NOW))
-    from aughor.automations.scheduler import wake_due_inquiries_hourly
+    from pramanyx.automations.scheduler import wake_due_inquiries_hourly
     assert wake_due_inquiries_hourly(now=1e12, force=True) == 0        # nothing left due
     # a claim the inquiry established is restated → it wakes
     cid = C.book(C.Claim(kind="observation", tier="measured", about=C.About(kind="connection", key=conn),
@@ -265,7 +265,7 @@ def test_the_heartbeat_wakes_a_waiting_inquiry_on_its_date_and_a_restated_claim_
 
 
 def test_a_person_closes_an_inquiry_with_lessons_through_the_door(monkeypatch):
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ops-lead")
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ops-lead")
     conn = _conn()
     q = I.open_inquiry(question="q", connection_id=conn, opened_by="person", now=NOW)
     view = R.close_record_inquiry(q.id, R.CloseInquiryRequest(closed_as="overtaken",
@@ -283,8 +283,8 @@ def test_a_person_closes_an_inquiry_with_lessons_through_the_door(monkeypatch):
 # ── signals open inquiries ─────────────────────────────────────────────────────────────────
 
 def test_a_fired_monitor_alert_opens_an_inquiry_without_spending_a_run():
-    from aughor.monitors.models import Monitor, MonitorAlert
-    from aughor.monitors.notify import dispatch_alert
+    from pramanyx.monitors.models import Monitor, MonitorAlert
+    from pramanyx.monitors.notify import dispatch_alert
     conn = _conn()
     monitor = Monitor(conn_id=conn, name="Refund rate", metric_name="refund_rate", notification_channel="in_app")
     alert = MonitorAlert(monitor_id=monitor.id, monitor_name=monitor.name, conn_id=conn, metric_name="refund_rate",
@@ -301,8 +301,8 @@ def test_a_fired_monitor_alert_opens_an_inquiry_without_spending_a_run():
 # ── the skeptic's second binding ───────────────────────────────────────────────────────────
 
 def test_the_skeptic_challenges_from_a_second_binding_where_the_install_has_two(monkeypatch):
-    from aughor.agent import explore
-    from aughor.agent.investigate import _refutation_record
+    from pramanyx.agent import explore
+    from pramanyx.agent.investigate import _refutation_record
     providers = {"coder": SimpleNamespace(model="qwen-coder"), "narrator": SimpleNamespace(model="llama-narrator")}
     monkeypatch.setattr(explore, "get_provider", lambda role="coder", **kw: providers[role])
     provider, binding = explore.skeptic_binding()

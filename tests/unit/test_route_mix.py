@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.obs import session_log
+from pramanyx.obs import session_log
 
 
 class _FakeLedger:
@@ -33,7 +33,7 @@ class _FakeLedger:
 
 
 def _install(monkeypatch, finals, tools):
-    import aughor.kernel.ledger as led
+    import pramanyx.kernel.ledger as led
     monkeypatch.setattr(led.Ledger, "default", staticmethod(lambda: _FakeLedger(finals, tools)))
 
 
@@ -138,7 +138,7 @@ def test_tool_names_survive_the_round_trip_through_the_store():
     conversation had used. Only reading the endpoint against real data showed it, which
     is the argument for the endpoint as much as for the fix.
     """
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
 
     ledger = Ledger.default()
     ledger.session_events_clear()

@@ -1,14 +1,14 @@
 """Deploy spine — profiler adapter + binding store (P1b, 2026-06-27).
 
 schema_facts_from_table_cols turns a table/column map into the resolver's SchemaFacts;
-the binding store pins a resolved mapping per org/pack/connection. See aughor/packs/.
+the binding store pins a resolved mapping per org/pack/connection. See pramanyx/packs/.
 """
 import pytest
 
-from aughor.packs import schema_facts_from_table_cols, propose_bindings
-from aughor.packs.models import RoleSpec
-from aughor.org.context import using_org
-import aughor.packs.bindings as bnd
+from pramanyx.packs import schema_facts_from_table_cols, propose_bindings
+from pramanyx.packs.models import RoleSpec
+from pramanyx.org.context import using_org
+import pramanyx.packs.bindings as bnd
 
 
 TABLE_COLS = {

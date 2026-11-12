@@ -8,10 +8,10 @@ workspace's rows. Fixed by threading ``workspace_id`` through and applying the
 fail-closed ``workspace_connection_ids`` gate (None=unscoped, set=scoped,
 empty-set=unknown workspace surfaces nothing).
 """
-import aughor.monitors.store as mstore
-import aughor.workspace.store as wstore
-from aughor.monitors.models import Monitor, MonitorAlert
-from aughor.routers.monitors import get_all_alerts, list_monitors_route
+import pramanyx.monitors.store as mstore
+import pramanyx.workspace.store as wstore
+from pramanyx.monitors.models import Monitor, MonitorAlert
+from pramanyx.routers.monitors import get_all_alerts, list_monitors_route
 
 
 def _seed(tmp_path, monkeypatch) -> str:
@@ -19,7 +19,7 @@ def _seed(tmp_path, monkeypatch) -> str:
     mstore._init_schema()
     monkeypatch.setattr(wstore, "_DB_PATH", tmp_path / "workspaces.db")
     # The data-path gate now resolves through the metastore — keep it hermetic too.
-    import aughor.metastore.store as cat_store
+    import pramanyx.metastore.store as cat_store
     monkeypatch.setattr(cat_store, "_DB_PATH", tmp_path / "metastore.db")
 
     mstore.upsert_monitor(Monitor(conn_id="c1", name="m1", custom_sql="SELECT 1"))

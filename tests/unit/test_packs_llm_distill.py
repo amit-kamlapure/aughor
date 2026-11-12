@@ -1,10 +1,10 @@
 """LLM flywheel distiller (Bet 1 enhancement, 2026-06-27).
 
 Distils subtler pack learnings from a verified run's summary, behind the same is_compoundable
-gate. Provider injected as a fake here. See aughor/packs/flywheel.py.
+gate. Provider injected as a fake here. See pramanyx/packs/flywheel.py.
 """
-from aughor.packs import llm_distill_deltas
-from aughor.agent.state import VerificationManifest
+from pramanyx.packs import llm_distill_deltas
+from pramanyx.agent.state import VerificationManifest
 
 
 def _verified():

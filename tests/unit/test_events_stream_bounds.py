@@ -33,10 +33,10 @@ def events_mod(monkeypatch):
     def _load(**env):
         for k, v in env.items():
             monkeypatch.setenv(k, v)
-        import aughor.routers.events as m
+        import pramanyx.routers.events as m
         return importlib.reload(m)
     yield _load
-    import aughor.routers.events as m
+    import pramanyx.routers.events as m
     importlib.reload(m)
 
 
@@ -64,7 +64,7 @@ def _drain(gen, limit=200):
 
 def test_the_bound_is_off_by_default_for_a_long_lived_server(events_mod, monkeypatch):
     monkeypatch.delenv("VERCEL", raising=False)
-    monkeypatch.delenv("AUGHOR_SSE_MAX_SECONDS", raising=False)
+    monkeypatch.delenv("PRAMANYX_SSE_MAX_SECONDS", raising=False)
     m = events_mod()
     assert m._MAX_STREAM_SECONDS == 0.0, "a self-hosted server must keep its stream open"
 
@@ -78,13 +78,13 @@ def test_serverless_gets_a_bound_below_the_platform_limit(events_mod):
 
 
 def test_an_explicit_override_wins(events_mod):
-    m = events_mod(VERCEL="1", AUGHOR_SSE_MAX_SECONDS="12")
+    m = events_mod(VERCEL="1", PRAMANYX_SSE_MAX_SECONDS="12")
     assert m._MAX_STREAM_SECONDS == 12.0
 
 
 def test_the_stream_closes_itself_when_bounded(events_mod, monkeypatch):
     """The claim: a stream that nobody disconnects still ENDS."""
-    m = events_mod(AUGHOR_SSE_MAX_SECONDS="0.25")
+    m = events_mod(PRAMANYX_SSE_MAX_SECONDS="0.25")
     monkeypatch.setattr(m, "_POLL_SECONDS", 0.01)
     monkeypatch.setattr(m, "_POLL_IDLE_MAX", 0.01)
 
@@ -102,7 +102,7 @@ def test_the_stream_closes_itself_when_bounded(events_mod, monkeypatch):
 
 def test_events_carry_an_id_so_a_reconnect_can_resume(events_mod, monkeypatch):
     """Without `id:`, EventSource replays from the ORIGINAL since_seq on reconnect."""
-    m = events_mod(AUGHOR_SSE_MAX_SECONDS="0.25")
+    m = events_mod(PRAMANYX_SSE_MAX_SECONDS="0.25")
     monkeypatch.setattr(m, "_POLL_SECONDS", 0.01)
     monkeypatch.setattr(m, "_POLL_IDLE_MAX", 0.01)
 
@@ -123,7 +123,7 @@ def test_events_carry_an_id_so_a_reconnect_can_resume(events_mod, monkeypatch):
 
 def test_last_event_id_beats_the_query_cursor(events_mod, monkeypatch):
     """The browser's own resume point is newer than the URL it first connected with."""
-    m = events_mod(AUGHOR_SSE_MAX_SECONDS="0.25")
+    m = events_mod(PRAMANYX_SSE_MAX_SECONDS="0.25")
     monkeypatch.setattr(m, "_POLL_SECONDS", 0.01)
     monkeypatch.setattr(m, "_POLL_IDLE_MAX", 0.01)
 
@@ -144,7 +144,7 @@ def test_last_event_id_beats_the_query_cursor(events_mod, monkeypatch):
 
 def test_a_quiet_journal_is_not_read_once_a_second_forever(events_mod, monkeypatch):
     """The back-off. 19 streams x 300 reads was the measured production load."""
-    m = events_mod(AUGHOR_SSE_MAX_SECONDS="0.4")
+    m = events_mod(PRAMANYX_SSE_MAX_SECONDS="0.4")
     monkeypatch.setattr(m, "_POLL_SECONDS", 0.01)
     monkeypatch.setattr(m, "_POLL_IDLE_MAX", 0.2)
 

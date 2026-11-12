@@ -2,4 +2,4 @@ node_modules/
 .env.local
 
 # AO-7b — the persisted message→turn maps, one pair per bot
-.aughor-turns.*.json
+.pramanyx-turns.*.json

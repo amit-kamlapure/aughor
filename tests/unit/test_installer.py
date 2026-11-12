@@ -1,4 +1,4 @@
-"""`aughor.installer` — the one-shot install every OS runs.
+"""`pramanyx.installer` — the one-shot install every OS runs.
 
 Hermetic: no network, no uv, no npm. Real child processes appear only where the behaviour
 under test IS the child-process handling (output kept off the terminal, a failure's tail);
@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from aughor import installer
+from pramanyx import installer
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -37,16 +37,16 @@ def _no_question_unless_a_test_scripts_one(tmp_path, monkeypatch):
     from a terminal, pytest would sit waiting for a person. Every test starts with no terminal and its own
     choice file; the tests about the question script a terminal of their own."""
     monkeypatch.setattr(installer, "_terminal", _no_terminal)
-    monkeypatch.setenv("AUGHOR_INDUSTRIES_FILE", str(tmp_path / "state" / "industries.json"))
-    monkeypatch.delenv("AUGHOR_INDUSTRIES", raising=False)
+    monkeypatch.setenv("PRAMANYX_INDUSTRIES_FILE", str(tmp_path / "state" / "industries.json"))
+    monkeypatch.delenv("PRAMANYX_INDUSTRIES", raising=False)
 
 
 @pytest.fixture(autouse=True)
 def _no_launcher_on_the_real_path(tmp_path, monkeypatch):
-    """`main()` writes the `aughor` command into uv's command folder. Every test points that
+    """`main()` writes the `pramanyx` command into uv's command folder. Every test points that
     folder at a temp dir, so no test can put a launcher on the developer's real PATH."""
     monkeypatch.setattr(installer, "launcher_dir", lambda uv: tmp_path / "uv-bin")
-    monkeypatch.delenv("AUGHOR_LAUNCHER", raising=False)
+    monkeypatch.delenv("PRAMANYX_LAUNCHER", raising=False)
 
 
 # ── It runs before anything is installed ─────────────────────────────────────────
@@ -59,7 +59,7 @@ def test_the_installer_imports_only_the_standard_library():
     # `update.py` too: the installer imports it (relatively) to fast-forward an existing clone,
     # so a third-party import there would break every fresh install exactly as one here would.
     imported: set[str] = set()
-    for tree in (ast.parse((REPO / "aughor" / name).read_text(encoding="utf-8"))
+    for tree in (ast.parse((REPO / "pramanyx" / name).read_text(encoding="utf-8"))
                  for name in ("installer.py", "update.py")):
       for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -69,12 +69,12 @@ def test_the_installer_imports_only_the_standard_library():
     assert {"subprocess", "urllib", "tarfile"} <= imported, "the import walk found nothing to check"
     outside = sorted(name for name in imported
                      if name != "__future__" and name not in sys.stdlib_module_names)
-    assert not outside, f"aughor/installer.py imports {outside}, which a fresh machine does not have yet"
+    assert not outside, f"pramanyx/installer.py imports {outside}, which a fresh machine does not have yet"
 
 
 def test_the_installer_starts_with_no_site_packages_at_all():
     """The same property, observed rather than parsed: `-S` hides every installed package."""
-    out = subprocess.run([sys.executable, "-S", "-m", "aughor.installer", "--help"],
+    out = subprocess.run([sys.executable, "-S", "-m", "pramanyx.installer", "--help"],
                          cwd=REPO, capture_output=True, text=True, timeout=120)
     assert out.returncode == 0, out.stderr
     assert "--no-start" in out.stdout
@@ -254,7 +254,7 @@ def test_when_every_node_is_too_old_the_newest_is_named(tmp_path, monkeypatch):
     assert installer.find_node(tmp_path) == (None, (18, 19, 0))
 
 
-def test_no_usable_node_means_aughor_downloads_its_own(tmp_path, monkeypatch, capsys):
+def test_no_usable_node_means_pramanyx_downloads_its_own(tmp_path, monkeypatch, capsys):
     fetched = installer.Node(tmp_path / "node", (24, 21, 0), downloaded=True)
     monkeypatch.setattr(installer, "find_node", lambda root: (None, (18, 0, 0)))
     monkeypatch.setattr(installer, "download_node", lambda root, steps: fetched)
@@ -266,9 +266,9 @@ def test_forcing_the_download_ignores_every_installed_node(tmp_path, monkeypatch
     """CI's switch for exercising the download path on runners that all ship a Node.js."""
     fake = _file(tmp_path / "bin" / "node")
     monkeypatch.setattr(installer.shutil, "which", lambda name: str(fake))
-    monkeypatch.setenv("AUGHOR_NODE_DOWNLOAD", "1")
+    monkeypatch.setenv("PRAMANYX_NODE_DOWNLOAD", "1")
     assert installer.node_candidates(tmp_path) == []
-    downloaded = _file(tmp_path / ".aughor" / "node" / "node-v24.21.0-linux-x64" / "bin" / "node")
+    downloaded = _file(tmp_path / ".pramanyx" / "node" / "node-v24.21.0-linux-x64" / "bin" / "node")
     if sys.platform != "win32":
         assert installer.node_candidates(tmp_path) == [downloaded]
 
@@ -356,7 +356,7 @@ def test_the_build_fingerprint_follows_what_the_build_reads_and_nothing_else(tmp
     for generated in (".next/BUILD_ID", "node_modules/next/index.js", "next-env.d.ts"):
         _file(web / generated).write_text("generated")
     assert installer.build_fingerprint(tmp_path, env) == first, "build output and packages are not inputs"
-    assert installer.build_fingerprint(tmp_path, {**env, "AUGHOR_API_BASE": "x"}) == first, \
+    assert installer.build_fingerprint(tmp_path, {**env, "PRAMANYX_API_BASE": "x"}) == first, \
         "a value read at run time needs no rebuild"
     assert installer.build_fingerprint(tmp_path, {**env, "NEXT_PUBLIC_API_URL": "http://localhost:8010"}) != first, \
         "NEXT_PUBLIC_* is baked into the bundle"
@@ -408,10 +408,10 @@ def test_the_web_app_builds_only_when_its_inputs_change(tmp_path, monkeypatch):
 def test_a_moved_api_port_reaches_the_bundle_and_the_chat_proxy():
     moved = installer.web_env(8010, base={})
     assert moved["NEXT_PUBLIC_API_URL"] == "http://localhost:8010"      # web/lib/config.ts, build time
-    assert moved["AUGHOR_API_BASE"] == "http://127.0.0.1:8010"          # web/lib/chatProxy.ts, run time
+    assert moved["PRAMANYX_API_BASE"] == "http://127.0.0.1:8010"          # web/lib/chatProxy.ts, run time
     assert moved["NEXT_TELEMETRY_DISABLED"] == "1"
     default = installer.web_env(8000, base={})
-    assert "NEXT_PUBLIC_API_URL" not in default and "AUGHOR_API_BASE" not in default
+    assert "NEXT_PUBLIC_API_URL" not in default and "PRAMANYX_API_BASE" not in default
     mine = installer.web_env(8010, base={"NEXT_PUBLIC_API_URL": "https://api.example.com",
                                          "NEXT_TELEMETRY_DISABLED": "0"})
     assert mine["NEXT_PUBLIC_API_URL"] == "https://api.example.com", "the user's own value wins"
@@ -421,22 +421,22 @@ def test_a_moved_api_port_reaches_the_bundle_and_the_chat_proxy():
 # ── The whole run ────────────────────────────────────────────────────────────────
 
 def test_the_next_time_hint_names_what_this_terminal_is_missing(monkeypatch):
-    """Measured on the `curl | sh` path: the clone lands in ./aughor while the terminal stays in
-    the parent, where a bare `uv run aughor up` fails. And a just-installed uv is on PATH only
+    """Measured on the `curl | sh` path: the clone lands in ./pramanyx while the terminal stays in
+    the parent, where a bare `uv run pramanyx up` fails. And a just-installed uv is on PATH only
     in a new terminal."""
-    monkeypatch.delenv("AUGHOR_UV_INSTALLED", raising=False)
-    monkeypatch.delenv("AUGHOR_CHECKOUT_DIR", raising=False)
-    assert installer.start_command_hint() == "Next time, start Pramanyx with:  uv run aughor up"
-    monkeypatch.setenv("AUGHOR_CHECKOUT_DIR", "/home/me/aughor")
-    assert installer.start_command_hint() == "Next time, go to /home/me/aughor and run:  uv run aughor up"
-    monkeypatch.setenv("AUGHOR_UV_INSTALLED", "1")
+    monkeypatch.delenv("PRAMANYX_UV_INSTALLED", raising=False)
+    monkeypatch.delenv("PRAMANYX_CHECKOUT_DIR", raising=False)
+    assert installer.start_command_hint() == "Next time, start Pramanyx with:  uv run pramanyx up"
+    monkeypatch.setenv("PRAMANYX_CHECKOUT_DIR", "/home/me/pramanyx")
+    assert installer.start_command_hint() == "Next time, go to /home/me/pramanyx and run:  uv run pramanyx up"
+    monkeypatch.setenv("PRAMANYX_UV_INSTALLED", "1")
     assert installer.start_command_hint() == \
-        "Next time, open a new terminal, go to /home/me/aughor and run:  uv run aughor up"
+        "Next time, open a new terminal, go to /home/me/pramanyx and run:  uv run pramanyx up"
     assert "&&" not in installer.start_command_hint(), "Windows PowerShell 5.1 has no &&"
 
 
 def _checkout(root: Path) -> Path:
-    (root / "pyproject.toml").write_text('[project]\nname = "aughor"\n')
+    (root / "pyproject.toml").write_text('[project]\nname = "pramanyx"\n')
     _web(root)
     return root
 
@@ -452,7 +452,7 @@ def test_install_only_does_every_step_and_does_not_start(tmp_path, monkeypatch, 
     assert "Pramanyx is installed" in capsys.readouterr().out
 
 
-def test_the_installer_hands_its_options_to_aughor_up(tmp_path, monkeypatch):
+def test_the_installer_hands_its_options_to_pramanyx_up(tmp_path, monkeypatch):
     monkeypatch.chdir(_checkout(tmp_path))
     monkeypatch.setattr(installer, "sync_python", lambda root, steps: None)
     monkeypatch.setattr(installer, "prepare_web", lambda root, steps, **kw: None)
@@ -491,7 +491,7 @@ def test_outside_a_checkout_the_installer_says_where_to_run_it(tmp_path, monkeyp
     assert "is not a Pramanyx checkout" in capsys.readouterr().out
 
 
-# ── The `aughor` command ─────────────────────────────────────────────────────────
+# ── The `pramanyx` command ─────────────────────────────────────────────────────────
 
 def _fake_uv(folder: Path) -> Path:
     """A `uv` that reports where it ran and what it was asked, instead of running anything."""
@@ -503,8 +503,8 @@ def _fake_uv(folder: Path) -> Path:
 
 
 @pytest.mark.skipif(os.name == "nt", reason="runs the POSIX launcher; CI runs the Windows one")
-def test_the_aughor_command_starts_aughor_from_any_folder(tmp_path, monkeypatch):
-    root = tmp_path / "home" / "aughor"
+def test_the_pramanyx_command_starts_pramanyx_from_any_folder(tmp_path, monkeypatch):
+    root = tmp_path / "home" / "pramanyx"
     root.mkdir(parents=True)
     _checkout(root)
     uv = _fake_uv(tmp_path / "uv-home")
@@ -516,69 +516,69 @@ def test_the_aughor_command_starts_aughor_from_any_folder(tmp_path, monkeypatch)
     elsewhere = tmp_path / "somewhere-else"
     elsewhere.mkdir()
 
-    def aughor(*args):
-        return subprocess.run([str(bin_dir / "aughor"), *args], cwd=elsewhere,
+    def pramanyx(*args):
+        return subprocess.run([str(bin_dir / "pramanyx"), *args], cwd=elsewhere,
                               capture_output=True, text=True, timeout=30)
 
-    where, _, asked = aughor().stdout.strip().partition("|")
+    where, _, asked = pramanyx().stdout.strip().partition("|")
     assert Path(where).resolve() == root.resolve(), "runs from the checkout, not the terminal's folder"
-    assert asked == "run --quiet aughor up", "no arguments starts Pramanyx"
-    assert aughor("seed").stdout.strip().endswith("|run --quiet aughor seed")
+    assert asked == "run --quiet pramanyx up", "no arguments starts Pramanyx"
+    assert pramanyx("seed").stdout.strip().endswith("|run --quiet pramanyx seed")
 
     shutil.rmtree(root)
-    gone = aughor()
+    gone = pramanyx()
     assert gone.returncode == 1 and "no longer in" in gone.stderr
 
 
-def test_someone_elses_aughor_command_is_never_overwritten(tmp_path, monkeypatch):
+def test_someone_elses_pramanyx_command_is_never_overwritten(tmp_path, monkeypatch):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    theirs = bin_dir / ("aughor.cmd" if os.name == "nt" else "aughor")
-    theirs.write_text("echo their own aughor\n")
+    theirs = bin_dir / ("pramanyx.cmd" if os.name == "nt" else "pramanyx")
+    theirs.write_text("echo their own pramanyx\n")
     monkeypatch.setattr(installer, "launcher_dir", lambda uv: bin_dir)
-    root = tmp_path / "aughor"
+    root = tmp_path / "pramanyx"
     root.mkdir()
     _checkout(root)
     assert installer.install_launcher(root, str(tmp_path / "uv")) == ""
-    assert theirs.read_text() == "echo their own aughor\n"
+    assert theirs.read_text() == "echo their own pramanyx\n"
 
 
 def test_a_launcher_beside_a_just_installed_uv_works_in_the_next_terminal(tmp_path, monkeypatch):
     bin_dir = tmp_path / "bin"
     monkeypatch.setattr(installer, "launcher_dir", lambda uv: bin_dir)
     monkeypatch.setenv("PATH", os.pathsep.join(["/usr/bin", "/bin"]))  # this terminal: not yet
-    root = tmp_path / "aughor"
+    root = tmp_path / "pramanyx"
     root.mkdir()
     _checkout(root)
-    monkeypatch.setenv("AUGHOR_UV_INSTALLED", "1")
+    monkeypatch.setenv("PRAMANYX_UV_INSTALLED", "1")
     assert installer.install_launcher(root, str(bin_dir / "uv")) == "new-terminal"
-    monkeypatch.delenv("AUGHOR_UV_INSTALLED")
+    monkeypatch.delenv("PRAMANYX_UV_INSTALLED")
     assert installer.install_launcher(root, str(tmp_path / "brew" / "uv")) == "", \
         "a folder no terminal has on PATH gets the checkout's own command instead"
 
 
 def test_the_windows_command_is_a_plain_cmd_script():
-    text = installer.launcher_script(Path("C:/Users/you/aughor"), "C:/Users/you/.local/bin/uv.exe",
+    text = installer.launcher_script(Path("C:/Users/you/pramanyx"), "C:/Users/you/.local/bin/uv.exe",
                                      windows=True)
     assert text.startswith("@echo off\r\n")
     assert "\n" not in text.replace("\r\n", ""), "cmd.exe needs CRLF line endings"
     assert installer.LAUNCHER_MARK in text
-    assert '"%AUGHOR_UV%" run --quiet aughor up' in text
-    assert '"%AUGHOR_UV%" run --quiet aughor %*' in text
+    assert '"%PRAMANYX_UV%" run --quiet pramanyx up' in text
+    assert '"%PRAMANYX_UV%" run --quiet pramanyx %*' in text
     assert "(" not in text, "a ( ) block breaks on a folder name with a bracket in it"
 
 
 def test_next_time_is_one_command_where_the_launcher_reaches(monkeypatch):
-    monkeypatch.setenv("AUGHOR_CHECKOUT_DIR", "/home/me/aughor")
-    monkeypatch.setenv("AUGHOR_LAUNCHER", "ready")
-    assert installer.start_command_hint() == "Next time, start Pramanyx with:  aughor"
-    monkeypatch.setenv("AUGHOR_LAUNCHER", "new-terminal")
-    assert installer.start_command_hint() == "Next time, open a new terminal and run:  aughor"
-    monkeypatch.setenv("AUGHOR_LAUNCHER", "")
-    assert installer.start_command_hint().endswith("uv run aughor up")
+    monkeypatch.setenv("PRAMANYX_CHECKOUT_DIR", "/home/me/pramanyx")
+    monkeypatch.setenv("PRAMANYX_LAUNCHER", "ready")
+    assert installer.start_command_hint() == "Next time, start Pramanyx with:  pramanyx"
+    monkeypatch.setenv("PRAMANYX_LAUNCHER", "new-terminal")
+    assert installer.start_command_hint() == "Next time, open a new terminal and run:  pramanyx"
+    monkeypatch.setenv("PRAMANYX_LAUNCHER", "")
+    assert installer.start_command_hint().endswith("uv run pramanyx up")
 
 
-def test_the_installer_leaves_the_aughor_command_behind(tmp_path, monkeypatch, capsys):
+def test_the_installer_leaves_the_pramanyx_command_behind(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(_checkout(tmp_path))
     monkeypatch.setattr(installer, "sync_python", lambda root, steps: None)
     monkeypatch.setattr(installer, "prepare_web", lambda root, steps, **kw: None)
@@ -586,7 +586,7 @@ def test_the_installer_leaves_the_aughor_command_behind(tmp_path, monkeypatch, c
     monkeypatch.setattr(installer, "install_launcher", lambda root, uv: placed.append(root) or "ready")
     assert installer.main(["--no-start"]) == 0
     assert placed == [tmp_path]
-    assert "Next time, start Pramanyx with:  aughor" in capsys.readouterr().out
+    assert "Next time, start Pramanyx with:  pramanyx" in capsys.readouterr().out
 
 
 # ── Which industries (IP-2) ──────────────────────────────────────────────────────
@@ -606,7 +606,7 @@ def two_industries(tmp_path, monkeypatch):
     packs = tmp_path / "packs"
     _industry_pack(packs, "food-delivery", "food_delivery", "Food delivery")
     _industry_pack(packs, "retail", "retail", "Retail and e-commerce")
-    monkeypatch.setenv("AUGHOR_PACKS_DIR", str(packs))
+    monkeypatch.setenv("PRAMANYX_PACKS_DIR", str(packs))
     (tmp_path / "checkout").mkdir()
     monkeypatch.chdir(_checkout(tmp_path / "checkout"))
     return installer.shipped_industries(Path.cwd())
@@ -624,12 +624,12 @@ def _scripted(answers: str, transcript: list):
 
 
 def _recorded() -> object:
-    path = Path(os.environ["AUGHOR_INDUSTRIES_FILE"])
+    path = Path(os.environ["PRAMANYX_INDUSTRIES_FILE"])
     return json.loads(path.read_text(encoding="utf-8"))["industries"] if path.exists() else "nothing"
 
 
 def test_the_installer_offers_the_industries_the_api_ships():
-    from aughor.packs.industry_choice import shipped_industries
+    from pramanyx.packs.industry_choice import shipped_industries
 
     offered = installer.shipped_industries(REPO)
     assert [(i.id, i.name) for i in offered] == [(i.id, i.name) for i in shipped_industries()]
@@ -637,14 +637,14 @@ def test_the_installer_offers_the_industries_the_api_ships():
 
 
 def test_the_installer_writes_the_choice_where_and_how_the_api_reads_it(tmp_path, monkeypatch):
-    from aughor.packs import industry_choice
+    from pramanyx.packs import industry_choice
 
-    monkeypatch.delenv("AUGHOR_INDUSTRIES_FILE")
-    monkeypatch.delenv("AUGHOR_STATE_DIR", raising=False)
+    monkeypatch.delenv("PRAMANYX_INDUSTRIES_FILE")
+    monkeypatch.delenv("PRAMANYX_STATE_DIR", raising=False)
     assert installer.industries_file(tmp_path) == tmp_path / industry_choice.choice_path()   # data/ in the checkout
-    monkeypatch.setenv("AUGHOR_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("PRAMANYX_STATE_DIR", str(tmp_path / "state"))
     assert installer.industries_file(tmp_path) == industry_choice.choice_path()
-    monkeypatch.setenv("AUGHOR_INDUSTRIES_FILE", str(tmp_path / "elsewhere.json"))
+    monkeypatch.setenv("PRAMANYX_INDUSTRIES_FILE", str(tmp_path / "elsewhere.json"))
     assert installer.industries_file(tmp_path) == industry_choice.choice_path()
 
     installer.write_industries(industry_choice.choice_path(), ["saas", "retail"])
@@ -672,7 +672,7 @@ def test_an_answer_that_names_no_industry_is_refused(two_industries, answer):
 
 
 def test_a_deprecated_or_uncurated_package_is_not_offered(tmp_path, monkeypatch):
-    monkeypatch.delenv("AUGHOR_PACKS_DIR", raising=False)     # the checkout's own packs/ folder
+    monkeypatch.delenv("PRAMANYX_PACKS_DIR", raising=False)     # the checkout's own packs/ folder
     packs = tmp_path / "packs"
     _industry_pack(packs, "airline", "airline", "Airline", status="deprecated")
     _industry_pack(packs, "rail", "rail", "Rail", curated=False)
@@ -684,7 +684,7 @@ def test_a_deprecated_or_uncurated_package_is_not_offered(tmp_path, monkeypatch)
 
 def test_a_draft_package_is_not_offered_until_it_is_active(tmp_path, monkeypatch):
     """§3.17 gate 6: the API does not read a draft, so the installer does not offer one."""
-    monkeypatch.delenv("AUGHOR_PACKS_DIR", raising=False)
+    monkeypatch.delenv("PRAMANYX_PACKS_DIR", raising=False)
     packs = tmp_path / "packs"
     _industry_pack(packs, "banking", "banking", "Banking", status="draft")
     _industry_pack(packs, "saas", "saas", "SaaS")
@@ -692,7 +692,7 @@ def test_a_draft_package_is_not_offered_until_it_is_active(tmp_path, monkeypatch
 
 
 def test_a_comment_is_not_part_of_a_manifest_value(tmp_path, monkeypatch):
-    monkeypatch.delenv("AUGHOR_PACKS_DIR", raising=False)
+    monkeypatch.delenv("PRAMANYX_PACKS_DIR", raising=False)
     rail = tmp_path / "packs" / "rail"
     rail.mkdir(parents=True)
     (rail / "pack.yaml").write_text('id: rail\nname: "Rail # freight"\nlayer: industry  # one industry\n'
@@ -714,7 +714,7 @@ def test_the_question_comes_before_the_slow_steps_and_is_recorded(two_industries
 
 
 def test_a_recorded_answer_is_not_asked_again(two_industries, monkeypatch, capsys):
-    installer.write_industries(Path(os.environ["AUGHOR_INDUSTRIES_FILE"]), ["food_delivery"])
+    installer.write_industries(Path(os.environ["PRAMANYX_INDUSTRIES_FILE"]), ["food_delivery"])
     monkeypatch.setattr(installer, "_terminal", lambda: pytest.fail("an answered question is not asked again"))
     installer.choose_industries(Path.cwd(), installer.Steps())
     assert "Industries: Food delivery" in capsys.readouterr().out
@@ -777,7 +777,7 @@ def test_the_flag_or_the_environment_answers_without_asking(two_industries, monk
     monkeypatch.setattr(installer, "prepare_web", lambda root, steps, **kw: None)
     assert installer.main(["--no-start", "--industries", "retail,food-delivery"]) == 0
     assert _recorded() == ["food_delivery", "retail"]
-    monkeypatch.setenv("AUGHOR_INDUSTRIES", "none")
+    monkeypatch.setenv("PRAMANYX_INDUSTRIES", "none")
     assert installer.main(["--no-start"]) == 0
     assert _recorded() == []
 
@@ -790,7 +790,7 @@ def test_an_unknown_industry_stops_the_install_before_anything_slow(two_industri
     assert _recorded() == "nothing"
 
 
-def test_the_industries_option_is_not_handed_to_aughor_up(two_industries, monkeypatch):
+def test_the_industries_option_is_not_handed_to_pramanyx_up(two_industries, monkeypatch):
     monkeypatch.setattr(installer, "sync_python", lambda root, steps: None)
     monkeypatch.setattr(installer, "prepare_web", lambda root, steps, **kw: None)
     handed: dict = {}
@@ -802,14 +802,14 @@ def test_the_industries_option_is_not_handed_to_aughor_up(two_industries, monkey
 
 def test_the_installer_finds_the_choice_in_a_migrated_data_home(tmp_path, monkeypatch):
     """IN-4: once `migrate-state` has written its marker the API reads the choice from the home,
-    so the installer must write it there — its stdlib mirror of `aughor.db.home` says the same."""
-    from aughor.packs import industry_choice
+    so the installer must write it there — its stdlib mirror of `pramanyx.db.home` says the same."""
+    from pramanyx.packs import industry_choice
 
-    monkeypatch.delenv("AUGHOR_INDUSTRIES_FILE", raising=False)
-    monkeypatch.delenv("AUGHOR_STATE_DIR", raising=False)
-    monkeypatch.setenv("AUGHOR_HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("PRAMANYX_INDUSTRIES_FILE", raising=False)
+    monkeypatch.delenv("PRAMANYX_STATE_DIR", raising=False)
+    monkeypatch.setenv("PRAMANYX_HOME", str(tmp_path / "home"))
     assert installer.industries_file(tmp_path) == tmp_path / "data" / "industries.json"
     (tmp_path / "home").mkdir()
-    (tmp_path / "home" / ".aughor-home").write_text("migrated")
+    (tmp_path / "home" / ".pramanyx-home").write_text("migrated")
     assert installer.industries_file(tmp_path) == industry_choice.choice_path() \
         == tmp_path / "home" / "state" / "industries.json"

@@ -36,8 +36,8 @@ def _stub_providers(monkeypatch):
     """Hermetic: no LLM. Same shape as tests/integration/test_insight_stream.py, so the
     two files exercise the same runtime with the same stubs — a transcript recorded here
     describes the pipeline, not this fixture."""
-    import aughor.llm.provider as prov
-    from aughor.routers.investigations import _ChatAnswer, _PostAnswer
+    import pramanyx.llm.provider as prov
+    from pramanyx.routers.investigations import _ChatAnswer, _PostAnswer
 
     class FakeCoder:
         def complete(self, system=None, user=None, response_model=None, temperature=0.1, **kw):

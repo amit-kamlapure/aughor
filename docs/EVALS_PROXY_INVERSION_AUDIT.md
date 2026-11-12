@@ -1,7 +1,7 @@
 # The proxy-inversion audit
 
-*Wave E4 loose end. Code: [`aughor/evals/proxy_audit.py`](../aughor/evals/proxy_audit.py);
-the composite lever is `demote` on [`fidelity.assess`](../aughor/evals/fidelity.py).*
+*Wave E4 loose end. Code: [`pramanyx/evals/proxy_audit.py`](../pramanyx/evals/proxy_audit.py);
+the composite lever is `demote` on [`fidelity.assess`](../pramanyx/evals/fidelity.py).*
 
 ## The failure it prevents
 
@@ -17,7 +17,7 @@ anchor to the reference distribution — read miscalibration as improvement. The
 reason to score every axis as *distance from the same model's fp16 self* rather than absolutely:
 **absolute proxy metrics can invert, so never let one stand in for the end task unaudited.**
 
-Aughor has already measured its own version of the trap. E2's evaluator sweep over the 53 golden
+Pramanyx has already measured its own version of the trap. E2's evaluator sweep over the 53 golden
 queries found guards firing on **known-correct SQL** — true positives in our *own* reference SQL
 (the CIDR "benchmarks are broken" pattern), plus false positives on safe 1:N aggregation. So a
 rising `pass_rate` (fewer guards firing) does **not** imply rising correctness, and can move

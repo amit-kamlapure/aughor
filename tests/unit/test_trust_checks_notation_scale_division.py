@@ -8,7 +8,7 @@ dialect, because DuckDB divides to a fraction and Postgres does not.
 """
 from __future__ import annotations
 
-from aughor.sql.trust_checks import run_trust_checks
+from pramanyx.sql.trust_checks import run_trust_checks
 
 FACTS = {
     "superstore.order date": {"format": "MM/DD/YYYY", "format_note": "text dates written MM/DD/YYYY", "value_range": None,
@@ -110,17 +110,17 @@ def test_the_source_is_registered_by_the_profiler_side_and_the_platform_imports_
     """`test_platform_agent_boundary` bit on the first full run: trust_checks imported tools. The dependency is inverted."""
     import ast
     import pathlib
-    from aughor.sql import trust_checks as T
-    from aughor.tools import profile_cache as PC
+    from pramanyx.sql import trust_checks as T
+    from pramanyx.tools import profile_cache as PC
     assert T._COLUMN_FACTS_SOURCE is PC.load_column_facts
     src = pathlib.Path(T.__file__).read_text()
     imported = {n.module for n in ast.walk(ast.parse(src)) if isinstance(n, ast.ImportFrom) and n.module}
-    assert not any(m.startswith("aughor.tools") for m in imported)
+    assert not any(m.startswith("pramanyx.tools") for m in imported)
 
 
 def test_the_facts_are_read_from_the_profile_cache_newest_first_and_cached_per_connection(monkeypatch):
-    from aughor.sql import trust_checks as T
-    from aughor.tools import profile_cache as PC
+    from pramanyx.sql import trust_checks as T
+    from pramanyx.tools import profile_cache as PC
     cache = {"c9:fp1": {"columns": {"main.superstore.Order Date": {
         "table": "main.superstore", "column": "Order Date", "dtype": "VARCHAR", "date_format": "MM/DD/YYYY",
         "date_format_note": "text dates written MM/DD/YYYY", "value_range": None, "value_interpretation": None},
@@ -145,9 +145,9 @@ def test_the_facts_are_read_from_the_profile_cache_newest_first_and_cached_per_c
 
 
 def test_a_saved_profile_drops_the_cached_facts(monkeypatch):
-    from aughor.sql import trust_checks as T
+    from pramanyx.sql import trust_checks as T
     T._COLFACTS_CACHE["c-saved"] = {"x": {}}
-    from aughor.tools import profile_cache as PC
+    from pramanyx.tools import profile_cache as PC
     class Store:
         def put(self, key, value): pass
         def trim_prefix(self, prefix, n): pass
@@ -159,7 +159,7 @@ def test_a_saved_profile_drops_the_cached_facts(monkeypatch):
 # ── the frame says a path is followed whole ───────────────────────────────────────────────
 
 def test_a_multi_hop_path_is_followed_whole_and_a_one_hop_path_needs_no_such_line():
-    from aughor.ontology.framing import Frame, FrameDriver, FrameMoment, render_frame_block
+    from pramanyx.ontology.framing import Frame, FrameDriver, FrameMoment, render_frame_block
     # a frame renders only when the question reached something declared: one stage's moment is enough here
     moment = FrameMoment(text="shipped", process="fulfilment", process_label="Fulfilment", stage="shipped", entity="Order", timestamp="shipped_at")
     two = FrameDriver(path="order.customer.country", label="country", entity="Country", object_type="country", property="country")

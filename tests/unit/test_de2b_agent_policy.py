@@ -16,10 +16,10 @@ import json
 import httpx
 import pytest
 
-from aughor.mcp import policy as P
-from aughor.mcp import server as S
-from aughor.mcp.client import AGENT_HEADER, AGENT_MARK, TOOL_HEADER, AughorClient
-from aughor.orgsettings import agent_policy as AP
+from pramanyx.mcp import policy as P
+from pramanyx.mcp import server as S
+from pramanyx.mcp.client import AGENT_HEADER, AGENT_MARK, TOOL_HEADER, PramanyxClient
+from pramanyx.orgsettings import agent_policy as AP
 
 ORG = "default"      # identity is off in the suite, so every request is the default organisation's
 AGENT = {AGENT_HEADER: AGENT_MARK}
@@ -31,7 +31,7 @@ def _run(coro):
 
 @pytest.fixture(autouse=True)
 def _clean_policy(monkeypatch):
-    for var in ("AUGHOR_AGENT_POLICY_LEVEL", "AUGHOR_AGENT_POLICY_CONNECTIONS", "AUGHOR_AGENT_POLICY_TOOLS"):
+    for var in ("PRAMANYX_AGENT_POLICY_LEVEL", "PRAMANYX_AGENT_POLICY_CONNECTIONS", "PRAMANYX_AGENT_POLICY_TOOLS"):
         monkeypatch.delenv(var, raising=False)
     AP.clear_agent_policy(ORG)
     S.forget_policy()
@@ -66,21 +66,21 @@ def test_a_person_saves_a_policy_and_it_is_read_on_the_next_call():
 
 def test_the_environment_narrows_and_never_widens(monkeypatch):
     AP.save_agent_policy(ORG, level="act", connections=["c1", "c2"], set_by="ana")
-    monkeypatch.setenv("AUGHOR_AGENT_POLICY_LEVEL", "read")
-    monkeypatch.setenv("AUGHOR_AGENT_POLICY_CONNECTIONS", "c2,c3")
-    monkeypatch.setenv("AUGHOR_AGENT_POLICY_TOOLS", "list_connections,ask")
+    monkeypatch.setenv("PRAMANYX_AGENT_POLICY_LEVEL", "read")
+    monkeypatch.setenv("PRAMANYX_AGENT_POLICY_CONNECTIONS", "c2,c3")
+    monkeypatch.setenv("PRAMANYX_AGENT_POLICY_TOOLS", "list_connections,ask")
     p = AP.effective_agent_policy(ORG)
     assert p.level == "read" and p.connections == ("c2",) and p.tools == ("ask", "list_connections")
     assert p.source == "narrowed" and set(p.narrowed_by) == {"level", "connections", "tools"}
     # The other way round: a saved `read` and an environment `act` stay `read`.
     AP.save_agent_policy(ORG, level="read", set_by="ana")
-    monkeypatch.setenv("AUGHOR_AGENT_POLICY_LEVEL", "act")
-    monkeypatch.delenv("AUGHOR_AGENT_POLICY_CONNECTIONS")
-    monkeypatch.delenv("AUGHOR_AGENT_POLICY_TOOLS")
+    monkeypatch.setenv("PRAMANYX_AGENT_POLICY_LEVEL", "act")
+    monkeypatch.delenv("PRAMANYX_AGENT_POLICY_CONNECTIONS")
+    monkeypatch.delenv("PRAMANYX_AGENT_POLICY_TOOLS")
     p = AP.effective_agent_policy(ORG)
     assert p.level == "read" and p.source == "saved"
     # An unreadable cap is the tightest cap, not no cap.
-    monkeypatch.setenv("AUGHOR_AGENT_POLICY_LEVEL", "everything")
+    monkeypatch.setenv("PRAMANYX_AGENT_POLICY_LEVEL", "everything")
     assert AP.effective_agent_policy(ORG).level == "read"
 
 
@@ -102,14 +102,14 @@ def test_every_registered_tool_has_a_level_and_the_routes_classify():
 def test_the_spotlight_act_names_are_the_rosters_own():
     """The level map's copy of Spotlight's act limb is held to the roster, so a new act tool
     cannot arrive classified as a read."""
-    from aughor.agent.spotlight_act import spotlight_act_tools
+    from pramanyx.agent.spotlight_act import spotlight_act_tools
     assert P.SPOTLIGHT_ACT_TOOLS == {t.name for t in spotlight_act_tools("c1")}
 
 
 # ── the API enforces it, and audits it ───────────────────────────────────────────────
 
 def _api():
-    from aughor.api import app
+    from pramanyx.api import app
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t")
 
 
@@ -172,7 +172,7 @@ def test_tool_and_connection_allowlists_refuse_by_name_including_a_connection_in
 
 
 def test_every_agent_call_is_audited_with_its_principal_and_shows_on_the_governance_feed():
-    from aughor.govern.audit_categories import KIND_CATEGORY, feed
+    from pramanyx.govern.audit_categories import KIND_CATEGORY, feed
 
     assert KIND_CATEGORY["mcp.tool_call"] == "data_access"
 
@@ -181,8 +181,8 @@ def test_every_agent_call_is_audited_with_its_principal_and_shows_on_the_governa
 
     async def go():
         async with _api() as c:
-            await c.post("/jobs/not-a-job/cancel", headers={**AGENT, TOOL_HEADER: "cancel_job", "X-Aughor-User": robot})
-            await c.get("/connections", headers={**AGENT, TOOL_HEADER: "list_connections", "X-Aughor-User": robot})
+            await c.post("/jobs/not-a-job/cancel", headers={**AGENT, TOOL_HEADER: "cancel_job", "X-Pramanyx-User": robot})
+            await c.get("/connections", headers={**AGENT, TOOL_HEADER: "list_connections", "X-Pramanyx-User": robot})
     _run(go())
     events = [e for e in feed(category="data_access", limit=500)
               if e.kind == "mcp.tool_call" and e.detail.get("actor") == robot]
@@ -209,7 +209,7 @@ def test_the_policy_route_is_set_by_a_person_and_refuses_the_agent():
     assert by_agent.status_code == 403 and by_agent.json()["detail"]["code"] == P.CODE_SELF_SET
     assert by_person.status_code == 200
     eff = after.json()["effective"]
-    from aughor.security.authz import local_operator
+    from pramanyx.security.authz import local_operator
     # nobody signs in here: the policy is set by the login the request acts for, not the word "api-key"
     assert eff["level"] == "act" and eff["connections"] == ["c1"] and eff["set_by"] == local_operator()
     assert cleared.json()["effective"]["source"] == "default"
@@ -303,7 +303,7 @@ def test_the_knowledge_tools_call_the_api_with_the_agent_mark_and_the_tool_name(
             return httpx.Response(200, json={"checked": False, "table": request.url.params["table"]})
         return httpx.Response(404, json={"detail": "no such route in this fake"})
 
-    fake = AughorClient(base_url="http://t", api_key="", transport=httpx.MockTransport(handler))
+    fake = PramanyxClient(base_url="http://t", api_key="", transport=httpx.MockTransport(handler))
     monkeypatch.setattr(S, "_client", fake)
     S.forget_policy()
     out = _run(S.mcp.call_tool("search_graph", {"connection": "c1", "query": "orders"}))

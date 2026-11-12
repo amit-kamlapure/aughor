@@ -1,4 +1,4 @@
-"""The 2027 study's close-out, C9 — OAuth-authenticated MCP servers, the code half (`aughor/mcpservers/oauth.py`).
+"""The 2027 study's close-out, C9 — OAuth-authenticated MCP servers, the code half (`pramanyx/mcpservers/oauth.py`).
 
 What these hold: the two OAuth modes are rows a person writes down with the model's own rules (http only; client
 credentials need a client); the token set lives on the row, encrypted at rest and never returned; the transport is
@@ -17,9 +17,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from aughor.mcpservers import oauth as O
-from aughor.mcpservers import store
-from aughor.mcpservers.models import SERVER_SECRET_FIELDS, McpServer
+from pramanyx.mcpservers import oauth as O
+from pramanyx.mcpservers import store
+from pramanyx.mcpservers.models import SERVER_SECRET_FIELDS, McpServer
 
 
 def _release_waiters():
@@ -102,9 +102,9 @@ def test_the_transport_is_handed_the_sdks_provider_for_an_oauth_server_and_nothi
     cc = _server(auth_mode="oauth_client_credentials", oauth_client_id="cid", oauth_client_secret="shh")
     assert isinstance(O.auth_for(cc), ClientCredentialsOAuthProvider)
     code = _server()
-    provider = O.auth_for(code, redirect_uri="https://aughor.example/mcp-servers/oauth/callback")
+    provider = O.auth_for(code, redirect_uri="https://pramanyx.example/mcp-servers/oauth/callback")
     assert isinstance(provider, OAuthClientProvider)
-    assert str(provider.context.client_metadata.redirect_uris[0]) == "https://aughor.example/mcp-servers/oauth/callback"
+    assert str(provider.context.client_metadata.redirect_uris[0]) == "https://pramanyx.example/mcp-servers/oauth/callback"
     # an ordinary open of a server nobody signed in to says so and names the door — it never hangs on a browser
     with pytest.raises(O.McpSignInRequired, match=f"POST /mcp-servers/{code.id}/oauth/begin"):
         asyncio.run(provider.context.redirect_handler("https://as.example/authorize?state=x"))
@@ -129,9 +129,9 @@ def _fake_flow(code_to_token=lambda code: f"tok-{code}"):
 
 def test_a_sign_in_begins_on_a_thread_and_the_callback_completes_it(monkeypatch):
     monkeypatch.setattr(O, "_signin_flow", _fake_flow())
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     s = _server()
-    begun = O.begin(s, redirect_uri="https://aughor.example/mcp-servers/oauth/callback", timeout_s=20)
+    begun = O.begin(s, redirect_uri="https://pramanyx.example/mcp-servers/oauth/callback", timeout_s=20)
     assert begun["authorization_url"].startswith("https://as.example/authorize") and begun["state"] == "S1"
     assert O.status(store.get_server(s.id))["sign_in_pending"]
     with pytest.raises(LookupError, match="no sign-in is waiting"):
@@ -153,13 +153,13 @@ def test_a_sign_in_begins_on_a_thread_and_the_callback_completes_it(monkeypatch)
     # a server that does not sign in by authorization code is refused with why
     cc = _server(auth_mode="oauth_client_credentials", oauth_client_id="cid", oauth_client_secret="shh")
     with pytest.raises(ValueError, match="does not sign in by authorization code"):
-        O.begin(cc, redirect_uri="https://aughor.example/mcp-servers/oauth/callback")
+        O.begin(cc, redirect_uri="https://pramanyx.example/mcp-servers/oauth/callback")
 
 
 def test_the_authorization_servers_refusal_reaches_the_person(monkeypatch):
     monkeypatch.setattr(O, "_signin_flow", _fake_flow())
     s = _server()
-    O.begin(s, redirect_uri="https://aughor.example/mcp-servers/oauth/callback", timeout_s=20)
+    O.begin(s, redirect_uri="https://pramanyx.example/mcp-servers/oauth/callback", timeout_s=20)
     done = O.complete("S1", "", error="access_denied")
     assert done["signed_in"] is False and "access_denied" in done["error"]
     assert not store.get_server(s.id).signed_in
@@ -169,8 +169,8 @@ def test_the_authorization_servers_refusal_reaches_the_person(monkeypatch):
 
 def test_the_doors_begin_complete_and_sign_out_and_the_callback_needs_no_key(monkeypatch):
     monkeypatch.setattr(O, "_signin_flow", _fake_flow())
-    from aughor.api import _AUTH_EXEMPT
-    from aughor.routers.mcpservers import router
+    from pramanyx.api import _AUTH_EXEMPT
+    from pramanyx.routers.mcpservers import router
     assert any(O.CALLBACK_PATH.startswith(p) for p in _AUTH_EXEMPT)
     app = FastAPI()
     app.include_router(router)
@@ -180,9 +180,9 @@ def test_the_doors_begin_complete_and_sign_out_and_the_callback_needs_no_key(mon
     assert created["oauth"] == {"mode": "oauth_authorization_code", "signed_in": False, "client_id": "", "scopes": "read",
                                 "obtained_at": "", "has_client_secret": False, "expires_at": "", "sign_in_pending": False}
     sid = created["id"]
-    begun = client.post(f"/mcp-servers/{sid}/oauth/begin", headers={"x-forwarded-proto": "https", "x-forwarded-host": "aughor.example"})
+    begun = client.post(f"/mcp-servers/{sid}/oauth/begin", headers={"x-forwarded-proto": "https", "x-forwarded-host": "pramanyx.example"})
     assert begun.status_code == 200, begun.text
-    assert begun.json()["callback"] == "https://aughor.example/mcp-servers/oauth/callback"
+    assert begun.json()["callback"] == "https://pramanyx.example/mcp-servers/oauth/callback"
     assert client.get("/mcp-servers/oauth/callback?state=nope&code=x").status_code == 404
     landed = client.get("/mcp-servers/oauth/callback?state=S1&code=zzz")
     assert landed.status_code == 200 and "Signed in" in landed.text

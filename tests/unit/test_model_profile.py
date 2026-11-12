@@ -15,16 +15,16 @@ The contract under test, in order of what it would cost to get wrong:
 """
 import pytest
 
-from aughor.llm import profile as pr
+from pramanyx.llm import profile as pr
 
 
 # ── 1. The floor is the old constants, as absolute numbers ───────────────────
 
 def test_unknown_model_gets_the_exact_legacy_constants(monkeypatch):
-    monkeypatch.delenv("AUGHOR_LLM_RPM", raising=False)
-    monkeypatch.delenv("AUGHOR_MAX_OUTPUT_TOKENS", raising=False)
-    monkeypatch.delenv("AUGHOR_LLM_STRUCTURED_ATTEMPTS", raising=False)
-    monkeypatch.delenv("AUGHOR_REASONING_EFFORT", raising=False)
+    monkeypatch.delenv("PRAMANYX_LLM_RPM", raising=False)
+    monkeypatch.delenv("PRAMANYX_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.delenv("PRAMANYX_LLM_STRUCTURED_ATTEMPTS", raising=False)
+    monkeypatch.delenv("PRAMANYX_REASONING_EFFORT", raising=False)
     p = pr.profile_for("coder", model="somebodys/fine-tune-7b")
     assert p.schema_char_limit == 20_000       # investigate._SCHEMA_CHAR_LIMIT
     assert p.evidence_budget == 6_000          # investigate._EVIDENCE_BUDGET
@@ -36,9 +36,9 @@ def test_unknown_model_gets_the_exact_legacy_constants(monkeypatch):
 
 
 def test_a_wide_context_window_earns_the_larger_budgets(monkeypatch):
-    monkeypatch.delenv("AUGHOR_MAX_OUTPUT_TOKENS", raising=False)
-    monkeypatch.delenv("AUGHOR_REASONING_EFFORT", raising=False)
-    monkeypatch.setenv("AUGHOR_MODEL_CONTEXT_TOKENS", "1000000")
+    monkeypatch.delenv("PRAMANYX_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.delenv("PRAMANYX_REASONING_EFFORT", raising=False)
+    monkeypatch.setenv("PRAMANYX_MODEL_CONTEXT_TOKENS", "1000000")
     p = pr.profile_for("coder", model="any/model")
     assert p.schema_char_limit == 60_000
     assert p.evidence_budget == 18_000
@@ -56,7 +56,7 @@ def test_the_tier_is_derived_from_the_declared_context_not_the_name(monkeypatch)
     silently ran on 20k of schema instead of 60k. The provider's declared context window
     is the fact the family table was a proxy for, so it decides directly now — and it is
     right about a model nobody here has ever heard of."""
-    monkeypatch.delenv("AUGHOR_MODEL_CONTEXT_TOKENS", raising=False)
+    monkeypatch.delenv("PRAMANYX_MODEL_CONTEXT_TOKENS", raising=False)
     monkeypatch.setattr(pr, "declared_context",
                         lambda m: {"wide/one": 200_000, "narrow/one": 8_000}.get(m))
     assert pr.tier_for("wide/one")["schema_char_limit"] == 60_000
@@ -69,9 +69,9 @@ def test_the_tier_is_derived_from_the_declared_context_not_the_name(monkeypatch)
 def test_an_operator_can_declare_the_context_window(monkeypatch):
     """The escape hatch for a backend that publishes no context length — and the only
     thing that stands in for the deleted list."""
-    monkeypatch.setenv("AUGHOR_MODEL_CONTEXT_TOKENS", "128000")
+    monkeypatch.setenv("PRAMANYX_MODEL_CONTEXT_TOKENS", "128000")
     assert pr.tier_for("anything/at-all")["schema_char_limit"] == 60_000
-    monkeypatch.setenv("AUGHOR_MODEL_CONTEXT_TOKENS", "32000")
+    monkeypatch.setenv("PRAMANYX_MODEL_CONTEXT_TOKENS", "32000")
     assert pr.tier_for("anything/at-all")["schema_char_limit"] == 20_000
 
 
@@ -84,13 +84,13 @@ def test_undeclared_budget_is_not_an_unlimited_one(monkeypatch):
     binding) and a dev machine (llm_config binds an OpenRouter :free model) on the
     SAME topology — both serial — instead of the suite compiling different graphs
     on each side."""
-    monkeypatch.delenv("AUGHOR_LLM_RPM", raising=False)
+    monkeypatch.delenv("PRAMANYX_LLM_RPM", raising=False)
     assert pr._rpm_budget("ollama-something") is None
     assert pr.profile_for("coder", model="ollama-something").parallel_waves is False
 
 
 def test_free_suffix_is_a_20_rpm_declaration(monkeypatch):
-    monkeypatch.delenv("AUGHOR_LLM_RPM", raising=False)
+    monkeypatch.delenv("PRAMANYX_LLM_RPM", raising=False)
     p = pr.profile_for("coder", model="vendor/model:free")
     assert p.rpm_budget == 20
     assert p.parallel_waves is False           # 20 < the wave floor
@@ -103,15 +103,15 @@ def test_free_suffix_is_a_20_rpm_declaration(monkeypatch):
     ("120", True),
 ])
 def test_explicit_rpm_wins_in_both_directions(monkeypatch, rpm, expected):
-    monkeypatch.setenv("AUGHOR_LLM_RPM", rpm)
+    monkeypatch.setenv("PRAMANYX_LLM_RPM", rpm)
     # even on a :free binding — the operator's declaration outranks the suffix
     p = pr.profile_for("coder", model="x:free")
     assert p.parallel_waves is expected, f"rpm={rpm}"
 
 
 def test_single_slot_concurrency_forces_serial(monkeypatch):
-    monkeypatch.setenv("AUGHOR_LLM_RPM", "0")
-    monkeypatch.setenv("AUGHOR_LLM_MAX_CONCURRENCY", "1")
+    monkeypatch.setenv("PRAMANYX_LLM_RPM", "0")
+    monkeypatch.setenv("PRAMANYX_LLM_MAX_CONCURRENCY", "1")
     assert pr.profile_for("coder", model="anything").parallel_waves is False
 
 
@@ -126,8 +126,8 @@ def test_parallel_waves_enabled_is_fail_safe(monkeypatch):
 def test_env_overrides_are_read_at_call_time_not_import(monkeypatch):
     monkeypatch.setattr(pr, "declared_context", lambda m: 200_000)   # a capable binding
     p1 = pr.profile_for("coder", model="wide/model:free")
-    monkeypatch.setenv("AUGHOR_MAX_OUTPUT_TOKENS", "2048")
-    monkeypatch.setenv("AUGHOR_REASONING_EFFORT", "high")
+    monkeypatch.setenv("PRAMANYX_MAX_OUTPUT_TOKENS", "2048")
+    monkeypatch.setenv("PRAMANYX_REASONING_EFFORT", "high")
     p2 = pr.profile_for("coder", model="wide/model:free")
     assert (p1.max_output_tokens, p2.max_output_tokens) == (8_192, 2_048)
     assert p2.reasoning_effort == "high"
@@ -137,7 +137,7 @@ def test_env_overrides_are_read_at_call_time_not_import(monkeypatch):
 
 def test_investigate_budgets_follow_the_profile(monkeypatch):
     """The agent's helpers must reach the profile, not a frozen constant."""
-    from aughor.agent import investigate as inv
+    from pramanyx.agent import investigate as inv
     cap = pr.ModelProfile(backend="t", model="m", schema_char_limit=42_000,
                           evidence_budget=17_000, interpret_max_rows=33,
                           max_output_tokens=8192, structured_attempts=1,
@@ -145,15 +145,15 @@ def test_investigate_budgets_follow_the_profile(monkeypatch):
                           linker_top_cols=8, context_table_cap=10,
                           parallel_waves=False, rpm_budget=None,
                           tool_loop_steps=4, deep_loop_steps=10)
-    monkeypatch.setattr("aughor.llm.profile.profile_for", lambda *a, **k: cap)
+    monkeypatch.setattr("pramanyx.llm.profile.profile_for", lambda *a, **k: cap)
     assert inv._schema_limit() == 42_000
     assert inv._evidence_budget() == 17_000
     assert inv._interpret_rows() == 33
 
 
 def test_investigate_budgets_fail_safe_to_the_baseline(monkeypatch):
-    from aughor.agent import investigate as inv
-    monkeypatch.setattr("aughor.llm.profile.profile_for",
+    from pramanyx.agent import investigate as inv
+    monkeypatch.setattr("pramanyx.llm.profile.profile_for",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no binding")))
     assert inv._schema_limit() == 20_000
     assert inv._evidence_budget() == 6_000
@@ -162,16 +162,16 @@ def test_investigate_budgets_fail_safe_to_the_baseline(monkeypatch):
 
 def test_topology_helpers_follow_one_transport_decision(monkeypatch):
     """The former four flags now answer from ONE derivation — all together."""
-    from aughor.agent import graph as g
-    from aughor.agent import explore as ex
-    from aughor.agent import investigate as inv
-    monkeypatch.setenv("AUGHOR_LLM_RPM", "120")
-    monkeypatch.setenv("AUGHOR_LLM_MAX_CONCURRENCY", "4")
+    from pramanyx.agent import graph as g
+    from pramanyx.agent import explore as ex
+    from pramanyx.agent import investigate as inv
+    monkeypatch.setenv("PRAMANYX_LLM_RPM", "120")
+    monkeypatch.setenv("PRAMANYX_LLM_MAX_CONCURRENCY", "4")
     on = [g._explore_parallel_enabled(), g._ada_parallel_lenses_enabled(),
           g._ada_parallel_phases_enabled(), ex._parallel_subq_on(),
           inv._parallel_why_lenses_enabled()]
     assert on == [True] * 5
-    monkeypatch.setenv("AUGHOR_LLM_RPM", "20")
+    monkeypatch.setenv("PRAMANYX_LLM_RPM", "20")
     off = [g._explore_parallel_enabled(), g._ada_parallel_lenses_enabled(),
            g._ada_parallel_phases_enabled(), ex._parallel_subq_on(),
            inv._parallel_why_lenses_enabled()]
@@ -179,7 +179,7 @@ def test_topology_helpers_follow_one_transport_decision(monkeypatch):
 
 
 def test_topology_flags_dict_keeps_its_shape():
-    from aughor.agent.graph import topology_flags
+    from pramanyx.agent.graph import topology_flags
     tf = topology_flags()
     assert set(tf) == {"ada_parallel_lenses", "ada_parallel_phases", "explore_parallel"}
 
@@ -187,14 +187,14 @@ def test_topology_flags_dict_keeps_its_shape():
 # ── 5. The registry really let go ────────────────────────────────────────────
 
 def test_the_four_parallelism_flags_are_gone_and_stay_gone():
-    from aughor.kernel import flags as fl
+    from pramanyx.kernel import flags as fl
     for name in ("explore.parallel_subq", "deep_analysis.parallel_lenses",
                  "deep_analysis.parallel_phases", "deep_analysis.parallel_why_lenses"):
         assert name not in fl.FLAG_ENV, name
         assert name not in fl.FLAG_META, name
         assert name not in fl.RENAMED, name          # dead aliases go with their targets
     assert fl.COST_LATENCY_PROFILE == frozenset()    # declared and EMPTY, like AUTO_ELIGIBLE
-    assert "AUGHOR_ADA_PARALLEL_LENSES" not in fl.RETIRED_ENV
+    assert "PRAMANYX_ADA_PARALLEL_LENSES" not in fl.RETIRED_ENV
 
 
 # ── a window recorded under another vendor's namespace ───────────────────────
@@ -210,29 +210,29 @@ class TestBareNameLookup:
     """
 
     def test_the_vendor_prefix_is_not_part_of_the_identity(self, monkeypatch):
-        monkeypatch.delenv("AUGHOR_MODEL_CONTEXT_TOKENS", raising=False)
-        monkeypatch.setattr("aughor.llm.provider.read_config",
+        monkeypatch.delenv("PRAMANYX_MODEL_CONTEXT_TOKENS", raising=False)
+        monkeypatch.setattr("pramanyx.llm.provider.read_config",
                             lambda: {"model_context": {"google/gemini-3.1-flash-lite": 1_048_576}})
         assert pr.declared_context("gemini-3.1-flash-lite") == 1_048_576
         assert pr.tier_for("gemini-3.1-flash-lite")["schema_char_limit"] == 60_000
 
     def test_an_alias_marker_is_stripped_too(self, monkeypatch):
-        monkeypatch.delenv("AUGHOR_MODEL_CONTEXT_TOKENS", raising=False)
-        monkeypatch.setattr("aughor.llm.provider.read_config",
+        monkeypatch.delenv("PRAMANYX_MODEL_CONTEXT_TOKENS", raising=False)
+        monkeypatch.setattr("pramanyx.llm.provider.read_config",
                             lambda: {"model_context": {"~anthropic/claude-sonnet-latest": 1_000_000}})
         assert pr.declared_context("claude-sonnet-latest") == 1_000_000
 
     def test_an_exact_match_still_wins(self, monkeypatch):
-        monkeypatch.delenv("AUGHOR_MODEL_CONTEXT_TOKENS", raising=False)
-        monkeypatch.setattr("aughor.llm.provider.read_config", lambda: {"model_context": {
+        monkeypatch.delenv("PRAMANYX_MODEL_CONTEXT_TOKENS", raising=False)
+        monkeypatch.setattr("pramanyx.llm.provider.read_config", lambda: {"model_context": {
             "gemini-x": 64_000, "google/gemini-x": 1_048_576}})
         assert pr.declared_context("gemini-x") == 64_000
 
     def test_ambiguity_resolves_to_the_SMALLEST_window(self, monkeypatch):
         """An over-estimate silences the overflow guard; an under-estimate only costs
         headroom. So when two namespaces disagree, the conservative number wins."""
-        monkeypatch.delenv("AUGHOR_MODEL_CONTEXT_TOKENS", raising=False)
-        monkeypatch.setattr("aughor.llm.provider.read_config", lambda: {"model_context": {
+        monkeypatch.delenv("PRAMANYX_MODEL_CONTEXT_TOKENS", raising=False)
+        monkeypatch.setattr("pramanyx.llm.provider.read_config", lambda: {"model_context": {
             "vendor-a/model-q": 1_000_000, "vendor-b/model-q": 128_000}})
         assert pr.declared_context("model-q") == 128_000
 
@@ -240,14 +240,14 @@ class TestBareNameLookup:
         """`:free` / `:batch` twins genuinely differ — OpenRouter reports 1,000,000 for
         one Nemotron variant and 262,144 for its `:free` sibling — so they must not
         collapse into each other."""
-        monkeypatch.delenv("AUGHOR_MODEL_CONTEXT_TOKENS", raising=False)
-        monkeypatch.setattr("aughor.llm.provider.read_config", lambda: {"model_context": {
+        monkeypatch.delenv("PRAMANYX_MODEL_CONTEXT_TOKENS", raising=False)
+        monkeypatch.setattr("pramanyx.llm.provider.read_config", lambda: {"model_context": {
             "nvidia/nemotron-3-super": 1_000_000, "nvidia/nemotron-3-super:free": 262_144}})
         assert pr.declared_context("nemotron-3-super") == 1_000_000
         assert pr.declared_context("nemotron-3-super:free") == 262_144
 
     def test_an_unknown_model_still_gets_nothing(self, monkeypatch):
-        monkeypatch.delenv("AUGHOR_MODEL_CONTEXT_TOKENS", raising=False)
-        monkeypatch.setattr("aughor.llm.provider.read_config",
+        monkeypatch.delenv("PRAMANYX_MODEL_CONTEXT_TOKENS", raising=False)
+        monkeypatch.setattr("pramanyx.llm.provider.read_config",
                             lambda: {"model_context": {"google/gemini-x": 1_048_576}})
         assert pr.declared_context("something-else-entirely") is None

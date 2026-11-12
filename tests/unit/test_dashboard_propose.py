@@ -25,14 +25,14 @@ from typing import Optional
 
 import pytest
 
-from aughor.actions import inbox
-from aughor.agent.dashboard_tool import draft_dashboard, drafting_tool
-from aughor.dashboards import cards, propose, validate as V, versions
-from aughor.dashboards.home import Home, approver
-from aughor.cards import doors, store as card_store
-from aughor.cards.models import StoredCard
-from aughor.semantic.metrics import MetricDefinition, save_metric
-from aughor.semantic.trusted_queries import TrustedQuery, save_trusted
+from pramanyx.actions import inbox
+from pramanyx.agent.dashboard_tool import draft_dashboard, drafting_tool
+from pramanyx.dashboards import cards, propose, validate as V, versions
+from pramanyx.dashboards.home import Home, approver
+from pramanyx.cards import doors, store as card_store
+from pramanyx.cards.models import StoredCard
+from pramanyx.semantic.metrics import MetricDefinition, save_metric
+from pramanyx.semantic.trusted_queries import TrustedQuery, save_trusted
 
 needs_rules = pytest.mark.skipif(
     shutil.which("node") is None or not V._BUNDLE.exists(),
@@ -71,8 +71,8 @@ def warehouse(monkeypatch, tmp_path) -> Warehouse:
     # read them whole. The first cut saved into them: `test_metric_dedup` then read 168
     # metrics it had not expected, on the full run and on no targeted one. Each test here has
     # its own, as every other test that saves a metric does.
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.json"))
-    monkeypatch.setenv("AUGHOR_TRUSTED_QUERIES_PATH", str(tmp_path / "trusted_queries.json"))
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.json"))
+    monkeypatch.setenv("PRAMANYX_TRUSTED_QUERIES_PATH", str(tmp_path / "trusted_queries.json"))
     w = Warehouse()
     monkeypatch.setattr(doors, "run_guarded", w)
     FINDINGS.clear()
@@ -216,7 +216,7 @@ def test_the_tool_is_offered_in_no_conversation(desk):
     """The canvas is for investigation (§6 item 36(l)). A chat turn's tools are what they were
     before Arc CT, flag on or off, in a canvas or not: the drafting tool runs only in the
     Briefing's own draft, bound to the dashboard it drafts."""
-    from aughor.agent.converse_tools import converse_tools
+    from pramanyx.agent.converse_tools import converse_tools
     emit = lambda kind, payload: None   # noqa: E731
     with_canvas = converse_tools(CONN, emit=emit, canvas_id="cv1", user_question="build me a returns dashboard")
     without = converse_tools(CONN, emit=emit)
@@ -767,8 +767,8 @@ def test_the_tool_tells_the_writer_to_repair_and_try_again(desk):
 def test_a_refused_drafts_reasons_are_kept_on_the_record_of_the_step(desk, monkeypatch):
     """Through the tool loop's own recorder, as a turn would: what it stores of a step's
     result is `error`, and a refusal must be in it."""
-    from aughor.agent import tool_loop
-    from aughor.obs import session_log
+    from pramanyx.agent import tool_loop
+    from pramanyx.obs import session_log
 
     kept = []
     monkeypatch.setattr(session_log, "emit", lambda kind, **kw: kept.append((kind, kw)))
@@ -875,7 +875,7 @@ def test_the_approver_is_the_signed_in_user_where_there_is_one(monkeypatch, ware
     knows who, and that is the name a dashboard is kept in."""
     me = f"u-{uuid.uuid4().hex[:6]}"
     desk = Desk(monkeypatch, owner=me)
-    monkeypatch.setattr("aughor.org.context.current_user_id", lambda: me)
+    monkeypatch.setattr("pramanyx.org.context.current_user_id", lambda: me)
     p = staged(desk)
     assert accept(p, actor="chat").ok is True
     assert versions.latest(desk.home)["approved_by"] == f"user:{me}"
@@ -888,7 +888,7 @@ def test_a_persons_cockpit_is_kept_by_them_and_nobody_else(monkeypatch, warehous
     p = staged(desk)
     real, made = cards.place, []
     monkeypatch.setattr(cards, "place", lambda *a, **kw: made.append(a) or real(*a, **kw))
-    monkeypatch.setattr("aughor.org.context.current_user_id", lambda: "u7")
+    monkeypatch.setattr("pramanyx.org.context.current_user_id", lambda: "u7")
     result = accept(p, actor="chat")
     assert result.ok is False and made == []
     assert "This dashboard was drafted for someone else, and only they can keep it. Nothing was made." in result.message
@@ -1287,13 +1287,13 @@ def test_an_edit_drafted_against_a_version_lands_on_that_version_or_not_at_all(s
 
 @pytest.fixture
 def faux(monkeypatch):
-    from aughor.llm.provider import LLMProvider
-    monkeypatch.delenv("AUGHOR_TOOL_LOOP_STEPS", raising=False)
+    from pramanyx.llm.provider import LLMProvider
+    monkeypatch.delenv("PRAMANYX_TOOL_LOOP_STEPS", raising=False)
     return LLMProvider(backend="faux", role="coder")
 
 
 def _call(**args):
-    from aughor.llm.faux import FauxToolCall
+    from pramanyx.llm.faux import FauxToolCall
     return FauxToolCall(payload=args, name="draft_dashboard")
 
 
@@ -1303,8 +1303,8 @@ def _mine(desk: Desk) -> list:
 
 
 def test_an_area_is_drafted_into_one_proposal_for_a_new_cockpit_of_the_persons(desk, faux):
-    from aughor.dashboards.ask import draft_for_area
-    from aughor.llm.faux import set_responses
+    from pramanyx.dashboards.ask import draft_for_area
+    from pramanyx.llm.faux import set_responses
     set_responses([_call(op="options"), _call(op="new", spec=desk.spec(), cards=desk.cards()), "Drafted."])
 
     out = draft_for_area(CONN, desk.home.owner, "Returns, with an alert above 12%", provider=faux)
@@ -1323,8 +1323,8 @@ def test_an_area_is_drafted_into_one_proposal_for_a_new_cockpit_of_the_persons(d
 
 def test_a_refused_draft_is_repaired_in_the_same_run(desk, faux):
     """The area names no limit, so the draft's limit of 12 is refused; the model repairs it."""
-    from aughor.dashboards.ask import draft_for_area
-    from aughor.llm.faux import set_responses
+    from pramanyx.dashboards.ask import draft_for_area
+    from pramanyx.llm.faux import set_responses
     no_limit = [{k: v for k, v in c.items() if k != "limit"} for c in desk.cards()]
     set_responses([_call(op="options"), _call(op="new", spec=desk.spec(), cards=desk.cards()),
                    _call(op="new", spec=desk.spec(), cards=no_limit), "Drafted."])
@@ -1336,8 +1336,8 @@ def test_a_refused_draft_is_repaired_in_the_same_run(desk, faux):
 
 
 def test_when_nothing_is_drafted_the_reasons_are_the_platforms_or_a_figure_free_sentence(desk, faux):
-    from aughor.dashboards.ask import draft_for_area
-    from aughor.llm.faux import set_responses
+    from pramanyx.dashboards.ask import draft_for_area
+    from pramanyx.llm.faux import set_responses
 
     set_responses([_call(op="options"), "Nothing this connection measures bears on marketing."])
     out = draft_for_area(CONN, desk.home.owner, "marketing", provider=faux)
@@ -1357,23 +1357,23 @@ def test_when_nothing_is_drafted_the_reasons_are_the_platforms_or_a_figure_free_
 
 
 def test_no_area_or_no_model_that_calls_tools_spends_nothing(desk, monkeypatch):
-    from aughor.dashboards import ask
+    from pramanyx.dashboards import ask
 
     def spent(*a, **kw):
         raise AssertionError("the model was called")
 
-    monkeypatch.setattr("aughor.agent.tool_loop.run_tool_loop", spent)
+    monkeypatch.setattr("pramanyx.agent.tool_loop.run_tool_loop", spent)
     assert ask.draft_for_area(CONN, desk.home.owner, "   ")["sentences"] == [
         "Name the area this dashboard is for — returns, pricing, marketing."]
-    monkeypatch.setattr("aughor.agent.converse_tools.binding_calls_tools", lambda: False)
+    monkeypatch.setattr("pramanyx.agent.converse_tools.binding_calls_tools", lambda: False)
     out = ask.draft_for_area(CONN, desk.home.owner, "returns")
     assert out["staged"] is False and "cannot call tools" in out["sentences"][0]
 
 
 def test_the_model_is_given_the_drafting_tool_alone(desk, faux, monkeypatch):
-    from aughor.agent import tool_loop
-    from aughor.dashboards.ask import draft_for_area
-    from aughor.llm.faux import set_responses
+    from pramanyx.agent import tool_loop
+    from pramanyx.dashboards.ask import draft_for_area
+    from pramanyx.llm.faux import set_responses
     seen = []
     real = tool_loop.run_tool_loop
 

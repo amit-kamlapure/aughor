@@ -1,6 +1,6 @@
 """Phase 4 of the 2027 study — verification and undo on every declaration, Action as a ledger
 entry, the earned ladder keyed by action and scope, graduation on a receipt, automatic demotion
-(`aughor/actions/authority.py`).
+(`pramanyx/actions/authority.py`).
 
 What these hold: a side-effect action is declared with a verification read and an undo, or
 declared irreversible by name, else the declare door refuses it; the executor runs the verification
@@ -18,11 +18,11 @@ import uuid
 
 import pytest
 
-from aughor.actions import authority as A
-from aughor.actions import grants
-from aughor.actions.executor import execute_kinetic_action
-from aughor.ontology.models import ActionParameter, KineticAction, Undo, Verification
-from aughor.record import decisions as D
+from pramanyx.actions import authority as A
+from pramanyx.actions import grants
+from pramanyx.actions.executor import execute_kinetic_action
+from pramanyx.ontology.models import ActionParameter, KineticAction, Undo, Verification
+from pramanyx.record import decisions as D
 
 
 def _conn():
@@ -51,7 +51,7 @@ def _recorder():
 
 @pytest.fixture(autouse=True)
 def _approval_off(monkeypatch):
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "0")
 
 
 def _warehouse(rows_for: dict[str, list]):
@@ -81,12 +81,12 @@ def test_a_side_effect_action_is_declared_with_verification_and_undo_or_irrevers
 
 def test_the_declare_door_refuses_an_incomplete_side_effect_action(monkeypatch):
     from fastapi import HTTPException
-    from aughor.routers import ontology as ONT
+    from pramanyx.routers import ontology as ONT
     monkeypatch.setattr(ONT, "_object_types_problem", lambda declared, graph: "")
     monkeypatch.setattr(ONT, "_get_ontology_graph", lambda c, s: None)
     monkeypatch.setattr(ONT, "_resolve_schema", lambda c, s: None)
-    monkeypatch.setattr("aughor.ontology.overrides.find_override", lambda *a, **k: None)
-    monkeypatch.setattr("aughor.ontology.models.encrypt_action_secrets", lambda fields, prior: fields)
+    monkeypatch.setattr("pramanyx.ontology.overrides.find_override", lambda *a, **k: None)
+    monkeypatch.setattr("pramanyx.ontology.models.encrypt_action_secrets", lambda fields, prior: fields)
     body = ONT._DeclaredActionBody(kind="side_effect", params=[{"name": "order_id", "data_type": "VARCHAR"}],
                                   side_effects=[{"kind": "webhook", "config": {"url": "https://x.example/h"}}], risk="high")
     with pytest.raises(HTTPException) as exc:
@@ -99,7 +99,7 @@ def test_the_declare_door_refuses_an_incomplete_side_effect_action(monkeypatch):
 
 def test_the_executor_verifies_after_dispatch_and_books_the_action_entry(monkeypatch):
     conn = _conn()
-    monkeypatch.setattr("aughor.db.measure.run_sql_for", _warehouse({"'8821'": [[1]]}))
+    monkeypatch.setattr("pramanyx.db.measure.run_sql_for", _warehouse({"'8821'": [[1]]}))
     rec = _recorder()
     r = execute_kinetic_action(_action(), {"order_id": "8821"}, actor="user:ana", scope=conn, dispatch=rec, approved=True)
     assert r.ok and r.verification["status"] == "passed" and "1 row returned" in r.verification["why"]
@@ -110,7 +110,7 @@ def test_the_executor_verifies_after_dispatch_and_books_the_action_entry(monkeyp
     assert len(runs) == 1 and runs[0]["under"] == "human accept" and runs[0]["verification"]["status"] == "passed"
     assert runs[0]["undo"]["action_id"] == "reverse_refund" and runs[0]["params"] == {"order_id": "8821"}
     # a read that cannot run is unavailable — recorded, never a failed change, no demotion
-    monkeypatch.setattr("aughor.db.measure.run_sql_for", _warehouse({"'9000'": "error"}))
+    monkeypatch.setattr("pramanyx.db.measure.run_sql_for", _warehouse({"'9000'": "error"}))
     r2 = execute_kinetic_action(_action(), {"order_id": "9000"}, actor="user:ana", scope=conn, dispatch=_recorder(), approved=True)
     assert r2.ok and r2.verification["status"] == "unavailable" and "could not run" in r2.verification["why"] \
         or r2.verification["status"] == "unavailable" and "failed" in r2.verification["why"]
@@ -127,7 +127,7 @@ def test_a_failed_verification_demotes_and_withdraws_the_standing_grants(monkeyp
     conn = _conn()
     g = grants.mint_from_action(_action(), {"order_id": "8821"}, connection_id=conn, created_by="user:ana")
     assert grants.get_grant(g.id) is not None
-    monkeypatch.setattr("aughor.db.measure.run_sql_for", _warehouse({"'8821'": []}))     # the change is not visible
+    monkeypatch.setattr("pramanyx.db.measure.run_sql_for", _warehouse({"'8821'": []}))     # the change is not visible
     r = execute_kinetic_action(_action(), {"order_id": "8821"}, actor="user:ana", scope=conn, dispatch=_recorder(), approved=True)
     assert r.ok and r.verification["status"] == "failed" and "not visible" in r.verification["why"]
     demotion = A._latest(A.DEMOTION_KIND, "refund", conn)
@@ -143,10 +143,10 @@ def test_levels_from_the_record_and_the_ceilings(monkeypatch):
     conn = _conn()
     incomplete = A.level_for(_action(verification=None), conn)
     assert incomplete["level"] == 1 and incomplete["label"] == "recommend" and "verification statement" in incomplete["why"]
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "1")
     complete = A.level_for(_action(), conn)
     assert complete["level"] == 3 and complete["label"] == "execute with approval" and complete["ceiling"] == 4
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "0")
     off = A.level_for(_action(), conn)
     assert off["level"] == 3 and "kill switch" in off["why"] and "the operator's doing" in off["why"]
     irreversible = A.level_for(_action(undo=None, reversibility="irreversible"), conn)
@@ -157,7 +157,7 @@ def test_levels_from_the_record_and_the_ceilings(monkeypatch):
 
 
 def _run_n(action, conn, n, monkeypatch):
-    monkeypatch.setattr("aughor.db.measure.run_sql_for", _warehouse({"'": [[1]]}))
+    monkeypatch.setattr("pramanyx.db.measure.run_sql_for", _warehouse({"'": [[1]]}))
     for i in range(n):
         r = execute_kinetic_action(action, {"order_id": str(1000 + i)}, actor="user:ana", scope=conn,
                                    dispatch=_recorder(), approved=True)
@@ -208,9 +208,9 @@ def test_graduation_is_earned_on_the_record_and_refused_without_an_outcome(monke
 
 
 def test_the_authority_door_lists_the_table_and_books_receipts(monkeypatch):
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ops-lead")   # who the request acts for — never "unidentified"
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ops-lead")   # who the request acts for — never "unidentified"
     from fastapi import HTTPException
-    from aughor.routers import authority as R
+    from pramanyx.routers import authority as R
     conn = _conn()
     actions = {"refund": _action(), "note": KineticAction(id="note", kind="annotate", params=[])}
     monkeypatch.setattr(R, "_actions", lambda c, s: actions)
@@ -233,7 +233,7 @@ def test_the_authority_door_lists_the_table_and_books_receipts(monkeypatch):
 
 def test_a_persons_ceiling_only_lowers_and_is_lifted_as_a_new_version(monkeypatch):
     from fastapi import HTTPException
-    from aughor.routers import authority as R
+    from pramanyx.routers import authority as R
     conn = _conn()
     assert A.person_ceiling("refund", conn) is None and A.level_for(_action(), conn)["person_ceiling"] is None
     for bad in (6, -1, True):
@@ -260,14 +260,14 @@ def test_a_persons_ceiling_only_lowers_and_is_lifted_as_a_new_version(monkeypatc
     with pytest.raises(HTTPException) as exc:
         R.authority_ceiling("refund", R.CeilingBody(connection_id=conn, level=9), principal=None)
     assert exc.value.status_code == 422
-    from aughor.kernel.events import CATALOGUE
+    from pramanyx.kernel.events import CATALOGUE
     assert "authority.ceiling" in CATALOGUE
 
 
 def test_a_standing_grant_is_signed_only_at_l4_and_a_drill_is_a_demotion_that_says_so(monkeypatch):
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ops-lead")
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ops-lead")
     from fastapi import HTTPException
-    from aughor.routers import authority as R
+    from pramanyx.routers import authority as R
     conn = _conn()
     monkeypatch.setattr(R, "_actions", lambda c, s: {"refund": _action()})
     with pytest.raises(HTTPException) as exc:                           # at L3: widening is itself a graduation
@@ -285,7 +285,7 @@ def test_a_standing_grant_is_signed_only_at_l4_and_a_drill_is_a_demotion_that_sa
     assert signed["graduation_receipt"] == "receipt-9" and signed["expires_at"] and signed["created_by"] == "user:ops-lead"
     assert [g.id for g in grants.list_grants(conn)] == [signed["id"]]
     monkeypatch.undo()
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "0")
     drill = R.authority_demote("refund", R.DemoteBody(connection_id=conn, why="quarterly drill", drill=True), principal=None)
     assert drill["drill"] is True and A._latest(A.DEMOTION_KIND, "refund", conn)["evidence"] == {"drill": True}
     assert grants.list_grants(conn) == []                              # a demotion withdraws the standing grants, drill or not

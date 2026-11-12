@@ -4,7 +4,7 @@
  * Spend — what model calls cost, what is unknown, and what to fix.
  *
  * Laid out as the approved mockup lays it out (`design-mockups/spend.html`, 2026-10-10; the law is
- * `aughor-v2/CLARITY.md`): four figures, then what needs a person in amber, then two pictures side
+ * `pramanyx-v2/CLARITY.md`): four figures, then what needs a person in amber, then two pictures side
  * by side (tokens by model · where tokens go), then the governance window said once per kind of
  * thing that happened. 5,257 words a reader faced became about two hundred; nothing left the screen
  * that a person could act on — the caps editor opens from "Set a cap" or "Edit", the full feed with
@@ -205,7 +205,7 @@ export function SpendPanel() {
               {totals && unpriced.length > 0 ? (
                 <>
                   <span className="aug-fs-chrome" style={{ fontWeight: 500, color: "var(--t1)", display: "block" }}
-                    title="A price is declared by the operator (AUGHOR_MODEL_PRICES) or published in the provider's catalogue; a model with neither stays unpriced.">
+                    title="A price is declared by the operator (PRAMANYX_MODEL_PRICES) or published in the provider's catalogue; a model with neither stays unpriced.">
                     {totals.unpriced === 1 ? "1 call has no price" : `${formatCount(totals.unpriced)} calls have no price`}, so the real spend is unknown
                   </span>
                   <span className="aug-fs-sm" style={{ color: "var(--t2)", display: "block", ...oneLine }}>

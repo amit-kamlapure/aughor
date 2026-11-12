@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import uuid
 
-from aughor.semantic.metrics import MetricDefinition, save_metric
+from pramanyx.semantic.metrics import MetricDefinition, save_metric
 from tests.unit.test_metric_twins import client, con  # noqa: F401 — fixtures by name
 
 MARGIN = "SELECT SUM(oi.sale_price) AS sales FROM order_items oi LEFT JOIN orders o ON oi.order_id = o.order_id"

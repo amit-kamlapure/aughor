@@ -1,6 +1,6 @@
 """VA-1 — the two rungs a pack needs before an imported skill is worth anything.
 
-The skills plane could import (`aughor/skills/`) and could steer (`packs/intake.py`), and
+The skills plane could import (`pramanyx/skills/`) and could steer (`packs/intake.py`), and
 between them sat two gaps that made the whole thing inert:
 
 * **`status` was read in four places and written in none.** Import lands a pack at `draft`
@@ -22,8 +22,8 @@ import types
 import pytest
 import yaml
 
-from aughor.packs.loader import PROSE_FILE, load_pack
-from aughor.packs.promote import PromotionRefused, set_status
+from pramanyx.packs.loader import PROSE_FILE, load_pack
+from pramanyx.packs.promote import PromotionRefused, set_status
 
 
 def _write_pack(root, pack_id, *, partial=True, prose="Cohorts before totals.",
@@ -157,7 +157,7 @@ def test_an_active_prose_pack_does_not_shadow_a_grounded_one(monkeypatch):
     that outscored a deployed pack would win the routing and then fall out at the
     binding gate — steering would silently STOP on exactly the questions the real pack was
     deployed for, and the only symptom would be a generalist answer."""
-    import aughor.packs.intake as intake
+    import pramanyx.packs.intake as intake
 
     # `scope` joins `partial` as a field every pack in the pool is read for; a real
     # manifest always carries it (the model defaults it), so the fakes complete.
@@ -189,15 +189,15 @@ def packs_dir(tmp_path, monkeypatch):
     # The AUTHORED root, through its env override: reads now resolve via
     # `packs.roots`, which spans two directories, so patching one module constant
     # no longer redirects them.
-    monkeypatch.setenv("AUGHOR_PACKS_DIR", str(tmp_path))
-    monkeypatch.setenv("AUGHOR_IMPORTED_PACKS_DIR", str(tmp_path / "_none"))
+    monkeypatch.setenv("PRAMANYX_PACKS_DIR", str(tmp_path))
+    monkeypatch.setenv("PRAMANYX_IMPORTED_PACKS_DIR", str(tmp_path / "_none"))
     return tmp_path
 
 
 def test_list_packs_advertises_a_description(packs_dir):
     """The cheap rung. Every pack's description is read on every call, so it must be
     affordable at scale — only the body of the one the model picks is ever fetched."""
-    from aughor.agent import platform_tools as pt
+    from pramanyx.agent import platform_tools as pt
 
     _write_pack(packs_dir, "cohorts", prose="Reasons in cohorts and lifecycles.")
 
@@ -212,7 +212,7 @@ def test_list_packs_advertises_a_description(packs_dir):
 def test_read_pack_refuses_a_draft_and_says_why(packs_dir):
     """Serving a draft here would break the importer's contract through a side door —
     and the side door is the one nobody audits."""
-    from aughor.agent import platform_tools as pt
+    from pramanyx.agent import platform_tools as pt
 
     _write_pack(packs_dir, "cohorts")
 
@@ -223,7 +223,7 @@ def test_read_pack_refuses_a_draft_and_says_why(packs_dir):
 
 
 def test_read_pack_serves_an_active_pack_with_its_provenance(packs_dir):
-    from aughor.agent import platform_tools as pt
+    from pramanyx.agent import platform_tools as pt
 
     _write_pack(packs_dir, "cohorts", status="active", prose="Reasons in cohorts.")
 
@@ -237,7 +237,7 @@ def test_read_pack_serves_an_active_pack_with_its_provenance(packs_dir):
 
 def test_read_pack_bounds_the_body(packs_dir):
     """A tool result that eats the window it was fetched into is the VA-5 failure again."""
-    from aughor.agent import platform_tools as pt
+    from pramanyx.agent import platform_tools as pt
 
     _write_pack(packs_dir, "huge", status="active", prose="x" * 40_000)
 
@@ -248,7 +248,7 @@ def test_read_pack_bounds_the_body(packs_dir):
 
 
 def test_read_pack_distinguishes_unknown_from_unreadable(packs_dir):
-    from aughor.agent import platform_tools as pt
+    from pramanyx.agent import platform_tools as pt
 
     assert "no pack" in pt.read_pack("c1", {"pack_id": "nope"})["error"]
     assert "required" in pt.read_pack("c1", {})["error"]
@@ -256,7 +256,7 @@ def test_read_pack_distinguishes_unknown_from_unreadable(packs_dir):
 
 def test_read_pack_is_in_the_roster(packs_dir):
     """Built-but-not-wired is the shape this whole arc keeps finding."""
-    from aughor.agent.platform_tools import platform_tools
+    from pramanyx.agent.platform_tools import platform_tools
 
     names = {t.name for t in platform_tools("c1")}
 
@@ -269,7 +269,7 @@ def test_read_pack_is_in_the_roster(packs_dir):
 def client():
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -326,13 +326,13 @@ def two_roots(tmp_path, monkeypatch):
     """An authored root and an imported one, both empty, both isolated."""
     authored, imported = tmp_path / "authored", tmp_path / "imported"
     authored.mkdir(); imported.mkdir()
-    monkeypatch.setenv("AUGHOR_PACKS_DIR", str(authored))
-    monkeypatch.setenv("AUGHOR_IMPORTED_PACKS_DIR", str(imported))
+    monkeypatch.setenv("PRAMANYX_PACKS_DIR", str(authored))
+    monkeypatch.setenv("PRAMANYX_IMPORTED_PACKS_DIR", str(imported))
     return authored, imported
 
 
 def test_both_roots_are_searched(two_roots):
-    from aughor.packs.roots import all_pack_ids, pack_dir
+    from pramanyx.packs.roots import all_pack_ids, pack_dir
 
     authored, imported = two_roots
     _write_pack(authored, "customer-analytics", partial=False)
@@ -346,7 +346,7 @@ def test_authored_wins_a_collision(two_roots):
     """A skill library will eventually contain a `retention`. An import must not shadow a
     pack someone here maintains — and the imported copy stays on disk, so the collision is
     recoverable by renaming rather than by re-importing."""
-    from aughor.packs.roots import all_pack_ids, pack_dir
+    from pramanyx.packs.roots import all_pack_ids, pack_dir
 
     authored, imported = two_roots
     _write_pack(authored, "retention", prose="The authored one.")
@@ -359,7 +359,7 @@ def test_authored_wins_a_collision(two_roots):
 
 def test_pack_dir_refuses_to_leave_its_roots(two_roots):
     """A pack id arrives from a route parameter and from a tool call."""
-    from aughor.packs.roots import pack_dir
+    from pramanyx.packs.roots import pack_dir
 
     assert pack_dir("../../etc") is None
     assert pack_dir("..") is None
@@ -368,7 +368,7 @@ def test_pack_dir_refuses_to_leave_its_roots(two_roots):
 
 def test_an_imported_pack_can_be_promoted_and_read(two_roots):
     """The whole point of the second root: it is a real pack root, not a staging area."""
-    from aughor.agent import platform_tools as pt
+    from pramanyx.agent import platform_tools as pt
 
     _authored, imported = two_roots
     _write_pack(imported, "tanstack-sorting", prose="Sort with rowSortingFeature.")
@@ -385,7 +385,7 @@ def test_skills_import_writes_to_the_untracked_root_by_default(two_roots, tmp_pa
     side effect of running an importer."""
     from click.testing import CliRunner
 
-    from aughor.cli import cli
+    from pramanyx.cli import cli
 
     _authored, imported = two_roots
     src = tmp_path / "src"

@@ -12,10 +12,10 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from aughor.actions import outbox
-from aughor.actions.authority import executions
-from aughor.actions.executor import KineticDispatchError, execute_kinetic_action
-from aughor.ontology.models import ActionParameter, KineticAction, Verification
+from pramanyx.actions import outbox
+from pramanyx.actions.authority import executions
+from pramanyx.actions.executor import KineticDispatchError, execute_kinetic_action
+from pramanyx.ontology.models import ActionParameter, KineticAction, Verification
 
 LATER = datetime.now(timezone.utc) + timedelta(hours=2)
 
@@ -52,10 +52,10 @@ def far_end(monkeypatch):
             raise answer
         return answer
 
-    monkeypatch.setattr("aughor.actions.executor.dispatch_effect", dispatch)
-    monkeypatch.setattr("aughor.actions.authority.verify",
+    monkeypatch.setattr("pramanyx.actions.executor.dispatch_effect", dispatch)
+    monkeypatch.setattr("pramanyx.actions.authority.verify",
                         lambda action, params, scope, **k: {"status": state["check"], "why": f"check {state['check']}"})
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "0")
     return state
 
 

@@ -9,8 +9,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const seen: { body?: Record<string, unknown>; connectionId?: string } = {};
 
-vi.mock("@/lib/useAughorChat", () => ({
-  useAughorChat: (opts: { body?: Record<string, unknown>; connectionId: string }) => {
+vi.mock("@/lib/usePramanyxChat", () => ({
+  usePramanyxChat: (opts: { body?: Record<string, unknown>; connectionId: string }) => {
     seen.body = opts.body;
     seen.connectionId = opts.connectionId;
     return { messages: [], sendMessage: vi.fn(), status: "ready", error: undefined };

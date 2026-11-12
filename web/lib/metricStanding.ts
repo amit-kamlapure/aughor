@@ -10,7 +10,7 @@ import type { CatalogueMetric } from "@/lib/api";
 
 export type MetricStanding = "approved" | "draft" | "proposed" | "absent";
 
-/** `normalize_name` in `aughor/semantic/metric_catalogue.py`: the catalogue's identity for a
+/** `normalize_name` in `pramanyx/semantic/metric_catalogue.py`: the catalogue's identity for a
  *  metric, so "Average Booking Value (ABV)" and `average_booking_value_abv` are one metric. */
 export function normalizeMetricName(text: string): string {
   return String(text ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");

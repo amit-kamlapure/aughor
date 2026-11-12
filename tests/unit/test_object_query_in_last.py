@@ -10,8 +10,8 @@ from datetime import date
 
 import pytest
 
-from aughor.ontology.models import OntologyGraph
-from aughor.semantic import object_query as oq
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.semantic import object_query as oq
 from tests.unit.test_object_bindings import GRAPH
 
 

@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 
 def test_delete_connection_runs_cascade(client: TestClient, monkeypatch):
-    from aughor.db import purge, registry
+    from pramanyx.db import purge, registry
 
     calls: list[str] = []
     monkeypatch.setattr(purge, "purge_connection_artifacts",
@@ -30,7 +30,7 @@ def test_delete_connection_runs_cascade(client: TestClient, monkeypatch):
 
 def test_delete_builtin_does_not_cascade(client: TestClient, monkeypatch, tmp_path):
     """Deleting the builtin only hides it; its artifacts are preserved (restorable)."""
-    from aughor.db import purge, registry
+    from pramanyx.db import purge, registry
 
     calls: list[str] = []
     monkeypatch.setattr(purge, "purge_connection_artifacts",

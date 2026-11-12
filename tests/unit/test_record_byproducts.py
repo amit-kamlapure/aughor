@@ -1,5 +1,5 @@
 """Phase 1 of the 2027 study, P1-3 — decisions booked as a BY-PRODUCT of the doors that exist
-(`aughor/record/byproducts.py`, `aughor/routers/record.py`).
+(`pramanyx/record/byproducts.py`, `pramanyx/routers/record.py`).
 
 What these hold: accepting a recommendation books a Decision with the deep analysis's claims as
 what was relied on, the review date proposed from the settling lag (one date, the outcome
@@ -18,13 +18,13 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from aughor.actions import inbox
-from aughor.db.history import complete_investigation, create_investigation
-from aughor.playbook import outcomes as O
-from aughor.record import claims as C
-from aughor.record import decisions as D
-from aughor.routers import investigations as inv
-from aughor.routers import record as R
+from pramanyx.actions import inbox
+from pramanyx.db.history import complete_investigation, create_investigation
+from pramanyx.playbook import outcomes as O
+from pramanyx.record import claims as C
+from pramanyx.record import decisions as D
+from pramanyx.routers import investigations as inv
+from pramanyx.routers import record as R
 
 SPEC = {"metric_label": "total sales", "metric_sql": "SUM(sale_price)", "metric_table": "thelook.order_items",
         "date_column": "thelook.order_items.created_at", "window_days": 14, "window_basis": "observation"}
@@ -33,7 +33,7 @@ SPEC = {"metric_label": "total sales", "metric_sql": "SUM(sale_price)", "metric_
 @pytest.fixture(autouse=True)
 def _hermetic(tmp_path, monkeypatch):
     monkeypatch.setattr(O, "_DEFAULT_PATH", tmp_path / "recommendation_outcomes.json")
-    import aughor.settling.store as settling
+    import pramanyx.settling.store as settling
     monkeypatch.setattr(settling, "learned_lag_days", lambda conn_id: 5)
 
 
@@ -44,7 +44,7 @@ def _deep_answer(conn: str, *, spec=SPEC) -> str:
                                            "recommended_actions": ["Raise the free-shipping threshold"]},
                            hypotheses=[], query_history=[], question="why did sales fall?", connection_id=conn,
                            skip_index=True, cache=False)
-    from aughor.kernel.ledger import DEEP_REPORT_KIND
+    from pramanyx.kernel.ledger import DEEP_REPORT_KIND
     out = inv.write_answer_receipt(kind=DEEP_REPORT_KIND, natural_key=f"deep:{conn}:{inv_id}",
                                    question="why did sales fall?", sqls=["SELECT SUM(sale_price) FROM order_items"],
                                    headline="Sales fell on fewer first orders", schema="", connection_id=conn,

@@ -1,4 +1,4 @@
-"""The shared SQL-analysis facade (aughor/sql/analyze.py) and its first retargets.
+"""The shared SQL-analysis facade (pramanyx/sql/analyze.py) and its first retargets.
 
 `analyze(sql)` is the single AST-based semantic-fact extractor that string-munging
 consumers (ontology validator, investigations._extract_tables, …) now share. The
@@ -7,7 +7,7 @@ missed any nested-paren argument.
 """
 import re
 
-from aughor.sql.analyze import analyze
+from pramanyx.sql.analyze import analyze
 
 
 # ── product_of_aggregates — the $3T anti-pattern, on the AST ───────────────────

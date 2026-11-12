@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.agent import converse_tools as ct
-from aughor.llm.faux import FauxToolCall, calls, set_responses
-from aughor.llm.provider import LLMProvider
+from pramanyx.agent import converse_tools as ct
+from pramanyx.llm.faux import FauxToolCall, calls, set_responses
+from pramanyx.llm.provider import LLMProvider
 
 
 class _Result:
@@ -30,12 +30,12 @@ class _Result:
 
 @pytest.fixture
 def session(monkeypatch):
-    monkeypatch.delenv("AUGHOR_MAX_OUTPUT_TOKENS", raising=False)
-    monkeypatch.delenv("AUGHOR_TOOL_LOOP_STEPS", raising=False)
+    monkeypatch.delenv("PRAMANYX_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.delenv("PRAMANYX_TOOL_LOOP_STEPS", raising=False)
     schema = "TABLE: analytics.orders\n  order_id  BIGINT\n  total  DOUBLE\n"
     monkeypatch.setattr(ct, "_connection",
                         lambda cid, **kw: type("C", (), {"get_schema": staticmethod(lambda: schema)})())
-    monkeypatch.setattr("aughor.sql.executor.execute_guarded", lambda *a, **k: _Result())
+    monkeypatch.setattr("pramanyx.sql.executor.execute_guarded", lambda *a, **k: _Result())
     return LLMProvider(backend="faux", role="coder")
 
 

@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import pytest
 
-import aughor.agent.investigate as I
-from aughor.agent.investigate import (_clamp_intake_to_coverage, _comparison_basis, _measures_label,
+import pramanyx.agent.investigate as I
+from pramanyx.agent.investigate import (_clamp_intake_to_coverage, _comparison_basis, _measures_label,
                                       _metric_definition_receipt, _one_expression_per_measure,
                                       periods_asked, route_after_intake)
-from aughor.agent.prompts_investigate import IntakeOutput
+from pramanyx.agent.prompts_investigate import IntakeOutput
 
 Q1 = "What was total revenue and how many units were sold in July 2026?"
 Q2 = ("Which 10 product categories brought in the most revenue in the last 6 months, and what is "
@@ -135,8 +135,8 @@ class _Grounding:
 
 @pytest.fixture
 def run(monkeypatch):
-    import aughor.agent.explore as ex
-    import aughor.semantic.data_understanding as du
+    import pramanyx.agent.explore as ex
+    import pramanyx.semantic.data_understanding as du
     monkeypatch.setattr(ex, "build_analysis_ledger", lambda state: "")
     monkeypatch.setattr(du, "build_data_understanding", lambda *a, **k: _Grounding())
     monkeypatch.setattr(I, "_measure_date_span", lambda *a, **k: ("2019-01-09", "2026-09-29"))
@@ -162,7 +162,7 @@ def test_a_question_with_no_period_is_answered_over_all_the_data_with_both_measu
     assert ["Observation", "All data (2019-01-09 → 2026-09-29)"] in rows
     assert ["Measure", "avg hours to deliver (AVG(TIMESTAMP_DIFF(delivered_at, shipped_at, HOUR)))"] in rows
     assert not any(r[0] == "Comparison" for r in rows)
-    from aughor.agent.analyst import _spec_section
+    from pramanyx.agent.analyst import _spec_section
     said = _spec_section(spec)
     assert "also asked: avg hours to deliver = AVG(TIMESTAMP_DIFF(delivered_at, shipped_at, HOUR))" in said
     assert "comparison: none — the question asks to compare no periods" in said
@@ -206,7 +206,7 @@ def test_with_no_coverage_measured_the_invented_window_still_goes(run, monkeypat
     spec, rows = run(Q4, metric_label="average days to ship", metric_sql="AVG(x)",
                      observation_start="2026-08-01", observation_end="2026-09-02", observation_label="August 2026")
     assert (spec["observation_start"], spec["observation_end"], spec["observation_label"]) == ("", "", "")
-    from aughor.agent.analyst import _spec_section
+    from pramanyx.agent.analyst import _spec_section
     assert "observation: all the data — the question names no period." in _spec_section(spec)
 
 
@@ -240,12 +240,12 @@ def test_a_further_measure_follows_its_governed_definition_and_cogs_is_no_count(
     units sold follows the declared metric. And the matcher that took "cost of goods sold" for units_sold on the
     word "sold" must not now reach a further measure."""
     from types import SimpleNamespace
-    from aughor.agent.analyst import _spec_section
-    from aughor.agent.prompts_investigate import IntakeMeasure
+    from pramanyx.agent.analyst import _spec_section
+    from pramanyx.agent.prompts_investigate import IntakeMeasure
     units = SimpleNamespace(name="units_sold", label="Units Sold", sql="COUNT(id)", tables=["inventory_items"],
                             filters=["sold_at IS NOT NULL"], rank=1)
-    monkeypatch.setattr("aughor.semantic.canonical.resolve_planning_metrics", lambda *a, **k: [units])
-    monkeypatch.setattr("aughor.semantic.metrics.get_metric", lambda name, **k: SimpleNamespace(time_column="sold_at"))
+    monkeypatch.setattr("pramanyx.semantic.canonical.resolve_planning_metrics", lambda *a, **k: [units])
+    monkeypatch.setattr("pramanyx.semantic.metrics.get_metric", lambda name, **k: SimpleNamespace(time_column="sold_at"))
     monkeypatch.setattr(I, "_pinned_metric_runs", lambda conn, cid, table, sql: table == "inventory_items")
     it = _intake(metric_label="total revenue", metric_sql="SUM(sale_price)", metric_table="order_items")
     it.other_measures = [IntakeMeasure(label="units sold", sql="COUNT(*)"),
@@ -268,8 +268,8 @@ def test_the_intake_ties_its_further_measures_and_says_so_in_the_spec(run, monke
     from types import SimpleNamespace
     units = SimpleNamespace(name="units_sold", label="Units Sold", sql="COUNT(id)", tables=["inventory_items"],
                             filters=["sold_at IS NOT NULL"], rank=1)
-    monkeypatch.setattr("aughor.semantic.canonical.resolve_planning_metrics", lambda *a, **k: [units])
-    monkeypatch.setattr("aughor.semantic.metrics.get_metric", lambda name, **k: SimpleNamespace(time_column="sold_at"))
+    monkeypatch.setattr("pramanyx.semantic.canonical.resolve_planning_metrics", lambda *a, **k: [units])
+    monkeypatch.setattr("pramanyx.semantic.metrics.get_metric", lambda name, **k: SimpleNamespace(time_column="sold_at"))
     monkeypatch.setattr(I, "_pinned_metric_runs", lambda conn, cid, table, sql: table == "inventory_items")
     spec, rows = run(Q1, metric_label="total revenue", metric_sql="SUM(sale_price)",
                      other_measures=[{"label": "units sold", "sql": "COUNT(*)"}],
@@ -282,8 +282,8 @@ def test_the_intake_ties_its_further_measures_and_says_so_in_the_spec(run, monke
 def test_columns_that_identify_people_are_not_offered_as_dimensions(monkeypatch):
     """Q5's intake (2026-10-01) offered `users.email` to group by: a cut by it lists customers one row each."""
     from types import SimpleNamespace
-    from aughor.agent import investigate as I
-    from aughor.tools import profile_cache
+    from pramanyx.agent import investigate as I
+    from pramanyx.tools import profile_cache
     monkeypatch.setattr(profile_cache, "load_concepts", lambda conn: {("users", "contact"): "contact.email"})
     intake = SimpleNamespace(intake_notes="", dimensions=[
         "users.email", "users.country", "users.traffic_source", "users.first_name", "users.contact",

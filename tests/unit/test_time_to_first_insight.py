@@ -10,8 +10,8 @@ time-to-first-insight milestone (`exploration.first_insight`).
 from datetime import datetime, timedelta, timezone
 
 
-from aughor.explorer.agent import SchemaExplorer
-from aughor.explorer.models import ExplorationPhase, ExplorationStatus, elapsed_seconds
+from pramanyx.explorer.agent import SchemaExplorer
+from pramanyx.explorer.models import ExplorationPhase, ExplorationStatus, elapsed_seconds
 
 
 class _StubLedger:
@@ -25,7 +25,7 @@ class _StubLedger:
 
 def _explorer(monkeypatch, started_at=None):
     """A SchemaExplorer with just the attributes the emit path needs — no DB."""
-    import aughor.kernel.ledger as ledger_mod
+    import pramanyx.kernel.ledger as ledger_mod
     stub = _StubLedger()
     monkeypatch.setattr(ledger_mod.Ledger, "default", classmethod(lambda cls: stub))
 
@@ -157,8 +157,8 @@ def test_status_to_dict_ttfi_none_before_first_insight():
 # ── KPI aggregate endpoint ────────────────────────────────────────────────────
 
 def _kpi_with_durations(monkeypatch, durations):
-    import aughor.kernel.ledger as ledger_mod
-    from aughor.routers.exploration import time_to_first_insight_kpi
+    import pramanyx.kernel.ledger as ledger_mod
+    from pramanyx.routers.exploration import time_to_first_insight_kpi
 
     events = [
         {"conn_id": f"c{i}", "at": "2026-06-12T10:00:00", "payload": {"elapsed_seconds": d, "phase": "domain_intel"}}

@@ -11,7 +11,7 @@ prose and stopped there.
 """
 from __future__ import annotations
 
-from aughor.agent import analyst as an
+from pramanyx.agent import analyst as an
 
 
 class _Turn:

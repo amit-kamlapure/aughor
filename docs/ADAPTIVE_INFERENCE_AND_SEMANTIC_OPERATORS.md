@@ -192,17 +192,17 @@ plan still adds; the others are re-namings of what we already ship. (The cascade
 > plan below is kept only as the design record.
 
 **Where.** Any surface where we make a graded/binary LLM judgment at scale, in priority order:
-1. **Hypothesis evaluation** — `aughor/agent/nodes.py::score_evidence` (scores hypotheses serially
+1. **Hypothesis evaluation** — `pramanyx/agent/nodes.py::score_evidence` (scores hypotheses serially
    today; this is also the roadmap's "quickest perf win"). _Pilot here._
 2. **Finding-trust** — the real/quarantine/narration-inversion judgments in the explorer.
 3. **The UNIFY LLM-judge eval scorer** — the canonical pairwise-judge cascade use case.
 
 **Design.**
-- Add a `proxy`/`helper` role to the provider layer (`aughor/llm/provider.py`) — a cheap, fast model
+- Add a `proxy`/`helper` role to the provider layer (`pramanyx/llm/provider.py`) — a cheap, fast model
   alongside the primary. (#33 already resolves models per-role; this is one more role.)
 - Define each surface's **gold algorithm** = the current expensive-model judgment. The guarantee is
   recall/precision _relative to that gold_.
-- Implement the cascade core (~150 lines, no external dependency) in e.g. `aughor/llm/cascade.py`:
+- Implement the cascade core (~150 lines, no external dependency) in e.g. `pramanyx/llm/cascade.py`:
   importance sampling, logprob calibration, and the Hoeffding threshold learner from §1.4.
 - **Confidence source.** Prefer top-logprobs → `P(true)/(P(true)+P(false))`. **Risk:** not all 5
   backends expose `top_logprobs` (OpenAI/vLLM do; some hosted providers don't). Mitigation — support
@@ -265,10 +265,10 @@ offering (text/unstructured analytics) _without_ giving up our efficiency or gro
 > 🗑️ **Retired 2026-07-23.** Both call sites are now **deterministic** — #197 replaced the briefing
 > digest with a plain listing (1 model call per brief, was ~6) and #202 replaced the ADA evidence
 > condensation (0 model calls; a model paraphrasing grounded numbers was a fabrication surface).
-> With no production caller left, `aughor/llm/reduce.py` was removed. The history below is kept for
+> With no production caller left, `pramanyx/llm/reduce.py` was removed. The history below is kept for
 > the record; **the file no longer exists.**
 >
-> ✅ **Shipped.** Pure primitive `aughor/llm/reduce.py` (`hierarchical_reduce` / `partitioned_reduce`)
+> ✅ **Shipped.** Pure primitive `pramanyx/llm/reduce.py` (`hierarchical_reduce` / `partitioned_reduce`)
 > wired into **two** synthesis sites: the briefing's `_coverage_digest` (folds findings beyond the cited
 > top-8 into a per-domain digest), and **`ada_synthesize`** (`_phases_evidence_budgeted` keeps phases
 > verbatim up to the budget for grounding, then folds overflow phases into a number-preserving digest
@@ -282,7 +282,7 @@ when synthesising many findings; partition-aware so it won't blend unrelated dom
 
 - **Ontology entity merging:** embedding self-similarity-join + threshold + connected-components to
   collapse near-duplicate entities (cleaner ontology board). ✅ **Detection + apply-merge shipped (backend)** —
-  `aughor/ontology/dedup.py`: `detect_duplicate_entities` + `GET /ontology/duplicate-entities` returns
+  `pramanyx/ontology/dedup.py`: `detect_duplicate_entities` + `GET /ontology/duplicate-entities` returns
   *suggestions*; `merge_entities` + `POST /ontology/entities/merge` (gated `ONTOLOGY_EDIT`) applies a
   confirmed merge as a pure, deterministic rewrite of every cross-reference. Never auto-merges — explicit
   and user-confirmed only. **UI shipped:** a "Find duplicates" drawer in the `OntologyPanel` (detect →
@@ -349,9 +349,9 @@ guardrails caught** — which is the system working, not failing.
 Built (#49) and then **removed from the codebase entirely** (2026-06-15) — the cascade core, the proxy
 provider, the opt-in `score_evidence` wiring, and the parked calibration harness (PR #50) are all gone.
 The learning below is why; it's kept as record so the idea isn't re-attempted blindly.
-- **What was built:** a generic cascade core (`aughor/llm/cascade.py`, Hoeffding guarantee proven on
+- **What was built:** a generic cascade core (`pramanyx/llm/cascade.py`, Hoeffding guarantee proven on
   synthetic data), `get_proxy_provider`, and an opt-in cascade on hypothesis scoring
-  (`AUGHOR_CASCADE_HYPOTHESIS`, fail-safe to the oracle).
+  (`PRAMANYX_CASCADE_HYPOTHESIS`, fail-safe to the oracle).
 - **The wall:** the proxy signal is the cheap model's self-reported `EvidenceScore.confidence`, and on a
   live 45-example calibration **every accessible cheap model is miscalibrated** — gemma4:31b,
   qwen2.5-coder:14b, and command-r7b all cluster confidence at 0.6–0.8 regardless of the evidence
@@ -386,7 +386,7 @@ but **~6× slower** (~20s vs ~3s) — unacceptable latency for the interactive c
 
 ### Borrow 3 — semantic operators over SQL: IN PROGRESS
 The remaining, highest-upside borrow (§4) and the one genuinely-new capability — now the active work.
-- **Phase 1 shipped:** the `filter` + `extract` operators in `aughor/semops/operators.py` (pure
+- **Phase 1 shipped:** the `filter` + `extract` operators in `pramanyx/semops/operators.py` (pure
   `QueryResult → SemanticOpResult` functions; value-based text-column detection since rows arrive
   stringified with no dtypes; **cost-bounded by push-down + a refuse-over-cap of 200 rows**, batched
   per LLM call on role `fast`; **fail-open** — a model/parse error keeps the row or blanks the field and

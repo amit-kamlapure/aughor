@@ -33,7 +33,7 @@ These are the conventions and *earned* gotchas of this repo. Violating them is h
   (`:27`), dead-flag **0** (`:108-122`). Web gates (blocking): `lint:tokens` 0, `lint:format` 0,
   `lint:elements` raw-`<button>` baseline **204** (`web/scripts/check-raw-elements.mjs:24`).
 - Never write `except: pass` / `except Exception: pass` — the only sanctioned swallow is
-  `aughor.kernel.errors.tolerate()` (334 call sites; logs + counts + journals).
+  `pramanyx.kernel.errors.tolerate()` (334 call sites; logs + counts + journals).
 - Git: dated branch `YYYY-MM-DD-<topic>`; commit as you go; squash-merge when CI green;
   `Co-Authored-By:` trailer. Read CI with `gh run list --branch <b>` (**not** `gh pr checks` —
   PAT-blocked; and `gh run watch --exit-status` has returned 0 on a FAILED run — always confirm
@@ -46,15 +46,15 @@ These are the conventions and *earned* gotchas of this repo. Violating them is h
   `web/lib/api.gen.ts` — the CI `codegen` job fails on any drift, even if you only consume the
   endpoint via hand-written wrappers in `web/lib/api.ts`.
 - **New SQLite store checklist** (all four or the contract tests fail):
-  1) open through `aughor/db/sqlite_util.py` `tune()` (contract test
+  1) open through `pramanyx/db/sqlite_util.py` `tune()` (contract test
      `test_every_store_connect_site_is_tuned`);
   2) default path under `data/` resolved via `resolve_db_path` (`sqlite_util.py:44-53`) with an
-     `AUGHOR_*_DB` env override;
+     `PRAMANYX_*_DB` env override;
   3) register that env var in the `tests/conftest.py:13-72` redirect block (hermeticity);
-  4) schema evolution via `aughor/db/migrations.py` `run_migrations` (PRAGMA `user_version`,
+  4) schema evolution via `pramanyx/db/migrations.py` `run_migrations` (PRAGMA `user_version`,
      additive-only). Migrate columns by **`PRAGMA table_info` probe**, never `try/except-pass`
      ALTER (swallow-ratchet bait).
-- Feature flags: one registry — `aughor/kernel/flags.py` `FLAG_ENV` (+ `FLAG_DEFAULT`,
+- Feature flags: one registry — `pramanyx/kernel/flags.py` `FLAG_ENV` (+ `FLAG_DEFAULT`,
   `FLAG_META`). Any `flag_enabled("literal")` must name a registered flag (dead-flag ratchet).
   New behavior ships **flag-gated, default-off, byte-identical when off**; promote defaults only
   after live verification. Runtime overrides go through `GET/PUT /system/flags`.
@@ -63,22 +63,22 @@ These are the conventions and *earned* gotchas of this repo. Violating them is h
 - Model policy: the strong pinned coder model is `glm-5.2:cloud` (note the hyphen — `glm5.2:cloud`
   404s). Runtime config pins coder over the `.env` default.
 - Live-data caution: any real app/investigation run writes live stores. For live verification,
-  isolate with the `AUGHOR_*` env overrides, then `git status` and revert unintended tracked
-  changes before committing. Prefer the seeded fixture (`aughor seed` → `data/aughor.duckdb`,
-  scenario in `aughor/demo/scenario.py`) or synthetic DuckDB for deterministic logic.
+  isolate with the `PRAMANYX_*` env overrides, then `git status` and revert unintended tracked
+  changes before committing. Prefer the seeded fixture (`pramanyx seed` → `data/pramanyx.duckdb`,
+  scenario in `pramanyx/demo/scenario.py`) or synthetic DuckDB for deterministic logic.
 
 ### 0.3 Web conventions
 - Primitives: `<Button>` from `components/ui/button` — **never** raw `<button>` (ratchet).
   Numbers/dates through `@/lib/format` (formatting gate). Status colors through
   `components/brief/StatusChip.tsx` `chipTone()` — hue vocabulary is **blue/red only** (no
   `--green4`/`--amber4` tokens exist).
-- Tokens: the live theme layer is `web/aughor-v2/theme/tokens-v2.css` (it **shadows**
+- Tokens: the live theme layer is `web/pramanyx-v2/theme/tokens-v2.css` (it **shadows**
   `web/styles/tokens.css` by import order — the v1 file's values are stale/dead; don't read it as
   truth). Tailwind v4 arbitrary values must be `[var(--x)]`, **not** `[--x]` (silently dropped).
   Keep `@import` lines bare — a trailing same-line comment silently drops the import.
 - Next 16 holds a **single-instance lock** per directory — you cannot start a second dev server in
   the same working tree; navigate to the running one on :3000. Prod preview: build and serve on
-  **:3210** (`aughor-web-prod` launch config; :3001/:3210 are the CORS-allowed prod ports).
+  **:3210** (`pramanyx-web-prod` launch config; :3001/:3210 are the CORS-allowed prod ports).
 - React dev **StrictMode double-fires effects** — before "fixing" a duplicate fetch, confirm it
   reproduces in a prod build (`npm run build && npm start`).
 - `uvicorn --reload` can leave an orphaned stale worker holding :8000 (`start.sh` kills by port
@@ -126,7 +126,7 @@ fanout/grain/join/filter/E1 guards):
 | MCP | `mcp/server.py` proxies REST only — **no raw-SQL tool** | inherited | inherited | strength |
 
 **Findings:**
-- **F1 — the unified Trust plane is dormant.** `aughor/trust/__init__.py:43` composes
+- **F1 — the unified Trust plane is dormant.** `pramanyx/trust/__init__.py:43` composes
   readonly+E1+preflight+join+grain behind `verify(artifact, scope)`, but every consumer flag
   defaults off: `trust.verify_facade` (`routers/query.py:709`), `trust.verify_live`
   (`sql/executor.py:162`), `capability.pipeline_live` (`capability/pipeline.py:65`).
@@ -202,7 +202,7 @@ so monitor/brief warehouse SQL is **unmetered and uncancellable**; metering expl
 money/bytes-scanned (`kernel/metering.py:15-19`).
 
 Related good bits: anti-flap debounce (`monitors/runner.py:100-112`); global concurrency cap
-`AUGHOR_MAX_CONCURRENT_JOBS=8` (`jobs.py:91`); lower-only deployment token ceiling
+`PRAMANYX_MAX_CONCURRENT_JOBS=8` (`jobs.py:91`); lower-only deployment token ceiling
 (`agents.py:181-189`); per-domain query cap ~15 (`explorer/store.py:156-164`); the known
 large-workspace budget issue (33-table luxexperience cancels at 600s before briefing-ready —
 ROADMAP “Large-workspace exploration budget”).
@@ -216,7 +216,7 @@ ROADMAP “Large-workspace exploration budget”).
 - `agent/investigate.py` **6,321 LOC / 137 defs / 143 lazy imports** — the ADA engine; cohesive
   domain, accreting file. Cohesive-but-huge: `explorer/agent.py` 3,994; `sql/fanout.py` 1,557;
   `tools/profiler.py` 1,536; `agent/nodes.py` 1,535.
-- **Cycle debt is masked by function-local imports:** ~1,682 function-local `aughor.*` imports vs
+- **Cycle debt is masked by function-local imports:** ~1,682 function-local `pramanyx.*` imports vs
   ~429 module-level. Layering leaks upward: `kernel/jobs.py:389` → `routers._shared` (worst),
   `agent/nodes.py:1259` → `routers._shared`, `sql/writer.py:428` → `agent.prompts`,
   `verify/gate.py:14` → `agent.state` **at module level**.
@@ -237,15 +237,15 @@ ROADMAP “Large-workspace exploration budget”).
 ratchet keeps registry⊇usage. **But** ≥4 parallel mechanisms exist:
 1. the registry;
 2. **unregistered bare `os.getenv` behavioral toggles, invisible to Settings** — notably
-   `AUGHOR_UNIFIED_ASK` **default-ON** (`routers/investigations.py:3153`), `AUGHOR_KB_ENABLED`
-   **default-ON** (`semantic/kb_retriever.py:31`), `AUGHOR_AUTOSEED` **default-ON**
-   (`semantic/autoseed.py:28`), `AUGHOR_PLAN_GATE` (`investigations.py:2308`),
-   `AUGHOR_SOMA_CLARIFY` (`investigations.py:1455`), `AUGHOR_CONTEXT_SURFACE`
-   (`investigations.py:2274`), `AUGHOR_DECLARATIVE_MODES` (`agent/modes/registry.py:29`),
-   `AUGHOR_ACTION_APPROVAL` (`govern/actions.py:66`), plus `AUGHOR_CONSISTENCY_CHECK`,
-   `AUGHOR_UNIFORM_CONVERGENCE`, `AUGHOR_PRIOR_ANALYSES`, `AUGHOR_QUERY_LOG_MINING`;
+   `PRAMANYX_UNIFIED_ASK` **default-ON** (`routers/investigations.py:3153`), `PRAMANYX_KB_ENABLED`
+   **default-ON** (`semantic/kb_retriever.py:31`), `PRAMANYX_AUTOSEED` **default-ON**
+   (`semantic/autoseed.py:28`), `PRAMANYX_PLAN_GATE` (`investigations.py:2308`),
+   `PRAMANYX_SOMA_CLARIFY` (`investigations.py:1455`), `PRAMANYX_CONTEXT_SURFACE`
+   (`investigations.py:2274`), `PRAMANYX_DECLARATIVE_MODES` (`agent/modes/registry.py:29`),
+   `PRAMANYX_ACTION_APPROVAL` (`govern/actions.py:66`), plus `PRAMANYX_CONSISTENCY_CHECK`,
+   `PRAMANYX_UNIFORM_CONVERGENCE`, `PRAMANYX_PRIOR_ANALYSES`, `PRAMANYX_QUERY_LOG_MINING`;
 3. licensing Capabilities (tier);
-4. `AUGHOR_REQUIRE_IDENTITY` double-gate with `RBAC_SSO`.
+4. `PRAMANYX_REQUIRE_IDENTITY` double-gate with `RBAC_SSO`.
    Phantom docs-only flags (do NOT reference as existing): `obs.task_table`, `ask.context_receipt`.
    Redundant pair: `ada.adversarial_verify` superseded-for-cost by `ada.adversarial_high_stakes`
    (`flags.py:171`); `ada.causal_drill` inert when parallel lenses on (`flags.py:163`).
@@ -305,7 +305,7 @@ agents.db, matcache (file-global; tenancy is an **opt-in per-call key fold** —
   `MonitorsPanel.tsx:483-667` form setters; **zero** `@ts-ignore`. `api.gen.ts` 17,110 LOC
   generated + CI drift gate; `api.ts` still hand-declares 148 interfaces (incremental migration).
 - Tokens: two same-name `:root` layers — v1 `styles/tokens.css` (stale values) shadowed
-  by v2 `aughor-v2/theme/tokens-v2.css` via import order (`app/globals.css:3,5`;
+  by v2 `pramanyx-v2/theme/tokens-v2.css` via import order (`app/globals.css:3,5`;
   `tokens-v2.css:12-17`); `components-v2.css` imported separately from `app/layout.tsx:7`.
   2,414 `var(--…)` refs vs **252 hardcoded hex** (concentrations: BrandLogos 45 (legit),
   AugTable 44, SemanticLayerPanel 33, SecurityAuditPanel 21, echarts/theme.ts 16); 2,048
@@ -379,7 +379,7 @@ Toured: Briefing, Data Canvas, Home, Action Hub, Agents (Overview/Memory), Setti
 8. Nits: “Workspace LOCA” chip truncation (Data Canvas connection column); near-invisible
    low-contrast metadata columns in the Data Canvas table; sidebar footer overlap (avatar/glyph
    overlapping the “Settings” label at ~1280×720); Settings→System “Uptime: 0s” (an artifact of
-   `--reload` worker restart re-instantiating `Stats` — `aughor/stats.py:47` — cosmetic, consider
+   `--reload` worker restart re-instantiating `Stats` — `pramanyx/stats.py:47` — cosmetic, consider
    showing started-at).
 9. **Praise (protect these):** Settings→System Capabilities page (tri-state Auto/On/Off, per-
    capability plain-language trigger + active/inactive chips) is excellent; Agent Workspace's
@@ -560,11 +560,11 @@ live verification on the real path with isolated stores; update `ROADMAP.md` §2
 - Command (per ROADMAP §0): `uv run --extra observability python -m evals.model_bakeoff --models
   "glm-5.2:cloud,<candidate-1>,<candidate-2>"` — one env-isolated subprocess per model,
   deterministic scorers (golden exec-accuracy + trust battery + exec-success), results to the
-  `aughor-bakeoff` MLflow experiment + printed ranking. A previous 3-model run (glm-5.2 vs
+  `pramanyx-bakeoff` MLflow experiment + printed ranking. A previous 3-model run (glm-5.2 vs
   minimax-m2.5:cloud vs kimi-k2.7-code:cloud, 53q) was launched 2026-07-11 — **check
   `evals/bakeoff_out/*.json` for completed results before re-running.**
 - Gotchas: model ids need exact hyphens (`glm-5.2:cloud`); providers cache
-  `AUGHOR_CODER_MODEL` per process (that's why subprocess arms exist); mlflow-skinny has no
+  `PRAMANYX_CODER_MODEL` per process (that's why subprocess arms exist); mlflow-skinny has no
   SQLAlchemy → file store only (`MLFLOW_ALLOW_FILE_STORE=true`), never `sqlite:///`.
 - Decision rule: pin the winner on mean golden accuracy, tie-broken by trust-battery pass rate,
   then tokens/q. Apply via the runtime model-role config (the same mechanism WS3 used to pin
@@ -578,17 +578,17 @@ live verification on the real path with isolated stores; update `ROADMAP.md` §2
 **Closes:** §1.4 store risks 1–2. **Effort:** ~half day. **Priority: #4.**
 > **STATUS 2026-07-12: SHIPPED** (branch `2026-07-12-wp4-wp2-hygiene`). agents.db default
 > `"agents.db"` → `data/agents.db` + a one-time VACUUM-INTO relocation shim (skips when
-> `AUGHOR_AGENTS_DB` is set, so tests never read a repo-root file) + migration-framework
+> `PRAMANYX_AGENTS_DB` is set, so tests never read a repo-root file) + migration-framework
 > adoption (v2–4 replacing the probe-ALTER); `git rm --cached agents.db`. Env overrides
-> `AUGHOR_MATCACHE_DB` / `AUGHOR_EPISODES_DIR` / `AUGHOR_MEMORY_DIR` / `AUGHOR_ACTIONS_DIR`
-> close the four holes; new `aughor/memory/paths.py`; episode readers unified via
+> `PRAMANYX_MATCACHE_DB` / `PRAMANYX_EPISODES_DIR` / `PRAMANYX_MEMORY_DIR` / `PRAMANYX_ACTIONS_DIR`
+> close the four holes; new `pramanyx/memory/paths.py`; episode readers unified via
 > `episodes_dir()`. conftest redirects all four; hermeticity + relocation + migration
 > tests added. **Live-verified:** API start relocated the root DB into `data/`, both demo
 > agents preserved & served; targeted suite left `data/` byte-identical (md5 match).
 > *Note: the redundant per-test matcache monkeypatch was LEFT — it overrides `_conn` (the
 > connection object), which is a valid, path-independent hermetic mechanism, not the hole.*
 
-- **agents.db →** `resolve_db_path("agents.db")` (i.e., `data/agents.db`, env `AUGHOR_AGENTS_DB`
+- **agents.db →** `resolve_db_path("agents.db")` (i.e., `data/agents.db`, env `PRAMANYX_AGENTS_DB`
   already exists) in `user_agents/store.py:42`. One-time adoption shim at store init: if legacy
   root `./agents.db` exists and the resolved path doesn't → copy it over (preserves the 2 demo
   agents), log once. Then `git rm --cached agents.db` (the `/agents.db*` ignore already exists) —
@@ -596,10 +596,10 @@ live verification on the real path with isolated stores; update `ROADMAP.md` §2
   while touching it (replace the ad-hoc `PRAGMA table_info` ALTER block `store.py:51-58` with
   Migration entries; current schema = user_version 1 baseline).
 - **Env overrides + conftest registration** (rulebook 0.2 checklist) for:
-  - `AUGHOR_MATCACHE_DB` — `db/matcache.py:39` (`_CACHE_PATH` via `resolve_db_path`);
-  - `AUGHOR_EPISODES_DIR` — `explorer/episodes.py:21,29-30,44`;
-  - `AUGHOR_MEMORY_DIR` — `memory/__init__.py:28`, `memory/skills.py:26,323`, `memory/trust.py:36`;
-  - `AUGHOR_ACTIONS_DIR` — `actions/store.py:14-15`.
+  - `PRAMANYX_MATCACHE_DB` — `db/matcache.py:39` (`_CACHE_PATH` via `resolve_db_path`);
+  - `PRAMANYX_EPISODES_DIR` — `explorer/episodes.py:21,29-30,44`;
+  - `PRAMANYX_MEMORY_DIR` — `memory/__init__.py:28`, `memory/skills.py:26,323`, `memory/trust.py:36`;
+  - `PRAMANYX_ACTIONS_DIR` — `actions/store.py:14-15`.
   Remove the now-redundant per-test monkeypatch in `tests/unit/test_matcache_tenancy.py:36`
   (keep the test, point it at the env override).
 - **Sentinel:** extend `tests/unit/test_store_hermeticity.py` with per-store redirect assertions
@@ -639,7 +639,7 @@ live verification on the real path with isolated stores; update `ROADMAP.md` §2
 #### WP-6 · Continuous exploration (or honest copy) — the headline claim
 **Closes:** §1.2. **Effort:** 2–4 days. Flag `explorer.continuous`, default-off → promote.
 > **STATUS 2026-07-12: 6a + 6c + 6d SHIPPED** (branch `2026-07-12-wp6-continuous-exploration`).
-> **6a** — `aughor/explorer/continuous.py`: a pure `reexplore_decision()` (schema-fingerprint
+> **6a** — `pramanyx/explorer/continuous.py`: a pure `reexplore_decision()` (schema-fingerprint
 > change OR staleness window, with a `None`-stored-fp guard so pre-existing runs don't all
 > false-fire on first enable) + `plan_reexplorations()` (sync, executor-safe) + async
 > `run_continuous_tick()` (spawns on the loop via `kickoff_exploration(auto=True)`); hourly
@@ -660,7 +660,7 @@ live verification on the real path with isolated stores; update `ROADMAP.md` §2
 > Scout `time_budget_s` with catalog size) — needs a per-run budget override on
 > `kernel().submit`, distinct from this tick. **Promotion to default-on** gated on WP-7
 > (background cost metering) so a big cloud warehouse can't get a surprise re-explore bill.
-> Also spun off: a task chip to give `explorer/store.py` an `AUGHOR_EXPLORATION_DIR` override
+> Also spun off: a task chip to give `explorer/store.py` an `PRAMANYX_EXPLORATION_DIR` override
 > (same WP-4 hermeticity hole class).
 
 - **6a — staleness/schema re-arm tick.** A periodic loop beside the hourly ontology refresh
@@ -668,7 +668,7 @@ live verification on the real path with isolated stores; update `ROADMAP.md` §2
   tier grants `AUTO_EXPLORATION`, re-kick exploration via the existing `spawn_explorer`
   (`routers/_shared.py:65` — keep the kernel-submitted path so budgets apply) when:
   (i) `schema_fingerprint` changed since the last completed run, OR
-  (ii) `is_complete()` (`explorer/store.py:59`) and `last_run_age > AUGHOR_EXPLORER_REFRESH_DAYS`
+  (ii) `is_complete()` (`explorer/store.py:59`) and `last_run_age > PRAMANYX_EXPLORER_REFRESH_DAYS`
   (default 7). The frontier recompute (§1.2) already makes re-runs incremental — only uncovered
   cuts rank; do not build a new frontier store.
 - **6b — auto-resume-once on budget cancel.** In the budget-cancel path
@@ -778,7 +778,7 @@ live verification on the real path with isolated stores; update `ROADMAP.md` §2
   up from FLAG_META for free. Add the env names to `.env.example` with one-line comments.
 - **Must be byte-identical:** default resolution for each = today's behavior (watch the
   default-ON trio). Tests: a table-driven test asserting each new flag's default equals the
-  legacy `getenv` default; grep-test that no bare `os.getenv("AUGHOR_` behavioral reads remain
+  legacy `getenv` default; grep-test that no bare `os.getenv("PRAMANYX_` behavioral reads remain
   outside the registry (allowlist infra vars: DB paths, budgets, model config).
 - **DoD:** Settings→System lists every behavioral toggle; `PUT /system/flags` can flip each at
   runtime; zero behavior change with a clean env.
@@ -789,12 +789,12 @@ live verification on the real path with isolated stores; update `ROADMAP.md` §2
 **Source:** ROADMAP §3 “single highest-leverage open bet”. **Effort:** ~1 week.
 > **STATUS 2026-07-13: backend core SHIPPED + live-verified** (branch
 > `2026-07-13-wp10-public-receipt`, stacked on WP-7). One receipt **id** (the kernel ledger
-> artifact id) + one `GET /receipt/{receipt_id}` (`aughor/routers/receipt.py`) resolving any
-> mode into one signed public contract (`aughor/trust/receipt.py` `build_public_receipt`):
+> artifact id) + one `GET /receipt/{receipt_id}` (`pramanyx/routers/receipt.py`) resolving any
+> mode into one signed public contract (`pramanyx/trust/receipt.py` `build_public_receipt`):
 > `{id, created_at, mode, question, headline, connection, executed_sql[], input_tables[],
 > guards[{name,fired,action,caveat}], caveats[], metrics{used/drifted/available/proposed},
 > confidence, data_trust, model, cost, signature}`. **HMAC-SHA256** over the canonical body
-> (`sign`/`verify`, per-install secret from `AUGHOR_RECEIPT_SECRET` or a ledger-kv-persisted
+> (`sign`/`verify`, per-install secret from `PRAMANYX_RECEIPT_SECRET` or a ledger-kv-persisted
 > one) proves server issuance + detects tampering. **RBAC**: a receipt on a connection outside
 > the caller's org 404s identically to a missing id (fail-closed, no existence leak). Ledger
 > gained `artifact_by_id` / `receipt_by_id` (exact version, immutable link);
@@ -905,7 +905,7 @@ live verification on the real path with isolated stores; update `ROADMAP.md` §2
 **Closes:** §1.5/1.6 zero-tests. **Effort:** 1–2 days initial.
 
 - **Playwright smoke** (new `web/e2e/`, `@playwright/test` devDependency): boot API on the seeded
-  fixture (`aughor seed`; `AUGHOR_*` envs → temp dirs so e2e never touches live stores) + prod web
+  fixture (`pramanyx seed`; `PRAMANYX_*` envs → temp dirs so e2e never touches live stores) + prod web
   build. Five specs, no LLM dependency:
   1) Home renders, zero console errors (fail the test on any `console.error`);
   2) sidebar → each of the 5 workspaces renders its header (catches lazy-panel crashes);
@@ -963,8 +963,8 @@ live verification on the real path with isolated stores; update `ROADMAP.md` §2
   router include — **route paths and OpenAPI operation ids must not change** (codegen gate will
   catch drift; regen anyway). Mechanical; do it before the next feature lands in that file.
 - **Fix the two worst layering inversions:** move the shared helpers that `kernel/jobs.py:389`
-  and `agent/nodes.py:1259` reach into (`routers._shared`) down into `aughor/kernel/` or a neutral
-  `aughor/util/` module (spawn/exploration kickoff helpers are agent-layer, not router-layer —
+  and `agent/nodes.py:1259` reach into (`routers._shared`) down into `pramanyx/kernel/` or a neutral
+  `pramanyx/util/` module (spawn/exploration kickoff helpers are agent-layer, not router-layer —
   follow the Pattern-C resolver-registry precedent from DATA-06). Make `verify/gate.py:14`'s
   `agent.state` import type-only/function-local.
 - **`agent/investigate.py` (6,321):** split per phase only when a phase is next modified

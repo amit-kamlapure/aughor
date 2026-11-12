@@ -27,8 +27,8 @@ import pytest
      "SELECT event_id, EXTRACT(EPOCH FROM (end_date - start_date)) AS dur FROM events"),
 ])
 def test_fix_repairs_binder_error_to_executable_sql(name: str, sql: str) -> None:
-    from aughor.db.connection import open_connection_for
-    from aughor.sql.writer import SqlWriter
+    from pramanyx.db.connection import open_connection_for
+    from pramanyx.sql.writer import SqlWriter
 
     db = open_connection_for("fixture")
     try:

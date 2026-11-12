@@ -28,9 +28,9 @@ TIMEOUT = 45
 CONNS = ["workspace", "c1c664b0"]
 SCHEMA_FOR = {"c1c664b0": "analytics"}
 QDRANT_COLLECTIONS = [
-    "aughor_investigations", "aughor_sql_examples", "sql_knowledge_base",
-    "aughor_documents", "org_intelligence", "aughor_schema",
-    "aughor_connection_kb", "schema_suggestions",
+    "pramanyx_investigations", "pramanyx_sql_examples", "sql_knowledge_base",
+    "pramanyx_documents", "org_intelligence", "pramanyx_schema",
+    "pramanyx_connection_kb", "schema_suggestions",
 ]
 
 

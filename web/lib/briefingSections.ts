@@ -4,7 +4,7 @@
  * A person shows, hides and orders the Briefing's sections and chooses which dashboard of theirs
  * rides with it. The content of a section is never theirs to change, and a send carries the
  * platform's Briefing, not their switches. The preference is kept per person on the server
- * (`briefing_sections`, `aughor/db/user_prefs.py`), whose registry holds the same ids.
+ * (`briefing_sections`, `pramanyx/db/user_prefs.py`), whose registry holds the same ids.
  *
  * Two of the switches are PARTS of the verdict block, not sections of their own (the user,
  * 2026-10-08, pointing at the tiles under the headline: "how do you use this functionality to

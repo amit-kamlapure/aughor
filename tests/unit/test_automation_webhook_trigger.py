@@ -22,8 +22,8 @@ from datetime import datetime, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.automations.models import Automation, Condition, Effect
+from pramanyx.api import app
+from pramanyx.automations.models import Automation, Condition, Effect
 
 client = TestClient(app)
 CONN = "ds17hook"
@@ -31,7 +31,7 @@ CONN = "ds17hook"
 
 @pytest.fixture(autouse=True)
 def _clean_automations():
-    from aughor.automations.store import delete_automation, list_automations
+    from pramanyx.automations.store import delete_automation, list_automations
     for a in list_automations(conn_id=CONN):
         delete_automation(a.id)
     yield
@@ -49,7 +49,7 @@ _CHEAP_STEP = Effect(kind="slack_post", config={"bot_id": "no-such-bot", "channe
 
 
 def _save(*, triggers=("webhook",), enabled=True) -> Automation:
-    from aughor.automations.store import upsert_automation
+    from pramanyx.automations.store import upsert_automation
     cfg = {"webhook": {}, "schedule": {"cron": "0 9 * * *"}}
     return upsert_automation(Automation(
         name="DS-17 webhook receipt", conn_id=CONN, enabled=enabled,
@@ -71,14 +71,14 @@ def test_a_webhook_trigger_needs_no_config_and_that_is_the_point():
 
 def test_the_kind_is_accepted_by_the_model_and_reaches_the_store():
     saved = _save()
-    from aughor.automations.store import get_automation
+    from pramanyx.automations.store import get_automation
     assert [c.kind for c in get_automation(saved.id).conditions] == ["webhook"]
 
 
 # ── the probe · it reads the RUN, because the world cannot be asked ──────────────
 
 def _fired(automation, *, manual, via="hand"):
-    from aughor.automations.engine import evaluate_conditions
+    from pramanyx.automations.engine import evaluate_conditions
     ok, details, _ = evaluate_conditions(
         automation, now=datetime.now(timezone.utc), manual=manual, via=via)
     return ok, details
@@ -120,7 +120,7 @@ def test_a_webhook_call_no_longer_mislabels_a_schedule_as_run_by_hand():
 # ── the token · a credential, handled like one ───────────────────────────────────
 
 def test_the_token_is_returned_once_and_never_again():
-    from aughor.automations.webhooks import issue_webhook_token, webhook_issued_at
+    from pramanyx.automations.webhooks import issue_webhook_token, webhook_issued_at
     a = _save()
     token = issue_webhook_token(a.id)
     assert token
@@ -131,7 +131,7 @@ def test_the_token_is_returned_once_and_never_again():
 def test_rotation_invalidates_the_previous_token():
     """The only remedy for a leak. A rotation that left the old one working would be a
     revoke button that does not revoke."""
-    from aughor.automations.webhooks import issue_webhook_token, webhook_token_matches
+    from pramanyx.automations.webhooks import issue_webhook_token, webhook_token_matches
     a = _save()
     old = issue_webhook_token(a.id)
     new = issue_webhook_token(a.id)
@@ -140,7 +140,7 @@ def test_rotation_invalidates_the_previous_token():
 
 
 def test_revoking_deletes_rather_than_flags():
-    from aughor.automations.webhooks import (
+    from pramanyx.automations.webhooks import (
         issue_webhook_token, revoke_webhook_token, webhook_issued_at, webhook_token_matches)
     a = _save()
     token = issue_webhook_token(a.id)
@@ -151,7 +151,7 @@ def test_revoking_deletes_rather_than_flags():
 
 
 def test_an_unissued_chain_matches_nothing_including_the_empty_string():
-    from aughor.automations.webhooks import webhook_token_matches
+    from pramanyx.automations.webhooks import webhook_token_matches
     a = _save()
     assert webhook_token_matches(a.id, "") is False
     assert webhook_token_matches(a.id, "anything") is False
@@ -220,7 +220,7 @@ def test_the_lifecycle_gate_still_holds_for_a_caller_holding_a_good_token():
     disabled — the same answer Run now gets."""
     a = _save()
     token = client.post(f"/automations/{a.id}/webhook").json()["token"]
-    from aughor.automations.store import set_automation_enabled
+    from pramanyx.automations.store import set_automation_enabled
     set_automation_enabled(a.id, False)
 
     run = _call(a.id, token).json()
@@ -231,7 +231,7 @@ def test_the_lifecycle_gate_still_holds_for_a_caller_holding_a_good_token():
 def test_removing_the_trigger_after_issuing_shuts_the_door():
     """A token minted while the consent existed must stop working when it is withdrawn —
     the check lives on the route as well as at issue time because a route is the boundary."""
-    from aughor.automations.store import upsert_automation
+    from pramanyx.automations.store import upsert_automation
     a = _save()
     token = client.post(f"/automations/{a.id}/webhook").json()["token"]
 
@@ -247,7 +247,7 @@ def test_deleting_the_chain_takes_its_token_with_it():
     """The owner cascade the DELETE route already runs for grants and proposals. The route
     refuses a token whose automation is gone either way, so this is not a hole being closed
     — it is a credential not being left behind."""
-    from aughor.automations.webhooks import webhook_issued_at
+    from pramanyx.automations.webhooks import webhook_issued_at
     a = _save()
     client.post(f"/automations/{a.id}/webhook")
     assert webhook_issued_at(a.id)
@@ -272,6 +272,6 @@ def test_the_body_is_ignored_rather_than_threaded_into_the_chain():
 def test_the_public_prefix_is_exactly_the_public_door():
     """A prefix that exempted `/automations` would have opened every read, write and delete
     on that surface along with it — the reason this route has its own top-level path."""
-    from aughor.api import _AUTH_EXEMPT
+    from pramanyx.api import _AUTH_EXEMPT
     assert "/hooks/" in _AUTH_EXEMPT
     assert not any(p.startswith("/automations") for p in _AUTH_EXEMPT)

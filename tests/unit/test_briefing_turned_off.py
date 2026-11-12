@@ -11,8 +11,8 @@ import uuid
 
 import pytest
 
-from aughor.ontology import visibility as V
-from aughor.ontology.visibility import SCHEMA_WIDE, briefing_off, declare_exclusion
+from pramanyx.ontology import visibility as V
+from pramanyx.ontology.visibility import SCHEMA_WIDE, briefing_off, declare_exclusion
 
 
 def _conn() -> str:
@@ -50,7 +50,7 @@ def test_a_connection_read_whole_is_off_only_when_every_schema_is():
 
 
 def test_the_connection_read_whole_leaves_an_off_schemas_findings_out(tmp_path, monkeypatch):
-    from aughor.explorer import store
+    from pramanyx.explorer import store
     monkeypatch.setattr(store, "_DATA_DIR", tmp_path)
     conn = _conn()
     for sch, words in (("gold_finance", "12 loads failed"), ("luxexperience", "Conversion is 31%")):
@@ -64,15 +64,15 @@ def test_the_connection_read_whole_leaves_an_off_schemas_findings_out(tmp_path, 
 
 @pytest.fixture
 def briefing_route(monkeypatch):
-    from aughor.routers import exploration as ex
-    monkeypatch.setattr("aughor.routers._shared.canonical_schema", lambda c, s: s)
-    monkeypatch.setattr("aughor.routers._shared.schemas_of_connection", lambda c: ["gold_finance"])
+    from pramanyx.routers import exploration as ex
+    monkeypatch.setattr("pramanyx.routers._shared.canonical_schema", lambda c, s: s)
+    monkeypatch.setattr("pramanyx.routers._shared.schemas_of_connection", lambda c: ["gold_finance"])
 
     def _never(*a, **k):
         raise AssertionError("an off schema's Briefing re-validated, measured or wrote something")
 
-    monkeypatch.setattr("aughor.knowledge.briefing.get_briefing", _never)
-    monkeypatch.setattr("aughor.explorer.revalidate_live.revalidate_for_briefing", _never)
+    monkeypatch.setattr("pramanyx.knowledge.briefing.get_briefing", _never)
+    monkeypatch.setattr("pramanyx.explorer.revalidate_live.revalidate_for_briefing", _never)
     return ex
 
 
@@ -90,8 +90,8 @@ def test_a_range_briefing_of_an_off_schema_is_read_as_off(briefing_route, monkey
     declare_exclusion(conn, "gold_finance", SCHEMA_WIDE, "other")
     spec = type("Spec", (), {"key": "yesterday"})()
     monkeypatch.setattr(ex, "_range_spec_or_refuse", lambda *a: spec)
-    monkeypatch.setattr("aughor.briefing.ranges.range_block", lambda s: {"start": "2026-10-10", "end": "2026-10-10"})
-    monkeypatch.setattr("aughor.knowledge.briefing.peek_entry",
+    monkeypatch.setattr("pramanyx.briefing.ranges.range_block", lambda s: {"start": "2026-10-10", "end": "2026-10-10"})
+    monkeypatch.setattr("pramanyx.knowledge.briefing.peek_entry",
                         lambda key: {"narrative": "from before", "period": {"start": "2026-10-10", "end": "2026-10-10"}})
     out = ex.read_briefing(conn, schema="gold_finance", preset="yesterday")
     assert out["off"]["schemas"] == ["gold_finance"] and out["available"] is False and "narrative" in out
@@ -101,9 +101,9 @@ def test_a_range_briefing_of_an_off_schema_is_read_as_off(briefing_route, monkey
 
 
 def test_a_subscription_to_an_off_schema_is_not_sent_and_says_why(monkeypatch):
-    from aughor.briefing import delivery
-    from aughor.briefing.models import BriefSubscription
-    from aughor.knowledge import period_brief
+    from pramanyx.briefing import delivery
+    from pramanyx.briefing.models import BriefSubscription
+    from pramanyx.knowledge import period_brief
     conn = _conn()
     declare_exclusion(conn, "gold_finance", SCHEMA_WIDE, "other")
     monkeypatch.setattr(period_brief, "refusal", lambda period: "")

@@ -1,4 +1,4 @@
-"""Phase 6 of the 2027 study, P6-1 — packs as claims with priors (`aughor/packs/priors.py`,
+"""Phase 6 of the 2027 study, P6-1 — packs as claims with priors (`pramanyx/packs/priors.py`,
 `record/writers.book_pack_claims`, the loader's new parts).
 
 What these hold: a pack's watches, scenario and mission templates load from their own files; a
@@ -15,13 +15,13 @@ import uuid
 
 import pytest
 
-from aughor.ontology.models import OntologyEntity, OntologyGraph, OntologyRelationship
-from aughor.packs import priors as P
-from aughor.packs.loader import load_pack
-from aughor.packs.models import Pack, PackManifest, PackMissionTemplate, PackMonitorPrior, PackPlaybook, PackScenarioTemplate
-from aughor.packs.roots import pack_dir
-from aughor.packs.validate import validate_loaded
-from aughor.record import claims as C
+from pramanyx.ontology.models import OntologyEntity, OntologyGraph, OntologyRelationship
+from pramanyx.packs import priors as P
+from pramanyx.packs.loader import load_pack
+from pramanyx.packs.models import Pack, PackManifest, PackMissionTemplate, PackMonitorPrior, PackPlaybook, PackScenarioTemplate
+from pramanyx.packs.roots import pack_dir
+from pramanyx.packs.validate import validate_loaded
+from pramanyx.record import claims as C
 
 
 def _conn():
@@ -125,8 +125,8 @@ def _graph(conn: str) -> OntologyGraph:
 
 
 def test_a_packs_map_measured_on_connect_is_booked_into_the_record_as_the_packs_hypotheses():
-    from aughor.packs.ontology_map import apply_core_claims, record_claims, resolve_ontology
-    from aughor.record.writers import book_pack_claims, pack_claims
+    from pramanyx.packs.ontology_map import apply_core_claims, record_claims, resolve_ontology
+    from pramanyx.record.writers import book_pack_claims, pack_claims
     conn = _conn()
     graph = _graph(conn)
     report = apply_core_claims(graph, resolve_ontology("core-ecommerce"), "core-ecommerce", None)
@@ -156,7 +156,7 @@ def test_a_packs_map_measured_on_connect_is_booked_into_the_record_as_the_packs_
 
 
 def test_mission_templates_are_read_through_the_records_door():
-    from aughor.routers import record as R
+    from pramanyx.routers import record as R
     out = R.list_record_mission_templates(pack_id="core-ecommerce")
     assert out["packs"] == ["core-ecommerce"] and {t["id"] for t in out["templates"]} == {
         "protect_gross_margin", "cut_returns_without_hurting_conversion", "keep_stock_cover_inside_a_band"}

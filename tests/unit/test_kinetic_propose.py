@@ -8,7 +8,7 @@ model may abstain; and no declared actions ⇒ no LLM call. Hermetic: no network
 """
 from __future__ import annotations
 
-from aughor.actions.propose import (
+from pramanyx.actions.propose import (
     ProposedAction,
     ProposerOutput,
     build_kinetic_actions_section,
@@ -16,7 +16,7 @@ from aughor.actions.propose import (
     propose_actions,
     validate_proposals,
 )
-from aughor.ontology.models import (
+from pramanyx.ontology.models import (
     ActionParameter,
     KineticAction,
     OntologyGraph,
@@ -148,11 +148,11 @@ def test_validate_mixes_valid_and_invalid():
 
 
 def test_router_propose_returns_staged_proposals(monkeypatch):
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", lambda *a, **k: _graph())
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology", lambda *a, **k: _graph())
     fake = _FakeProvider([ProposedAction(action_id="refund_order",
                                          params={"order_id": "A1", "amount_eur": "500"})])
-    monkeypatch.setattr("aughor.llm.provider.get_provider", lambda role=None: fake)
-    from aughor.routers import kinetic as K
+    monkeypatch.setattr("pramanyx.llm.provider.get_provider", lambda role=None: fake)
+    from pramanyx.routers import kinetic as K
     out = K.propose_actions_route(K.ProposeRequest(context="A1 double charged"),
                                   connection_id="c", schema_name=None)
     assert out["proposals"][0]["status"] == "proposed" and out["proposals"][0]["ok"] is True

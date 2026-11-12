@@ -1,0 +1,264 @@
+"""Idea 4 · the daily reading: count each recent day, per table, and file it.
+
+Once a day, for every profiled table that has a primary timestamp, the sampler counts the
+rows of each of the last `HORIZON_DAYS` days and files the counts as observations taken
+today. Tomorrow's reading of the same days is what the learner compares them with. No
+model call: one `GROUP BY day` per table, on the timestamp column alone.
+
+The count is the measure on purpose. A backfill or a late row changes the row count of
+the day it belongs to whatever the metric, so the count is the settling signal every
+metric on the table inherits — and it needs no definition to be right.
+
+Dates are Python literals, never `CURRENT_DATE`: the reading is stamped with THIS clock,
+and the same clock names the days it asks for, so a warehouse in another timezone cannot
+make "yesterday" mean two different things in one observation.
+"""
+from __future__ import annotations
+
+import logging
+from datetime import date, datetime, timedelta, timezone
+from typing import Callable, Optional
+
+from pramanyx.settling.store import record_observations, record_old_readings
+
+logger = logging.getLogger(__name__)
+
+#: How many recent days each reading counts. Long enough to see a source that settles a
+#: week out; short enough that the daily query stays a scan of one column over two weeks.
+HORIZON_DAYS = 14
+#: A week about six months old, read for every table not yet shown to hold: far older than any late row, so days this old
+#: moving means the source rewrites its past (`learn.rewrites_history`), and reading further back will not help. Read from
+#: a table's first day, so a new source is recognised at its second refresh, and until they have held for a month
+#: (`learn.old_days_held`): one more scan of one column a day, per table, and only until then.
+OLD_DAYS = (180, 187)
+#: The largest tables carry the signal; a lookup table's count never moves.
+MAX_TABLES_PER_CONNECTION = 8
+
+RunSql = Callable[[str], tuple[list, list, Optional[str]]]
+
+
+def _ident(name: str) -> str:
+    """One identifier, double-quoted in DuckDB's dialect — the door translates the quoting
+    for engines that write their own (BigQuery's backticks). Found by the first
+    live tick: an unquoted "Event Date" is two tokens, and the reading failed on every
+    upload whose columns carry spaces."""
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _table_ref(table: str) -> str:
+    """A table reference with each dotted part quoted on its own, so `schema.table` stays
+    two identifiers rather than one name with a dot in it."""
+    return ".".join(_ident(p) for p in table.split(".") if p)
+
+
+def count_by_day_sql(table: str, date_column: str, start: date, stop: date) -> str:
+    """Rows per day in [start, stop) — the shape CB-2's `measurement_sql` reads, one day at
+    a time; here grouped so one query reads the whole horizon."""
+    col, tbl = _ident(date_column), _table_ref(table)
+    return (f"SELECT CAST({col} AS DATE) AS day, COUNT(*) AS n FROM {tbl} "
+            f"WHERE CAST({col} AS DATE) >= DATE '{start.isoformat()}' "
+            f"AND CAST({col} AS DATE) < DATE '{stop.isoformat()}' "
+            f"GROUP BY 1 ORDER BY 1")
+
+
+def time_tables(connection_id: str) -> list[tuple[str, str, int]]:
+    """(table, primary timestamp, row count) for every profiled table that has a
+    timestamp, largest first, capped. From the profiler's most recent cache entry."""
+    try:
+        from pramanyx.tools.profile_cache import merged_profile_entry
+        latest = merged_profile_entry(connection_id)
+    except Exception as exc:
+        from pramanyx.kernel.errors import tolerate
+        tolerate(exc, "no profile cache means no time tables to read", counter="settling.profile_cache")
+        return []
+    from pramanyx.semantic.metric_time import bare_name
+
+    dates = _metric_dates(connection_id)
+    out: list[tuple[str, str, int]] = []
+    for name, tp in ((latest or {}).get("tables") or {}).items():
+        if not isinstance(tp, dict):
+            continue
+        col = str(tp.get("primary_timestamp") or dates.get(bare_name(str(name))) or "").strip()
+        if not col:
+            continue
+        try:
+            rows = int(tp.get("row_count") or 0)
+        except (TypeError, ValueError):
+            rows = 0
+        out.append((str(name), col, rows))
+    # A table a metric reads comes first, and always: unread, its figures would read as settled for want of evidence.
+    needed = sum(bare_name(t[0]) in dates for t in out)      # every one of these has a date, or it was left out above
+    out.sort(key=lambda t: (bare_name(t[0]) not in dates, -t[2], t[0]))
+    return out[:max(MAX_TABLES_PER_CONNECTION, needed)]
+
+
+def _metric_dates(connection_id: str) -> dict[str, str]:
+    """Each table an approved metric of this connection reads, by bare name, with the column that dates it: "" for a table
+    it joins but is not dated by, which the profile's own date reads, or which cannot be read."""
+    try:
+        from pramanyx.semantic.metric_statement import split_grain
+        from pramanyx.semantic.metric_time import bare_name, tables_read
+        from pramanyx.semantic.metrics import list_metrics
+        out: dict[str, str] = {}
+        for m in list_metrics(connection_id=connection_id):
+            if m.status != "approved" or m.connection != connection_id:
+                continue
+            read = tables_read(m)
+            table, col = split_grain(getattr(m, "time_column", None))
+            table = table or next(iter(read), "")
+            if table and col:
+                out[bare_name(table)] = out.get(bare_name(table)) or col
+            for joined in read:
+                out.setdefault(bare_name(joined), "")
+        return out
+    except Exception as exc:  # noqa: BLE001 — the largest tables are read as they were
+        from pramanyx.kernel.errors import tolerate
+        tolerate(exc, "the tables approved metrics read are unknown; the largest are read", counter="settling.metric_tables")
+        return {}
+
+
+def _as_date(value) -> Optional[date]:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except (TypeError, ValueError):
+        return None
+
+
+def _day_counts(rows: list, start: date, stop: date) -> dict[str, float]:
+    """Each day's count in [start, stop) from a `count_by_day_sql` result."""
+    counts: dict[str, float] = {}
+    for r in rows or []:
+        vals = list(r.values()) if isinstance(r, dict) else list(r)
+        if len(vals) < 2:
+            continue
+        day = _as_date(vals[0])
+        if day is None or not (start <= day < stop):
+            continue
+        try:
+            counts[day.isoformat()] = float(vals[1] or 0)
+        except (TypeError, ValueError) as exc:
+            from pramanyx.kernel.errors import tolerate
+            tolerate(exc, "a count that is not a number is not a reading; the day is left out",
+                     counter="settling.unreadable_count")
+            continue
+    # A day with no rows is a reading too — zero is a value, and a day that later
+    # gains rows is exactly a day that was still settling.
+    for i in range((stop - start).days):
+        counts.setdefault((start + timedelta(days=i)).isoformat(), 0.0)
+    return counts
+
+
+def _read_old_days(connection_id: str, table: str, col: str, run_sql: RunSql, today: date) -> str:
+    """File one reading of `OLD_DAYS`. Returns why it could not be read, or "": the day's reading already stands."""
+    start, stop = today - timedelta(days=OLD_DAYS[1]), today - timedelta(days=OLD_DAYS[0])
+    try:
+        _columns, rows, error = run_sql(count_by_day_sql(table, col, start, stop))
+    except Exception as exc:  # noqa: BLE001 — reported by the caller with the table's other errors
+        rows, error = [], str(exc)
+    if error:
+        return str(error)[:200]
+    record_old_readings(connection_id, table, today, _day_counts(rows, start, stop))
+    return ""
+
+
+def sample_connection(connection_id: str, run_sql: RunSql, *, today: Optional[date] = None,
+                      horizon_days: int = HORIZON_DAYS) -> dict:
+    """Read every time table once and file today's counts. Returns what happened per table;
+    a table whose query fails is reported and skipped, never guessed."""
+    today = today or datetime.now(timezone.utc).date()
+    stop = today
+    sampled: list[str] = []
+    errors: dict[str, str] = {}
+    # A table still moving at the oldest age read cannot name its lag until the horizon
+    # grows — so read it twice as far back (theLook's order_items was still moving at 14 on
+    # 2026-09-25). One wider scan of one column a day; the others keep the short horizon.
+    try:
+        from pramanyx.settling.learn import old_days_held
+        from pramanyx.settling.store import old_readings, verdicts
+        known = verdicts(connection_id)
+        moving = {t for t, v in known.items() if v.still_moving}
+        settled = {t for t, v in known.items() if v.lag_days is not None and old_days_held(old_readings(connection_id, t))}
+    except Exception as exc:  # noqa: BLE001
+        from pramanyx.kernel.errors import tolerate
+        tolerate(exc, "unreadable verdicts: every table is read at the short horizon",
+                 counter="settling.horizon_verdicts")
+        moving, settled = set(), set()
+    for table, col, _rows in time_tables(connection_id):
+        span = horizon_days * 2 if table in moving else horizon_days
+        start = today - timedelta(days=span)
+        try:
+            columns, rows, error = run_sql(count_by_day_sql(table, col, start, stop))
+        except Exception as exc:
+            error, rows = str(exc), []
+        if error:
+            errors[table] = str(error)[:200]
+            continue
+        record_observations(connection_id, table, col, today, _day_counts(rows, start, stop))
+        sampled.append(table)
+        if table not in settled:
+            why = _read_old_days(connection_id, table, col, run_sql, today)
+            if why:
+                errors[f"{table}, its old days"] = why
+    return {"connection_id": connection_id, "sampled": sampled, "errors": errors,
+            "measured_on": today.isoformat()}
+
+
+_last_sample_day: str = ""
+
+
+def _read_parts(connection_id: str, today: date) -> None:
+    """BR-8 — the same morning, each approved metric's parts per day (`parts.read_connection`): one statement per
+    metric. A failure is logged and costs nothing else the morning reads."""
+    try:
+        from pramanyx.settling.parts import read_connection
+        got = read_connection(connection_id, today=today)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("the daily reading of metric parts failed on %s: %s", connection_id, exc)
+        return
+    if got["metrics"]:
+        not_kept = {m["metric"]: m["why"] for m in got["metrics"] if not m["kept"]}
+        logger.info("daily parts on %s: %d metrics, %d statements%s", connection_id, len(got["metrics"]),
+                    got["statements"], f"; not kept: {not_kept}" if not_kept else "")
+
+
+def run_settling_samples_daily(*, now: Optional[datetime] = None, force: bool = False) -> int:
+    """Read every connection once per UTC day. Returns how many tables were sampled (0 when
+    today's reading was already taken). ``force`` is for an external clock."""
+    global _last_sample_day
+    today = (now or datetime.now(timezone.utc)).date()
+    if not force and _last_sample_day == today.isoformat():
+        return 0
+    _last_sample_day = today.isoformat()
+    try:
+        from pramanyx.db.registry import list_connections
+        connections = list_connections()
+    except Exception as exc:
+        logger.warning("settling sampler could not list connections: %s", exc)
+        return 0
+    from pramanyx.db.measure import run_sql_for
+    total = 0
+    from pramanyx.record.signals import on_settling_sampled
+    from pramanyx.settling.store import connection_lag
+    for conn in connections:
+        cid = str((conn or {}).get("id") or "")
+        if not cid:
+            continue
+        _read_parts(cid, today)
+        if not time_tables(cid):
+            continue
+        before = connection_lag(cid)
+        try:
+            result = sample_connection(cid, run_sql_for(cid, internal=True), today=today)
+        except Exception as exc:
+            logger.warning("settling sample failed on %s: %s", cid, exc)
+            continue
+        total += len(result["sampled"])
+        if result["errors"]:
+            logger.info("settling sample on %s skipped %s", cid, result["errors"])
+        # the close-out (C4): the settling lag itself is a signal — a lag that moved opens an inquiry
+        on_settling_sampled(cid, before, connection_lag(cid))
+    return total

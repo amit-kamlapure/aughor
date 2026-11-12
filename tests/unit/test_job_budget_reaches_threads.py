@@ -21,10 +21,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.kernel import jobs as J
-from aughor.kernel import metering
-from aughor.kernel.jobs import JobKernel, JobState
-from aughor.kernel.ledger import Ledger
+from pramanyx.kernel import jobs as J
+from pramanyx.kernel import metering
+from pramanyx.kernel.jobs import JobKernel, JobState
+from pramanyx.kernel.ledger import Ledger
 
 
 @pytest.fixture()
@@ -57,7 +57,7 @@ def _drive(ledger, work, *, install_context_executor: bool = True) -> tuple[str,
     async def main():
         loop = asyncio.get_running_loop()
         if install_context_executor:
-            from aughor.kernel.concurrency import ContextThreadPoolExecutor
+            from pramanyx.kernel.concurrency import ContextThreadPoolExecutor
             loop.set_default_executor(ContextThreadPoolExecutor(thread_name_prefix="test-exec"))
         k = JobKernel(ledger)
         jid = await k.submit("profile", lambda: work(loop), conn_id="c1")

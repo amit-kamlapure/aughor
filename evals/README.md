@@ -18,7 +18,7 @@ Separate from `tests/` — requires a live LLM and (optionally) a Braintrust acc
 uv pip install -e ".[evals]"
 
 # Configure LLM backend (uses your existing .env)
-# AUGHOR_BACKEND, AUGHOR_CODER_MODEL, AUGHOR_NARRATOR_MODEL must be set
+# PRAMANYX_BACKEND, PRAMANYX_CODER_MODEL, PRAMANYX_NARRATOR_MODEL must be set
 
 # (Optional) Braintrust account for result tracking
 export BRAINTRUST_API_KEY=...
@@ -33,7 +33,7 @@ uv run python evals/run.py --dry-run --limit 3
 # Full dry-run — all 15 questions, no push
 uv run python evals/run.py --dry-run
 
-# Full run — push results to Braintrust project 'aughor-investigations'
+# Full run — push results to Braintrust project 'pramanyx-investigations'
 uv run python evals/run.py
 
 # CI gate — fail if any metric regresses >5% vs last Braintrust experiment
@@ -61,15 +61,15 @@ its model becomes that model's first, and a baseline only moves with `--promote`
 
 ```bash
 # what the schedule runs: a copy of the newest backup, every set and dataset, a $5 ceiling
-uv run --all-extras python -m evals.nightly from-backup --env-file ~/dev/aughor/.env
+uv run --all-extras python -m evals.nightly from-backup --env-file ~/dev/pramanyx/.env
 
 # fewer cases, one dataset, a lower ceiling (any `run` flag passes through)
-uv run --all-extras python -m evals.nightly from-backup --env-file ~/dev/aughor/.env \
+uv run --all-extras python -m evals.nightly from-backup --env-file ~/dev/pramanyx/.env \
     --datasets luxexperience --limit 3 --ceiling-usd 2
 ```
 
 **Never on the live state.** `from-backup` unpacks the newest finished backup into a temporary home,
-runs `run --home <copy>` in a child with `AUGHOR_HOME` set and every other `AUGHOR_*` stripped, and
+runs `run --home <copy>` in a child with `PRAMANYX_HOME` set and every other `PRAMANYX_*` stripped, and
 deletes the copy (it holds credentials). `run` refuses a home a live process serves.
 
 **The ceiling.** Spend is the model-call log (`session_events`, priced by `obs.usage.cost_of_call`).
@@ -78,7 +78,7 @@ Before each case: spent + the dearest case so far (else `--first-case-usd`) must
 answered with no token usage, makes the spend unknown and stops the night; so does a model call the
 provider made that never reached the log (every call is counted at `_record_llm_call` and given a
 trace when it had none). A FAILED call with no usage — a refused request — is counted at $0 and said.
-The configured models must be priced, in the env file's `AUGHOR_MODEL_PRICES`
+The configured models must be priced, in the env file's `PRAMANYX_MODEL_PRICES`
 (`anthropic:claude-sonnet-5-5=2/10@2026-10-06;anthropic:claude-haiku-5-5=0.10/0.50@2026-10-06`), or
 the night refuses to start.
 
@@ -86,16 +86,16 @@ the night refuses to start.
 0 held and complete · 1 a budget broken · 2 refused to start · 3 incomplete (ceiling stop or withheld
 cases) with no budget broken.
 
-**The schedule** is `docs/launchd/com.aughor.nightly-eval.plist` (03:30, logs to
-`~/.config/aughor/nightly-eval.log`). It is not installed; the operator turns it on:
+**The schedule** is `docs/launchd/com.pramanyx.nightly-eval.plist` (03:30, logs to
+`~/.config/pramanyx/nightly-eval.log`). It is not installed; the operator turns it on:
 
 ```bash
-cp docs/launchd/com.aughor.nightly-eval.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.aughor.nightly-eval.plist
+cp docs/launchd/com.pramanyx.nightly-eval.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.pramanyx.nightly-eval.plist
 ```
 
-or, as a crontab line instead: `30 3 * * * cd ~/dev/aughor && /opt/homebrew/bin/uv run --all-extras
-python -m evals.nightly from-backup --env-file ~/dev/aughor/.env >> ~/.config/aughor/nightly-eval.log 2>&1`
+or, as a crontab line instead: `30 3 * * * cd ~/dev/pramanyx && /opt/homebrew/bin/uv run --all-extras
+python -m evals.nightly from-backup --env-file ~/dev/pramanyx/.env >> ~/.config/pramanyx/nightly-eval.log 2>&1`
 
 ## Intake pick validity (`intake_validity_eval.py`)
 
@@ -194,8 +194,8 @@ uv run python evals/judgment_battery_eval.py \
     --db data/decisions.db --output evals/judgment_battery_results.json
 ```
 
-🔴 It redirects `AUGHOR_STATE_DIR` to a temp dir before importing `aughor`. Pointing
-`AUGHOR_DECISIONS_DB` alone is not enough — every other store resolves relative to the state
+🔴 It redirects `PRAMANYX_STATE_DIR` to a temp dir before importing `pramanyx`. Pointing
+`PRAMANYX_DECISIONS_DB` alone is not enough — every other store resolves relative to the state
 dir, and the platform's own guard fired on this file's first run with a server live: *"two
 processes mapped into one SQLite WAL index is the precondition for the SIGBUS in walFindFrame
 that has killed this app repeatedly — a read-only connection counts."* Its siblings in this
@@ -237,9 +237,9 @@ uv run --extra observability python -m evals.model_bakeoff --model glm-5.2:cloud
 Per question: the live production-mirror pipeline (`run_golden` mode `full`)
 generates SQL → executes → three scorers (`evals/mlflow_scorers.py`): golden
 **execution accuracy** (multi-reference `sql_accuracy` comparator), the
-**Trust-plane guard battery** (`aughor.trust.verify`), and **exec success** —
+**Trust-plane guard battery** (`pramanyx.trust.verify`), and **exec success** —
 plus latency and kernel-metered tokens/question. Results land in the
-`aughor-bakeoff` MLflow experiment (`AUGHOR_MLFLOW_TRACKING_URI`, or a local
+`pramanyx-bakeoff` MLflow experiment (`PRAMANYX_MLFLOW_TRACKING_URI`, or a local
 file store under `evals/bakeoff_out/`) with per-question traces, and each arm
 writes `evals/bakeoff_out/<model>.json` for the comparison table. Needs a
 seeded `samples` connection and live LLM credentials.
@@ -272,10 +272,10 @@ the registry is a served store, and a hermetic run beside the API redirects it. 
 stays the label and the `--graph-json` key; the served graphs are committed beside their sets
 (`ablation_*_ontology.json`), and beside each the same graph after its relationship cardinalities
 were measured against the data (`ablation_*_ontology_measured.json`, written by
-`python -m aughor.ontology.cardinality` and then `python -m aughor.ontology.lifecycle`, each
+`python -m pramanyx.ontology.cardinality` and then `python -m pramanyx.ontology.lifecycle`, each
 `--graph-json <served> --duckdb <file> --out <measured>`; ON-0a). The measured files also carry the
-core pack's claims by tier (`core_claims`), the receipt `POST /ontology/measure?pack=<id>` returns live. Run the `ontology` arm on the measured file to test a block that says true things. Run beside a serving API with every `AUGHOR_*_DB` redirected
-(the list is `tests/conftest.py`'s) and `AUGHOR_FALLBACK_BACKENDS=none`.
+core pack's claims by tier (`core_claims`), the receipt `POST /ontology/measure?pack=<id>` returns live. Run the `ontology` arm on the measured file to test a block that says true things. Run beside a serving API with every `PRAMANYX_*_DB` redirected
+(the list is `tests/conftest.py`'s) and `PRAMANYX_FALLBACK_BACKENDS=none`.
 
 ## Adding questions
 

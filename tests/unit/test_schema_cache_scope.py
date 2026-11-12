@@ -12,8 +12,8 @@ the whole tour on `main` and silently dropping every `luxexperience` table.
 """
 import pytest
 
-from aughor.routers import _shared
-from aughor.routers._shared import get_schema_cached, invalidate_schema_cache
+from pramanyx.routers import _shared
+from pramanyx.routers._shared import get_schema_cached, invalidate_schema_cache
 
 
 class _FakeDB:

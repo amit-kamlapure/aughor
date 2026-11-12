@@ -15,9 +15,9 @@ import uuid
 import duckdb
 import sqlglot
 
-from aughor.db.connection import DuckDBConnection
-from aughor.sql import time_order_guard as T
-from aughor.sql.executor import execute_guarded
+from pramanyx.db.connection import DuckDBConnection
+from pramanyx.sql import time_order_guard as T
+from pramanyx.sql.executor import execute_guarded
 
 SHIP = "SELECT AVG(date_diff('hour', created_at, shipped_at)) AS hours FROM items"
 
@@ -94,7 +94,7 @@ def test_a_probe_that_fails_is_unchecked_not_clean():
 # ── The analyst's evidence carries the result's size and what its guards said ─────────
 
 def test_the_analyst_records_the_results_size_and_its_caveats():
-    from aughor.agent.analyst import AnalystTurn, _record_evidence
+    from pramanyx.agent.analyst import AnalystTurn, _record_evidence
     turn = AnalystTurn(connection_id="c", conn=None, state={"question": "q", "investigation_phases": []})
     result = {"columns": ["cohort", "n"], "rows": [["2025-01", 3]] * 20, "row_count": 720,
               "truncated": True, "caveats": ["time-order guard: shipped_at is earlier than created_at …"]}
@@ -134,7 +134,7 @@ def test_without_such_a_table_it_still_says_parent_first():
 # ── A query re-run to correct a flagged one replaces it on the page ───────────────────
 
 def _record(turn, columns, caveats, rows=(("a", 1),)):
-    from aughor.agent.analyst import _record_evidence
+    from pramanyx.agent.analyst import _record_evidence
     out = _record_evidence(turn, {"sql": "SELECT 1"}, {"columns": columns, "rows": [list(r) for r in rows],
                                                        "row_count": len(rows), "caveats": caveats})
     turn.phase_tools_run.append("run_sql")
@@ -142,8 +142,8 @@ def _record(turn, columns, caveats, rows=(("a", 1),)):
 
 
 def test_a_corrected_rerun_hides_the_flagged_result_and_nothing_else():
-    from aughor.agent.analyst import AnalystTurn
-    from aughor.agent.investigate import _evidence_confidence_ceiling
+    from pramanyx.agent.analyst import AnalystTurn
+    from pramanyx.agent.investigate import _evidence_confidence_ceiling
     turn = AnalystTurn(connection_id="c", conn=None, state={"question": "q", "investigation_phases": []})
     _record(turn, ["centre", "days"], ["time-order guard: shipped_at is earlier than created_at …"])
     _record(turn, ["month", "days"], [])                       # a different cut: stays
@@ -156,7 +156,7 @@ def test_a_corrected_rerun_hides_the_flagged_result_and_nothing_else():
 
 
 def test_a_rerun_that_is_flagged_too_replaces_nothing():
-    from aughor.agent.analyst import AnalystTurn
+    from pramanyx.agent.analyst import AnalystTurn
     turn = AnalystTurn(connection_id="c", conn=None, state={"question": "q", "investigation_phases": []})
     _record(turn, ["centre", "days"], ["time-order guard: …"])
     _record(turn, ["centre", "days"], ["time-order guard: …"])
@@ -166,8 +166,8 @@ def test_a_rerun_that_is_flagged_too_replaces_nothing():
 def test_a_rerun_returning_the_flagged_rows_unchanged_carries_the_warning():
     """The fulfilment answer's last query (2026-10-01, evening) re-wrote a join flagged as an over-count through two
     CTEs, came back with the flagged rows to the last digit, and replaced four warnings with a table carrying none."""
-    from aughor.agent.analyst import AnalystTurn
-    from aughor.agent.investigate import _evidence_confidence_ceiling
+    from pramanyx.agent.analyst import AnalystTurn
+    from pramanyx.agent.investigate import _evidence_confidence_ceiling
     turn = AnalystTurn(connection_id="c", conn=None, state={"question": "q", "investigation_phases": []})
     over = "possible over-count: AVG(o.lead) over orders is taken across the join to order_items …"
     flagged_rows = (("Chicago IL", "1.5064156373665947"), ("Houston TX", "1.492280657713069"))
@@ -180,14 +180,14 @@ def test_a_rerun_returning_the_flagged_rows_unchanged_carries_the_warning():
     assert flagged.get("_hidden") and flagged.get("superseded_by") == again["phase_id"]   # one table, its warning
     assert not time_order.get("_hidden")                       # a copy of another result corrects nothing
     assert _evidence_confidence_ceiling(turn.state["investigation_phases"])[0] != "HIGH"
-    from aughor.agent.analyst import _same_rows                # a preview alike over more rows is not a copy
+    from pramanyx.agent.analyst import _same_rows                # a preview alike over more rows is not a copy
     assert not _same_rows({"rows": [["a", "1"]], "row_count": 25}, [["a", "1"]], 26)
 
 
 def test_a_stop_with_every_result_flagged_is_not_an_answer_yet():
     """2026-10-01, 22:37: three queries, each flagged, and the analyst answered from one of them — "Chicago and
     Memphis are the slowest to ship", which per order no centre is."""
-    from aughor.agent.analyst import AnalystTurn, _every_result_warned
+    from pramanyx.agent.analyst import AnalystTurn, _every_result_warned
     spec = {"phase_id": "intake", "findings": [{"columns": ["field", "value"], "rows": [["Metric", "days"]]}]}
     turn = AnalystTurn(connection_id="c", conn=None, state={"question": "q", "investigation_phases": [spec]})
     assert _every_result_warned(turn) is None                                # nothing measured, nothing to hold
@@ -200,7 +200,7 @@ def test_a_stop_with_every_result_flagged_is_not_an_answer_yet():
 
 
 def test_a_shown_result_keeps_a_warning_a_hidden_copy_also_had():
-    from aughor.agent.investigate import _dedupe_repeated_caveats
+    from pramanyx.agent.investigate import _dedupe_repeated_caveats
     w = "possible over-count: …"
     phases = [{"phase_id": "adhoc_2", "_hidden": True, "findings": [{"trust_caveat": w}]},
               {"phase_id": "adhoc_3", "findings": [{"trust_caveat": w}]},
@@ -280,7 +280,7 @@ def test_a_pair_nothing_filtered_is_still_counted_over_the_statements_own_rows()
 
 
 def test_a_rerun_that_leaves_the_rows_out_does_not_replace_the_flagged_one():
-    from aughor.agent.analyst import AnalystTurn
+    from pramanyx.agent.analyst import AnalystTurn
     turn = AnalystTurn(connection_id="c", conn=None, state={"question": "q", "investigation_phases": []})
     conn = _conn(inverted=3)
     for sql in (SHIP, LEFT_OUT):

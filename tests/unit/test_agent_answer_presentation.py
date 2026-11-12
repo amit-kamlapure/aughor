@@ -7,7 +7,7 @@ tables, printed three times apiece in the PDF — and the PDF printed the answer
 """
 from __future__ import annotations
 
-from aughor.agent.analyst import _adhoc_title
+from pramanyx.agent.analyst import _adhoc_title
 
 QUESTION = ("Of customers who placed their first order in each month of 2025, what share ordered "
             "again within 90 days — and does that repeat rate differ by traffic source and country?")
@@ -130,7 +130,7 @@ COUNTRIES = (["country", "total_first_orders", "repeat_customers", "repeat_rate"
 def test_the_groups_too_small_to_compare_are_counted_and_handed_to_the_analyst():
     """The repeat-rate answer of 2026-10-01 said "many groups represent small sample sizes" where one country of
     thirteen (Colombia, two first-time buyers) and no traffic source was."""
-    from aughor.agent.analyst import AnalystTurn, _record_evidence, _too_few_to_compare
+    from pramanyx.agent.analyst import AnalystTurn, _record_evidence, _too_few_to_compare
     assert _too_few_to_compare(*COUNTRIES) == {"Colombia": 2}               # Poland's 49 compares
     assert _too_few_to_compare(*SOURCES) == {}
     all_small = [COUNTRIES[1][0], ["Peru", "3", "1", "0.3333333333333333"]]
@@ -140,7 +140,7 @@ def test_the_groups_too_small_to_compare_are_counted_and_handed_to_the_analyst()
     turn = AnalystTurn(connection_id="c", conn=None, state={"question": QUESTION, "investigation_phases": []})
     out = _record_evidence(turn, {"sql": "SELECT 1"}, {"columns": COUNTRIES[0], "rows": COUNTRIES[1], "row_count": 3})
     assert out.get("too_few") == {"Colombia": 2}                            # read by the model with the rows
-    from aughor.agent.analyst import analyst_system_prompt
+    from pramanyx.agent.analyst import analyst_system_prompt
     rule = analyst_system_prompt("c", {}, 10, shape="describe")
     assert "under `too_few`" in rule and "call no other group small" in rule
 
@@ -153,7 +153,7 @@ MONTHLY = (["month", "monthly_revenue", "revenue_change", "pct_change"],
 def test_the_first_period_s_missing_change_is_named_to_the_analyst():
     """2026-10-02: each month's change was taken inside the twelve months asked; September 2025's came back empty,
     and the answer called December "the only decline" when September had fallen 9.7% against August."""
-    from aughor.agent.analyst import AnalystTurn, _first_change_missing, _record_evidence, analyst_system_prompt
+    from pramanyx.agent.analyst import AnalystTurn, _first_change_missing, _record_evidence, analyst_system_prompt
     first = {"period": "2025-09-01", "columns": ["revenue_change", "pct_change"]}
     assert _first_change_missing(*MONTHLY, "2025-09-01") == first
     with_base = (MONTHLY[0], [r if r[0] != "2025-09-01" else ["2025-09-01", "50543.93", "-5421.84", "-9.69"]
@@ -170,7 +170,7 @@ def test_the_first_period_s_missing_change_is_named_to_the_analyst():
 
 
 def test_the_analyst_records_one_title_for_the_phase_and_its_finding():
-    from aughor.agent.analyst import AnalystTurn, _record_evidence
+    from pramanyx.agent.analyst import AnalystTurn, _record_evidence
     turn = AnalystTurn(connection_id="c", conn=None, state={"question": QUESTION, "investigation_phases": []})
     _record_evidence(turn, {"sql": "SELECT 1"}, {"columns": COHORTS[0], "rows": COHORTS[1], "row_count": 3})
     phase = turn.state["investigation_phases"][-1]
@@ -198,7 +198,7 @@ SUMMARY = (
 
 
 def test_the_summary_prints_its_headings_table_and_lists_as_such():
-    from aughor.export.document import _summary_blocks
+    from pramanyx.export.document import _summary_blocks
     blocks = _summary_blocks(SUMMARY)
     assert [b.kind for b in blocks] == ["prose", "table", "prose", "prose", "prose", "bullets", "prose"]
     assert blocks[0].text == "**90-Day Repeat Rate by Cohort Month (2025)**"
@@ -210,14 +210,14 @@ def test_the_summary_prints_its_headings_table_and_lists_as_such():
 
 
 def test_a_summary_written_as_prose_is_the_one_block_it_was():
-    from aughor.export.document import _p, _summary_blocks
+    from pramanyx.export.document import _p, _summary_blocks
     text = "Load factors trail short-haul by 2.7 points.\n\nThe gap is **widest** on Mondays."
     assert _summary_blocks(text) == [_p(text)]
 
 
 def _agent_report(monkeypatch):
     """The repeat-rate report as stored: each result's phase, finding and chart share a title."""
-    import aughor.export.document as D
+    import pramanyx.export.document as D
     drawn: list = []
     monkeypatch.setattr(D, "render_chart_svg", lambda c, r, t, title, **k: drawn.append(title) or "<svg/>")
     monkeypatch.setattr(D, "svg_to_png", lambda svg: None)
@@ -242,7 +242,7 @@ def test_a_results_title_is_printed_once(monkeypatch):
 
 
 def test_a_finding_that_says_something_else_keeps_its_caption_and_its_figure_title(monkeypatch):
-    import aughor.export.document as D
+    import pramanyx.export.document as D
     drawn: list = []
     monkeypatch.setattr(D, "render_chart_svg", lambda c, r, t, title, **k: drawn.append(title) or "<svg/>")
     monkeypatch.setattr(D, "svg_to_png", lambda svg: None)
@@ -255,7 +255,7 @@ def test_a_finding_that_says_something_else_keeps_its_caption_and_its_figure_tit
 
 
 def test_an_ai_summary_replaces_the_whole_written_summary(monkeypatch):
-    import aughor.export.document as D
+    import pramanyx.export.document as D
     monkeypatch.setattr(D, "_llm_executive_summary", lambda inv, doc: "The rate rose through 2025.")
     inv = {"question": "q", "report": {"_report_type": "investigate", "executive_summary": SUMMARY,
                                        "metric": "90-day repeat rate", "phases": []}}
@@ -265,7 +265,7 @@ def test_an_ai_summary_replaces_the_whole_written_summary(monkeypatch):
 
 
 def test_a_result_a_corrected_rerun_replaced_is_not_printed(monkeypatch):
-    import aughor.export.document as D
+    import pramanyx.export.document as D
     monkeypatch.setattr(D, "render_chart_svg", lambda *a, **k: "<svg/>")
     monkeypatch.setattr(D, "svg_to_png", lambda svg: None)
     phase = lambda pid, name, **kw: {"phase_id": pid, "phase_name": name, "status": "complete", **kw,  # noqa: E731
@@ -280,7 +280,7 @@ def test_a_result_a_corrected_rerun_replaced_is_not_printed(monkeypatch):
 def test_a_title_is_written_in_words_a_reader_reads():
     """"units_sold — 2026-07-01 → 2026-07-31" titled Q1's figure and its source (2026-10-02): column
     names are for SQL, and a reader says a period, not its first and last ISO days."""
-    from aughor.agent.analyst import _window_words, _words
+    from pramanyx.agent.analyst import _window_words, _words
     assert _words("units_sold") == "units sold" and _words("avg_aov_usd") == "avg AOV USD"
     assert [_window_words(w) for w in ("2026-07-01 → 2026-07-31", "2025-08-01 → 2026-08-31",
                                        "2025-01-01 → 2025-12-31", "2026-03-04 → 2026-09-03",

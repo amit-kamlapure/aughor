@@ -15,7 +15,7 @@ These lock the three bugs reported after the cross-sectional path update (#25):
 """
 import types
 
-from aughor.agent import investigate as I
+from pramanyx.agent import investigate as I
 
 
 def _q(title, chart="bar_horizontal"):

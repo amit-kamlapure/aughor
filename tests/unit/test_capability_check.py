@@ -1,8 +1,8 @@
 """Unit tests for the connector-capability contract (Rec 6) — deterministic AST diagnostics, fail-open."""
 from __future__ import annotations
 
-from aughor.db.capabilities import DialectCapabilities, for_dialect
-from aughor.sql.capability_check import capability_diagnostics
+from pramanyx.db.capabilities import DialectCapabilities, for_dialect
+from pramanyx.sql.capability_check import capability_diagnostics
 
 
 def test_for_dialect_lookups():
@@ -53,7 +53,7 @@ def test_unparseable_sql_fails_open():
 
 
 def test_avoid_line_for_native_and_permissive_dialects():
-    from aughor.db.capabilities import avoid_line
+    from pramanyx.db.capabilities import avoid_line
     sf = avoid_line("snowflake")
     assert sf.startswith("AVOID on snowflake") and "SAFE_DIVIDE" in sf
     assert "ILIKE" in avoid_line("bigquery")

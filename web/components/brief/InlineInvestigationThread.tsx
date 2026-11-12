@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { PartsMessage } from "@/components/chat/PartsMessage";
 import type { SourcePanelData } from "@/components/ChatMessage";
 import { projectThread, newSessionId } from "@/lib/chatTurn";
-import { useAughorChat } from "@/lib/useAughorChat";
+import { usePramanyxChat } from "@/lib/usePramanyxChat";
 import { Button } from "@/components/ui/button";
 
 export interface ThreadRunOpts {
@@ -40,7 +40,7 @@ export interface InlineInvestigationThreadProps {
 
 /**
  * Capability A "pull the thread": an investigation that streams IN PLACE inside the
- * briefing. CA-1: one `useAughorChat` conversation per thread instance (its own
+ * briefing. CA-1: one `usePramanyxChat` conversation per thread instance (its own
  * session, its own abort), fired once on mount with the seeded `/investigate`
  * options riding the send's body; the turn renders through the same
  * `projectThread` → `PartsMessage` path as the chat surfaces. Aborts its stream
@@ -54,7 +54,7 @@ export function InlineInvestigationThread({
   onShowSource,
 }: InlineInvestigationThreadProps) {
   const [sessionId] = useState(() => newSessionId());
-  const { messages, sendMessage, stop, status, error } = useAughorChat({
+  const { messages, sendMessage, stop, status, error } = usePramanyxChat({
     connectionId: opts.connectionId,
     sessionId,
   });

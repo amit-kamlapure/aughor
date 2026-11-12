@@ -1,5 +1,5 @@
-"""Dry-run binding verification (P1b live half, 2026-06-27). See aughor/packs/dryrun.py."""
-from aughor.packs import dry_run_binding
+"""Dry-run binding verification (P1b live half, 2026-06-27). See pramanyx/packs/dryrun.py."""
+from pramanyx.packs import dry_run_binding
 
 
 class FakeConn:

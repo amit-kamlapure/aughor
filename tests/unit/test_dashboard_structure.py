@@ -11,8 +11,8 @@ import uuid
 
 import pytest
 
-from aughor.dashboards import validate as V, versions
-from aughor.dashboards.home import Home
+from pramanyx.dashboards import validate as V, versions
+from pramanyx.dashboards.home import Home
 from tests.unit.test_dashboard_canvas import ME, volumes  # noqa: F401 — the fixture, by name
 
 needs_rules = pytest.mark.skipif(shutil.which("node") is None or not V._BUNDLE.exists(),
@@ -31,7 +31,7 @@ def _split() -> dict:
 
 @needs_rules
 def test_the_keep_door_keeps_a_structure(volumes, monkeypatch):  # noqa: F811
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: False)
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled", lambda name: False)
     tag = uuid.uuid4().hex[:6]
     home = Home(f"struct{tag}", ME, f"desk-{tag}")
     kept = versions.keep(home, _split(), approved_by="user:amit", source="a person's own hand", written_by_model=False)

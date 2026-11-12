@@ -17,12 +17,12 @@ sys.path.insert(0, str(WT / "evals"))
 import semops_band_eval as h  # noqa: E402
 
 h._isolate()
-h._load_env_file("/Users/amitkamlapure/dev/aughor/.env")
+h._load_env_file("/Users/amitkamlapure/dev/pramanyx/.env")
 
 import os  # noqa: E402
 
-from aughor.judgment.seam import Noul  # noqa: E402
-from aughor.semops import operators as ops  # noqa: E402
+from pramanyx.judgment.seam import Noul  # noqa: E402
+from pramanyx.semops import operators as ops  # noqa: E402
 
 KEY = os.environ["TYPESAFE_API_KEY"]
 BATCH = 25

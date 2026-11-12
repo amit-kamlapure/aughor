@@ -7,7 +7,7 @@ Flag off = the pre-R16 prompt, byte-identical.
 """
 from __future__ import annotations
 
-from aughor.agent.prompts_investigate import synthesis_system_prompt as _synthesis_system_prompt
+from pramanyx.agent.prompts_investigate import synthesis_system_prompt as _synthesis_system_prompt
 
 
 def test_the_prompt_carries_the_writing_contract():

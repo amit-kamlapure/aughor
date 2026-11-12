@@ -7,7 +7,7 @@ the narrator, who wrote "no significant variation ⇒ broad volume-based shift".
 """
 from __future__ import annotations
 
-from aughor.agent.investigate import (
+from pramanyx.agent.investigate import (
     _finding_earns_place,
     _is_self_comparison_finding,
     _is_zero_variance_ranking,

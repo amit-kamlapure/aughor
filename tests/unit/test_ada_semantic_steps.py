@@ -11,11 +11,11 @@ import re
 
 import pytest
 
-from aughor.agent.investigate import _apply_semantic_steps
-from aughor.agent.prompts_investigate import PhaseQueryPlan, SemanticField, SemanticStep
-from aughor.agent.state import QueryResult
-from aughor.semops import operators as ops
-from aughor.semops.operators import (
+from pramanyx.agent.investigate import _apply_semantic_steps
+from pramanyx.agent.prompts_investigate import PhaseQueryPlan, SemanticField, SemanticStep
+from pramanyx.agent.state import QueryResult
+from pramanyx.semops import operators as ops
+from pramanyx.semops.operators import (
     _Aggregation,
     _ExtractBatch,
     _ExtractedRow,

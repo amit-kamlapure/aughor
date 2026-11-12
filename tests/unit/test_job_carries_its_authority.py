@@ -12,11 +12,11 @@ import asyncio
 
 import pytest
 
-from aughor.kernel.jobs import JobKernel, JobState
-from aughor.kernel.ledger import Ledger
-from aughor.org.context import current_actor, reset_user_id, set_actor, set_user_id, using_org
-from aughor.rbac.policy import policy_version
-from aughor.security.authz import local_operator
+from pramanyx.kernel.jobs import JobKernel, JobState
+from pramanyx.kernel.ledger import Ledger
+from pramanyx.org.context import current_actor, reset_user_id, set_actor, set_user_id, using_org
+from pramanyx.rbac.policy import policy_version
+from pramanyx.security.authz import local_operator
 
 
 @pytest.fixture()
@@ -32,7 +32,7 @@ async def _submit_and_wait(k: JobKernel, kind: str, work) -> str:
 
 
 def test_sign_in_off_the_operator_is_the_authority(ledger, monkeypatch):
-    monkeypatch.delenv("AUGHOR_REQUIRE_IDENTITY", raising=False)
+    monkeypatch.delenv("PRAMANYX_REQUIRE_IDENTITY", raising=False)
     jid = asyncio.run(_submit_and_wait(JobKernel(ledger), "c1-probe", lambda: asyncio.sleep(0)))
     auth = ledger.job_get(jid)["auth"]
     assert auth, "the job row carries no authority"
@@ -42,9 +42,9 @@ def test_sign_in_off_the_operator_is_the_authority(ledger, monkeypatch):
 
 
 def test_an_identified_caller_is_recorded_with_their_roles(ledger, monkeypatch):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")          # conftest declares the proxy
-    monkeypatch.setenv("AUGHOR_RBAC_AUTO_BOOTSTRAP", "0")
-    from aughor.rbac.store import assign_role
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")          # conftest declares the proxy
+    monkeypatch.setenv("PRAMANYX_RBAC_AUTO_BOOTSTRAP", "0")
+    from pramanyx.rbac.store import assign_role
     assign_role("c1-org", "ana", "analyst")
 
     async def main():
@@ -61,14 +61,14 @@ def test_an_identified_caller_is_recorded_with_their_roles(ledger, monkeypatch):
 
 def test_a_job_no_request_named_anyone_for_says_so(ledger, monkeypatch):
     """Identity enforced, no caller in context — a clock, the platform. Empty is said, never filled in."""
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
     jid = asyncio.run(_submit_and_wait(JobKernel(ledger), "c1-clock", lambda: asyncio.sleep(0)))
     auth = ledger.job_get(jid)["auth"]
     assert auth["person"] == "" and auth["verified_by"] == "none" and auth["roles"] == []
 
 
 def test_the_authority_is_written_once(ledger, monkeypatch):
-    monkeypatch.delenv("AUGHOR_REQUIRE_IDENTITY", raising=False)
+    monkeypatch.delenv("PRAMANYX_REQUIRE_IDENTITY", raising=False)
     jid = asyncio.run(_submit_and_wait(JobKernel(ledger), "c1-probe", lambda: asyncio.sleep(0)))
     before = ledger.job_get(jid)["auth"]
     with pytest.raises(ValueError, match="written once"):
@@ -91,7 +91,7 @@ def test_a_run_off_any_request_acts_for_the_person_on_the_row(ledger):
     try:
         asyncio.run(JobKernel(ledger)._run("j-c1", work, None))
     finally:
-        from aughor.org.context import reset_actor
+        from pramanyx.org.context import reset_actor
         reset_actor(tok)
     assert seen["actor"] == "ana"
 
@@ -103,8 +103,8 @@ def test_a_row_written_before_c1_still_runs_and_reads_as_none(ledger, client):
 
 
 def test_the_jobs_door_shows_it(client, monkeypatch):
-    monkeypatch.delenv("AUGHOR_REQUIRE_IDENTITY", raising=False)
-    from aughor.kernel.jobs import kernel
+    monkeypatch.delenv("PRAMANYX_REQUIRE_IDENTITY", raising=False)
+    from pramanyx.kernel.jobs import kernel
     led = Ledger.default()
 
     async def main():
@@ -117,7 +117,7 @@ def test_the_jobs_door_shows_it(client, monkeypatch):
 
 
 def test_the_policy_version_moves_when_the_table_does(monkeypatch):
-    from aughor.rbac import policy as P
+    from pramanyx.rbac import policy as P
     before = P.policy_version()
     monkeypatch.setitem(P.POLICY, ("GET", "/c1-probe"), P.P.ADMIN_MANAGE_ORG)
     assert P.policy_version() != before

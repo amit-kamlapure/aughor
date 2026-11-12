@@ -9,7 +9,7 @@ the live-SQL path.
 """
 from __future__ import annotations
 
-from aughor.semantic import kb_retriever
+from pramanyx.semantic import kb_retriever
 
 _TIER2_HIT = {
     "title": "Average Transit Time",
@@ -48,7 +48,7 @@ def test_retrieve_for_reader_falls_through_empty_on_failure(monkeypatch):
 def test_connection_kb_registers_split(monkeypatch):
     from types import SimpleNamespace
 
-    from aughor.semantic import connection_kb
+    from pramanyx.semantic import connection_kb
 
     entries = [SimpleNamespace(render=lambda: "net_revenue: GMV minus returns and cancellations.")]
     monkeypatch.setattr(connection_kb, "_relevant_entries", lambda q, c, top_k=4: entries)

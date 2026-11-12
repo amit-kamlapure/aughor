@@ -13,9 +13,9 @@ import uuid
 
 import pytest
 
-from aughor.dashboards import cards, pieces, validate as V, versions
-from aughor.dashboards.home import Home
-from aughor.cards.models import StoredCard
+from pramanyx.dashboards import cards, pieces, validate as V, versions
+from pramanyx.dashboards.home import Home
+from pramanyx.cards.models import StoredCard
 from tests.unit.test_dashboard_canvas import FIXTURE, ME, volumes  # noqa: F401 — the fixture, by name
 
 needs_rules = pytest.mark.skipif(shutil.which("node") is None or not V._BUNDLE.exists(),
@@ -36,7 +36,7 @@ def _on_grid(spec: dict) -> dict:
 
 @needs_rules
 def test_the_keep_door_keeps_a_grid(volumes, monkeypatch):  # noqa: F811
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: False)
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled", lambda name: False)
     tag = uuid.uuid4().hex[:6]
     home = Home(f"grid{tag}", ME, f"orders-{tag}")
     rate, net = f"rate{tag}", f"net{tag}"
@@ -77,7 +77,7 @@ def test_a_model_may_resize_a_piece_on_the_grid_and_may_not_change_what_it_reads
 
 
 def test_resizing_a_piece_on_the_grid_keeps_the_release_it_is_pinned_to(monkeypatch):
-    from aughor.ontology import release
+    from pramanyx.ontology import release
     monkeypatch.setattr(release, "current_id_for_connection", lambda conn: "rel@9")
     before = {"spec": _table_spec(w=8, h=8), "ontology_release": "rel@3"}
     assert pieces.pin_for("c1", before, _table_spec(w=12, h=14)) == "rel@3"        # arrangement reads nothing new

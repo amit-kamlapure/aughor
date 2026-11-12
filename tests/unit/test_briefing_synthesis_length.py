@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-import aughor.llm.provider as prov
-from aughor.knowledge.briefing import (
+import pramanyx.llm.provider as prov
+from pramanyx.knowledge.briefing import (
     _SYSTEM,
     _SYSTEM_MULTI,
     BriefingCitation,
@@ -75,7 +75,7 @@ def test_user_prompt_closes_by_asking_for_paragraphs():
 def test_no_place_still_caps_the_narrative_at_two_or_three_sentences():
     """The defect was FIVE independent places agreeing on a cap; fixing four would have
     left the model with contradictory instructions and no visible failure."""
-    src = Path("aughor/knowledge/briefing.py").read_text()
+    src = Path("pramanyx/knowledge/briefing.py").read_text()
     offenders = [ln.strip() for ln in src.splitlines()
                  if re.search(r"(exactly )?2-3 sentence", ln)
                  and "LEDE" not in ln and "lede" not in ln]
@@ -100,7 +100,7 @@ def test_currency_rewrite_does_not_eat_paragraphs(monkeypatch):
     fp = FakeProvider("Revenue hit $1.2M [1].\n\nMargins held.")
     monkeypatch.setattr(prov, "get_provider", lambda role=None: fp)
     # a person confirmed EUR for the dataset (2026-10-23: the profile's code alone labels nothing)
-    monkeypatch.setattr("aughor.orgsettings.figure_currency", lambda conn_id, schema=None: "EUR")
+    monkeypatch.setattr("pramanyx.orgsettings.figure_currency", lambda conn_id, schema=None: "EUR")
     result = generate_narrative({"sales": [{"id": "s0", "finding": "f", "sql": "SELECT 1"}]},
                                 patterns=[], connection_id="c",
                                 profile={"currency_code": "EUR"})
@@ -127,7 +127,7 @@ def test_per_finding_attribution_reads_every_paragraph(fake, monkeypatch):
     def fake_update(conn, insight_id, merge=None, lineage_edge=None):
         captured[insight_id] = (merge or {}).get("narrative", "")
 
-    monkeypatch.setattr("aughor.explorer.dossier.update_dossier", fake_update)
+    monkeypatch.setattr("pramanyx.explorer.dossier.update_dossier", fake_update)
     data = {"sales": [{"id": f"s{i}", "finding": f"finding {i}", "sql": "SELECT 1"} for i in range(4)]}
     generate_narrative(data, patterns=[], connection_id="c")
     # ref [1] maps to the first ranked insight; its attributed text is drawn from the lede

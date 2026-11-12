@@ -1,6 +1,6 @@
 "use client";
 /**
- * Evals ▸ Experiments — redone to `aughor-v2/CLARITY.md` (2026-10-13). An experiment is a pair DERIVED from the run
+ * Evals ▸ Experiments — redone to `pramanyx-v2/CLARITY.md` (2026-10-13). An experiment is a pair DERIVED from the run
  * history, never stored: two runs of one suite whose recorded requests differ on exactly one axis (a flag, or a model
  * pin). Each pair is one row — A against B, the difference in points, and whether that difference clears A's noise
  * floor (a chip: "within noise", "On better by 4.5 pts", or why it cannot be called). The per-case reading — which

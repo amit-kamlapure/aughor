@@ -1,4 +1,4 @@
-"""Tests for active filter-literal binding (aughor/sql/join_guard.repair_filter_literals /
+"""Tests for active filter-literal binding (pramanyx/sql/join_guard.repair_filter_literals /
 bind_filter_literals): rewrite a guessed enum literal to its confirmed stored value.
 
 Contract: rewrite ONLY the literal in the comparison on the exact (table, column) named by a
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from aughor.sql.join_guard import (FilterDomainWarning, repair_filter_literals,
+from pramanyx.sql.join_guard import (FilterDomainWarning, repair_filter_literals,
                                    bind_filter_literals)
 
 
@@ -47,7 +47,7 @@ def test_no_suggestion_no_change():
 def test_bind_filter_literals_real_sqlite(tmp_path):
     """End-to-end via the product SQLiteConnection: a query filtering a non-existent spelling is
     detected against the live domain and bound to the stored value, then returns rows."""
-    from aughor.connectors.file.sqlite import SQLiteConnection
+    from pramanyx.connectors.file.sqlite import SQLiteConnection
 
     db_file = tmp_path / "orders.sqlite"
     seed = sqlite3.connect(str(db_file))
@@ -71,7 +71,7 @@ def test_bind_filter_literals_real_sqlite(tmp_path):
 def test_bind_filter_literals_corrects_wrong_case(tmp_path):
     """The Scout 'Womenswear' bug: a wrong-CASE enum value passes dry_run as valid but returns
     zero rows; binding corrects it to the stored casing against the live domain."""
-    from aughor.connectors.file.sqlite import SQLiteConnection
+    from pramanyx.connectors.file.sqlite import SQLiteConnection
 
     db_file = tmp_path / "products.sqlite"
     seed = sqlite3.connect(str(db_file))

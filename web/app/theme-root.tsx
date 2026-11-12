@@ -6,7 +6,7 @@
  * `<Theme asChild>` puts its class and its `data-*` attributes on the element it is given
  * instead of on a `<div>` of its own. Given `<html>`, the Theme's variables are declared at
  * the root — which is where every Instrument token is declared too
- * (`aughor-v2/theme/tokens-v2.css`), each as a name for a Radix step. So a token resolves
+ * (`pramanyx-v2/theme/tokens-v2.css`), each as a name for a Radix step. So a token resolves
  * against the person's accent, grey, radius and scaling everywhere: the page, the body's own
  * background, a toast or a menu portalled into `<body>`. A Theme on a wrapper inside `<body>`
  * leaves all of those on the default look.

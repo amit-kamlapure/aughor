@@ -1,0 +1,206 @@
+"""Move a pack between `draft`, `active` and `deprecated` — the rung that was missing.
+
+`status` was read in four places (`routing.select_pack`, `intake.active_packs`, the packs
+router's response) and **written in none**. Import lands a pack at `draft` and the
+ingester's own contract says "nothing imported reaches a prompt until someone promotes
+it" — but there was no way to promote it. Hand-editing `pack.yaml` was the entire
+mechanism, which is not a review path, leaves no record of who decided, and is invisible
+to anything that would want to ask.
+
+Three decisions shape this file:
+
+**Activation is where the lint belongs, not import.** Import is a copy onto disk; a draft
+pack steers nothing and is read by nobody. Activation is the moment third-party prose
+becomes reachable from a prompt, so that is the door worth guarding — and it guards
+hand-placed packs too, which never passed the importer at all. A pack whose prose BLOCKS
+cannot be activated, and the finding says why. The same door checks that the pack can
+be REACHED at all: a `scope.connections` naming no connection, or an engine no
+connector answers to, makes activation a no-op, and a no-op that reports success is
+how a plane ends up complete and inert.
+
+**The record ships with the act.** Who promoted what, and when, lands on the journal in
+the same call. An entitlement nobody can review is indistinguishable from no policy, and
+that lesson has already been paid for here once.
+
+**A prose pack and a grounded pack do not share a gate.** `evalgate.evaluate_activation`
+(Bet 2) demands a pinned+verified binding covering every role, declared evals, and a clean
+pass — and an imported skill can satisfy none of the three: it has no roles, no evals and
+nothing to run. That gate is right for a pack that STEERS A PLAN and meaningless for one
+that can only be READ, whose risk is prompt content rather than wrong SQL. So the fork is
+explicit: a `partial` pack is gated by the lint, a grounded one by its evals, and this
+function refuses to activate a grounded pack without the gate's verdict rather than
+quietly becoming a way around Bet 2. ⚠️ That verdict was already being COMPUTED — by
+`POST /packs/{id}/evaluate` — and thrown away, because nothing anywhere wrote `status`.
+
+**Only `status` is rewritten.** The manifest is re-dumped from the raw YAML mapping, not
+from the parsed model — a round trip through `PackManifest` would silently drop any key
+the model does not declare, and provenance (`source_url`, `licence`) is exactly the kind
+of key that gets added later and must survive a promotion made before that day.
+"""
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import Optional
+
+import yaml
+
+from pramanyx.packs.loader import PROSE_FILE, PacksError, load_pack
+from pramanyx.packs.models import Pack
+
+logger = logging.getLogger(__name__)
+
+#: The full vocabulary. `deprecated` is not a delete: a pack that steered real answers
+#: should stop steering without its history becoming unreadable.
+STATUSES = ("draft", "active", "deprecated")
+
+
+class PromotionRefused(Exception):
+    """Activation was refused. Carries the findings so a caller can show them."""
+
+    def __init__(self, message: str, findings: Optional[list] = None):
+        super().__init__(message)
+        self.findings = findings or []
+
+
+def _pack_root(pack_id: str, packs_dir=None) -> Path:
+    """Where this pack lives — an explicit dir if given, else whichever root holds it."""
+    if packs_dir is not None:
+        base = Path(packs_dir)
+        root = base / pack_id
+        # A caller-supplied id reaches here; assert containment rather than trusting it.
+        if root.parent.resolve() != base.resolve() or not (root / "pack.yaml").is_file():
+            raise PacksError(f"no pack '{pack_id}' under {base}")
+        return root
+    from pramanyx.packs.roots import pack_dir
+    found = pack_dir(pack_id)
+    if found is None:
+        raise PacksError(f"no pack '{pack_id}' in any pack root")
+    return found
+
+
+def lint_pack_prose(root: Path) -> list:
+    """Run the skill import gate over a pack's prose. No prose → nothing to refuse.
+
+    Deliberately the SAME linter the importer uses. Two copies of "is this prose safe to
+    put in front of a model" drift into two answers for one file, and the one that ends up
+    guarding the prompt would be whichever was edited last.
+    """
+    from pramanyx.skills.lint import lint_skill
+
+    prose = root / PROSE_FILE
+    if not prose.is_file():
+        return []
+    return lint_skill(prose.read_text(), name=root.name)
+
+
+def set_status(pack_id: str, status: str, *, packs_dir=None, actor: str = "",
+               gate_decision=None) -> Pack:
+    """Set a pack's status. Returns the reloaded pack.
+
+    ``gate_decision`` is an :class:`~pramanyx.packs.evalgate.ActivationDecision` and is
+    REQUIRED to activate a grounded (non-``partial``) pack — that is Bet 2's gate, and it
+    needs a connection to produce, so it is computed by the caller that has one.
+
+    Raises ``ValueError`` for an unknown status, ``PacksError`` for an unknown pack, and
+    ``PromotionRefused`` when activation would put blocked prose in front of a model or
+    would promote a grounded pack its own evals have not cleared.
+    """
+    if status not in STATUSES:
+        raise ValueError(f"unknown status '{status}' — one of {', '.join(STATUSES)}")
+
+    root = _pack_root(pack_id, packs_dir)
+    manifest_file = root / "pack.yaml"
+
+    if status == "active":
+        # Activating a pack that can never apply is a no-op the promoter should hear
+        # about, not discover from a roster that quietly never lists it. Both cases here
+        # are unreachable-by-construction rather than unreachable-today: an empty scope
+        # names no connection at all, and a misspelled engine names a connector type that
+        # does not exist, so neither becomes reachable when someone connects a warehouse.
+        # A scope for an engine nobody has connected YET is legitimate and passes.
+        from pramanyx.packs import scope as pack_scope
+        ents = pack_scope.entries(load_pack(root).manifest.scope)
+        if not ents:
+            raise PromotionRefused(
+                f"'{pack_id}' has an empty scope.connections, so it applies to no "
+                f"connection and activating it would change nothing. Omit the key to "
+                f"mean every connection.")
+        bad = pack_scope.unknown_engines(ents)
+        if bad:
+            raise PromotionRefused(
+                f"'{pack_id}' is scoped to engine {', '.join(repr(b) for b in bad)}, "
+                f"which no connector type answers to — so it cannot match any connection "
+                f"here. Either the name is a typo, or this pack is for an engine the "
+                f"product does not connect to yet.")
+
+        findings = lint_pack_prose(root)
+        from pramanyx.skills.lint import blocks
+        refused = blocks(findings)
+        if refused:
+            raise PromotionRefused(
+                f"'{pack_id}' cannot be activated: "
+                + "; ".join(f"{f.rule} (line {f.line})" for f in refused),
+                findings=findings)
+
+        # The close-out's C8: a source the package cites but nobody read (`unread: true` — reached
+        # through an index or a summary where it was drafted) keeps the pack a draft. Its bands and
+        # plays rest on a report of a report; a person reads the document, carries the figures it
+        # publishes, drops the flag, and promotes. Said here rather than left as a note nobody acts on.
+        unread = [s.id or "?" for s in load_pack(root).sources if getattr(s, "unread", False)]
+        if unread:
+            raise PromotionRefused(
+                f"'{pack_id}' cites {len(unread)} source{'s' if len(unread) != 1 else ''} marked unread "
+                f"({', '.join(unread)}): read each in the publisher's document, carry the figures it "
+                f"publishes with the words they were published in, drop `unread`, then promote.")
+
+        # Demotion is never gated — taking something out of service must not require
+        # passing a test. Only this direction asks anything.
+        if not load_pack(root).manifest.partial:
+            if gate_decision is None:
+                raise PromotionRefused(
+                    f"'{pack_id}' declares entities or metrics, so it steers plans and its "
+                    f"evals decide activation. Run POST /packs/{pack_id}/evaluate against a "
+                    f"connection and activate through that verdict.")
+            if not getattr(gate_decision, "can_activate", False):
+                raise PromotionRefused(
+                    f"'{pack_id}' was refused by its own evals: "
+                    + "; ".join(getattr(gate_decision, "reasons", []) or ["no reason given"]))
+
+    text = manifest_file.read_text(encoding="utf-8")
+    raw = yaml.safe_load(text) or {}
+    if not isinstance(raw, dict):
+        raise PacksError(f"{manifest_file.name} must be a YAML mapping")
+    before = str(raw.get("status", "draft"))
+    raw["status"] = status
+    # The close-out's C9: ONE line changes. A dump of the loaded mapping dropped every comment the
+    # author wrote — the provenance a reviewer reads — so the status is rewritten in place
+    # (`packs/manifest.rewrite_scalars`) and every other byte of the file stays theirs.
+    from pramanyx.packs.manifest import rewrite_scalars
+    manifest_file.write_text(rewrite_scalars(text, {"status": status}), encoding="utf-8")
+
+    _journal(pack_id, before, status, actor, raw)
+    return load_pack(root)
+
+
+def _journal(pack_id: str, before: str, after: str, actor: str, raw: dict) -> None:
+    """Record the decision. Best-effort: a journal that cannot be written must not undo a
+    status change that already landed on disk — the file is the authority, this is the
+    trail, and a half-applied promotion would be worse than an unrecorded one."""
+    try:
+        from pramanyx.kernel.ledger import Ledger
+        Ledger.default().emit("pack.status_changed", {
+            "pack_id": pack_id,
+            "from": before,
+            "to": after,
+            "actor": actor,
+            # The two facts that make the record worth reading later: where the prose came
+            # from, and whether the pack it activated actually knows anything about data.
+            "source": str(raw.get("source") or ""),
+            "source_url": str(raw.get("source_url") or ""),
+            "licence": str(raw.get("licence") or ""),
+            "partial": bool(raw.get("partial") or False),
+        })
+    except Exception as exc:
+        logger.warning("pack %s status %s→%s was applied but not journalled: %s",
+                       pack_id, before, after, exc)

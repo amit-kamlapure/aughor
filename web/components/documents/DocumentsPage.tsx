@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Documents — the corpus every agent, canvas and prompt can search, redone to `aughor-v2/CLARITY.md` (2026-10-13).
+ * Documents — the corpus every agent, canvas and prompt can search, redone to `pramanyx-v2/CLARITY.md` (2026-10-13).
  *
  * The screen used to open on a big fact-check form, then an amber paragraph, then a five-step authoring wizard that
  * stood open on every visit, then the connected wikis — and the documents themselves below the fold. Now it leads with

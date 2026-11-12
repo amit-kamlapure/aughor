@@ -17,14 +17,14 @@ import json
 from pathlib import Path
 from types import SimpleNamespace as NS
 
-import aughor.agent.investigate as I
-from aughor.agent.investigate import _take_framed_metric, framed_rules
-from aughor.agent.prompts_investigate import IntakeOutput
-from aughor.ontology.framing import frame_question
-from aughor.ontology.models import OntologyGraph
-from aughor.semantic import enforcement as E
-from aughor.semantic.object_query import compile_object_query
-from aughor.sql.metric_filter_guard import enforce_metric_filters
+import pramanyx.agent.investigate as I
+from pramanyx.agent.investigate import _take_framed_metric, framed_rules
+from pramanyx.agent.prompts_investigate import IntakeOutput
+from pramanyx.ontology.framing import frame_question
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.semantic import enforcement as E
+from pramanyx.semantic.object_query import compile_object_query
+from pramanyx.sql.metric_filter_guard import enforce_metric_filters
 from tests.unit.test_keyed_statement_metrics import LINE_REVENUE, db  # noqa: F401 — the samples warehouse fixture
 from tests.unit.test_object_bindings import GRAPH as SAMPLES, rows
 
@@ -190,7 +190,7 @@ def test_the_deep_streams_later_nodes_read_what_its_intake_declared():
     # Each node runs in the stream's one copied context, on an executor thread; a scan's workers copy it again.
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
-    from aughor.routers.investigations import _investigation_stream
+    from pramanyx.routers.investigations import _investigation_stream
 
     def nodes():
         E.declare([CHOSEN])                                               # the intake

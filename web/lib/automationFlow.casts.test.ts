@@ -21,7 +21,7 @@ function serverCasts(): string[] {
   // From the vitest root (`web/`), not `__dirname` — that is undefined under ESM, and the
   // vacuity guard below is what caught it rather than a silently empty comparison.
   const src = readFileSync(
-    resolve(process.cwd(), "..", "aughor", "automations", "dataflow.py"), "utf8");
+    resolve(process.cwd(), "..", "pramanyx", "automations", "dataflow.py"), "utf8");
   // Anchored on the closing paren at LINE START, not the first ")" — the block's own
   // comments contain parentheses ("post only if > 0"), and splitting on those truncated
   // the parse after a single entry. The vacuity guard below is what surfaced that.

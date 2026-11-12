@@ -63,7 +63,7 @@ export function useInspector(): InspectorStore {
 }
 const NO_INSPECTOR: InspectorStore = { subject: null, inspect: () => {}, close: () => {} };
 
-const WIDTH_KEY = "aughor_inspector_width";
+const WIDTH_KEY = "pramanyx_inspector_width";
 const MIN_W = 320, MAX_W = 520, DEFAULT_W = 360;
 
 function readWidth(): number {

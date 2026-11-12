@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * One catalog — or one schema of it — redone to `aughor-v2/CLARITY.md` (2026-10-12, the approved
+ * One catalog — or one schema of it — redone to `pramanyx-v2/CLARITY.md` (2026-10-12, the approved
  * `design-mockups/catalog.html` frame 2): a header line (name · what it is · its state · Ask about it · Tools ▾), then
  * Overview · Tables · Diagram · Docs · Settings. The Overview opens on four figures, what needs a person (only when
  * something does), rows by table beside what the platform knows, then the tables. The Diagram — the tables and the

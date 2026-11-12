@@ -1,7 +1,7 @@
 """F3 — render_profile_annotations classifies high-null columns: dead (100%),
 structural-sparse (a real attribute for a subset, ≥2 distinct), or noise (1 value
 sprinkled across a few rows). Uses null_rate + distinct_count — no extra scan."""
-from aughor.tools.profiler import ColumnProfile, TableProfile, render_profile_annotations
+from pramanyx.tools.profiler import ColumnProfile, TableProfile, render_profile_annotations
 
 
 def _render(col, null_rate, distinct):

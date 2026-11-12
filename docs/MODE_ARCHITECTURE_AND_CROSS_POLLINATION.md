@@ -25,18 +25,18 @@ date column lived in a table Insight never probed but Deep did) is the canonical
 same understanding existed in one mode and was simply absent in the other.**
 
 Entry points:
-- **Insight** — `aughor/routers/investigations.py` (`/investigate` with `deep=false`), the chat/insight streaming block (~850–1450).
-- **Deep / ADA** — `aughor/agent/investigate.py` (intake + phase nodes) orchestrated from `investigations.py` (~1900+).
-- **Explorer** — `aughor/explorer/agent.py`.
-- **Shared SQL tooling** — `aughor/sql/writer.py` (`SqlWriter.fix`, `_repair_from_candidates`), `aughor/sql/identifiers.py` (`repair_identifiers`, `unresolved_identifiers`), `aughor/tools/error_classifier.py`, `aughor/agent/verifier.py` (the Verifier).
+- **Insight** — `pramanyx/routers/investigations.py` (`/investigate` with `deep=false`), the chat/insight streaming block (~850–1450).
+- **Deep / ADA** — `pramanyx/agent/investigate.py` (intake + phase nodes) orchestrated from `investigations.py` (~1900+).
+- **Explorer** — `pramanyx/explorer/agent.py`.
+- **Shared SQL tooling** — `pramanyx/sql/writer.py` (`SqlWriter.fix`, `_repair_from_candidates`), `pramanyx/sql/identifiers.py` (`repair_identifiers`, `unresolved_identifiers`), `pramanyx/tools/error_classifier.py`, `pramanyx/agent/verifier.py` (the Verifier).
 
 ---
 
 ## 2. Capability map
 
 ### Shared core (all modes already have)
-- Unified metric grounding (`aughor/semantic/canonical.py: unified_metric_grounding`).
-- Fan-out detection + de-fan (`aughor/sql/fanout.py`).
+- Unified metric grounding (`pramanyx/semantic/canonical.py: unified_metric_grounding`).
+- Fan-out detection + de-fan (`pramanyx/sql/fanout.py`).
 - Currency / format grounding (unified across surfaces in PR #82 via `web/lib/orgSettings.ts: localizeCurrency` + the export/CLI paths).
 - The shared LLM SQL-repair loop (`SqlWriter.fix`) — now with a **deterministic candidate-binding substitution** fast-path (`_repair_from_candidates`, added 2026-06-25/G7) that fires before any LLM call.
 
@@ -52,8 +52,8 @@ Entry points:
 ### Deep / ADA is stronger at — *validation AFTER generation* + *honesty under uncertainty*
 | Capability | Where | Note |
 |---|---|---|
-| **The Verifier** | `aughor/agent/verifier.py` | Deterministic trust battery (chasm/fan-out detectors) → a typed per-phase verdict |
-| Error-classified repair + KB patterns + metrics block in fix | `aughor/agent/nodes.py` (FIX_SQL_PROMPT enrichment) | Repairs routed by error *type*, enriched with learned patterns |
+| **The Verifier** | `pramanyx/agent/verifier.py` | Deterministic trust battery (chasm/fan-out detectors) → a typed per-phase verdict |
+| Error-classified repair + KB patterns + metrics block in fix | `pramanyx/agent/nodes.py` (FIX_SQL_PROMPT enrichment) | Repairs routed by error *type*, enriched with learned patterns |
 | Temporal grounding | `investigate.py: _measure_date_span`, `_clamp_intake_to_coverage` | Understands the data's true date range + re-anchors windows (G2 fix) |
 | Honesty guards | `investigate.py` (F2 reframe, F3 no-baseless-waterfall, G1 no-baseless-driver) | Never fabricate from a missing baseline / unmeasured change / truncated population |
 | Intake | `investigate.py: ada_intake` | Feasibility check, dimension prioritisation, contradiction report, period selection |
@@ -134,9 +134,9 @@ without a caveat.* (F2/F3/G1 are the Deep-side instances; Insight needs the same
 | # | Move | Direction | Status |
 |---|---|---|---|
 | **R1** | Pre-flight `dry_run` + repair in Insight (validate-then-execute) | Deep→Insight | ✅ Shipped — folded into R2 |
-| **R2** | Shared SQL-safety pipeline (`aughor/sql/safety.py: preflight_repair`) | Platform | ✅ Shipped — wired into Insight + ADA |
+| **R2** | Shared SQL-safety pipeline (`pramanyx/sql/safety.py: preflight_repair`) | Platform | ✅ Shipped — wired into Insight + ADA |
 | **R3** | Trusted-query reuse in ADA phases | Insight→Deep | ✅ Shipped — dormant until a connection's library populates |
-| **R4** | Shared data-understanding builder (`aughor/semantic/data_understanding.py`) | Platform | ✅ Shipped — both modes consume it |
+| **R4** | Shared data-understanding builder (`pramanyx/semantic/data_understanding.py`) | Platform | ✅ Shipped — both modes consume it |
 | **R5** | Measure-grain prevention in the ADA phase planner | Insight→Deep | ✅ Shipped |
 | **R6** | Verifier chasm battery in Insight + safety-pipeline observability receipts | Both | ✅ Shipped (user-facing per-finding badge deferred) |
 

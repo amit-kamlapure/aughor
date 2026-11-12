@@ -42,23 +42,23 @@ export function fingerprint(b: BotRecord): string {
 
 export function createRegistry(
   env: {
-    AUGHOR_API_URL?: string;
-    AUGHOR_API_KEY?: string;
+    PRAMANYX_API_URL?: string;
+    PRAMANYX_API_KEY?: string;
     /** The supervisor's own key, generated in Integrations → Slack. This route is the
      *  one that returns raw `xoxb-`/`xapp-` tokens, so it refuses an unauthenticated
      *  caller; a scoped key means the whole API does not have to be locked to open it. */
-    AUGHOR_RUNTIME_KEY?: string;
+    PRAMANYX_RUNTIME_KEY?: string;
   } = process.env,
   fetchImpl: typeof fetch = fetch,
 ): FetchBots {
-  const base = (env.AUGHOR_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
+  const base = (env.PRAMANYX_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
   return async () => {
     const res = await fetchImpl(`${base}/slack-bots/runtime`, {
       headers: {
         accept: "application/json",
-        ...(env.AUGHOR_API_KEY ? { "x-api-key": env.AUGHOR_API_KEY } : {}),
-        ...(env.AUGHOR_RUNTIME_KEY
-          ? { "x-aughor-runtime-key": env.AUGHOR_RUNTIME_KEY } : {}),
+        ...(env.PRAMANYX_API_KEY ? { "x-api-key": env.PRAMANYX_API_KEY } : {}),
+        ...(env.PRAMANYX_RUNTIME_KEY
+          ? { "x-pramanyx-runtime-key": env.PRAMANYX_RUNTIME_KEY } : {}),
       },
     });
     // 503 is the platform refusing to hand credentials to an unauthenticated caller —
@@ -67,7 +67,7 @@ export function createRegistry(
     if (res.status === 503) {
       throw new Error(
         "the API refused to serve bot credentials: generate a supervisor key in "
-        + "Integrations → Slack and set it here as AUGHOR_RUNTIME_KEY");
+        + "Integrations → Slack and set it here as PRAMANYX_RUNTIME_KEY");
     }
     if (!res.ok) throw new Error(`registry read failed (HTTP ${res.status})`);
     const body = await res.json() as { bots?: BotRecord[] };
@@ -106,13 +106,13 @@ export type PostHeartbeat = (beat: Heartbeat) => Promise<boolean>;
  */
 export function createHeartbeat(
   env: {
-    AUGHOR_API_URL?: string;
-    AUGHOR_API_KEY?: string;
-    AUGHOR_RUNTIME_KEY?: string;
+    PRAMANYX_API_URL?: string;
+    PRAMANYX_API_KEY?: string;
+    PRAMANYX_RUNTIME_KEY?: string;
   } = process.env,
   fetchImpl: typeof fetch = fetch,
 ): PostHeartbeat {
-  const base = (env.AUGHOR_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
+  const base = (env.PRAMANYX_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
   return async (beat) => {
     try {
       const res = await fetchImpl(`${base}/slack-bots/runtime/heartbeat`, {
@@ -120,9 +120,9 @@ export function createHeartbeat(
         headers: {
           "content-type": "application/json",
           accept: "application/json",
-          ...(env.AUGHOR_API_KEY ? { "x-api-key": env.AUGHOR_API_KEY } : {}),
-          ...(env.AUGHOR_RUNTIME_KEY
-            ? { "x-aughor-runtime-key": env.AUGHOR_RUNTIME_KEY } : {}),
+          ...(env.PRAMANYX_API_KEY ? { "x-api-key": env.PRAMANYX_API_KEY } : {}),
+          ...(env.PRAMANYX_RUNTIME_KEY
+            ? { "x-pramanyx-runtime-key": env.PRAMANYX_RUNTIME_KEY } : {}),
         },
         body: JSON.stringify(beat),
       });

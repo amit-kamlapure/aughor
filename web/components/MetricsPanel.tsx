@@ -2,7 +2,7 @@
 
 /**
  * The Semantic Layer's Metrics tab: every metric that applies to one connection — its own definitions, its industry
- * package's and the explorer's suggestions — redone to `aughor-v2/CLARITY.md` (2026-10-12).
+ * package's and the explorer's suggestions — redone to `pramanyx-v2/CLARITY.md` (2026-10-12).
  *
  * The user asked, of LuxExperience, why its metrics "had not popped up": they were suggestions until its profile was
  * built, then proposed and approved — and four of them still had no date column. So the tab opens on what a reader
@@ -73,7 +73,7 @@ import { byWho } from "@/lib/names";
 const GRAINS = ["day", "week", "month", "quarter", "year"] as const;
 
 // ── Governance lifecycle (B-8) ──────────────────────────────────────────────────────────────────────────────────────
-// Legal transitions per state — mirrors aughor/semantic/governance.py.
+// Legal transitions per state — mirrors pramanyx/semantic/governance.py.
 const NEXT_ACTIONS: Record<string, string[]> = {
   draft:      ["propose"],
   proposed:   ["approve", "reject"],

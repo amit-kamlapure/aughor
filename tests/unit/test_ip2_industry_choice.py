@@ -10,10 +10,10 @@ import json
 
 import pytest
 
-from aughor.business_profile import metric_kb
-from aughor.packs import industry_choice
-from aughor.packs.industry_choice import UnknownIndustry, read_choice, readable_industries, write_choice
-from aughor.playbook.models import PlaybookEntry
+from pramanyx.business_profile import metric_kb
+from pramanyx.packs import industry_choice
+from pramanyx.packs.industry_choice import UnknownIndustry, read_choice, readable_industries, write_choice
+from pramanyx.playbook.models import PlaybookEntry
 
 SHIPPED = ["airline", "food_delivery", "logistics", "manufacturing", "retail", "saas"]
 
@@ -23,12 +23,12 @@ def choice(tmp_path, monkeypatch):
     """Each test gets its own choice file: a choice written to the session's shared one would narrow
     every test that runs after it."""
     path = tmp_path / "state" / "industries.json"
-    monkeypatch.setenv("AUGHOR_INDUSTRIES_FILE", str(path))
+    monkeypatch.setenv("PRAMANYX_INDUSTRIES_FILE", str(path))
     return path
 
 
 def test_with_no_choice_every_shipped_industry_is_available_as_before(choice):
-    from aughor.packs.knowledge import industry_kbs
+    from pramanyx.packs.knowledge import industry_kbs
 
     assert not choice.exists() and not read_choice().chosen
     assert list(industry_choice.available_industries()) == SHIPPED
@@ -54,7 +54,7 @@ def test_none_keeps_only_what_every_industry_shares(choice):
 
 
 def test_a_read_that_knows_nothing_about_its_connection_sees_only_the_chosen_industries(choice, monkeypatch):
-    from aughor.playbook import retriever
+    from pramanyx.playbook import retriever
 
     plays = [PlaybookEntry(id=f"p_{kb}", source_kb_id=kb, trigger_metric="churn rate", trigger_condition="c",
                            recommendation="r", status="active")
@@ -67,7 +67,7 @@ def test_a_read_that_knows_nothing_about_its_connection_sees_only_the_chosen_ind
 
 
 def test_rule_outs_name_only_a_chosen_industrys_metrics(choice):
-    from aughor.playbook.rule_outs import match_metric
+    from pramanyx.playbook.rule_outs import match_metric
 
     assert [m.kb_id for m in match_metric("passenger load factor", None)] == ["air_load_factor"]
     write_choice(["retail"], source="test")
@@ -76,7 +76,7 @@ def test_rule_outs_name_only_a_chosen_industrys_metrics(choice):
 
 
 def test_a_changed_choice_reaches_a_running_process(choice):
-    """Settings and `aughor industries` write while the API runs: the cached vocabulary follows the file."""
+    """Settings and `pramanyx industries` write while the API runs: the cached vocabulary follows the file."""
     tokens = lambda: {t for t, _label, _formula in metric_kb.metric_vocabulary("")}  # noqa: E731
     assert "repeatpurchaserate" in tokens() and "availableseatkilometers" in tokens()   # retail's, airline's
     write_choice(["airline"], source="test")
@@ -112,7 +112,7 @@ def test_the_file_is_written_whole_in_the_shape_the_installer_writes(choice):
 
 
 def test_a_changed_choice_drops_only_the_profiles_that_resolve_differently(choice, tmp_path, monkeypatch):
-    from aughor.business_profile import store
+    from pramanyx.business_profile import store
 
     monkeypatch.setattr(store, "_DATA_DIR", tmp_path / "profiles")
     for key, industry in {"air": "Commercial airline", "shop": "E-commerce retail",
@@ -127,8 +127,8 @@ def test_a_changed_choice_drops_only_the_profiles_that_resolve_differently(choic
 def test_settings_reads_and_changes_the_choice(choice, tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
-    from aughor.business_profile import store
+    from pramanyx.api import app
+    from pramanyx.business_profile import store
 
     monkeypatch.setattr(store, "_DATA_DIR", tmp_path / "profiles")
     store._family().put("air", {"profile": {"industry": "Airline"}, "recipes": []})
@@ -151,8 +151,8 @@ def test_settings_reads_and_changes_the_choice(choice, tmp_path, monkeypatch):
 def test_the_cli_lists_and_changes_the_choice(choice, tmp_path, monkeypatch):
     from click.testing import CliRunner
 
-    from aughor import cli
-    from aughor.business_profile import store
+    from pramanyx import cli
+    from pramanyx.business_profile import store
 
     monkeypatch.setattr(store, "_DATA_DIR", tmp_path / "profiles")
     runner = CliRunner()

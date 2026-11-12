@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import types
 
-import aughor.agent.investigate as I
-from aughor.agent.prompts_investigate import IntakeOutput
+import pramanyx.agent.investigate as I
+from pramanyx.agent.prompts_investigate import IntakeOutput
 from dataclasses import dataclass, field
 
 
@@ -72,7 +72,7 @@ def _governed_refund_rate() -> _Metric:
 
 def _pin_on(monkeypatch, metrics):
     monkeypatch.setattr(
-        "aughor.semantic.canonical.resolve_planning_metrics",
+        "pramanyx.semantic.canonical.resolve_planning_metrics",
         lambda *a, **k: list(metrics),
     )
 
@@ -192,7 +192,7 @@ def test_ada_intake_pins_governed_metric_end_to_end(monkeypatch):
     # the flag on, the emitted spec must carry the pinned formula + a transparency note.
     _pin_on(monkeypatch, [_governed_refund_rate()])
     monkeypatch.setattr(I, "_provider", lambda role: _FakeProvider(_intake()))
-    import aughor.agent.explore as ex
+    import pramanyx.agent.explore as ex
     monkeypatch.setattr(ex, "build_analysis_ledger", lambda state: "")
 
     st = {"question": "Why is the Fragrance refund rate so high?", "schema_context": _SCHEMA,
@@ -208,7 +208,7 @@ def test_ada_intake_pins_governed_metric_end_to_end(monkeypatch):
 def test_ada_intake_leaves_metric_untouched_when_flag_off(monkeypatch):
     # Byte-identical default: no governed pin without the flag.
     monkeypatch.setattr(I, "_provider", lambda role: _FakeProvider(_intake()))
-    import aughor.agent.explore as ex
+    import pramanyx.agent.explore as ex
     monkeypatch.setattr(ex, "build_analysis_ledger", lambda state: "")
 
     st = {"question": "Why is the Fragrance refund rate so high?", "schema_context": _SCHEMA,

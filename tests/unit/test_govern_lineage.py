@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from aughor.govern.lineage import (
+from pramanyx.govern.lineage import (
     LINEAGE_EDGES,
     MAX_DEPTH,
     LineageReport,
@@ -108,7 +108,7 @@ def test_an_edge_to_a_node_that_is_not_in_the_graph_is_skipped():
 def test_the_module_exposes_no_delete():
     """A lineage walk that deleted would quietly become the most destructive path in the
     platform, reachable from a single table drop. C1's supersede-not-delete rule stands."""
-    import aughor.govern.lineage as L
+    import pramanyx.govern.lineage as L
 
     assert not [n for n in dir(L)
                 if any(w in n.lower() for w in ("delete", "purge", "remove", "drop"))]
@@ -158,7 +158,7 @@ class TestKnowledgeConnectorCredentials:
     def test_the_known_knowledge_connectors_are_exactly_these_two(self):
         import pathlib
 
-        import aughor.connectors.knowledge as pkg
+        import pramanyx.connectors.knowledge as pkg
 
         mods = sorted(p.stem for p in pathlib.Path(pkg.__file__).parent.glob("*.py")
                       if p.stem != "__init__")
@@ -171,7 +171,7 @@ class TestKnowledgeConnectorCredentials:
         """The finding itself, asserted rather than described."""
         import inspect
 
-        from aughor.connectors.knowledge import confluence, notion
+        from pramanyx.connectors.knowledge import confluence, notion
 
         assert "api_token" in inspect.getsource(confluence)
         assert "integration_token" in inspect.getsource(notion)
@@ -180,7 +180,7 @@ class TestKnowledgeConnectorCredentials:
         """Guards against a future edit that adds the words without the mechanism."""
         import inspect
 
-        from aughor.connectors.knowledge import confluence, notion
+        from pramanyx.connectors.knowledge import confluence, notion
 
         for mod in (confluence, notion):
             src = inspect.getsource(mod).lower()
@@ -193,7 +193,7 @@ class TestKnowledgeConnectorCredentials:
 # ── Wave P4 — each dependent carries the expression that would break ──────────────
 
 def _graph_with_sql_finding():
-    from aughor.ontology.context_graph import (
+    from pramanyx.ontology.context_graph import (
         ContextGraph, GraphEdge, GraphNode, Provenance,
     )
     # org "default" — the route resolves the caller's org, so a fixture under another
@@ -223,7 +223,7 @@ def _graph_with_sql_finding():
 
 def test_dependents_carry_the_line_that_names_the_table():
     """Not just WHICH artifacts break — the expression to look at once one is open."""
-    from aughor.govern.lineage import dependents_of
+    from pramanyx.govern.lineage import dependents_of
 
     report = dependents_of(_graph_with_sql_finding(), "table:Order")
     by_id = {d.node_id: d for d in report.dependents}
@@ -241,10 +241,10 @@ def test_dependents_carry_the_line_that_names_the_table():
 def test_a_dependent_with_no_expression_reports_no_site_rather_than_a_guess():
     """A wrong guess about which line breaks is worse than none: a reviewer would check
     the wrong expression and conclude the dependency was fine."""
-    from aughor.ontology.context_graph import (
+    from pramanyx.ontology.context_graph import (
         ContextGraph, GraphEdge, GraphNode, Provenance,
     )
-    from aughor.govern.lineage import dependents_of
+    from pramanyx.govern.lineage import dependents_of
 
     cg = ContextGraph(org_id="o", connection_id="c")
     cg.add_node(GraphNode(id="table:Order", kind="table", label="Order",
@@ -260,11 +260,11 @@ def test_a_dependent_with_no_expression_reports_no_site_rather_than_a_guess():
 
 
 def test_lineage_route_answers_by_table_name(monkeypatch, tmp_path):
-    from aughor.ontology import context_graph_store as store
+    from pramanyx.ontology import context_graph_store as store
     monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
     store.save_graph(_graph_with_sql_finding())
 
-    from aughor.routers.ontology import get_context_graph_lineage
+    from pramanyx.routers.ontology import get_context_graph_lineage
     out = get_context_graph_lineage("c", None, "orders", schema_name=None, column=None)
 
     assert out["node_id"] == "table:Order"
@@ -275,11 +275,11 @@ def test_lineage_route_answers_by_table_name(monkeypatch, tmp_path):
 
 def test_lineage_route_requires_a_subject(monkeypatch, tmp_path):
     from fastapi import HTTPException
-    from aughor.ontology import context_graph_store as store
+    from pramanyx.ontology import context_graph_store as store
     monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")
     store.save_graph(_graph_with_sql_finding())
 
-    from aughor.routers.ontology import get_context_graph_lineage
+    from pramanyx.routers.ontology import get_context_graph_lineage
     try:
         get_context_graph_lineage("c", None, None, schema_name=None, column=None)
     except HTTPException as exc:
@@ -293,7 +293,7 @@ def test_a_site_never_points_at_a_different_table_or_a_function():
     `sales_summary` (a different table) and `date` matched `date_trunc(` (a function).
     A site that points at the wrong expression is worse than none — the reviewer checks
     it, finds it fine, and concludes the dependency was fine."""
-    from aughor.govern.lineage import _site_of
+    from pramanyx.govern.lineage import _site_of
     from types import SimpleNamespace
 
     n = SimpleNamespace(kind="finding", data={
@@ -309,7 +309,7 @@ def test_a_site_never_points_at_a_different_table_or_a_function():
 
 def test_a_label_that_is_not_an_identifier_yields_no_site():
     """`"Rev. ".split(".")[-1]` is `" "`, which is truthy and matched every line."""
-    from aughor.govern.lineage import _site_of
+    from pramanyx.govern.lineage import _site_of
     from types import SimpleNamespace
 
     n = SimpleNamespace(kind="finding", data={"sql": "SELECT a, b"})
@@ -321,7 +321,7 @@ def test_a_schema_qualified_reference_still_finds_its_line():
     preceding dot found NOTHING on every schema-qualified warehouse — every site reported
     line 0 — and the unit fixtures could not see it because they all used bare names. Only
     a run against the committed graph exposed it."""
-    from aughor.govern.lineage import _site_of
+    from pramanyx.govern.lineage import _site_of
     from types import SimpleNamespace
 
     n = SimpleNamespace(kind="finding", data={

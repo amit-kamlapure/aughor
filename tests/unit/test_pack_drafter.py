@@ -2,7 +2,7 @@
 
 The user's rule: a pack lays out how an industry is usually shaped, and the objects built are the ones the
 connection's tables hold — a business whose head office is its warehouse gets no Warehouse because a pack says so.
-These hold the pack drafter (`aughor/packs/drafter.py`) and its door to that rule, on the real samples and theLook
+These hold the pack drafter (`pramanyx/packs/drafter.py`) and its door to that rule, on the real samples and theLook
 graphs: what the data holds is grouped, named and staged the industry's way; what it does not hold is never proposed
 and never mentioned; every proposal goes through the explorer's own path with the pack's provenance, never a model's.
 """
@@ -13,12 +13,12 @@ from pathlib import Path
 
 import pytest
 
-from aughor.ontology import drafts as DR
-from aughor.ontology import overrides as OV
-from aughor.ontology.explorer import Answerer
-from aughor.ontology.models import KineticAction, OntologyEntity, OntologyGraph
-from aughor.packs.drafter import pack_draft
-from aughor.packs.ontology_map import apply_core_claims, match_objects, resolve_ontology
+from pramanyx.ontology import drafts as DR
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.explorer import Answerer
+from pramanyx.ontology.models import KineticAction, OntologyEntity, OntologyGraph
+from pramanyx.packs.drafter import pack_draft
+from pramanyx.packs.ontology_map import apply_core_claims, match_objects, resolve_ontology
 
 REPO = Path(__file__).resolve().parents[2]
 SAMPLES = REPO / "evals" / "ablation_samples_ecommerce_ontology_measured.json"
@@ -136,7 +136,7 @@ def test_actions_are_offered_only_on_objects_the_data_holds_and_settled_once_dec
 
 
 def test_an_offered_action_is_not_booked_into_the_record_as_a_claim_about_the_business(monkeypatch):
-    from aughor.record import writers
+    from pramanyx.record import writers
     booked = []
     monkeypatch.setattr(writers._claims, "book", lambda claim, **kw: booked.append(kw["key"]))
     report = apply_core_claims(_graph(SAMPLES), _core(), "core-ecommerce")
@@ -166,17 +166,17 @@ def _isolated_trees(tmp_path, monkeypatch):
 
 @pytest.fixture
 def door(tmp_path, monkeypatch):
-    import aughor.db.connection as C
-    from aughor.db.connection import open_connection
-    from aughor.ontology import store as ST
-    from aughor.util.json_store import KeyedJsonStore
+    import pramanyx.db.connection as C
+    from pramanyx.db.connection import open_connection
+    from pramanyx.ontology import store as ST
+    from pramanyx.util.json_store import KeyedJsonStore
     from tests.unit.test_object_bindings import GRAPH, seed
 
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
     ST.save_ontology(CONN, "ecommerce", "fp", OntologyGraph.model_validate(json.loads(GRAPH.read_text())))
     path = tmp_path / "samples.duckdb"
     seed(path)
-    from aughor.routers._shared import invalidate_schema_cache
+    from pramanyx.routers._shared import invalidate_schema_cache
     invalidate_schema_cache(CONN)               # the served graph is cached per connection, across tests
     monkeypatch.setattr(C, "open_connection_for_with_schema",
                         lambda *_a, **_k: open_connection("duckdb", str(path), schema_name="ecommerce",
@@ -209,8 +209,8 @@ def test_the_door_refuses_a_pack_with_no_map(door, client):
 @pytest.mark.parametrize("bound", [[], ["core-ecommerce"]], ids=["nothing bound", "a draft pack bound"])
 def test_with_no_pack_deployed_the_rite_is_exactly_what_it_was(monkeypatch, bound):
     # deployed = bound AND active: core-ecommerce ships as a draft, so binding it alone runs nothing
-    from aughor.packs import bindings
-    from aughor.routers import _shared
+    from pramanyx.packs import bindings
+    from pramanyx.routers import _shared
     monkeypatch.setattr(bindings, "packs_bound_on", lambda conn, schema="": list(bound))
     seen = []
     assert _shared.run_pack_structure("c1", "shop", lambda *a, **k: seen.append(a)) == "none"
@@ -220,11 +220,11 @@ def test_with_no_pack_deployed_the_rite_is_exactly_what_it_was(monkeypatch, boun
 def test_a_pack_run_on_the_scope_does_not_stop_the_business_explorer(monkeypatch):
     from types import SimpleNamespace
 
-    import aughor.licensing.resolver as resolver
-    import aughor.ontology.drafts as drafts
-    import aughor.ontology.store as ontology_store
-    import aughor.routers.ontology as ontology
-    from aughor.routers import _shared
+    import pramanyx.licensing.resolver as resolver
+    import pramanyx.ontology.drafts as drafts
+    import pramanyx.ontology.store as ontology_store
+    import pramanyx.routers.ontology as ontology
+    from pramanyx.routers import _shared
     calls = []
     monkeypatch.setattr(ontology, "explore_ontology",
                         lambda connection_id, schema_name=None: calls.append(connection_id) or {"run": {"id": "r"}})

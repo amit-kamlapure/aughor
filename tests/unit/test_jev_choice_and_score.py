@@ -23,8 +23,8 @@ What they pin:
 """
 from __future__ import annotations
 
-from aughor.judgment.jev import JevJudge
-from aughor.judgment.seam import CHOICE, NOUL, SCORE, Choice, Noul, Score
+from pramanyx.judgment.jev import JevJudge
+from pramanyx.judgment.seam import CHOICE, NOUL, SCORE, Choice, Noul, Score
 
 TREATMENT = Choice(id="treatment", question="How much work does this ask earn?",
                    options=("lookup", "single_query", "multi_query", "investigation"))

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Settings ▸ Access, redone to `aughor-v2/CLARITY.md` (2026-10-12): four figures first — who you are here, the role
+ * Settings ▸ Access, redone to `pramanyx-v2/CLARITY.md` (2026-10-12): four figures first — who you are here, the role
  * assignments, the function groups, how much of the call ledger carries a person — then what needs one (calls nobody
  * is attributed to, a function group with no members), then the roles beside the groups and the assignments beside the
  * measured users. Each role's permissions sit behind its *Details*; the built-in groups fold into one line.

@@ -1,0 +1,200 @@
+"""The authority door (the 2027 study §M; phase 4) — the L0–L5 table for a connection's declared
+actions, each level with its record, its receipt and its blockers; the graduation a person books
+on an earned record; the demotion a person or a failed verification books; the executions.
+"""
+from __future__ import annotations
+
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+
+from pramanyx.actions import authority as A
+from pramanyx.db.registry import BUILTIN_ID
+from pramanyx.security.authz import acting_person, connection_owner_guard, get_principal
+
+router = APIRouter(prefix="/authority", tags=["authority"], dependencies=[Depends(connection_owner_guard)])
+
+
+def _actions(connection_id: str, schema_name: Optional[str]) -> dict:
+    from pramanyx.ontology.store import load_latest_ontology
+    graph = load_latest_ontology(connection_id, schema_name or None)
+    if graph is None and schema_name:
+        graph = load_latest_ontology(connection_id, None)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="Ontology not available")
+    return {a.id: a for a in graph.declared_actions()}
+
+
+def _who(principal) -> str:
+    """Who books it: the signed-in person, else the one the request acts for (`authz.acting_person`)."""
+    return acting_person(principal)
+
+
+@router.get("")
+def authority_table(connection_id: str = BUILTIN_ID, schema_name: Optional[str] = Query(default=None)) -> dict:
+    """Every declared action's level on this connection, with the record it is computed from, the
+    receipt that granted it, the demotion that took it, and what L4 would still need."""
+    actions = _actions(connection_id, schema_name)
+    return {"connection_id": connection_id, "levels": A.LEVELS, "graduation_n": A.GRADUATION_N, "l5_n": A.L5_N,
+            "actions": A.table(list(actions.values()), connection_id),
+            "note": (f"L5 only on an L5 receipt a person books on a long L4 record ({A.L5_N} verified executions) inside a mission "
+                     "whose ceiling sets it; an irreversible action never passes L3")}
+
+
+@router.get("/{action_id}/l5-check")
+def authority_l5_check(action_id: str, connection_id: str = BUILTIN_ID, schema_name: Optional[str] = Query(default=None)) -> dict:
+    """Whether (action, scope) has earned L5, with every blocker named (the close-out, C6)."""
+    actions = _actions(connection_id, schema_name)
+    action = actions.get(action_id)
+    if action is None:
+        raise HTTPException(status_code=404, detail=f"No declared action '{action_id}'")
+    return A.evaluate_l5(action, connection_id)
+
+
+class GrantL5Body(BaseModel):
+    connection_id: str = BUILTIN_ID
+    schema_name: Optional[str] = None
+    mission: str = ""
+
+
+@router.post("/{action_id}/grant-l5", status_code=201)
+def authority_grant_l5(action_id: str, body: GrantL5Body, principal=Depends(get_principal)) -> dict:
+    """A person books the L5 receipt inside a mission whose ceiling sets the action at L5 — the record
+    decides whether it is earned (the close-out, C6)."""
+    actions = _actions(body.connection_id, body.schema_name)
+    action = actions.get(action_id)
+    if action is None:
+        raise HTTPException(status_code=404, detail=f"No declared action '{action_id}'")
+    try:
+        return A.grant_l5(action, body.connection_id, by=_who(principal) or "unidentified", mission=body.mission)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.get("/{action_id}/record")
+def authority_record(action_id: str, connection_id: str = BUILTIN_ID,
+                     schema_name: Optional[str] = Query(default=None), limit: int = 100) -> dict:
+    actions = _actions(connection_id, schema_name)
+    action = actions.get(action_id)
+    if action is None:
+        raise HTTPException(status_code=404, detail=f"No declared action '{action_id}'")
+    return {**A.level_for(action, connection_id), "graduation_check": A.evaluate_graduation(action, connection_id),
+            "executions": A.executions(action_id, connection_id, limit=max(1, min(int(limit), 500)))}
+
+
+class GraduateBody(BaseModel):
+    connection_id: str = BUILTIN_ID
+    schema_name: Optional[str] = None
+
+
+@router.post("/{action_id}/graduate", status_code=201)
+def authority_graduate(action_id: str, body: GraduateBody, principal=Depends(get_principal)) -> dict:
+    """A person books the graduation receipt — the record decides whether it is earned."""
+    actions = _actions(body.connection_id, body.schema_name)
+    action = actions.get(action_id)
+    if action is None:
+        raise HTTPException(status_code=404, detail=f"No declared action '{action_id}'")
+    try:
+        return A.graduate(action, body.connection_id, by=_who(principal) or "unidentified")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+class UndoBody(BaseModel):
+    connection_id: str = BUILTIN_ID
+    schema_name: Optional[str] = None
+
+
+@router.post("/{action_id}/executions/{entry_id}/undo", status_code=201)
+def authority_undo(action_id: str, entry_id: str, body: UndoBody, principal=Depends(get_principal)) -> dict:
+    """Fire the declared undo of one execution (the close-out, C5): the compensating action runs
+    through the same governed pipeline, books its own entry naming the one it compensates, and the
+    original is restated as undone; an undo that could not run or failed its verification demotes
+    the action. Refused with why outside the window, twice, or when the undo is not declared."""
+    actions = _actions(body.connection_id, body.schema_name)
+    if action_id not in actions:
+        raise HTTPException(status_code=404, detail=f"No declared action '{action_id}'")
+    out = A.undo(entry_id, by=_who(principal) or "unidentified", actions=actions, scope=body.connection_id,
+                 schema_name=body.schema_name or "")
+    if out.get("status") == "refused":
+        raise HTTPException(status_code=409, detail=out)
+    return out
+
+
+@router.get("/writes")
+def authority_writes(door: Optional[str] = Query(default=None), limit: int = 100) -> dict:
+    """Every write the integration gateway and the MCP door performed, on the record beside the
+    declared actions' entries (the close-out, C5): operation, status, who, under what; no
+    verification read and no undo, said."""
+    rows = A.writes(door=door or "", limit=max(1, min(int(limit), 500)))
+    return {"writes": rows, "count": len(rows),
+            "note": "a gateway write declares no verification read and no undo; it is on the record so it can be counted, not graduated"}
+
+
+class CeilingBody(BaseModel):
+    connection_id: str = BUILTIN_ID
+    level: Optional[int] = None    # L0–L5; None lifts the cap
+    why: str = ""
+    by: str = ""                   # ignored: the person signed in sets it
+
+
+@router.post("/{action_id}/ceiling", status_code=201)
+def authority_ceiling(action_id: str, body: CeilingBody, principal=Depends(get_principal)) -> dict:
+    """A person caps an action on a connection at a level, outside any mission — or lifts the cap.
+    A ceiling only lowers what the record earned; it grants nothing."""
+    try:
+        entry = A.set_ceiling(action_id, body.connection_id, level=body.level,
+                              by=_who(principal) or "unidentified", why=body.why)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return {"entry": entry, "action_id": action_id, "scope": body.connection_id}
+
+
+class WidenBody(BaseModel):
+    connection_id: str = BUILTIN_ID
+    schema_name: Optional[str] = None
+    target_value: str
+    expires_days: int = 30
+    max_uses: int = 0              # 0 = no cap on uses
+    by: str = ""                   # ignored: the person signed in signs it
+
+
+@router.post("/{action_id}/widen", status_code=201)
+def authority_widen(action_id: str, body: WidenBody, principal=Depends(get_principal)) -> dict:
+    """A person signs a standing grant for an action at L4 — bound to one target value on this
+    connection, expiring, capped — citing the graduation receipt that licenses it. Refused below
+    L4 and for an action that does not declare exactly one target parameter, with why."""
+    actions = _actions(body.connection_id, body.schema_name)
+    action = actions.get(action_id)
+    if action is None:
+        raise HTTPException(status_code=404, detail=f"No declared action '{action_id}'")
+    if not (body.target_value or "").strip():
+        raise HTTPException(status_code=422, detail="a standing grant is bound to one target value")
+    if body.expires_days < 0 or body.max_uses < 0:
+        raise HTTPException(status_code=422, detail="an expiry and a cap on uses are counts")
+    try:
+        grant = A.widen(action, body.connection_id, target_value=body.target_value.strip(),
+                        by=_who(principal) or "unidentified", expires_days=body.expires_days,
+                        max_uses=body.max_uses)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return {"grant": grant.model_dump() if hasattr(grant, "model_dump") else grant}
+
+
+class DemoteBody(BaseModel):
+    connection_id: str = BUILTIN_ID
+    why: str
+    drill: bool = False            # a person rehearsing the demotion: the same entry, marked as a drill
+    by: str = ""                   # ignored: the person signed in demotes
+
+
+@router.post("/{action_id}/demote", status_code=201)
+def authority_demote(action_id: str, body: DemoteBody, principal=Depends(get_principal)) -> dict:
+    """A person takes authority away — the same entry a failed verification books — and the
+    standing grants of (action, scope) are withdrawn with it."""
+    if not (body.why or "").strip():
+        raise HTTPException(status_code=422, detail="a demotion says why")
+    entry = A.demote(action_id, body.connection_id, why=body.why, by=_who(principal) or "unidentified",
+                     evidence={"drill": True} if body.drill else None)
+    return {"entry": entry, "action_id": action_id, "scope": body.connection_id, "to_level": 3, "drill": body.drill}

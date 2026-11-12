@@ -15,7 +15,7 @@ import asyncio
 
 import pytest
 
-from aughor.util.stream_events import clear_chain_sink, emit_chain_state, set_chain_sink
+from pramanyx.util.stream_events import clear_chain_sink, emit_chain_state, set_chain_sink
 
 
 @pytest.mark.anyio
@@ -58,10 +58,10 @@ async def test_detail_is_truncated_and_defaults_are_strings():
 
 @pytest.mark.anyio
 async def test_provider_shim_forwards(monkeypatch):
-    from aughor.llm import provider as provider_mod
+    from pramanyx.llm import provider as provider_mod
 
     seen: list = []
-    monkeypatch.setattr("aughor.util.stream_events.emit_chain_state",
+    monkeypatch.setattr("pramanyx.util.stream_events.emit_chain_state",
                         lambda *a, **k: seen.append((a, k)))
     provider_mod._emit_chain_state("fallback", "gemini", "groq",
                                    model="m", role="coder", detail="d")
@@ -71,10 +71,10 @@ async def test_provider_shim_forwards(monkeypatch):
 
 @pytest.mark.anyio
 async def test_provider_shim_never_breaks_the_call(monkeypatch):
-    from aughor.llm import provider as provider_mod
+    from pramanyx.llm import provider as provider_mod
 
     def _boom(*_a, **_k):
         raise RuntimeError("sink exploded")
 
-    monkeypatch.setattr("aughor.util.stream_events.emit_chain_state", _boom)
+    monkeypatch.setattr("pramanyx.util.stream_events.emit_chain_state", _boom)
     provider_mod._emit_chain_state("fallback", "gemini", "groq")  # must not raise

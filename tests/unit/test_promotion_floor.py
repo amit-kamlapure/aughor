@@ -9,8 +9,8 @@ Clearing the bar is not the same as beating it. The difference is the noise floo
 """
 from __future__ import annotations
 
-from aughor.evals import fidelity as FI
-from aughor.evals.promotion import evaluate_graduation
+from pramanyx.evals import fidelity as FI
+from pramanyx.evals.promotion import evaluate_graduation
 
 FLAGS = {"graph.readback"}
 

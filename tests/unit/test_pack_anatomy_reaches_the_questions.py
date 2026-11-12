@@ -23,8 +23,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.business_profile.metric_kb import declared_key_questions, package_questions
-from aughor.starters import PACKAGE_SUGGESTIONS_CAP, package_suggestions
+from pramanyx.business_profile.metric_kb import declared_key_questions, package_questions
+from pramanyx.starters import PACKAGE_SUGGESTIONS_CAP, package_suggestions
 
 AIRLINE_CANONICAL = "What was our on-time arrival rate last month?"
 AIRLINE_DIAGNOSTIC = "Which delay causes account for the fall in on-time arrivals?"
@@ -62,7 +62,7 @@ class TestTheDeclaredQuestionsArrive:
         """Gate 6 by construction: the seam reads what `knowledge_index()` carries. An index without
         airline (what a draft or a deactivated package looks like there) yields nothing, though the
         files are on disk."""
-        from aughor.packs import knowledge
+        from pramanyx.packs import knowledge
         real = knowledge.knowledge_index()
         # The fake keeps the curated industries (so "airline" still resolves to its id) and carries
         # no package — complete the fake, never loosen the reader.
@@ -107,7 +107,7 @@ class TestTheSuggestionsCarryTheirRoute:
         assert package_suggestions("c", industry="retail") == []
 
     def test_the_connections_industry_is_resolved_when_none_is_given(self, monkeypatch):
-        import aughor.starters as S
+        import pramanyx.starters as S
         monkeypatch.setattr(S, "connection_industry", lambda cid, schema="": "airline")
         assert package_suggestions("c")[0]["text"] == AIRLINE_CANONICAL
         monkeypatch.setattr(S, "connection_industry", lambda cid, schema="": "")
@@ -117,12 +117,12 @@ class TestTheSuggestionsCarryTheirRoute:
 class TestTheDoorLeadsWithThePackage:
     @pytest.fixture(autouse=True)
     def _cached(self, monkeypatch):
-        monkeypatch.setattr("aughor.semantic.suggestions_cache.get_cached",
+        monkeypatch.setattr("pramanyx.semantic.suggestions_cache.get_cached",
                             lambda cid, fp: [{"text": "Which carriers cancel the most flights?", "mode": "investigate"},
                                              {"text": "model q", "mode": "ask"}])
 
     def test_declared_questions_lead_and_a_repeat_is_dropped(self, client, monkeypatch):
-        import aughor.starters as S
+        import pramanyx.starters as S
         monkeypatch.setattr(S, "connection_industry", lambda cid, schema="": "airline")
         body = client.get("/suggestions", params={"connection_id": "fixture"}).json()
         texts = [s["text"] for s in body["suggestions"]]
@@ -133,7 +133,7 @@ class TestTheDoorLeadsWithThePackage:
         assert texts[-1] == "model q"
 
     def test_no_package_leaves_the_payload_byte_identical(self, client, monkeypatch):
-        import aughor.starters as S
+        import pramanyx.starters as S
         monkeypatch.setattr(S, "connection_industry", lambda cid, schema="": "")
         body = client.get("/suggestions", params={"connection_id": "fixture"}).json()
         assert body["suggestions"] == [{"text": "Which carriers cancel the most flights?", "mode": "investigate"},

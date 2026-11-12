@@ -5,9 +5,9 @@ Deep-Analysis audit finding (inv3): "why did revenue decline in 2024 vs 2023?" h
 dimension it never queried as a data gap. A "why did X change?" question presupposes a real move
 and asks its CAUSE — when the aggregate moved materially it must still run ONE dimensional pass.
 A genuinely-flat series (inv4's false "did refunds spike?" premise) must still stop cleanly.
-See route_after_baseline in aughor/agent/investigate.py.
+See route_after_baseline in pramanyx/agent/investigate.py.
 """
-from aughor.agent.investigate import route_after_baseline
+from pramanyx.agent.investigate import route_after_baseline
 
 
 def _state(question, *, sig=None, sigma=None, rel=None, phases=None):

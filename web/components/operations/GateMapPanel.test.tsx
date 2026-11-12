@@ -25,7 +25,7 @@ const GATE_MAP = {
     ],
     counted_since: "2026-10-05", uses_note: "Uses are counted from 2026-10-05; nothing earlier was recorded",
     unguarded: [{
-      key: "aughor/tools/data_catalog.py::_fetch_sample::execute::_catalog", path: "aughor/tools/data_catalog.py",
+      key: "pramanyx/tools/data_catalog.py::_fetch_sample::execute::_catalog", path: "pramanyx/tools/data_catalog.py",
       function: "_fetch_sample", door: "execute", label: "_catalog", dialect: "none", author: "platform",
       note: "kept DuckDB-only on purpose: translated, BigQuery rows would reach the model's prompt unredacted",
     }],
@@ -89,7 +89,7 @@ describe("GateMapView", () => {
     expect(within(dialects).getByText("none — undeclared")).toBeInTheDocument();
     const site = within(screen.getByTestId("gate-unguarded")).getByTestId("gate-unguarded-site");
     expect(site).toHaveTextContent("kept DuckDB-only on purpose");
-    expect(site).toHaveTextContent("aughor/tools/data_catalog.py · in _fetch_sample · written by the platform");
+    expect(site).toHaveTextContent("pramanyx/tools/data_catalog.py · in _fetch_sample · written by the platform");
   });
 
   it("an install without the census says so instead of drawing an empty map", async () => {
@@ -146,7 +146,7 @@ describe("PoliciesView", () => {
 
     const identity = screen.getByRole("group", { name: "Identity" });
     expect(await within(identity).findByText(/every caller is treated as the owner/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Download" })).toHaveAttribute("download", "aughor-ledger.jsonl");
+    expect(screen.getByRole("link", { name: "Download" })).toHaveAttribute("download", "pramanyx-ledger.jsonl");
   });
 
   it("a cap reads back as a sentence; a failed read says so on its own row", async () => {

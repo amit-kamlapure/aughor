@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from aughor.ontology.authority import choose
-from aughor.ontology.harvest import Evidence, from_override, from_registry, harvest, reliance
+from pramanyx.ontology.authority import choose
+from pramanyx.ontology.harvest import Evidence, from_override, from_registry, harvest, reliance
 
 
 def _ov(**kw):
@@ -135,11 +135,11 @@ def _isolate(monkeypatch, *, overrides=(), registry=(), executed=()):
     measures whatever happens to be on the machine — it caught a real `SUM(total_amount)`
     the first time it ran.
     """
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics",
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics",
                         lambda *a, **k: list(registry))
-    monkeypatch.setattr("aughor.ontology.overrides.load_overrides",
+    monkeypatch.setattr("pramanyx.ontology.overrides.load_overrides",
                         lambda *a, **k: list(overrides))
-    monkeypatch.setattr("aughor.db.history.recent_executed_sql",
+    monkeypatch.setattr("pramanyx.db.history.recent_executed_sql",
                         lambda *a, **k: list(executed))
 
 
@@ -148,8 +148,8 @@ def _isolate(monkeypatch, *, overrides=(), registry=(), executed=()):
 def test_provenance_route_returns_the_graphs_own_formula_as_a_claim(client, monkeypatch):
     """Even with no overrides and no registry, the metric's own formula is a CLAIM —
     and it is verified only if the graph says it bound, never because it is incumbent."""
-    from aughor.ontology.models import OntologyGraph, OntologyMetric
-    import aughor.routers.ontology as mod
+    from pramanyx.ontology.models import OntologyGraph, OntologyMetric
+    import pramanyx.routers.ontology as mod
 
     graph = OntologyGraph(connection_id="c1", schema_fingerprint="fp", entities={}, metrics={"revenue": OntologyMetric(
         id="revenue", display_name="Revenue", entity="orders",
@@ -169,8 +169,8 @@ def test_provenance_route_returns_the_graphs_own_formula_as_a_claim(client, monk
 
 
 def test_provenance_route_404s_for_a_metric_that_does_not_exist(client, monkeypatch):
-    from aughor.ontology.models import OntologyGraph
-    import aughor.routers.ontology as mod
+    from pramanyx.ontology.models import OntologyGraph
+    import pramanyx.routers.ontology as mod
     _isolate(monkeypatch)
     monkeypatch.setattr(mod, "_get_ontology_graph",
                         lambda *a, **k: OntologyGraph(connection_id="c1",
@@ -182,8 +182,8 @@ def test_provenance_route_404s_for_a_metric_that_does_not_exist(client, monkeypa
 def test_a_source_that_raises_does_not_lose_the_other_sources(client, monkeypatch):
     """Per-source best-effort: a broken history store must not cost us the definitions
     the graph and the overrides could evidence."""
-    from aughor.ontology.models import OntologyGraph, OntologyMetric
-    import aughor.routers.ontology as mod
+    from pramanyx.ontology.models import OntologyGraph, OntologyMetric
+    import pramanyx.routers.ontology as mod
 
     graph = OntologyGraph(connection_id="c1", schema_fingerprint="fp", entities={}, metrics={"revenue": OntologyMetric(
         id="revenue", display_name="Revenue", entity="orders", formula_sql="SUM(net)")})
@@ -192,7 +192,7 @@ def test_a_source_that_raises_does_not_lose_the_other_sources(client, monkeypatc
 
     def _boom(*a, **k):
         raise RuntimeError("history store is unreadable")
-    monkeypatch.setattr("aughor.db.history.recent_executed_sql", _boom)
+    monkeypatch.setattr("pramanyx.db.history.recent_executed_sql", _boom)
 
     body = client.get("/ontology/metrics/revenue/provenance").json()
     assert len(body["definitions"]) == 1 and body["definitions"][0]["use_count"] == 0

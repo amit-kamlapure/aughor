@@ -22,15 +22,15 @@ import duckdb
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.db import registry
+from pramanyx.api import app
+from pramanyx.db import registry
 
 client = TestClient(app)
 
 
 @pytest.fixture()
 def conn(tmp_path, monkeypatch):
-    import aughor.db.matcache as mc
+    import pramanyx.db.matcache as mc
     monkeypatch.setattr(mc, "_CACHE_PATH", tmp_path / "mat.duckdb")
     monkeypatch.setattr(mc, "_conn", None)
     db = tmp_path / "cache.duckdb"
@@ -145,7 +145,7 @@ def test_a_cached_typed_hit_still_carries_column_types(conn):
 def test_variant_partitions_the_key_and_none_reproduces_the_legacy_key():
     """Callers with no cap of their own (the metric-moves path) must keep the historical
     key — the variant is additive, not a re-keying of every consumer."""
-    from aughor.db.matcache import _cache_key
+    from pramanyx.db.matcache import _cache_key
     import hashlib
     legacy = hashlib.sha256(b"c1::SELECT 1").hexdigest()[:32]
     assert _cache_key("c1", "SELECT 1") == legacy
@@ -158,8 +158,8 @@ def test_variant_partitions_the_key_and_none_reproduces_the_legacy_key():
 def test_extras_round_trip_beside_the_result(tmp_path, monkeypatch):
     """`get_cached_entry` returns extras BESIDE the QueryResult, never on it — QueryResult
     is the execution contract and must not grow a display concern."""
-    import aughor.db.matcache as mc
-    from aughor.control_plane.contracts.execution import QueryResult
+    import pramanyx.db.matcache as mc
+    from pramanyx.control_plane.contracts.execution import QueryResult
     monkeypatch.setattr(mc, "_CACHE_PATH", tmp_path / "m.duckdb")
     monkeypatch.setattr(mc, "_conn", None)
     res = QueryResult(hypothesis_id="h", sql="SELECT 1", columns=["a"], rows=[[1]], row_count=1)
@@ -178,8 +178,8 @@ def test_extras_round_trip_beside_the_result(tmp_path, monkeypatch):
 
 def test_an_entry_without_extras_reports_an_empty_dict(tmp_path, monkeypatch):
     """Legacy entries carry no extra_json; the tuple shape must not depend on that."""
-    import aughor.db.matcache as mc
-    from aughor.control_plane.contracts.execution import QueryResult
+    import pramanyx.db.matcache as mc
+    from pramanyx.control_plane.contracts.execution import QueryResult
     monkeypatch.setattr(mc, "_CACHE_PATH", tmp_path / "m2.duckdb")
     monkeypatch.setattr(mc, "_conn", None)
     res = QueryResult(hypothesis_id="h", sql="SELECT 1", columns=["a"], rows=[[1]], row_count=1)

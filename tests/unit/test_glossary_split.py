@@ -16,7 +16,7 @@ from __future__ import annotations
 import pytest
 import yaml
 
-from aughor.semantic import glossary as G
+from pramanyx.semantic import glossary as G
 
 
 def _authored(desc="hand-written guidance"):
@@ -108,7 +108,7 @@ def test_removing_the_last_generated_entry_does_not_leave_it_resurrectable(gpath
 # ── the sidecar follows the authored path ─────────────────────────────────────
 
 def test_the_sidecar_is_derived_from_the_authored_path(tmp_path):
-    """Derived, not separately configured — so it follows AUGHOR_GLOSSARY_PATH automatically
+    """Derived, not separately configured — so it follows PRAMANYX_GLOSSARY_PATH automatically
     and there is no second env var for the suite to forget to isolate."""
     assert G.generated_path(tmp_path / "glossary.yaml").name == "glossary_generated.yaml"
     assert G.generated_path(tmp_path / "glossary.yaml").parent == tmp_path
@@ -117,10 +117,10 @@ def test_the_sidecar_is_derived_from_the_authored_path(tmp_path):
 def test_the_sidecar_lands_in_the_suites_temp_dir_not_the_repo(monkeypatch, tmp_path):
     """The hermeticity property, stated for the new file: a test write can never reach
     data/glossary_generated.yaml."""
-    monkeypatch.setenv("AUGHOR_GLOSSARY_PATH", str(tmp_path / "glossary.yaml"))
+    monkeypatch.setenv("PRAMANYX_GLOSSARY_PATH", str(tmp_path / "glossary.yaml"))
     G.save_glossary({"tables": {"x": _generated()}})
     assert (tmp_path / "glossary_generated.yaml").exists()
-    assert "aughor/data" not in str(G.generated_path())
+    assert "pramanyx/data" not in str(G.generated_path())
 
 
 # ── the layering it must not disturb ──────────────────────────────────────────
@@ -129,8 +129,8 @@ def test_merge_precedence_is_untouched_by_the_split(gpath, monkeypatch):
     """`auto_generated` stays the WEAKEST layer. If the split had stripped the marker or
     changed the join direction, an authored term would stop overriding its generated
     namesake — the one regression that would be silent and wrong."""
-    monkeypatch.setenv("AUGHOR_GLOSSARY_PATH", str(gpath))
-    monkeypatch.delenv("AUGHOR_DBT_MANIFEST", raising=False)
+    monkeypatch.setenv("PRAMANYX_GLOSSARY_PATH", str(gpath))
+    monkeypatch.delenv("PRAMANYX_DBT_MANIFEST", raising=False)
     G.save_glossary({"tables": {
         "orders": _authored("AUTHORITATIVE: use gross_amount"),
         "orders_gen": _generated(),

@@ -1,6 +1,6 @@
 """DE-2a — an outside agent is a principal, part a (ROADMAP §3.51).
 
-Measured on `f02c8f22`: the MCP client sent only `X-Api-Key`, so with `AUGHOR_REQUIRE_IDENTITY=1` every MCP call
+Measured on `f02c8f22`: the MCP client sent only `X-Api-Key`, so with `PRAMANYX_REQUIRE_IDENTITY=1` every MCP call
 was refused with a 401; the API compared the key with `!=`; FastMCP fixed a loopback-only host allowlist when the
 server object was built at import, before `--host` was read. Run live on 2026-10-03 before the build, `--http
 --host 0.0.0.0` answered a remote client `421 Invalid Host header` on every request and gave a loopback client with
@@ -26,9 +26,9 @@ import httpx
 import pytest
 from fastapi import HTTPException
 
-from aughor.mcp.client import IDENTITY_ORG_HEADER, IDENTITY_USER_HEADER, AughorClient, AughorError
+from pramanyx.mcp.client import IDENTITY_ORG_HEADER, IDENTITY_USER_HEADER, PramanyxClient, PramanyxError
 
-_PRINCIPAL_VARS = ("AUGHOR_MCP_ORG", "AUGHOR_MCP_USER", "AUGHOR_MCP_BEARER")
+_PRINCIPAL_VARS = ("PRAMANYX_MCP_ORG", "PRAMANYX_MCP_USER", "PRAMANYX_MCP_BEARER")
 
 
 def _run(coro):
@@ -40,41 +40,41 @@ def _run(coro):
 def test_the_client_presents_the_principal_it_is_given_and_nothing_otherwise(monkeypatch):
     for var in _PRINCIPAL_VARS:
         monkeypatch.delenv(var, raising=False)
-    bare = AughorClient(base_url="http://t", api_key="")._headers()
+    bare = PramanyxClient(base_url="http://t", api_key="")._headers()
     # Identity-off installs present no PRINCIPAL header; DE-2b added the agent mark, which is
     # what lets the API apply the organisation's agent policy to this client's calls.
-    assert bare == {"accept": "application/json", "X-Aughor-Agent": "mcp"}, bare
+    assert bare == {"accept": "application/json", "X-Pramanyx-Agent": "mcp"}, bare
 
-    monkeypatch.setenv("AUGHOR_MCP_ORG", "acme")
-    monkeypatch.setenv("AUGHOR_MCP_BEARER", "head.body.sig")
-    h = AughorClient(base_url="http://t", api_key="k")._headers()
+    monkeypatch.setenv("PRAMANYX_MCP_ORG", "acme")
+    monkeypatch.setenv("PRAMANYX_MCP_BEARER", "head.body.sig")
+    h = PramanyxClient(base_url="http://t", api_key="k")._headers()
     assert h["X-Api-Key"] == "k"
     assert h["Authorization"] == "Bearer head.body.sig"
     assert h[IDENTITY_ORG_HEADER] == "acme" and h[IDENTITY_USER_HEADER] == "mcp", "an org names a user: `mcp`"
-    assert AughorClient(base_url="http://t", org="acme", user="ana")._headers()[IDENTITY_USER_HEADER] == "ana"
+    assert PramanyxClient(base_url="http://t", org="acme", user="ana")._headers()[IDENTITY_USER_HEADER] == "ana"
 
 
 def test_the_header_names_are_the_apis_own():
     """Spelled in the client so it stays httpx-only; held equal to the API's seam here."""
-    from aughor.security import authz
+    from pramanyx.security import authz
     assert (IDENTITY_ORG_HEADER, IDENTITY_USER_HEADER) == (authz.IDENTITY_ORG_HEADER, authz.IDENTITY_USER_HEADER)
 
 
 def test_identity_mode_serves_the_client_only_with_a_principal(monkeypatch):
     """Through the real app: the 401 the study measured, then the same call served once the client says who."""
-    from aughor.api import app
+    from pramanyx.api import app
 
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    monkeypatch.delenv("AUGHOR_OIDC_ISSUER", raising=False)
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    monkeypatch.delenv("PRAMANYX_OIDC_ISSUER", raising=False)
     for var in _PRINCIPAL_VARS:
         monkeypatch.delenv(var, raising=False)
 
-    anonymous = AughorClient(base_url="http://test", transport=httpx.ASGITransport(app=app))
-    with pytest.raises(AughorError) as refused:
+    anonymous = PramanyxClient(base_url="http://test", transport=httpx.ASGITransport(app=app))
+    with pytest.raises(PramanyxError) as refused:
         _run(anonymous.list_connections())
     assert "401" in str(refused.value) and "identity required" in str(refused.value)
 
-    named = AughorClient(base_url="http://test", transport=httpx.ASGITransport(app=app), org="acme", user="probe")
+    named = PramanyxClient(base_url="http://test", transport=httpx.ASGITransport(app=app), org="acme", user="probe")
     assert isinstance(_run(named.list_connections()), list)
 
 
@@ -87,7 +87,7 @@ def _request(path: str = "/connections"):
 
 
 def test_the_api_key_is_compared_in_constant_time(monkeypatch):
-    import aughor.api as api
+    import pramanyx.api as api
 
     seen: list[tuple] = []
     real = hmac.compare_digest
@@ -110,7 +110,7 @@ def test_the_api_key_is_compared_in_constant_time(monkeypatch):
 # ── --http has a door, and its transport security follows the host ───────────────────────────────────────────────────
 
 def test_transport_security_follows_the_host():
-    from aughor.mcp.server import transport_security_for
+    from pramanyx.mcp.server import transport_security_for
 
     loopback = transport_security_for("127.0.0.1")
     assert loopback.enable_dns_rebinding_protection and "127.0.0.1:*" in loopback.allowed_hosts
@@ -118,7 +118,7 @@ def test_transport_security_follows_the_host():
 
 
 def test_the_bearer_gate_refuses_every_request_without_the_token():
-    from aughor.mcp.server import BearerGate
+    from pramanyx.mcp.server import BearerGate
 
     async def inner(scope, receive, send):
         await send({"type": "http.response.start", "status": 200, "headers": []})
@@ -135,20 +135,20 @@ def test_the_bearer_gate_refuses_every_request_without_the_token():
 
     none, wrong, basic, right = _run(go())
     assert none.status_code == wrong.status_code == basic.status_code == 401
-    assert none.headers["www-authenticate"].startswith("Bearer") and "AUGHOR_MCP_TOKEN" in none.text
+    assert none.headers["www-authenticate"].startswith("Bearer") and "PRAMANYX_MCP_TOKEN" in none.text
     assert right.status_code == 200 and right.text == "served"
     with pytest.raises(ValueError):
         BearerGate(inner, "")
 
 
 def test_http_refuses_to_start_without_a_token(monkeypatch):
-    import aughor.mcp.__main__ as entry
+    import pramanyx.mcp.__main__ as entry
 
-    monkeypatch.delenv("AUGHOR_MCP_TOKEN", raising=False)
-    monkeypatch.setattr(sys, "argv", ["aughor.mcp", "--http", "--no-automations", "--no-spotlight", "--no-agents"])
+    monkeypatch.delenv("PRAMANYX_MCP_TOKEN", raising=False)
+    monkeypatch.setattr(sys, "argv", ["pramanyx.mcp", "--http", "--no-automations", "--no-spotlight", "--no-agents"])
     with pytest.raises(SystemExit) as e:
         entry.main()
-    assert "AUGHOR_MCP_TOKEN" in str(e.value.code)
+    assert "PRAMANYX_MCP_TOKEN" in str(e.value.code)
 
 
 def _free_port() -> int:
@@ -171,10 +171,10 @@ def test_a_remote_client_is_served_with_the_token_and_refused_without(tmp_path: 
     """The pre-check, after. Before: a remote client got 421 on everything and a loopback client got a session for
     nothing. Now the host's `Host` header is accepted, and the token decides."""
     port = _free_port()
-    env = {**os.environ, "AUGHOR_MCP_TOKEN": "t0k-live", "AUGHOR_API_URL": "http://127.0.0.1:1",
-           "AUGHOR_SKIP_DOTENV": "1"}
+    env = {**os.environ, "PRAMANYX_MCP_TOKEN": "t0k-live", "PRAMANYX_API_URL": "http://127.0.0.1:1",
+           "PRAMANYX_SKIP_DOTENV": "1"}
     log = (tmp_path / "mcp.log").open("w")
-    proc = subprocess.Popen([sys.executable, "-m", "aughor.mcp", "--http", "--host", "0.0.0.0", "--port", str(port),
+    proc = subprocess.Popen([sys.executable, "-m", "pramanyx.mcp", "--http", "--host", "0.0.0.0", "--port", str(port),
                              "--no-automations", "--no-spotlight", "--no-agents"], env=env, stdout=log,
                             stderr=subprocess.STDOUT)
     try:

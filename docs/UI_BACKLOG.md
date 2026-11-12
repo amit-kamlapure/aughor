@@ -45,9 +45,9 @@ Catalog Explorer (evolve the existing Catalog screen)
 
 These are deliberate cost/ops trade-offs (off by default). Optionally expose a toggle
 in **Settings → Models / System** so an operator can flip them without env vars:
-- **R8 in-SQL `prompt()`/`embedding()`** — `AUGHOR_AI_SQL`
-- **Snapshot-pinned receipts** — `AUGHOR_SNAPSHOT_RECEIPTS`
-- **dbt manifest** — env/file (`AUGHOR_DBT_MANIFEST`); a manifest-upload UI is optional
+- **R8 in-SQL `prompt()`/`embedding()`** — `PRAMANYX_AI_SQL`
+- **Snapshot-pinned receipts** — `PRAMANYX_SNAPSHOT_RECEIPTS`
+- **dbt manifest** — env/file (`PRAMANYX_DBT_MANIFEST`); a manifest-upload UI is optional
 
 ## Not gaps (verified — do not build)
 - **Ontology overrides** — inline edit UI applies them (OntologyPanel), and since PX-6
@@ -63,7 +63,7 @@ in **Settings → Models / System** so an operator can flip them without env var
 2. ✅ **U3** — **Glossary** as a Comments tab in the table detail (`63efe35`, browser-verified).
 3. ✅ **U5 / U7 / U6** — per-agent model picker · monitor grace-period · playbook version history (`56f2c95`, browser-verified).
 4. ✅ **U8** — post-proc transforms: a `POST /query/postproc` endpoint + a "Transform" control on the answer card (`8c5a88e`).
-5. ✅ **P3** — runtime feature-flag store (`aughor/kernel/flags.py`, override > env) + Settings → System toggles (`494b43e`).
+5. ✅ **P3** — runtime feature-flag store (`pramanyx/kernel/flags.py`, override > env) + Settings → System toggles (`494b43e`).
 
 > **Status: COMPLETE.** All 🔴 real gaps (Volumes · Grants · Glossary) and all 🟡/P3 items
 > (U5–U8, P3) are shipped on branch `2026-06-22-org-tenant-spine` (PR #78), each browser-verified.

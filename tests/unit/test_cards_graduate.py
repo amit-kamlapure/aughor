@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.cards.models import StoredCard
-from aughor.cards.store import get_card, upsert_card
+from pramanyx.api import app
+from pramanyx.cards.models import StoredCard
+from pramanyx.cards.store import get_card, upsert_card
 
 client = TestClient(app)
 
@@ -19,7 +19,7 @@ def _stub_monitor(monkeypatch):
     # No scheduler stub: the automation heartbeat reads the monitor store live each
     # tick (Wave 4 — the per-monitor scheduler sync was deleted with the legacy loop).
     captured: dict = {}
-    monkeypatch.setattr("aughor.monitors.store.upsert_monitor",
+    monkeypatch.setattr("pramanyx.monitors.store.upsert_monitor",
                         lambda m: captured.setdefault("monitor", m) or m)
     return captured
 

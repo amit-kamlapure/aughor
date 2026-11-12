@@ -1,4 +1,4 @@
-# The healthcare providers and hospitals industry vocabulary (AUGHOR_ATLAS_INDUSTRY_VOCABULARY_v1, 2026-11-11: 66
+# The healthcare providers and hospitals industry vocabulary (PRAMANYX_ATLAS_INDUSTRY_VOCABULARY_v1, 2026-11-11: 66
 # reference types) as an industry map: what a provider's data is expected to hold, matched to tables by name or alias
 # and measured — expectations, never facts. Sixty-five objects: Treatment Episode is folded into EpisodeOfCare as a
 # spelling of it; every other type is an object here (Consent is named PatientConsent).

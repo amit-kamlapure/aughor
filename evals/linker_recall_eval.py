@@ -42,7 +42,7 @@ def _gold_tables(sql: str) -> set[str]:
 def _inline(schema: str) -> str:
     """The house form rewritten the way BigQuery/Snowflake render it: every table's columns
     inline on its header, no indented column lines, no value annotations."""
-    from aughor.db.schema_render import parse_inline_columns  # noqa: F401 — the form it parses
+    from pramanyx.db.schema_render import parse_inline_columns  # noqa: F401 — the form it parses
     out, current, cols = [], None, []
 
     def _flush():
@@ -70,10 +70,10 @@ def _inline(schema: str) -> str:
 
 def linked_tables(question: str, full_schema: str, connection_id: str) -> list[str]:
     """The tables the quick path's catalog would carry, computed as `_answer_core` computes them."""
-    from aughor.agent.grounding import schema_slice
-    from aughor.llm.profile import profile_for
-    from aughor.tools.schema import fk_neighbor_expand, parse_schema_tables, temporal_dimension_tables
-    from aughor.tools.schema_linker import rank_tables_for_context
+    from pramanyx.agent.grounding import schema_slice
+    from pramanyx.llm.profile import profile_for
+    from pramanyx.tools.schema import fk_neighbor_expand, parse_schema_tables, temporal_dimension_tables
+    from pramanyx.tools.schema_linker import rank_tables_for_context
     sliced = schema_slice(question, connection_id, schema=full_schema)
     linked = list(parse_schema_tables(sliced).keys())
     if not linked:
@@ -88,8 +88,8 @@ def linked_tables(question: str, full_schema: str, connection_id: str) -> list[s
 def measure(gold_path: Path) -> dict:
     import tests.conftest  # noqa: F401 — every store at a temp path, as the suite runs
     import duckdb
-    from aughor.db.connection import open_connection
-    from aughor.demo.setup import _seed_ecommerce
+    from pramanyx.db.connection import open_connection
+    from pramanyx.demo.setup import _seed_ecommerce
 
     path = Path(tempfile.mkdtemp()) / "samples.duckdb"
     con = duckdb.connect(str(path))

@@ -6,10 +6,10 @@ called `orders` — so a tie made on a bare name would show.
 """
 from __future__ import annotations
 
-from aughor.ontology.models import Backing, OntologyEntity, OntologyGraph, OntologyRelationship
-from aughor.ontology.sources import stamp_traversals
-from aughor.record import claims as C
-from aughor.record import cross_links as X
+from pramanyx.ontology.models import Backing, OntologyEntity, OntologyGraph, OntologyRelationship
+from pramanyx.ontology.sources import stamp_traversals
+from pramanyx.record import claims as C
+from pramanyx.record import cross_links as X
 
 
 def _type(type_id: str, table: str, conn: str) -> OntologyEntity:
@@ -118,20 +118,20 @@ def test_the_door_opens_the_ontology_and_this_module_never_does(monkeypatch):
 
     from fastapi import HTTPException
 
-    from aughor.routers import ontology as door
-    assert "aughor.ontology.domains" not in inspect.getsource(X)
-    monkeypatch.setattr("aughor.ontology.domains.domain_names", lambda org=None: ["retail"])
+    from pramanyx.routers import ontology as door
+    assert "pramanyx.ontology.domains" not in inspect.getsource(X)
+    monkeypatch.setattr("pramanyx.ontology.domains.domain_names", lambda org=None: ["retail"])
     opened: list[str] = []
 
     def graph_of(scope):
         opened.append(scope.name)
         return _graph()
 
-    monkeypatch.setattr("aughor.ontology.domains.domain_graph", graph_of)
+    monkeypatch.setattr("pramanyx.ontology.domains.domain_graph", graph_of)
     claim = _claim("shop", "Orders fell 4%", entities=["Order"], cid="near-1")
-    monkeypatch.setattr("aughor.record.claims.get", lambda cid: claim if cid == "near-1" else None)
+    monkeypatch.setattr("pramanyx.record.claims.get", lambda cid: claim if cid == "near-1" else None)
     monkeypatch.setattr(X, "_claims_on", lambda conn: [_claim("crm", "Enterprise accounts renew at 91%", entities=["Account"], cid="far-1")])
-    monkeypatch.setattr("aughor.security.authz.org_visible_conn_ids", lambda: None)
+    monkeypatch.setattr("pramanyx.security.authz.org_visible_conn_ids", lambda: None)
 
     out = door.list_claim_links("near-1", domain=None)
     assert opened == ["default", "retail"]                                # every domain the organisation declared in
@@ -142,7 +142,7 @@ def test_the_door_opens_the_ontology_and_this_module_never_does(monkeypatch):
 
     for hidden in (lambda: {"crm"}, None):
         if hidden is not None:
-            monkeypatch.setattr("aughor.security.authz.org_visible_conn_ids", hidden)
+            monkeypatch.setattr("pramanyx.security.authz.org_visible_conn_ids", hidden)
         try:
             door.list_claim_links("near-1" if hidden else "nobody", domain=None)
             raise AssertionError("expected a 404")

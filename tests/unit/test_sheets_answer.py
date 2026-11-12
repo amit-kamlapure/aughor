@@ -1,4 +1,4 @@
-"""Arc SH, SH-4 — the rows a question asked beside a sheet is about, put on the grid (``aughor/sheets/answer.py``).
+"""Arc SH, SH-4 — the rows a question asked beside a sheet is about, put on the grid (``pramanyx/sheets/answer.py``).
 
 Live, asked "Which records do not have order delivered carrier date?", the chat answered with a breakdown and a chart,
 no count of the rows asked about, and one of its own query's seven groups left out (trace d77fd873). What is asserted
@@ -22,18 +22,18 @@ o6,delivered,2018-09-30 10:00:00,2018-10-25 00:00:00,
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
-    from aughor.actions import overlay
+    monkeypatch.setenv("PRAMANYX_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "system.db"))
+    from pramanyx.actions import overlay
     monkeypatch.setattr(overlay, "_DB_PATH", tmp_path / "overlay.db")
-    from aughor.sheets import projection
+    from pramanyx.sheets import projection
     projection.reset()
     yield tmp_path
     projection.reset()
 
 
 def _orders(env):
-    from aughor.sheets import files, service
+    from pramanyx.sheets import files, service
     path = env / "olist_orders_dataset.csv"
     path.write_text(ORDERS)
     return service.create_from_file(files.stage(path, path.name), name="Olist orders", by="user:ana",
@@ -41,7 +41,7 @@ def _orders(env):
 
 
 def _show(ref, **args):
-    from aughor.sheets.answer import show_rows
+    from pramanyx.sheets.answer import show_rows
     frames: list = []
     out = show_rows(ref, args, emit=lambda name, payload: frames.append((name, payload)))
     return out, frames
@@ -51,22 +51,22 @@ EMPTY = [{"column": "order_delivered_customer_date", "op": "empty"}]
 
 
 def test_the_rows_asked_about_are_counted_as_the_grid_counts_them(env):
-    from aughor.sheets import projection
+    from pramanyx.sheets import projection
     sheet = _orders(env)
     out, frames = _show(sheet.id, conditions=EMPTY, about="Orders not delivered")
     assert out["shown"] and out["rows"] == 4 and out["of"] == 6, out          # o3, o4, o5 — and o6, delivered
     assert out["filter_said"] == "order_delivered_customer_date is empty"
     [(name, card)] = frames
     assert name == "sheet_rows" and card["about"] == "Orders not delivered" and card["share"] == 66.7
-    from aughor.sheets.model import Condition
+    from pramanyx.sheets.model import Condition
     grid = projection.read_rows(sheet, conditions=[Condition(**c) for c in card["filter"]])["total"]
     assert card["rows"] == grid == 4                                            # the card's filter IS the grid's
     assert card["filter"][0]["column"] == sheet.column("order_delivered_customer_date").id
 
 
 def test_these_means_the_rows_of_the_view_on_screen(env):
-    from aughor.sheets import service
-    from aughor.sheets.model import Condition, View
+    from pramanyx.sheets import service
+    from pramanyx.sheets.model import Condition, View
     sheet = _orders(env)
     status = sheet.column("order_status").id
     sheet = service.save_view(sheet, View(id="", name="Delivered", filter=[
@@ -95,8 +95,8 @@ def test_what_the_grid_could_not_show_is_refused_with_a_sentence_to_repair_from(
 
 
 def test_a_rule_is_named_by_its_name(env):
-    from aughor.sheets import service
-    from aughor.sheets.model import Condition, Rule
+    from pramanyx.sheets import service
+    from pramanyx.sheets.model import Condition, Rule
     sheet = _orders(env)
     sheet = service.save_rule(sheet, Rule(name="Not delivered", conditions=[
         Condition(column=sheet.column("order_delivered_customer_date").id, op="empty")]), by="user:ana")
@@ -107,8 +107,8 @@ def test_a_rule_is_named_by_its_name(env):
 
 
 def test_only_a_question_asked_beside_a_sheet_gets_the_tool(env):
-    from aughor.agent.converse_tools import converse_tools
-    from aughor.sheets.answer import sheet_tools
+    from pramanyx.agent.converse_tools import converse_tools
+    from pramanyx.sheets.answer import sheet_tools
     sheet = _orders(env)
     plain = [t.name for t in converse_tools("sheets")]
     beside = [t.name for t in converse_tools("sheets", sheet=sheet.id)]
@@ -117,7 +117,7 @@ def test_only_a_question_asked_beside_a_sheet_gets_the_tool(env):
 
 
 def test_the_sheet_tells_the_conversation_how_to_answer_before_its_columns(env):
-    from aughor.sheets import chat
+    from pramanyx.sheets import chat
     sheet = _orders(env)
     told = chat.explain_sheet(sheet.id)
     keys = list(told)
@@ -131,7 +131,7 @@ def test_the_sheet_tells_the_conversation_how_to_answer_before_its_columns(env):
 def test_the_counts_on_the_card_are_citable_by_the_answer(env):
     """The numbers check holds the prose to the turn's cells; the card's counts are pooled with them, so an answer
     that says what the card says is not rewritten."""
-    from aughor.agent.converse_tools import ground_answer_numbers
+    from pramanyx.agent.converse_tools import ground_answer_numbers
     answer = "3 of 6 orders have no delivered date — 50.0% of the sheet."
     kept, receipt = ground_answer_numbers(answer, [[3, 6, 50.0]], question="which orders were not delivered?")
     assert kept == answer and receipt is None
@@ -144,7 +144,7 @@ def test_the_stream_hands_the_sheet_to_the_conversation_and_the_card_to_the_numb
     import json
     import types
 
-    from aughor.routers import investigations as inv
+    from pramanyx.routers import investigations as inv
     monkeypatch.setattr(inv, "build_history_section", lambda h: "")
     monkeypatch.setattr(inv, "build_prior_answers_section", lambda a: "")
     monkeypatch.setattr(inv, "resolve_prior_answers", lambda *a, **k: [])
@@ -153,7 +153,7 @@ def test_the_stream_hands_the_sheet_to_the_conversation_and_the_card_to_the_numb
     def _ground(answer, rows, question=""):
         held["rows"] = rows
         return answer, None
-    monkeypatch.setattr("aughor.agent.converse_tools.ground_answer_numbers", _ground)
+    monkeypatch.setattr("pramanyx.agent.converse_tools.ground_answer_numbers", _ground)
     card = {"sheet": "s1", "rows": 4, "of": 6, "share": 66.7, "filter": [], "said": "x is empty", "about": "x"}
 
     def _converse(conn, q, *, tool_emit=None, sheet="", **k):
@@ -161,7 +161,7 @@ def test_the_stream_hands_the_sheet_to_the_conversation_and_the_card_to_the_numb
         tool_emit("sheet_rows", card)
         return types.SimpleNamespace(answer="4 of 6 orders.", steps=[], stop_reason="answered",
                                      injected_chars=0, reinjection_ratio=0.0)
-    monkeypatch.setattr("aughor.agent.converse_tools.converse", _converse)
+    monkeypatch.setattr("pramanyx.agent.converse_tools.converse", _converse)
 
     async def _go():
         return [json.loads(c.split("data: ", 1)[1]) async for c in inv._stream_converse(
@@ -182,7 +182,7 @@ def _drive_converse(monkeypatch, sheet: str):
     import json
     import types
 
-    from aughor.routers import investigations as inv
+    from pramanyx.routers import investigations as inv
     held: dict = {"prior_asked": 0}
     monkeypatch.setattr(inv, "build_history_section", lambda h: "THIS CONVERSATION\n")
 
@@ -195,13 +195,13 @@ def _drive_converse(monkeypatch, sheet: str):
     def _ground(answer, rows, question=""):
         held["rows"] = list(rows)
         return answer, None
-    monkeypatch.setattr("aughor.agent.converse_tools.ground_answer_numbers", _ground)
+    monkeypatch.setattr("pramanyx.agent.converse_tools.ground_answer_numbers", _ground)
 
     def _converse(conn, q, *, extra_context=None, **k):
         held["context"] = extra_context or ""
         return types.SimpleNamespace(answer="An answer.", steps=[], stop_reason="answered",
                                      injected_chars=0, reinjection_ratio=0.0)
-    monkeypatch.setattr("aughor.agent.converse_tools.converse", _converse)
+    monkeypatch.setattr("pramanyx.agent.converse_tools.converse", _converse)
 
     async def _go():
         return [json.loads(c.split("data: ", 1)[1]) async for c in inv._stream_converse(
@@ -224,9 +224,9 @@ def test_a_sheet_question_keeps_its_conversation_but_not_answers_from_elsewhere(
 def test_the_sheets_own_counts_are_citable_by_the_answer(env, monkeypatch):
     """Live (trace 58a155c0): the check rewrote a correct "1,783 of the 99,441 orders" away — 99,441 is the sheet's
     own count, handed to the conversation, and it was not among the cells the prose is held to."""
-    from aughor.sheets import service
-    from aughor.sheets.answer import citable_counts
-    from aughor.sheets.model import Condition, View
+    from pramanyx.sheets import service
+    from pramanyx.sheets.answer import citable_counts
+    from pramanyx.sheets.model import Condition, View
     sheet = _orders(env)
     assert [6] in _drive_converse(monkeypatch, sheet.id)["rows"]
     assert _drive_converse(monkeypatch, "")["rows"] == []                            # off a sheet: as it was

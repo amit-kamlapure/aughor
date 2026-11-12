@@ -17,9 +17,9 @@ BODY = {"name": "gmv_owner_edit_test", "label": "GMV (EUR)", "connection": "owne
 def door(monkeypatch):
     from fastapi.testclient import TestClient
 
-    import aughor.routers.metrics as MR
-    from aughor.api import app
-    from aughor.semantic.metrics import MetricDefinition
+    import pramanyx.routers.metrics as MR
+    from pramanyx.api import app
+    from pramanyx.semantic.metrics import MetricDefinition
 
     existing = MetricDefinition(**{**BODY, "status": "approved", "version": 3, "approved_by": "ana",
                                    "time_kind": "flow", "time_column": "orders.order_date"})
@@ -47,10 +47,10 @@ def test_clearing_the_owner_from_the_editor_keeps_them_too(monkeypatch):
     the dates, re-sent unchanged by the person who had confirmed them, appended "; confirmed by" to their source."""
     from fastapi.testclient import TestClient
 
-    import aughor.routers.metrics as MR
-    from aughor.api import app
-    from aughor.security.authz import caller
-    from aughor.semantic.metrics import MetricDefinition
+    import pramanyx.routers.metrics as MR
+    from pramanyx.api import app
+    from pramanyx.security.authz import caller
+    from pramanyx.semantic.metrics import MetricDefinition
 
     me = caller()
     existing = MetricDefinition(**{**BODY, "status": "approved", "version": 3, "approved_by": "ana",

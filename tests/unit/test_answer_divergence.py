@@ -13,7 +13,7 @@ The three things these tests hold, all of which the live data taught rather than
 """
 from __future__ import annotations
 
-from aughor.semantic import answer_divergence as AD
+from pramanyx.semantic import answer_divergence as AD
 
 
 def _receipt(rid, question, sql, tables=(), at="2026-07-01T00:00:00Z"):
@@ -147,7 +147,7 @@ def test_an_errored_variant_never_silently_counts_as_agreement():
 
 def test_pin_records_a_human_warrant_and_is_idempotent(monkeypatch, tmp_path):
     saved: list = []
-    monkeypatch.setattr("aughor.semantic.trusted_queries.save_trusted", lambda tq: saved.append(tq))
+    monkeypatch.setattr("pramanyx.semantic.trusted_queries.save_trusted", lambda tq: saved.append(tq))
 
     tq1 = AD.pin("c1", "total gmv", "SELECT SUM(gmv) FROM orders WHERE status <> 'cancelled'",
                  tables=["orders"], note="cancelled orders are not revenue")

@@ -4,7 +4,7 @@
  * Arc PX's law is that no machine text reaches an eye. The sweep held on the surfaces PX
  * touched and not on the ones built since: a run card said `Agentic · 8233e4fd`, the audit's
  * AGENT column said `__brief_metric_move__` and `card:2878362c`, a departure's destination was
- * `sb_e2d5c528af66:#aughor_canvas`, and a needs-you card opened with
+ * `sb_e2d5c528af66:#pramanyx_canvas`, and a needs-you card opened with
  * `monitor:Units Sold anomaly watch+automation:Units Sold anomaly watch: …`. Each of these is a
  * KEY the platform composes for itself, and each has a name a reader can act on. This module
  * turns the key into the name; the raw key stays for a title/tooltip and the copy button.
@@ -51,8 +51,8 @@ export function callerLabel(key: string): { agent: string; detail?: string } {
   return { agent: k || "—" };
 }
 
-/** A departure's destination as the place a reader knows: `sb_e2d5c528af66:#aughor_canvas`
- *  is the `#aughor_canvas` channel (the bot's id stays in `raw`). */
+/** A departure's destination as the place a reader knows: `sb_e2d5c528af66:#pramanyx_canvas`
+ *  is the `#pramanyx_canvas` channel (the bot's id stays in `raw`). */
 export function destinationLabel(target: string | null | undefined): { label: string; raw: string } {
   const raw = (target || "").trim();
   if (!raw) return { label: "", raw };

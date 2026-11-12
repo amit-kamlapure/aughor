@@ -27,7 +27,7 @@ structure / checkpointer / HITL are untouched. LangGraph *does* run parallel syn
 threads (also verified), so `Send` remains a clean future migration if per-branch streaming/partial-resume
 ever becomes the driver — the per-sub-question work is already factored into a reusable core for that.
 
-**Implementation** (`aughor/agent/explore.py`, `graph.py`, `kernel/flags.py`):
+**Implementation** (`pramanyx/agent/explore.py`, `graph.py`, `kernel/flags.py`):
 - Reusable cores extracted behavior-preservingly from the sequential nodes: `_scan_one_subq`,
   `_execute_one_subq`, `_reason_one_subq` (each pure w.r.t. graph state).
 - `plan_and_execute_wave` computes the **ready set** (`_ready_subqs`: not done + every `depends_on`
@@ -38,7 +38,7 @@ ever becomes the driver — the per-sub-question work is already factored into a
 - **Guardrails held:** budget-abort (a branch `BudgetExceeded` re-raises out of the wave), determinism
   (answers sorted by planned index post-merge, never completion order), failure isolation (one branch's
   error → an inconclusive answer, never fails the wave; serial fallback on executor failure), width cap
-  (`AUGHOR_EXPLORE_PARALLEL_WIDTH`, default 4) under the P6 token budget. 15 unit tests; full suite green.
+  (`PRAMANYX_EXPLORE_PARALLEL_WIDTH`, default 4) under the P6 token budget. 15 unit tests; full suite green.
 
 **Measured on the real path** (luxexperience, 33 tables, glm-5.2 cloud): a question decomposed into a
 **width-3 parallel wave** (region ∥ product-line ∥ channel). Serial **172.6s** → wave **116.9s** =
@@ -67,7 +67,7 @@ evidence** (each lens plans/interprets a smaller focused context and the two ove
 platform canvas**: the womenswear Deep-Analysis rendered both "Cross-Sectional Scan — Where" (luxury platforms
 40.5% vs off-price 27%) and "Mechanism / Reason Scan — Why" (reason/carrier/condition/refund all uniform → a
 *systemic*, not dimension-specific, problem) as distinct phase cards, synthesized together. *Caveat: a single
-throttled cloud endpoint (`AUGHOR_LLM_MAX_CONCURRENCY=4` + backoff) can erase the flat-latency benefit under
+throttled cloud endpoint (`PRAMANYX_LLM_MAX_CONCURRENCY=4` + backoff) can erase the flat-latency benefit under
 load — an uncontrolled run measured 537s when the endpoint was globally slow; the controlled A/B is the honest
 number. A follow-up is reconciling the two lenses' grain (the WHY lens read item-level ~76% vs the WHERE lens's
 order-level ~40%).*
@@ -145,7 +145,7 @@ single scan is byte-identical. **Live-grounded**: `order_items` → *"per line i
 ## 1. The pain point, correctly diagnosed
 
 The 8.4 min is **not** slow SQL. The dimension queries in a phase already run **in parallel**
-(`_parallel_execute_safe` at [`investigate.py:715`](../aughor/agent/investigate.py) — per-thread
+(`_parallel_execute_safe` at [`investigate.py:715`](../pramanyx/agent/investigate.py) — per-thread
 reader connections via `ContextThreadPoolExecutor`, contextvar-propagated). The wall-clock is
 dominated by **sequential frontier-model LLM calls across serial phases**:
 
@@ -166,7 +166,7 @@ its parallel machinery. That is the miss.
 - **Reducer-safe parallel state** — `investigation_phases` and `verification_checks` are
   `Annotated[list, operator.add]`, so parallel branches can append without clobbering. This is the
   exact idiom LangGraph map-reduce needs; **fan-out is low-friction because the state is already ready.**
-- **Deterministic routing** + the **P6 budget governor** (`AUGHOR_MAX_TOKEN_BUDGET`, heartbeat cancel) —
+- **Deterministic routing** + the **P6 budget governor** (`PRAMANYX_MAX_TOKEN_BUDGET`, heartbeat cancel) —
   the guardrails a parallel fan-out needs to stay bounded.
 
 ## 3. What we're missing (the gaps)
@@ -174,7 +174,7 @@ its parallel machinery. That is the miss.
 - **G1 — No map-reduce fan-out on independent axes.** `Send` is available but unused. The genuinely
   independent work is serialized:
   - **Explore sub-questions** — `plan_and_execute_subq` runs **one sub-question per superstep** in a loop
-    ([`explore.py:413`](../aughor/agent/explore.py)); independent sub-questions are a textbook `Send` fan-out.
+    ([`explore.py:413`](../pramanyx/agent/explore.py)); independent sub-questions are a textbook `Send` fan-out.
   - **Cross-section dimensions** — SQL is parallel, but each phase is one serial step vs the others.
   - **Hypothesis testing** (investigate) — hypotheses are tested serially.
 - **G2 — Linear graph → no parallel supersteps.** Pre-flight retrievals (KB, playbook, prior-analyses,

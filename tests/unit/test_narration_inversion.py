@@ -1,4 +1,4 @@
-"""Narration-inversion guard (aughor.agent.verify.inverted_universal_claim).
+"""Narration-inversion guard (pramanyx.agent.verify.inverted_universal_claim).
 
 The filed bug: a per-group/per-row value gets narrated as a UNIVERSAL per-entity
 property. A distribution like (1 item → 3 orders), (2 items → 5 orders) is narrated
@@ -9,7 +9,7 @@ and _mislabeled_per_grain only covers AVG-of-line-items.
 These pin the detector: it must FIRE on the inversion and stay SILENT on legitimate
 prose. The false-positive guard is the whole point — a clumsy version would suppress
 valid uniform-result claims or any sentence with 'all'."""
-from aughor.agent.verify import inverted_universal_claim
+from pramanyx.agent.verify import inverted_universal_claim
 
 
 # A distribution that VARIES: order_count differs across item-bucket rows.
@@ -79,7 +79,7 @@ class TestRobustness:
 # ── ADA report verifier (cross-surface wiring → DataQualityNote caveat) ────────
 
 def _report(headline="", verdict="", claims=(), actions=()):
-    from aughor.agent.state import AnalysisReport, Finding
+    from pramanyx.agent.state import AnalysisReport, Finding
     return AnalysisReport(
         headline=headline, verdict=verdict,
         key_findings=[Finding(claim=c, evidence="", confidence=0.9) for c in claims],
@@ -88,14 +88,14 @@ def _report(headline="", verdict="", claims=(), actions=()):
 
 
 def _qr(columns, rows, error=None):
-    from aughor.agent.state import QueryResult
+    from pramanyx.agent.state import QueryResult
     return QueryResult(hypothesis_id="h1", sql="SELECT 1", columns=columns,
                        rows=rows, row_count=len(rows), error=error)
 
 
 class TestADAReportVerifier:
     def test_inverted_finding_flagged(self):
-        from aughor.agent.verify import verify_universal_claims
+        from pramanyx.agent.verify import verify_universal_claims
         rep = _report(headline="AOV is flat.",
                       claims=["All orders have 3 items, so basket size is uniform."])
         qr = _qr(["items", "order_count"], VARYING)
@@ -103,25 +103,25 @@ class TestADAReportVerifier:
         assert reasons and "over-generalises" in reasons[0]
 
     def test_clean_report_not_flagged(self):
-        from aughor.agent.verify import verify_universal_claims
+        from pramanyx.agent.verify import verify_universal_claims
         rep = _report(headline="Revenue grew 12% in Q4.",
                       claims=["The top region drove most of the gain."])
         qr = _qr(["items", "order_count"], VARYING)
         assert verify_universal_claims(rep, [qr]) == []
 
     def test_uniform_data_not_flagged(self):
-        from aughor.agent.verify import verify_universal_claims
+        from pramanyx.agent.verify import verify_universal_claims
         rep = _report(headline="All months have 3 launches.")
         qr = _qr(["month", "launches"], [["jan", 3], ["feb", 3], ["mar", 3]])
         assert verify_universal_claims(rep, [qr]) == []
 
     def test_errored_query_is_skipped(self):
-        from aughor.agent.verify import verify_universal_claims
+        from pramanyx.agent.verify import verify_universal_claims
         rep = _report(headline="All orders have 3 items.")
         qr = _qr(["items", "order_count"], VARYING, error="boom")
         assert verify_universal_claims(rep, [qr]) == []
 
     def test_empty_report_text_no_crash(self):
-        from aughor.agent.verify import verify_universal_claims
+        from pramanyx.agent.verify import verify_universal_claims
         rep = _report()
         assert verify_universal_claims(rep, [_qr(["a"], [[1], [2]])]) == []

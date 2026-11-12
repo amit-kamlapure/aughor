@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-from aughor.ontology.lifecycle_states import is_lifecycle_state, plausible_lifecycle_states
+from pramanyx.ontology.lifecycle_states import is_lifecycle_state, plausible_lifecycle_states
 
 BLOB = json.dumps({"ids": {"order": 145378}, "status": "complete", "next": "processing",
                    "rows": [{"k": i, "v": "x" * 40} for i in range(2000)]})
@@ -38,7 +38,7 @@ def test_a_column_of_documents_has_no_lifecycle():
 # ── the block appended to every schema prompt ───────────────────────────────────────────────
 
 def _annotations(monkeypatch, maps: dict) -> str:
-    from aughor.explorer import store
+    from pramanyx.explorer import store
     monkeypatch.setattr(store, "load_aggregate", lambda _cid: {"phase": "complete", "lifecycle_maps": maps})
     return store.render_exploration_annotations("c1")
 
@@ -83,14 +83,14 @@ def _col(values: list[str]) -> SimpleNamespace:
 
 
 def test_the_status_finder_skips_a_document_that_contains_a_state_word():
-    from aughor.explorer.agent import _ACTIVE_SUBS, _find_status_col
+    from pramanyx.explorer.agent import _ACTIVE_SUBS, _find_status_col
     assert any(sub in BLOB for sub in _ACTIVE_SUBS)        # the substring match WOULD take it
     assert _find_status_col({"payload": _col([BLOB])}) is None
     assert _find_status_col({"payload": _col([BLOB]), "status": _col(REAL)}) == "status"
 
 
 def test_the_lifecycle_phase_maps_only_states():
-    from aughor.explorer.agent import _lifecycle_states
+    from pramanyx.explorer.agent import _lifecycle_states
     assert _lifecycle_states([(BLOB,)]) is None
     assert _lifecycle_states([(s,) for s in REAL] + [(BLOB,)]) == REAL
     assert _lifecycle_states([("a long description of a thing",), ("another one here",)]) is None
@@ -99,8 +99,8 @@ def test_the_lifecycle_phase_maps_only_states():
 # ── the ontology merge reads the same stored maps ───────────────────────────────────────────
 
 def test_the_ontology_merge_keeps_a_document_out_of_the_active_filter(monkeypatch):
-    from aughor.agent import schema_annotators
-    from aughor.explorer import store
+    from pramanyx.agent import schema_annotators
+    from pramanyx.explorer import store
     mixed = {**_ORDERS, "states": REAL + [BLOB], "terminal_states": ["Complete", BLOB]}
     monkeypatch.setattr(store, "load_aggregate", lambda _cid: {"phase": "complete", "lifecycle_maps": {"orders": mixed}})
     entity = SimpleNamespace(id="order", source_tables=["orders"], terminal_states=[], properties={},
@@ -116,7 +116,7 @@ def test_the_ontology_merge_keeps_a_document_out_of_the_active_filter(monkeypatc
 # ── the business-profile cap is an upper bound on the whole text ────────────────────────────
 
 def test_the_profile_cap_bounds_the_annotations_after_the_tables():
-    from aughor.business_profile.infer import cap_schema
+    from pramanyx.business_profile.infer import cap_schema
     tables = "\n\n".join(f"TABLE: t{i}  ({i * 100:,} rows)\n  a  INT\n  b  VARCHAR" for i in range(1, 30))
     trailer = ("EXPLORATION INTELLIGENCE\nENTITY LIFECYCLE (verified state machines):\n"
                f"  generator_state.payload\n    terminal: {BLOB}\n    active filter: payload NOT IN ('{BLOB}')\n"
@@ -131,7 +131,7 @@ def test_the_profile_cap_bounds_the_annotations_after_the_tables():
 
 
 def test_the_profile_cap_says_when_it_cuts_annotations_short():
-    from aughor.business_profile.infer import cap_schema
+    from pramanyx.business_profile.infer import cap_schema
     tables = "TABLE: t1  (5 rows)\n  a  INT"
     trailer = "\n".join(f"- hint {i} " + "y" * 200 for i in range(400))
     out = cap_schema(tables + "\n\n" + trailer, 8_000)
@@ -151,7 +151,7 @@ LIVE_NOT_STATUS = {   # the live maps on LuxExperience and theLook, column → i
 
 
 def test_a_city_an_account_or_a_category_is_not_a_status_column():
-    from aughor.explorer.agent import _find_status_col
+    from pramanyx.explorer.agent import _find_status_col
     for col, values in LIVE_NOT_STATUS.items():
         assert _find_status_col({col: _col(values)}) is None, col
     assert _find_status_col({"status": _col(["captured", "refunded"])}) == "status"     # Lux payments
@@ -160,7 +160,7 @@ def test_a_city_an_account_or_a_category_is_not_a_status_column():
 
 
 def test_a_map_stored_under_the_old_rule_is_not_served(monkeypatch):
-    from aughor.explorer import store
+    from pramanyx.explorer import store
 
     class _Family:
         def get_entry(self, _key):

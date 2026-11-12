@@ -19,22 +19,22 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi import HTTPException
 
-from aughor.record import claims as C
-from aughor.record import decisions as D
-from aughor.record import inquiry as I
-from aughor.record import mission as M
-from aughor.record import receipt_lines as RL
-from aughor.routers import record as R
+from pramanyx.record import claims as C
+from pramanyx.record import decisions as D
+from pramanyx.record import inquiry as I
+from pramanyx.record import mission as M
+from pramanyx.record import receipt_lines as RL
+from pramanyx.routers import record as R
 
 NOW = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
 
 
 @pytest.fixture(autouse=True)
 def _own_stores(tmp_path, monkeypatch):
-    import aughor.settling.store as settling
+    import pramanyx.settling.store as settling
     monkeypatch.setattr(settling, "learned_lag_days", lambda conn_id: 3)
-    monkeypatch.setenv("AUGHOR_DEPARTURES_DB", str(tmp_path / "departures.db"))
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana")
+    monkeypatch.setenv("PRAMANYX_DEPARTURES_DB", str(tmp_path / "departures.db"))
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ana")
 
 
 def _conn():
@@ -150,7 +150,7 @@ def test_a_claim_marked_wrong_is_restated_as_the_persons_statement_and_the_wrong
     assert C.get(cid).statement.text == "APAC revenue was 2.53M last week" and C.get(cid).superseded_by == new.id
     # an earlier version's id lands on the current one
     assert C.mark_wrong(cid, by="person:bo", corrected="APAC revenue was 2.70M last week")["superseded"] == new.id
-    from aughor.record.corrections import restatements
+    from pramanyx.record.corrections import restatements
     assert [(r["believed"], r["replaced_by"]) for r in restatements(conn_id=conn)] == [
         ("APAC revenue was 2.72M last week", "APAC revenue was 2.70M last week")]
 
@@ -173,7 +173,7 @@ def test_a_hypothesis_marked_wrong_is_refuted_with_the_persons_reason_and_a_pred
     # and the run it proposed while the hypothesis was open no longer names it as open
     assert booked.extra["proposed_run"]["could_change"]["open_hypotheses"] != []
     assert I.latest(booked.key).extra["proposed_run"]["could_change"]["open_hypotheses"] == []
-    from aughor.record.corrections import refuted_hypotheses
+    from pramanyx.record.corrections import refuted_hypotheses
     assert refuted_hypotheses(conn_id=conn)[0]["why"] == "marked wrong by a person"
     prediction = C.Claim(kind="prediction", tier="mined", about=C.About(kind="connection", key=conn), state="open",
                          statement=C.Statement(text="expected: revenue up", metric="revenue"), as_of="2026-10-01")
@@ -327,7 +327,7 @@ def test_a_claims_page_reads_who_was_told_from_the_answer_behind_it_and_says_whe
 # ── set aside: "not now" on what waits on a person ─────────────────────────────────────────
 
 def test_setting_an_item_aside_hides_it_until_its_day_and_writes_nothing_on_the_item():
-    from aughor.record import set_aside as SA
+    from pramanyx.record import set_aside as SA
     conn = _conn()
     did = _decision(conn, [])
     before = D.get_decision(did)
@@ -360,7 +360,7 @@ def test_setting_an_item_aside_hides_it_until_its_day_and_writes_nothing_on_the_
 
 
 def test_a_set_aside_item_returns_early_when_the_record_behind_it_changes():
-    from aughor.record import set_aside as SA
+    from pramanyx.record import set_aside as SA
     conn = _conn()
     cid = _observation(conn)
     did = _decision(conn, [cid])

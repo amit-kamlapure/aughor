@@ -11,10 +11,10 @@ from pathlib import Path
 
 import duckdb
 
-from aughor.db.connection import open_connection
-from aughor.ontology.lifecycle import default_end_state_names
-from aughor.ontology.models import OntologyGraph
-from aughor.packs.ontology_map import (
+from pramanyx.db.connection import open_connection
+from pramanyx.ontology.lifecycle import default_end_state_names
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.packs.ontology_map import (
     apply_core_claims, end_state_names_for_pack, load_pack_by_id, match_objects, resolve_ontology,
 )
 
@@ -112,9 +112,9 @@ def test_claims_with_data_measure_the_payment_lifecycle(tmp_path):
 
 
 def test_the_measure_door_takes_a_pack_id(tmp_path, monkeypatch, client):
-    from aughor.ontology import store as ST
-    from aughor.util.json_store import KeyedJsonStore
-    import aughor.db.connection as C
+    from pramanyx.ontology import store as ST
+    from pramanyx.util.json_store import KeyedJsonStore
+    import pramanyx.db.connection as C
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
     ST.save_ontology("914df862", "luxexperience", "fp", _lux())
     path = tmp_path / "wh.duckdb"
@@ -174,7 +174,7 @@ def test_process_and_rule_claims_match_moments_by_name_and_leave_the_terms_to_th
 
 
 def test_a_declared_process_or_rule_settles_its_claim_as_the_persons():
-    from aughor.ontology.models import BusinessRule, Process, ProcessStage
+    from pramanyx.ontology.models import BusinessRule, Process, ProcessStage
     g = _samples()
     g.processes["order_fulfilment"] = Process(id="order_fulfilment", entity="Order", stages=[
         ProcessStage(name="placed", timestamp="order_date"), ProcessStage(name="shipped", timestamp="shipped_at")],
@@ -192,7 +192,7 @@ def test_a_declared_process_or_rule_settles_its_claim_as_the_persons():
 def test_the_wider_ecommerce_vocabulary_is_a_child_package_and_the_core_stays_a_map():
     """The industry vocabulary's 59 e-commerce types (2026-11-11) live in a child draft package: the core keeps its
     ten to twenty objects, and the wider one reads a record of activity as a PART of the thing it happened to."""
-    from aughor.packs.ontology_map import OBJECT_ROLES
+    from pramanyx.packs.ontology_map import OBJECT_ROLES
     core = resolve_ontology("core-ecommerce")
     wide = resolve_ontology("ecommerce-extended")
     assert len(core.objects) <= 20 and len(wide.objects) == 59
@@ -211,7 +211,7 @@ def test_the_wider_ecommerce_vocabulary_is_a_child_package_and_the_core_stays_a_
 def _a_map_is_well_formed(po) -> None:
     """What every industry map must hold, whatever it names: one role vocabulary, parts that are its own objects and
     belong to one thing, and no table spelling claimed by two objects — the first to match would silently keep it."""
-    from aughor.packs.ontology_map import OBJECT_ROLES
+    from pramanyx.packs.ontology_map import OBJECT_ROLES
     names = {o.name for o in po.objects}
     assert len(names) == len(po.objects)
     assert all(o.roles and set(o.roles) <= set(OBJECT_ROLES) for o in po.objects), "one role vocabulary"
@@ -242,6 +242,6 @@ def test_every_industry_map_is_a_well_formed_draft():
         assert po is not None and len(po.objects) >= at_least, (pack_id, len(po.objects) if po else 0)
         _a_map_is_well_formed(po)
         assert pack.manifest.status == "draft", f"{pack_id}: a person activates a package, from the product"
-        from aughor.packs.ontology_map import OBJECT_SHAPES
+        from pramanyx.packs.ontology_map import OBJECT_SHAPES
         for o in po.objects:
             assert not o.drawn_as or OBJECT_SHAPES.get(o.drawn_as) in o.roles, (pack_id, o.name, o.drawn_as)

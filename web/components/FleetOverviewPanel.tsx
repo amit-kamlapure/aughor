@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Agent Ops · Overview — the operating picture, laid out to CLARITY (`aughor-v2/CLARITY.md`): four figures (runs,
+ * Agent Ops · Overview — the operating picture, laid out to CLARITY (`pramanyx-v2/CLARITY.md`): four figures (runs,
  * failed, running now, model spend), then what needs a person in amber with its buttons on the row, then one chart —
  * runs by agent, or tokens by model — then the agents, where their tokens went, their runs, and the deep runs by
  * question, as lists; the live events and every trace are folded shut at the foot.

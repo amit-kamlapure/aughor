@@ -20,12 +20,12 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-import aughor.routers.investigations as inv
-from aughor.custom_agents import create_agent, delete_agent, get_agent, list_agents, update_agent
-from aughor.custom_agents.context import activate_agent, answer_stamp, release_agent
-from aughor.custom_agents.revisions import list_revisions
-import aughor.custom_agents.store as agent_store
-from aughor.db.history import get_session_turns, save_chat_turn
+import pramanyx.routers.investigations as inv
+from pramanyx.custom_agents import create_agent, delete_agent, get_agent, list_agents, update_agent
+from pramanyx.custom_agents.context import activate_agent, answer_stamp, release_agent
+from pramanyx.custom_agents.revisions import list_revisions
+import pramanyx.custom_agents.store as agent_store
+from pramanyx.db.history import get_session_turns, save_chat_turn
 
 @pytest.fixture(autouse=True)
 def _clean_store():
@@ -44,7 +44,7 @@ class _Cap:
 
 @pytest.fixture
 def cap_ledger(monkeypatch):
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     cap = _Cap()
     # On the CLASS: patching the shared default instance leaves the class's own method pinned on it when the patch is
     # undone (the undo sets the bound method back as an instance attribute), so every later test that patches
@@ -102,7 +102,7 @@ def test_an_unbound_answer_carries_no_agent(cap_ledger):
 
 
 def test_the_revision_is_inside_the_public_receipts_signature():
-    from aughor.trust.receipt import build_public_receipt, verify
+    from pramanyx.trust.receipt import build_public_receipt, verify
     raw = {"artifact": {"id": "art_1", "kind": "chat_answer", "created_at": "2026-10-26T00:00:00Z",
                         "conn_id": "c", "payload": {"question": "q", "headline": "h",
                                                     "agent": {"id": "ua_1", "name": "A", "rev": "abc123def456"}}},
@@ -161,7 +161,7 @@ def test_a_save_against_the_current_revision_is_taken(agent):
 
 @pytest.fixture()
 def client():
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 

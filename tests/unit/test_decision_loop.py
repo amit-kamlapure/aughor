@@ -26,16 +26,16 @@ from types import SimpleNamespace
 import duckdb
 import pytest
 
-from aughor.db.history import complete_investigation, create_investigation
-from aughor.playbook import outcomes as O
-from aughor.record import byproducts as B
-from aughor.record import decisions as D
-from aughor.record import reviews as RV
-from aughor.record import scenario as S
-from aughor.record import writers as W
-from aughor.routers import investigations as inv
-from aughor.semantic.metric_time import adds_up
-from aughor.semantic.metrics import MetricDefinition
+from pramanyx.db.history import complete_investigation, create_investigation
+from pramanyx.playbook import outcomes as O
+from pramanyx.record import byproducts as B
+from pramanyx.record import decisions as D
+from pramanyx.record import reviews as RV
+from pramanyx.record import scenario as S
+from pramanyx.record import writers as W
+from pramanyx.routers import investigations as inv
+from pramanyx.semantic.metric_time import adds_up
+from pramanyx.semantic.metrics import MetricDefinition
 
 DECIDED = dt.date(2026, 8, 1)
 TODAY = dt.date(2026, 10, 15)
@@ -46,7 +46,7 @@ CATEGORIES = {"Jeans": 100.0, "Dresses": 160.0, "Outerwear": 120.0, "Shoes": 90.
 @pytest.fixture(autouse=True)
 def _hermetic(tmp_path, monkeypatch):
     monkeypatch.setattr(O, "_DEFAULT_PATH", tmp_path / "recommendation_outcomes.json")
-    import aughor.settling.store as settling
+    import pramanyx.settling.store as settling
     monkeypatch.setattr(settling, "learned_lag_days", lambda conn_id: 0)
 
 
@@ -91,7 +91,7 @@ def _revenue(conn: str, **kw) -> MetricDefinition:
 @pytest.fixture
 def metric(monkeypatch):
     holder = {}
-    import aughor.semantic.metrics as M
+    import pramanyx.semantic.metrics as M
     monkeypatch.setattr(M, "get_metric", lambda name, connection_id=None: holder.get(name))
     return holder
 
@@ -139,10 +139,10 @@ def test_a_finding_id_two_schemas_share_is_said_and_never_picked():
 def test_not_acting_on_a_finding_is_a_decision(monkeypatch):
     conn = _conn()
     cid = _finding(conn)
-    import aughor.explorer.store as ES
+    import pramanyx.explorer.store as ES
     monkeypatch.setattr(ES, "dismiss_insight_conn",
                         lambda c, f, reason="": {"id": f, "finding": "Jeans run at a fifth of revenue"})
-    from aughor.routers.exploration import DismissRequest, dismiss_connection_finding
+    from pramanyx.routers.exploration import DismissRequest, dismiss_connection_finding
     out = dismiss_connection_finding(conn, "synth__share__5", DismissRequest(reason="seasonal, it passes"), principal=None)
     d = D.get_decision(out["decision_id"])
     assert d.chosen == B.NOT_ACT and [o.id for o in d.options] == [B.ACT, B.NOT_ACT]
@@ -481,7 +481,7 @@ def test_a_month_with_no_rows_either_says_both_were_read(metric):
 # ── the intake doors (the decision-framework study §3.2, §8 step 3) ───────────────────────────────────────────────
 
 def _run_with_answer(conn: str, run: str = "") -> tuple[str, str]:
-    from aughor.kernel.ledger import DEEP_REPORT_KIND
+    from pramanyx.kernel.ledger import DEEP_REPORT_KIND
     run = run or "inv-" + uuid.uuid4().hex[:6]
     out = W.book_from_receipt(kind=DEEP_REPORT_KIND, natural_key=f"ada:{conn}:{run}", receipt_id="rcpt-" + run,
                               connection_id=conn, question="What did paid social bring?",
@@ -510,8 +510,8 @@ def test_a_decision_on_a_briefing_figure_books_the_reading_it_relied_on(metric, 
     with its own receipt — the page's number is never taken on trust — and the decision cites it."""
     conn = _conn()
     metric["revenue"] = _revenue(conn)
-    import aughor.knowledge.period_brief as PB
-    import aughor.routers.investigations as INV
+    import pramanyx.knowledge.period_brief as PB
+    import pramanyx.routers.investigations as INV
     monkeypatch.setattr(PB, "connection_runner", _shop())
     receipts = []
     monkeypatch.setattr(INV, "write_answer_receipt", lambda **kw: receipts.append(kw) or {"receipt_id": "rcpt-fig"})
@@ -538,9 +538,9 @@ def test_a_reading_of_a_table_still_moving_is_not_booked_final(metric, monkeypat
     """Measured on theLook 2026-11-04: no age of its tables settles, yet a figure a decision relied on was booked Final."""
     conn = _conn()
     metric["revenue"] = _revenue(conn)
-    import aughor.knowledge.period_brief as PB
-    import aughor.routers.investigations as INV
-    import aughor.settling.store as settling
+    import pramanyx.knowledge.period_brief as PB
+    import pramanyx.routers.investigations as INV
+    import pramanyx.settling.store as settling
     monkeypatch.setattr(PB, "connection_runner", _shop())
     monkeypatch.setattr(INV, "write_answer_receipt", lambda **kw: {"receipt_id": "rcpt-fig"})
 
@@ -558,7 +558,7 @@ def test_a_reading_of_a_table_still_moving_is_not_booked_final(metric, monkeypat
 def test_a_decision_said_in_slack_cites_the_threads_answer_and_its_card_books_approvals():
     from fastapi import HTTPException
 
-    from aughor.routers import arrivals as A
+    from pramanyx.routers import arrivals as A
     conn = _conn()
     run, observation = _run_with_answer(conn)
     out = A.slack_decision(A.SlackDecision(

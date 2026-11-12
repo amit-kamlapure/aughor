@@ -20,7 +20,7 @@ import { useEffect, useRef, useState } from "react";
 import { MergeView } from "@codemirror/merge";
 import { EditorState } from "@codemirror/state";
 import { Button } from "@/components/ui/button";
-import { aughorEditorTheme, aughorSyntaxHighlighting } from "@/components/query/editor/theme";
+import { pramanyxEditorTheme, pramanyxSyntaxHighlighting } from "@/components/query/editor/theme";
 import { quickFixSql, type QuickFix } from "@/lib/api";
 
 export function QuickFixPanel({
@@ -50,8 +50,8 @@ export function QuickFixPanel({
     merge.current = null;
     if (state !== "ready" || !fix?.proposed_sql || !host.current) return;
     merge.current = new MergeView({
-      a: { doc: sql, extensions: [EditorState.readOnly.of(true), aughorEditorTheme, aughorSyntaxHighlighting] },
-      b: { doc: fix.proposed_sql, extensions: [EditorState.readOnly.of(true), aughorEditorTheme, aughorSyntaxHighlighting] },
+      a: { doc: sql, extensions: [EditorState.readOnly.of(true), pramanyxEditorTheme, pramanyxSyntaxHighlighting] },
+      b: { doc: fix.proposed_sql, extensions: [EditorState.readOnly.of(true), pramanyxEditorTheme, pramanyxSyntaxHighlighting] },
       parent: host.current,
       collapseUnchanged: { margin: 2, minSize: 4 },
       orientation: "a-b",

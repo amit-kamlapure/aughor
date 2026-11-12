@@ -15,21 +15,21 @@ PAYMENTS = "order_id,payment_value\no1,6.00\no1,4.00\no2,20.00\n"
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana")
-    from aughor.actions import overlay
-    from aughor.cards import store as card_store
+    monkeypatch.setenv("PRAMANYX_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "system.db"))
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ana")
+    from pramanyx.actions import overlay
+    from pramanyx.cards import store as card_store
     monkeypatch.setattr(overlay, "_DB_PATH", tmp_path / "overlay.db")
     monkeypatch.setattr(card_store, "_DB_PATH", tmp_path / "cards.db")
-    from aughor.sheets import projection
+    from pramanyx.sheets import projection
     projection.reset()
     yield tmp_path
     projection.reset()
 
 
 def _make(env, name, text, by="user:ana"):
-    from aughor.sheets import files, service
+    from pramanyx.sheets import files, service
     path = env / f"{name}.csv"
     path.write_text(text)
     return service.create_from_file(files.stage(path, path.name), name=name, by=by)
@@ -40,7 +40,7 @@ def client(env):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from aughor.routers import cards, dashboards, sheets
+    from pramanyx.routers import cards, dashboards, sheets
     app = FastAPI()
     app.include_router(sheets.router)
     app.include_router(cards.router)
@@ -56,10 +56,10 @@ def _query_card(client, sql="SELECT customer_id, customer_city FROM customers", 
 
 def _dashboard(owner, title, card_ids, **publish):
     """A dashboard kept through its own door, holding these cards."""
-    from aughor.cards.store import get_card
-    from aughor.dashboards import versions
-    from aughor.dashboards.compose import default_spec
-    from aughor.dashboards.home import FIRST, Home
+    from pramanyx.cards.store import get_card
+    from pramanyx.dashboards import versions
+    from pramanyx.dashboards.compose import default_spec
+    from pramanyx.dashboards.home import FIRST, Home
     home = Home("sheets", owner, FIRST)
     spec = default_spec(title, [get_card(c) for c in card_ids])
     assert versions.keep(home, spec, approved_by="user:ana", source="a person's own hand", written_by_model=False).kept
@@ -70,7 +70,7 @@ def _dashboard(owner, title, card_ids, **publish):
 
 def _combined(env):
     """Orders reading Customers through a link, and totalling Payments twice."""
-    from aughor.sheets import combine, model
+    from pramanyx.sheets import combine, model
     orders, customers, payments = _make(env, "Orders", ORDERS), _make(env, "Customers", CUSTOMERS), _make(env, "Payments", PAYMENTS)
     combine.link_keep(model.get(orders.id), "customer_id", customers.id, "customer_id", bring=["customer_city"], by="user:ana")
     combine.total_keep(model.get(orders.id), "order_id", payments.id, "order_id", "sum", "payment_value", name="paid", by="user:ana")
@@ -98,7 +98,7 @@ def test_the_sheets_reading_it_are_named_with_the_columns_that_go_empty(env, cli
 
 
 def test_a_sheet_not_shared_with_the_asker_is_named_never_read(env, client):
-    from aughor.sheets import combine, model, sharing
+    from pramanyx.sheets import combine, model, sharing
     customers = _make(env, "Customers", CUSTOMERS)
     private = _make(env, "Private orders", ORDERS, by="user:bo")
     combine.link_keep(private, "customer_id", customers.id, "customer_id", bring=["customer_city"], by="user:bo")
@@ -128,7 +128,7 @@ def test_a_card_on_no_dashboard_is_named_too(env, client):
 
 
 def test_a_replaced_card_does_not_count(env, client):
-    from aughor.cards.store import get_card, upsert_card
+    from pramanyx.cards.store import get_card, upsert_card
     customers = _make(env, "Customers", CUSTOMERS)
     old = get_card(_query_card(client))
     upsert_card(old.model_copy(update={"provenance": old.provenance.model_copy(update={"superseded_by": "someone"})}))
@@ -136,8 +136,8 @@ def test_a_replaced_card_does_not_count(env, client):
 
 
 def test_a_dashboard_of_someone_elses_is_counted_and_its_title_withheld(env, client):
-    from aughor.cards.store import upsert_card
-    from aughor.cards.models import StoredCard
+    from pramanyx.cards.store import upsert_card
+    from pramanyx.cards.models import StoredCard
     customers = _make(env, "Customers", CUSTOMERS)
     theirs = upsert_card(StoredCard(connection_id="sheets", scope="user", scope_ref="bo", source="authored", kind="chart",
                                     title="Bo's private card", sql="SELECT * FROM customers", render={"shown": {"as": "table"}}))
@@ -151,8 +151,8 @@ def test_a_dashboard_of_someone_elses_is_counted_and_its_title_withheld(env, cli
 
 def _from_a_file(client, sheet, *, cards=None, filters=({"column": "customer_city"},), scenario=None, add_row=True, ticked=True):
     """A dashboard kept through the From a file door, with what a draft would have read. No model is asked."""
-    from aughor.dashboards.home import Home
-    from aughor.sheets import dashboard_draft
+    from pramanyx.dashboards.home import Home
+    from pramanyx.sheets import dashboard_draft
     cards = [{"key": "how-many", "title": "How many", "as": "figure", "series": [{"column": "n"}],
               "sql": f"SELECT COUNT(*) AS n FROM {sheet.table}"},
              {"key": "rows", "title": "The rows", "as": "table", "sql": f"SELECT * FROM {sheet.table}"}] if cards is None else cards
@@ -191,8 +191,8 @@ def test_a_dashboard_made_from_another_sheet_is_not_named(env, client):
 
 
 def test_a_card_a_scenario_shows_twice_is_named_once(env, client):
-    from aughor.cards.store import get_card
-    from aughor.dashboards import versions
+    from pramanyx.cards.store import get_card
+    from pramanyx.dashboards import versions
     sheet = _make(env, "Orders", ORDERS)
     table = sheet.table
     home = _from_a_file(client, sheet, filters=(), add_row=False, cards=[
@@ -208,9 +208,9 @@ def test_a_card_a_scenario_shows_twice_is_named_once(env, client):
 
 
 def test_someone_elses_dashboard_from_a_file_tells_no_title_and_no_piece(env, client):
-    from aughor.dashboards import versions
-    from aughor.dashboards.home import FIRST, Home
-    from aughor.sheets import dashboard_draft
+    from pramanyx.dashboards import versions
+    from pramanyx.dashboards.home import FIRST, Home
+    from pramanyx.sheets import dashboard_draft
     sheet = _make(env, "Customers", CUSTOMERS)
     spec = dashboard_draft.spec_for("Bo's private board", [], sheet=sheet, filters=[{"column": "customer_city", "label": "City"}],
                                     scenario=None, add_row=True)
@@ -221,8 +221,8 @@ def test_someone_elses_dashboard_from_a_file_tells_no_title_and_no_piece(env, cl
 
 
 def test_a_dashboard_from_a_file_says_why_at_every_card_and_filter_once_its_sheet_is_gone(env, client):
-    from aughor.cards.store import get_card
-    from aughor.dashboards import versions
+    from pramanyx.cards.store import get_card
+    from pramanyx.dashboards import versions
     sheet = _make(env, "Customers", CUSTOMERS)
     ids = versions.latest(_from_a_file(client, sheet))["cards"]
     assert all(get_card(c).render.get("standing") is True for c in ids)            # the cards this route keeps
@@ -273,8 +273,8 @@ def test_a_card_cut_to_a_range_says_why_too(env, client):
 
 
 def test_a_pinned_card_runs_the_other_path_and_says_why_with_its_kind(env, client):
-    from aughor.cards.models import StoredCard
-    from aughor.cards.store import upsert_card
+    from pramanyx.cards.models import StoredCard
+    from pramanyx.cards.store import upsert_card
     customers = _make(env, "Customers", CUSTOMERS)
     pinned = upsert_card(StoredCard(connection_id="sheets", scope="connection", scope_ref="sheets", source="query_builder",
                                     kind="kpi", title="How many", sql="SELECT COUNT(*) FROM customers"))
@@ -285,8 +285,8 @@ def test_a_pinned_card_runs_the_other_path_and_says_why_with_its_kind(env, clien
 
 
 def test_a_statement_says_who_removed_it_and_any_other_failure_stays_the_engines(env, client, monkeypatch):
-    from aughor.db.connection import open_connection_for
-    from aughor.sheets import model, service
+    from pramanyx.db.connection import open_connection_for
+    from pramanyx.sheets import model, service
     customers = _make(env, "Customers", CUSTOMERS)
     service.remove(model.get(customers.id), by="user:bo")
     db = open_connection_for("sheets")
@@ -306,8 +306,8 @@ def test_a_new_sheet_of_that_name_is_read_in_its_place(env, client):
 
 
 def test_the_last_removal_of_a_name_is_the_one_said(env, client):
-    from aughor.db.connection import open_connection_for
-    from aughor.sheets import model, service
+    from pramanyx.db.connection import open_connection_for
+    from pramanyx.sheets import model, service
     first = _make(env, "Customers", CUSTOMERS)
     service.remove(model.get(first.id), by="user:bo")
     second = _make(env, "Customers", CUSTOMERS)
@@ -316,7 +316,7 @@ def test_the_last_removal_of_a_name_is_the_one_said(env, client):
 
 
 def test_a_total_of_a_removed_sheet_is_empty_never_a_count_of_nothing(env, client):
-    from aughor.sheets import model, projection
+    from pramanyx.sheets import model, projection
     orders, _customers, payments = _combined(env)
     paid, made = orders.column("paid").id, orders.column("payments made").id
     assert [projection.read_row(orders, r)[made] for r in (1, 2, 3)] == [2, 1, 0]     # no payment for o3 is a true 0
@@ -330,7 +330,7 @@ def test_a_total_of_a_removed_sheet_is_empty_never_a_count_of_nothing(env, clien
 
 
 def test_a_column_says_which_removed_sheet_it_read_and_keeps_nothing_new(env, client):
-    from aughor.sheets import model
+    from pramanyx.sheets import model
     orders, customers, payments = _combined(env)
     assert "reads_removed" not in str(client.get(f"/sheets/{orders.id}").json()["columns"])
     client.delete(f"/sheets/{customers.id}")
@@ -353,7 +353,7 @@ def test_a_removed_sheet_opened_by_its_link_says_so(env, client):
 # ── what stays ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
 def test_a_workspace_file_stays_and_makes_a_new_sheet_a_brought_one_goes_with_it(env, client):
-    from aughor.sheets import files, service
+    from pramanyx.sheets import files, service
     upload = env / "uploaded.csv"
     upload.write_text(CUSTOMERS)
     made = service.create_from_file(files.stage(upload, upload.name), name="From the workspace", by="user:ana",
@@ -365,7 +365,7 @@ def test_a_workspace_file_stays_and_makes_a_new_sheet_a_brought_one_goes_with_it
     assert upload.exists()
     again = service.create_from_file(files.stage(upload, upload.name), name="From the workspace", by="user:ana",
                                      upload={"schema": "s", "file": upload.name})
-    from aughor.sheets import projection
+    from pramanyx.sheets import projection
     assert projection.read_row(again, 1)[again.column("customer_city").id] == "sao paulo"   # not with those edits
 
     brought = _make(env, "Brought", CUSTOMERS)

@@ -27,7 +27,7 @@ beforeAll(() => {
 });
 
 const HOST: DashboardHostState = { range: { status: "standing" }, cards: {} };
-const KEY = "aughor:cockpit-values:thelook:sales";
+const KEY = "pramanyx:cockpit-values:thelook:sales";
 
 const SPEC = {
   root: "cockpit",

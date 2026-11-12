@@ -44,7 +44,7 @@ def test_a_spend_it_cannot_read_stops_the_night_and_says_which_model_to_price():
     c = N.CostCeiling(limit_usd=100.0)
     why = c.reason_to_stop(N.Spend(usd=0.0, calls=3, unpriced_calls=2,
                                    unpriced_models=["anthropic:claude-sonnet-5-5"]), 0.0)
-    assert "anthropic:claude-sonnet-5-5" in why and "AUGHOR_MODEL_PRICES" in why
+    assert "anthropic:claude-sonnet-5-5" in why and "PRAMANYX_MODEL_PRICES" in why
     assert "no token usage" in c.reason_to_stop(N.Spend(calls=1, calls_without_usage=1), 0.0)
     # a call made that never reached the model-call log: the ceiling did not see it
     assert "reached the model-call log" in c.reason_to_stop(N.Spend(usd=0.1, calls=2), 0.0, calls_made=3)
@@ -383,18 +383,18 @@ def test_a_stored_copy_that_differs_from_its_manifest_is_not_unpacked(tmp_path):
 
 
 def test_the_child_cannot_be_pointed_back_at_the_live_state(tmp_path):
-    env = N.child_env({"PATH": "/bin", "AUGHOR_STATE_DIR": "/live/state", "AUGHOR_HOME": "/live",
-                       "ANTHROPIC_API_KEY": "sk-from-the-shell"}, tmp_path, {"AUGHOR_SECRET_KEY": "k"})
-    assert env["AUGHOR_HOME"] == str(tmp_path) and "AUGHOR_STATE_DIR" not in env
-    assert "ANTHROPIC_API_KEY" not in env and env["AUGHOR_SECRET_KEY"] == "k"
-    assert env["AUGHOR_DISABLE_SCHEDULERS"] == "1" and env["PATH"] == "/bin"
+    env = N.child_env({"PATH": "/bin", "PRAMANYX_STATE_DIR": "/live/state", "PRAMANYX_HOME": "/live",
+                       "ANTHROPIC_API_KEY": "sk-from-the-shell"}, tmp_path, {"PRAMANYX_SECRET_KEY": "k"})
+    assert env["PRAMANYX_HOME"] == str(tmp_path) and "PRAMANYX_STATE_DIR" not in env
+    assert "ANTHROPIC_API_KEY" not in env and env["PRAMANYX_SECRET_KEY"] == "k"
+    assert env["PRAMANYX_DISABLE_SCHEDULERS"] == "1" and env["PATH"] == "/bin"
 
 
 def test_only_the_named_keys_are_read_from_an_env_file(tmp_path):
     f = tmp_path / ".env"
-    f.write_text("AUGHOR_SECRET_KEY=abc\nexport AUGHOR_MODEL_PRICES='anthropic:x=1/2@d'\n"
-                 "AUGHOR_STATE_DIR=/live\n ANTHROPIC_API_KEY=sk\n# AUGHOR_DEFAULT_POSTGRES_DSN=no\n")
-    assert N.read_env_file(f) == {"AUGHOR_SECRET_KEY": "abc", "AUGHOR_MODEL_PRICES": "anthropic:x=1/2@d"}
+    f.write_text("PRAMANYX_SECRET_KEY=abc\nexport PRAMANYX_MODEL_PRICES='anthropic:x=1/2@d'\n"
+                 "PRAMANYX_STATE_DIR=/live\n ANTHROPIC_API_KEY=sk\n# PRAMANYX_DEFAULT_POSTGRES_DSN=no\n")
+    assert N.read_env_file(f) == {"PRAMANYX_SECRET_KEY": "abc", "PRAMANYX_MODEL_PRICES": "anthropic:x=1/2@d"}
 
 
 def test_a_failed_call_with_no_usage_is_counted_apart_and_does_not_blind_the_ceiling():
@@ -421,11 +421,11 @@ def test_from_backup_hands_every_run_flag_to_the_child(monkeypatch):
 
 
 def test_run_refuses_a_home_the_platform_was_not_pointed_at(monkeypatch, tmp_path, capsys):
-    """`run` checks AUGHOR_HOME names its --home BEFORE anything platform-side is imported: a run whose
+    """`run` checks PRAMANYX_HOME names its --home BEFORE anything platform-side is imported: a run whose
     stores resolved somewhere else would measure, and write into, that somewhere else."""
-    monkeypatch.setenv("AUGHOR_HOME", str(tmp_path / "elsewhere"))
+    monkeypatch.setenv("PRAMANYX_HOME", str(tmp_path / "elsewhere"))
     assert N.main(["run", "--home", str(tmp_path / "copy")]) == 2
-    assert "AUGHOR_HOME must name the same home" in capsys.readouterr().err
+    assert "PRAMANYX_HOME must name the same home" in capsys.readouterr().err
 
 
 def test_a_set_the_dataset_never_had_is_said_but_is_not_a_shortfall():

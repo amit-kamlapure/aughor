@@ -1,14 +1,14 @@
 "use client";
 
 /**
- * Evidence — the claim ledger, laid out to CLARITY (`aughor-v2/CLARITY.md`) and, since 2026-11-10, to the Evidence →
+ * Evidence — the claim ledger, laid out to CLARITY (`pramanyx-v2/CLARITY.md`) and, since 2026-11-10, to the Evidence →
  * Action study's register and inspector: one line of what it holds, the claims no one has reviewed under "Needs you",
  * then the claims as a register (Claim · Review · Mentions · Reads · Recorded) under the deep analysis that made them,
  * with search, the review filter and Copy/CSV in the toolbar row. A chosen claim opens in the inspector — the claim said
  * as the run's narrative, its marks and the review buttons (Overview), its whole query with Open in SQL Editor
  * (Definition), where it came from (Provenance). Outside the app's shell it is read beside the list, as it was.
  *
- * Drawn only from what the ledger records (aughor/evidence). What it does not carry is left out, not invented: guard
+ * Drawn only from what the ledger records (pramanyx/evidence). What it does not carry is left out, not invented: guard
  * results and a verdict per claim, refused claims (the ledger keeps what a run asserted, never what it refused), a
  * receipt id, run time and bytes read, and "used in" or an outcome (`downstream_recommendations` and `outcome_status`
  * have no writer). `data_freshness` is the run's completion time, so a claim reads "recorded", never "data as of";

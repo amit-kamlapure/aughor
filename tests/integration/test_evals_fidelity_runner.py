@@ -14,12 +14,12 @@ from __future__ import annotations
 import duckdb
 import pytest
 
-from aughor.evals import store
-from aughor.evals.experiments import Cell, MeasurementIntegrityError
-from aughor.evals.fidelity import assess
-from aughor.evals.runner import run_experiment
-from aughor.evals.targets import reference_checker, reference_target
-from aughor.kernel.flags import clear_flag
+from pramanyx.evals import store
+from pramanyx.evals.experiments import Cell, MeasurementIntegrityError
+from pramanyx.evals.fidelity import assess
+from pramanyx.evals.runner import run_experiment
+from pramanyx.evals.targets import reference_checker, reference_target
+from pramanyx.kernel.flags import clear_flag
 
 FLAG = "_synthetic.default_off"   # a synthetic default-off flag (tests/conftest.py `synthetic_flags`) — no product flag is a switch since 2026-10-28
 TABLES = ["orders"]
@@ -27,15 +27,15 @@ TABLES = ["orders"]
 
 @pytest.fixture(autouse=True)
 def _isolated(tmp_path, monkeypatch, synthetic_flags):
-    monkeypatch.setenv("AUGHOR_EVALS_DB", str(tmp_path / "evals.db"))
+    monkeypatch.setenv("PRAMANYX_EVALS_DB", str(tmp_path / "evals.db"))
     monkeypatch.setattr(store, "_DB_PATH", tmp_path / "evals.db")
-    monkeypatch.setenv("AUGHOR_FALLBACK_DISABLED", "1")
-    monkeypatch.setenv("AUGHOR_EVALS_EXPERIMENTS", "1")
+    monkeypatch.setenv("PRAMANYX_FALLBACK_DISABLED", "1")
+    monkeypatch.setenv("PRAMANYX_EVALS_EXPERIMENTS", "1")
     # Schema loads call `semantic.autoseed.seed_missing_tables`, which makes REAL LLM requests
     # against the 1,000/day budget. Nothing here measures the seeder. Patch the ATTRIBUTE, not
     # the env var: `_ENABLED` is resolved at module import, so a `setenv` here is a no-op —
     # the same trap the other live-path suites sidestep.
-    monkeypatch.setattr("aughor.semantic.autoseed._ENABLED", False)
+    monkeypatch.setattr("pramanyx.semantic.autoseed._ENABLED", False)
     yield
     clear_flag(FLAG)
     clear_flag("evals.experiments")
@@ -48,7 +48,7 @@ def db(tmp_path):
     con.execute("CREATE TABLE orders(id INT, amount INT)")
     con.execute("INSERT INTO orders VALUES (1,100),(2,250),(3,90)")
     con.close()
-    from aughor.db.connection import DuckDBConnection
+    from pramanyx.db.connection import DuckDBConnection
     conn = DuckDBConnection(str(path), connection_id="e4btest")
     yield conn
     conn.close()
@@ -118,7 +118,7 @@ def test_a_fixture_that_moves_mid_grid_is_recorded_not_hidden(db, suite, monkeyp
     local DuckDB file is opened read_only precisely so a run cannot mutate it — the
     property this test would otherwise have to break in order to exercise.
     """
-    from aughor.evals import experiments as X
+    from pramanyx.evals import experiments as X
 
     versions = iter(["fp:aaa", "fp:bbb", "fp:bbb", "fp:bbb"])
     monkeypatch.setattr(X, "data_version_of", lambda conn, tables=None: next(versions))
@@ -151,7 +151,7 @@ def test_omitting_the_fixture_leaves_the_stamp_empty_rather_than_faked(db, suite
 def test_a_polluted_connection_aborts_the_whole_grid(db, suite, monkeypatch):
     """Unlike a cell failure, this is not recorded and survived: exploration insights steer
     the model's metric choice, so every cell is measuring something neither of them varied."""
-    from aughor.evals import experiments as X
+    from pramanyx.evals import experiments as X
 
     monkeypatch.setattr(X, "volatile_semantic_state",
                         lambda cid: {"exploration_bytes": 4096, "ontology": "present"})
@@ -163,7 +163,7 @@ def test_a_polluted_connection_aborts_the_whole_grid(db, suite, monkeypatch):
 
 
 def test_pollution_can_be_allowed_deliberately(db, suite, monkeypatch):
-    from aughor.evals import experiments as X
+    from pramanyx.evals import experiments as X
 
     monkeypatch.setattr(X, "volatile_semantic_state",
                         lambda cid: {"exploration_bytes": 4096, "ontology": "present"})
@@ -175,7 +175,7 @@ def test_pollution_can_be_allowed_deliberately(db, suite, monkeypatch):
 
 
 def test_a_clean_connection_passes_the_guard(db, suite, monkeypatch):
-    from aughor.evals import experiments as X
+    from pramanyx.evals import experiments as X
 
     monkeypatch.setattr(X, "volatile_semantic_state",
                         lambda cid: {"exploration_bytes": 0, "ontology": "none"})

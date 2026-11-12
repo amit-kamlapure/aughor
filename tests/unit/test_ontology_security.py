@@ -12,10 +12,10 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.ontology.models import RowPolicy, Sensitivity
-from aughor.ontology.security import reset_acting_agent, set_acting_agent
-from aughor.semantic.object_instances import ObjectWithheld, get_object
-from aughor.semantic.object_query import (MaskedProperty, ObjectListing, ObjectQuery, compile_object_listing,
+from pramanyx.ontology.models import RowPolicy, Sensitivity
+from pramanyx.ontology.security import reset_acting_agent, set_acting_agent
+from pramanyx.semantic.object_instances import ObjectWithheld, get_object
+from pramanyx.semantic.object_query import (MaskedProperty, ObjectListing, ObjectQuery, compile_object_listing,
                                           compile_object_query)
 from tests.unit.test_object_actions import CONN, ORDER, db, graph  # noqa: F401 — fixtures by name
 
@@ -25,7 +25,7 @@ RETURNED = {"cancelled", "refunded"}
 
 @pytest.fixture
 def secured(graph, monkeypatch):  # noqa: F811
-    from aughor.rbac.groups import add_member, upsert_group
+    from pramanyx.rbac.groups import add_member, upsert_group
     for group, members in (("fulfilment", ["user:ana"]), ("support", ["user:ben"]),
                            ("finance", ["user:ben"])):
         upsert_group("default", group, group.capitalize())
@@ -40,7 +40,7 @@ def secured(graph, monkeypatch):  # noqa: F811
 
 
 def _as(monkeypatch, who: str) -> None:
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", who)
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", who)
 
 
 def _listing(graph, db, columns=("status", "total_amount")):  # noqa: F811
@@ -96,7 +96,7 @@ def test_the_object_page_masks_the_amount_and_says_an_order_outside_your_rows_is
 
 
 def test_an_agent_acting_for_a_person_reads_only_what_both_may(secured, db, monkeypatch):  # noqa: F811
-    from aughor.rbac.groups import add_member
+    from pramanyx.rbac.groups import add_member
     add_member("default", "fulfilment", "agent:bot")                          # the agent: fulfilment, no finance
     _as(monkeypatch, "ben")                                                  # the person: support and finance
     token = set_acting_agent("agent:bot")
@@ -113,21 +113,21 @@ def test_an_agent_acting_for_a_person_reads_only_what_both_may(secured, db, monk
 
 def test_the_acting_agent_header_narrows_a_listing_over_http(secured, client, monkeypatch):  # noqa: F811
     """The header reaches the door through its router dependency — the same read as above, over the wire."""
-    from aughor.rbac.groups import add_member
+    from pramanyx.rbac.groups import add_member
     add_member("default", "fulfilment", "agent:bot")
-    monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema=None: secured)
+    monkeypatch.setattr("pramanyx.routers.ontology.served_ontology_graph", lambda conn, schema=None: secured)
     _as(monkeypatch, "ben")
     body = {"entity": "Order", "columns": ["status"], "limit": 200}
     params = {"connection_id": CONN, "schema_name": "ecommerce"}
     alone = client.post("/objects/list", params=params, json=body)
     assert alone.status_code == 200 and alone.json()["total"] > 0, alone.text
-    acting = client.post("/objects/list", params=params, json=body, headers={"X-Aughor-Acting-Agent": "agent:bot"})
+    acting = client.post("/objects/list", params=params, json=body, headers={"X-Pramanyx-Acting-Agent": "agent:bot"})
     assert acting.status_code == 200 and acting.json()["total"] == 0, acting.text
     assert any("agent:bot" in c for c in acting.json()["caveats"])
 
 
 def test_the_declare_doors_take_own_properties_and_never_mask_the_key(graph, client, monkeypatch):  # noqa: F811
-    monkeypatch.setattr("aughor.routers.ontology._get_ontology_graph", lambda conn, schema=None: graph)
+    monkeypatch.setattr("pramanyx.routers.ontology._get_ontology_graph", lambda conn, schema=None: graph)
     params = {"connection_id": CONN, "schema_name": "ecommerce"}
     linked = client.put("/ontology/entities/Order/row-policies", params=params,
                         json={"policies": [{"group": "eu", "conditions": [{"path": "customer.country", "op": "=", "value": "DE"}]}]})
@@ -140,7 +140,7 @@ def test_the_declare_doors_take_own_properties_and_never_mask_the_key(graph, cli
     ok = client.put("/ontology/entities/Order/sensitive/total_amount", params=params,
                     json={"level": "pii", "visible_to": ["finance"]})
     assert ok.status_code == 200 and ok.json()["sensitive"]["visible_to"] == ["finance"]
-    from aughor.ontology.overrides import apply_overrides, viewing
+    from pramanyx.ontology.overrides import apply_overrides, viewing
     with viewing("draft"):                                                 # declared: waiting in the draft
         served, _ = apply_overrides(graph, CONN, "ecommerce")
     assert served.entities["Order"].row_policies[0].group == "eu"
@@ -149,7 +149,7 @@ def test_the_declare_doors_take_own_properties_and_never_mask_the_key(graph, cli
 
 
 def test_a_count_kept_for_every_reader_says_it_spans_objects_this_one_may_not_see(secured, monkeypatch):
-    from aughor.ontology.security import counts_said
+    from pramanyx.ontology.security import counts_said
     _as(monkeypatch, "ana")
     assert counts_said(secured.entities["Order"]) == ("counted over every Order, not only the ones user:ana may see — "
                                                      "a table of them lists only those")
@@ -157,7 +157,7 @@ def test_a_count_kept_for_every_reader_says_it_spans_objects_this_one_may_not_se
 
 
 def test_a_release_says_who_sees_what_before_a_person_publishes_it():
-    from aughor.ontology.compatibility import classify
+    from pramanyx.ontology.compatibility import classify
     rows = [{"group": "warehouse", "conditions": [{"path": "status", "op": "in", "values": ["pending"]}]}]
     masked = {"total_amount": {"level": "confidential", "visible_to": ["finance"]}}
     first, why = classify("entity", None, {"description": "x", "row_policies": rows, "sensitive": masked})
@@ -172,7 +172,7 @@ def test_a_release_says_who_sees_what_before_a_person_publishes_it():
 def test_with_nothing_declared_every_reader_sees_every_order_and_every_amount_as_before(graph, db, monkeypatch):  # noqa: F811
     """An entity that declares no row policy and no sensitive property reads exactly as before: nothing is filtered or
     masked, and the SQL is what the platform's own unfiltered check compiles."""
-    from aughor.ontology.security import unfiltered
+    from pramanyx.ontology.security import unfiltered
     _as(monkeypatch, "carl")
     compiled, rows, total = _listing(graph, db)
     statuses = {r[1] for r in rows}
@@ -191,8 +191,8 @@ from tests.unit.test_object_processes import _isolated_overrides  # noqa: E402,F
 
 
 def test_a_board_counts_the_readers_own_objects_and_the_kept_measurement_counts_every_one(door, client, monkeypatch):  # noqa: F811
-    from aughor.ontology.overrides import find_override
-    from aughor.rbac.groups import add_member, upsert_group
+    from pramanyx.ontology.overrides import find_override
+    from pramanyx.rbac.groups import add_member, upsert_group
     upsert_group("default", "warehouse", "Warehouse")
     add_member("default", "warehouse", "user:ana")
     samples = door()

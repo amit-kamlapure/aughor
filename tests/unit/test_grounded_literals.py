@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from aughor.sql.grounded_literals import enforce_grounded_literals
+from pramanyx.sql.grounded_literals import enforce_grounded_literals
 
 
 def _b(table: str, column: str, value: str):

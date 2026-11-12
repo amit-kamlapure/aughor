@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
-import aughor.agent.framing as AF
-from aughor.ontology.framing import frame_question
-from aughor.ontology.models import OntologyGraph
+import pramanyx.agent.framing as AF
+from pramanyx.ontology.framing import frame_question
+from pramanyx.ontology.models import OntologyGraph
 
 REPO = Path(__file__).resolve().parents[2]
 OLIST = OntologyGraph.model_validate(json.loads((REPO / "evals" / "ablation_olist_business_ontology.json").read_text()))
@@ -34,8 +34,8 @@ class _Model:
 @pytest.fixture
 def served(monkeypatch):
     """The store holds the Olist graph under `baef6c3e/ecommerce`; the registry names `main` as the connection's schema."""
-    import aughor.db.registry as registry
-    import aughor.ontology.store as store
+    import pramanyx.db.registry as registry
+    import pramanyx.ontology.store as store
     held = {("baef6c3e", "ecommerce"): OLIST}
     monkeypatch.setattr(store, "load_latest_ontology", lambda conn, schema=None: held.get((conn, schema)))
     monkeypatch.setattr(store, "list_schemas", lambda conn: sorted(s for c, s in held if c == conn))
@@ -78,7 +78,7 @@ def test_a_model_that_names_nothing_listed_or_fails_chooses_nothing(served, mode
 
 
 def test_only_a_person_s_synonyms_reach_the_frame(monkeypatch):
-    import aughor.ontology.vocabulary as V
+    import pramanyx.ontology.vocabulary as V
     rows = [V.Synonym("baef6c3e", "term", "order_to_delivery.dispatched", "handover", "human", ""),
             V.Synonym("baef6c3e", "term", "order_to_delivery.delivered", "arrival", "mined", ""),
             V.Synonym("baef6c3e", "term", "order_to_delivery.delivered", "drop", "llm_candidate", "")]

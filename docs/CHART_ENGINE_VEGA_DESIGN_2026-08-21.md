@@ -190,7 +190,7 @@ artifact keeps `chart_type` and drops `chart_config` entirely.
 
 Consequences:
 
-- The `exhibit` grammar (`web/components/charts/exhibit.ts`, `aughor/agent/exhibit.py`,
+- The `exhibit` grammar (`web/components/charts/exhibit.ts`, `pramanyx/agent/exhibit.py`,
   `tests/unit/test_chart_exhibit.py`) — severity ramps, sign colouring, reference lines,
   subject emphasis — **has never been recoverable from a stored answer.**
 - **You cannot re-render a past answer's chart as it was shown.** For a product whose thesis
@@ -231,10 +231,10 @@ exactly the chart the user was just looking at". **Keep that. Change only what i
 | Contract | Where | Why it constrains the design |
 |---|---|---|
 | `VizConfig` (18 optional fields) | `charts/vizConfig.ts` | Crosses the wire, persisted in `DashboardCard.render` and `viz_configs`. Absent-means-default; an untouched chart must still persist nothing. |
-| `ChartType` vocabulary | `aughor/agent/chart_vocab.py` | Backend and frontend agree on names; `tests/unit/test_chart_vocab_parity.py` enforces it. |
+| `ChartType` vocabulary | `pramanyx/agent/chart_vocab.py` | Backend and frontend agree on names; `tests/unit/test_chart_vocab_parity.py` enforces it. |
 | `exhibit` semantics | `charts/exhibit.ts`, `agent/exhibit.py` | `color.mode` (neutral/categorical/severity/sign/continuous), `ref_lines`, `quadrant`, `emphasis`, `order`. |
 | Palette gate | `web/scripts/check-chart-palette.mjs` | Parses `echarts/palette.ts` and CVD-validates. **Rewriting this is in scope, not optional.** |
-| Print path | `web/scripts/chart-ssr-entry.ts` → `aughor/export/chart_ssr.bundle.mjs` (825 KB) | Node subprocess, stdin JSON → stdout SVG. |
+| Print path | `web/scripts/chart-ssr-entry.ts` → `pramanyx/export/chart_ssr.bundle.mjs` (825 KB) | Node subprocess, stdin JSON → stdout SVG. |
 
 ### 5.2 What changes
 
@@ -250,7 +250,7 @@ exactly the chart the user was just looking at". **Keep that. Change only what i
 
 Vega-Lite makes dual-axis charts easy via `resolve.scale.independent`. Pramanyx's own exhibit
 grammar already retired combo charts ("one measure per exhibit" —
-`aughor/agent/prompts.py:245`). **Do not let the new grammar's convenience reopen a decision
+`pramanyx/agent/prompts.py:245`). **Do not let the new grammar's convenience reopen a decision
 the product already made correctly.**
 
 ---
@@ -301,14 +301,14 @@ token-built Vega-Lite `config`.
 
 ### Phase 2 — Renderer behind a flag · 1–2 weeks
 `resolveSpec()` for `bar`, `bar_horizontal`, `line`, `multi_line`, `counter`, `pie`, plus the
-`auto` inference path. `AUGHOR_CHART_ENGINE=vega|echarts` selects the engine; both render
+`auto` inference path. `PRAMANYX_CHART_ENGINE=vega|echarts` selects the engine; both render
 from the same intent.
 **Harness:** replay all 703 persisted charts through both engines and diff screenshots.
 **Gate:** no visual regression on the replay set; p95 render time within 20% of ECharts.
 
 ### Phase 3 — Persist the intent · DONE 2026-08-21
 `chart_config` — and the exhibit nested in it — now reaches the artifact, built by
-`answer_chart_payload()` in `aughor/agent/chart_vocab.py` (a pure function, so the bug's home in
+`answer_chart_payload()` in `pramanyx/agent/chart_vocab.py` (a pure function, so the bug's home in
 an argument list inside a 5,000-line route is now somewhere a test can reach).
 
 **Scope stops at INTENT, never data — decided 2026-08-21.** The original gate ("a past answer
@@ -325,7 +325,7 @@ bucketing, Pareto cumulative % and boxplot quartiles — all three are chart typ
 recorded uses**, so porting them would have broken §6's own rule. The transforms users can
 actually reach are the four in the edit panel, and those moved into the spec: period-over-period,
 share-of-total, rolling and cumulative now compute in the chart's dataflow instead of POSTing the
-whole result set to `/query/postproc`. Edge semantics are copied from `aughor/tools/postproc.py`
+whole result set to `/query/postproc`. Edge semantics are copied from `pramanyx/tools/postproc.py`
 and pinned by a test that RUNS each transform through Vega and compares every value against a
 port of the Python — which caught a real divergence (Vega's `count` counts rows, not non-null
 values, so a window holding a null measured as full).
@@ -414,5 +414,5 @@ carries it. That was always the contract; it is now the only one.
 | `web/components/charts/echarts/EChart.tsx` | 156 | Replaced by a Vega wrapper |
 | `web/scripts/chart-ssr-entry.ts` | 114 | Retargeted to `vega` → SVG |
 | `web/scripts/check-chart-palette.mjs` | — | Rewritten for the new palette source |
-| `aughor/export/echarts.py` | 95 | Renamed / retargeted |
-| `aughor/export/chart_ssr.bundle.mjs` | 825 KB | Rebuilt, expected smaller |
+| `pramanyx/export/echarts.py` | 95 | Renamed / retargeted |
+| `pramanyx/export/chart_ssr.bundle.mjs` | 825 KB | Rebuilt, expected smaller |

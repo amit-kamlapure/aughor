@@ -16,8 +16,8 @@ from types import SimpleNamespace as N
 
 import pytest
 
-from aughor.answer.series_names import cryptic, names_for
-from aughor.automations import picture
+from pramanyx.answer.series_names import cryptic, names_for
+from pramanyx.automations import picture
 
 REVENUE = N(name="revenue", label="Revenue", status="approved",
             sql="SELECT (SUM(sale_price)) AS revenue FROM order_items WHERE status <> 'Cancelled'",
@@ -68,7 +68,7 @@ def _source():
 
 @pytest.fixture(autouse=True)
 def _metrics(monkeypatch):
-    monkeypatch.setattr("aughor.answer.series_names.connection_metrics", lambda cid: [REVENUE])
+    monkeypatch.setattr("pramanyx.answer.series_names.connection_metrics", lambda cid: [REVENUE])
 
 
 def test_no_settings_draws_the_main_result_titled_by_its_own_sentence():
@@ -94,7 +94,7 @@ def test_bars_over_several_series_draw_every_series():
 
     [p] = picture.plan({"chart_kind": "bar"}, _source(), automation_name="x")
     assert p["kind"] == "grouped_bar" and not p["note"]
-    from aughor.export.echarts import render_chart_svg
+    from pramanyx.export.echarts import render_chart_svg
     svg = render_chart_svg(p["columns"], p["rows"], p["kind"], p["title"], chart_config={"names": p["names"]})
     assert sorted(set(re.findall(r">(Oct 2\d)<", svg or ""))) == ["Oct 28", "Oct 29"]
     one = {**_source(), "results": [{**_source()["results"][0], "columns": ["category", "r28"],
@@ -139,10 +139,10 @@ def test_a_table_picture_reads_its_names_and_numbers():
 
 def _post(monkeypatch, config: dict) -> list[dict]:
     """Run the engine's own attach with the renderer and the upload counted."""
-    from aughor.automations import engine
-    from aughor.automations.models import Effect
-    from aughor.export import echarts
-    from aughor.slackbots import post
+    from pramanyx.automations import engine
+    from pramanyx.automations.models import Effect
+    from pramanyx.export import echarts
+    from pramanyx.slackbots import post
     calls: list[dict] = []
     monkeypatch.setattr(echarts, "render_chart_svg", lambda *a, **k: calls.append({"render": a, **k}) or "<svg/>")
     monkeypatch.setattr(echarts, "svg_to_png", lambda *a, **k: b"PNG")
@@ -168,9 +168,9 @@ def test_the_post_draws_what_the_step_says(monkeypatch):
 def test_the_preview_is_what_the_post_plans(monkeypatch):
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
-    from aughor.automations.models import Automation, AutomationRun, Condition, Effect, EffectOutcome
-    from aughor.automations.store import append_run, upsert_automation
+    from pramanyx.api import app
+    from pramanyx.automations.models import Automation, AutomationRun, Condition, Effect, EffectOutcome
+    from pramanyx.automations.store import append_run, upsert_automation
     a = upsert_automation(Automation(
         id="wgp-preview", conn_id="", name="The Look - Daily Briefing",
         conditions=[Condition(kind="schedule", config={"cron": "0 9 * * *"})],
@@ -206,7 +206,7 @@ def test_the_preview_is_what_the_post_plans(monkeypatch):
 def test_the_governed_metrics_come_through_the_platforms_seam(monkeypatch):
     """The platform names an axis by a governed metric without importing the semantic layer: the
     agent registers its reader at bootstrap (`kernel/registries/governed_metrics.py`)."""
-    from aughor.kernel.registries import governed_metrics as gm
+    from pramanyx.kernel.registries import governed_metrics as gm
     monkeypatch.setattr(gm, "_reader", None)
     assert gm.metrics_for("c1") == []                                   # unregistered: none, so "Sale price"
     gm.register_metric_reader(lambda cid: [REVENUE] if cid == "c1" else [])

@@ -30,10 +30,10 @@ from pathlib import Path
 
 import pytest
 
-from aughor.mcpservers import call as door
-from aughor.mcpservers import store
-from aughor.mcpservers.discover import discover
-from aughor.mcpservers.models import (
+from pramanyx.mcpservers import call as door
+from pramanyx.mcpservers import store
+from pramanyx.mcpservers.discover import discover
+from pramanyx.mcpservers.models import (
     CALLABLE, GRANT_ACTIVE, GRANT_NONE, GRANT_STALE, McpServer, McpTool, McpToolGrant,
     grant_key, grant_verdict,
 )
@@ -88,7 +88,7 @@ def _discovered(server_id: str = _SERVER_ID) -> McpServer:
 
 def _grant(server_id: str, tool_name: str, *, by: str = "amit") -> McpToolGrant:
     """Ratify exactly as the route does — pinning from the ROSTER, never from an argument."""
-    from aughor.mcpservers.discover import tool_named
+    from pramanyx.mcpservers.discover import tool_named
     tool = tool_named(server_id, tool_name)
     assert tool is not None, f"{tool_name} is not on the roster; the test is set up wrong"
     return store.save_grant(McpToolGrant(
@@ -155,7 +155,7 @@ def test_a_grant_never_makes_a_tool_CALLABLE():
     silently re-derive a human decision."""
     s = _discovered()
     _grant(s.id, MUTATING)
-    from aughor.mcpservers.discover import tool_named
+    from pramanyx.mcpservers.discover import tool_named
     assert tool_named(s.id, MUTATING).disposition != CALLABLE
 
 
@@ -322,7 +322,7 @@ def test_a_granted_call_is_recorded_AS_A_WRITE_in_the_LEDGER(monkeypatch):
     the bug this suite already paid for once.
     """
     events: list[dict] = []
-    monkeypatch.setattr("aughor.obs.session_log.emit",
+    monkeypatch.setattr("pramanyx.obs.session_log.emit",
                         lambda kind, **kw: events.append({"kind": kind, **kw}))
 
     s = _discovered()
@@ -346,7 +346,7 @@ def test_granting_and_revoking_are_themselves_audited(monkeypatch):
     """A grant is a governance change, so it goes where governance changes go. A permission
     that appears with no record of who created it is one nobody can be asked about."""
     emitted: list[tuple] = []
-    monkeypatch.setattr("aughor.kernel.ledger.Ledger.default",
+    monkeypatch.setattr("pramanyx.kernel.ledger.Ledger.default",
                         staticmethod(lambda: type("L", (), {
                             "emit": lambda _self, kind, payload=None, **kw:
                                 emitted.append((kind, payload or {}))})()))
@@ -365,7 +365,7 @@ def test_granting_and_revoking_are_themselves_audited(monkeypatch):
 
 class _Unreachable:
     def __call__(self, *_a, **_k):
-        from aughor.mcpservers.session import McpUnreachable
+        from pramanyx.mcpservers.session import McpUnreachable
         raise McpUnreachable("the pipe closed mid-call")
 
 
@@ -376,7 +376,7 @@ def test_a_transport_failure_on_a_GRANTED_call_is_UNCERTAIN_not_failed(monkeypat
     """
     s = _discovered()
     _grant(s.id, MUTATING)
-    monkeypatch.setattr("aughor.mcpservers.call.call_tool", _Unreachable())
+    monkeypatch.setattr("pramanyx.mcpservers.call.call_tool", _Unreachable())
 
     result = door.call(s.id, MUTATING, {"target": "x"})
     assert result.status == "uncertain", (
@@ -389,7 +389,7 @@ def test_the_same_failure_on_a_READ_is_still_plainly_FAILED(monkeypatch):
     """`uncertain` must not leak onto reads, or it stops meaning anything: a caller that saw
     it everywhere would learn to treat it as `failed` and retry the writes too."""
     s = _discovered()
-    monkeypatch.setattr("aughor.mcpservers.call.call_tool", _Unreachable())
+    monkeypatch.setattr("pramanyx.mcpservers.call.call_tool", _Unreachable())
     result = door.call(s.id, READONLY, {"city": "Lisbon"})
     assert result.status == "failed"
     assert result.writes is False
@@ -415,7 +415,7 @@ def test_grants_survive_a_roster_replacement_that_changed_nothing():
 # ── the two surfaces that must learn the same thing (a partial add is the failure) ──
 
 def _step(server_id: str, tool: str):
-    from aughor.automations.models import Effect
+    from pramanyx.automations.models import Effect
     return Effect(kind="mcp_call", alias="ask",
                   config={"server_id": server_id, "tool": tool, "arguments": {}})
 
@@ -423,7 +423,7 @@ def _step(server_id: str, tool: str):
 def test_a_GRANTED_tool_may_be_SAVED_as_a_chain_step():
     """A grant that the door honours but `validate_chain` refuses would be a permission a
     person cannot spend — the step would be unsavable and the capability unreachable."""
-    from aughor.automations.dataflow import validate_chain
+    from pramanyx.automations.dataflow import validate_chain
     s = _discovered()
     assert validate_chain([_step(s.id, MUTATING)]) is not None, (
         "guard: an ungranted mutating step must be refused, or the assertion below passes "
@@ -435,7 +435,7 @@ def test_a_GRANTED_tool_may_be_SAVED_as_a_chain_step():
 def test_a_step_whose_grant_went_STALE_is_refused_at_SAVE_with_the_drift_sentence():
     """A chain that would refuse at 07:00 against somebody else's machine is one that looks
     schedulable — K1's expensive kind of broken."""
-    from aughor.automations.dataflow import validate_chain
+    from pramanyx.automations.dataflow import validate_chain
     s = _discovered()
     _grant(s.id, MUTATING)
     _drift(s.id, MUTATING, destructive_hint=False)
@@ -444,7 +444,7 @@ def test_a_step_whose_grant_went_STALE_is_refused_at_SAVE_with_the_drift_sentenc
 
 
 def _remote_tools():
-    from aughor.components.registry import _remote_tool_components
+    from pramanyx.components.registry import _remote_tool_components
     return {c.id: c for c in _remote_tool_components()}
 
 
@@ -488,7 +488,7 @@ def test_a_switched_off_SERVER_still_dims_a_granted_tool():
 # ── the whole vertical, through the engine ───────────────────────────────────────
 
 def _chain(server_id: str, tool: str, **cfg):
-    from aughor.automations.models import Automation, Condition, Effect
+    from pramanyx.automations.models import Automation, Condition, Effect
     return Automation(
         name="write slice", conn_id="thelook", max_retries=0,
         conditions=[Condition(kind="schedule", config={"cron": "0 9 * * *"})],
@@ -499,7 +499,7 @@ def _chain(server_id: str, tool: str, **cfg):
 def test_a_granted_write_RUNS_through_the_engine():
     """The whole vertical: an allowlisted server, a tool its own server refuses, a human's
     grant, a chain step, the one door, and a real subprocess."""
-    from aughor.automations.engine import run_automation
+    from pramanyx.automations.engine import run_automation
     s = _discovered()
     _grant(s.id, MUTATING)
     run = run_automation(_chain(s.id, MUTATING, arguments={"target": "row-9"}),
@@ -519,10 +519,10 @@ def test_a_lost_WRITE_reaches_the_engine_as_uncertain_and_is_NEVER_RETRIED(monke
     built to retry it, and the mutation would run twice — which is the single outcome a
     write gate exists to prevent.
     """
-    from aughor.automations.engine import run_automation
+    from pramanyx.automations.engine import run_automation
     s = _discovered()
     _grant(s.id, MUTATING)
-    monkeypatch.setattr("aughor.mcpservers.call.call_tool", _Unreachable())
+    monkeypatch.setattr("pramanyx.mcpservers.call.call_tool", _Unreachable())
 
     run = run_automation(_chain(s.id, MUTATING, arguments={"target": "x"}),
                          manual=True, persist=False)
@@ -541,7 +541,7 @@ def test_the_route_pins_the_declaration_from_the_ROSTER_not_the_request(client, 
     pinning that makes drift detectable into a value the caller chooses.
     """
     s = _discovered()
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "amit-op")   # who the request acts for, nobody signed in
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "amit-op")   # who the request acts for, nobody signed in
     res = client.put(f"/mcp-servers/{s.id}/grants/{MUTATING}",
                      json={"granted_by": "amit", "note": "cleanup job",
                            # Ignored — and that is the claim.

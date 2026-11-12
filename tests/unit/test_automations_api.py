@@ -12,9 +12,9 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.automations.models import AutomationRun
-from aughor.automations.store import append_run
+from pramanyx.api import app
+from pramanyx.automations.models import AutomationRun
+from pramanyx.automations.store import append_run
 
 client = TestClient(app)
 
@@ -28,7 +28,7 @@ BODY = {
 
 @pytest.fixture
 def flag_on(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled",
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled",
                         lambda n: n == "automations.engine")
 
 
@@ -103,7 +103,7 @@ def test_the_guard_operators_come_from_the_code(flag_on):
     """FETCHED, never mirrored. A picker that offered an operator the engine cannot
     evaluate would fail on a schedule, at 09:00, with nobody watching — the same
     argument the per-kind ports are fetched by."""
-    from aughor.automations.dataflow import GUARD_OPS, UNARY_OPS
+    from pramanyx.automations.dataflow import GUARD_OPS, UNARY_OPS
 
     ops = client.get("/automations/vocabulary").json()["guard_ops"]
     assert [o["op"] for o in ops] == list(GUARD_OPS)
@@ -230,7 +230,7 @@ def test_the_preview_returns_the_graph_an_execution_view_reads(flag_on):
 def test_the_fan_out_vocabulary_comes_from_the_code(flag_on):
     """Third fetched vocabulary, same argument: the cap is enforced by the model and the
     engine, and a form carrying its own copy would offer a list the save then refuses."""
-    from aughor.automations.dataflow import (
+    from pramanyx.automations.dataflow import (
         FAN_PUBLISHED, ITEM_ALIAS, ITEM_VALUE, MAX_FAN_OUT,
     )
 

@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import aughor.llm.provider as prov
-from aughor.agent.investigate import _one_phase_evidence, _phases_evidence, _phases_evidence_budgeted
+import pramanyx.llm.provider as prov
+from pramanyx.agent.investigate import _one_phase_evidence, _phases_evidence, _phases_evidence_budgeted
 
 
 def _phase(name: str, sql: str) -> dict:
@@ -68,7 +68,7 @@ def test_overflow_phases_are_condensed_not_dropped_and_no_llm(monkeypatch):
 def test_fail_open_falls_back_to_truncation(monkeypatch):
     # No LLM to fail anymore; force an internal error in the condense step and confirm the
     # path still fails open to plain truncation rather than raising.
-    import aughor.agent.investigate as inv
+    import pramanyx.agent.investigate as inv
 
     def boom(_p):
         raise RuntimeError("condense bug")

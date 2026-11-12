@@ -14,8 +14,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.intake import mining
+from pramanyx.api import app
+from pramanyx.intake import mining
 
 client = TestClient(app)
 
@@ -41,12 +41,12 @@ STORAGE_HTML = """
 
 @pytest.fixture()
 def stores(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_INTAKE_DB", str(tmp_path / "intake.db"))
-    monkeypatch.setenv("AUGHOR_TRUSTED_QUERIES_PATH", str(tmp_path / "tq.json"))
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.json"))
-    monkeypatch.setenv("AUGHOR_GLOSSARY_PATH", str(tmp_path / "glossary.yaml"))
-    monkeypatch.setenv("AUGHOR_VOCABULARY_ROOT", str(tmp_path / "vocab"))
-    import aughor.semantic.connection_kb as kb
+    monkeypatch.setenv("PRAMANYX_INTAKE_DB", str(tmp_path / "intake.db"))
+    monkeypatch.setenv("PRAMANYX_TRUSTED_QUERIES_PATH", str(tmp_path / "tq.json"))
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.json"))
+    monkeypatch.setenv("PRAMANYX_GLOSSARY_PATH", str(tmp_path / "glossary.yaml"))
+    monkeypatch.setenv("PRAMANYX_VOCABULARY_ROOT", str(tmp_path / "vocab"))
+    import pramanyx.semantic.connection_kb as kb
     monkeypatch.setattr(kb, "_DATA_DIR", tmp_path / "kb")
     monkeypatch.setattr(kb, "_index_entry", lambda e: None)
     monkeypatch.setattr(kb, "_delete_from_index", lambda c, i: None)
@@ -137,8 +137,8 @@ class _FakeConfluence:
 
 
 def _wire_confluence(monkeypatch):
-    from aughor.connectors.knowledge import confluence as conf_mod
-    from aughor.db import registry as reg
+    from pramanyx.connectors.knowledge import confluence as conf_mod
+    from pramanyx.db import registry as reg
 
     monkeypatch.setattr(conf_mod, "ConfluenceSync", _FakeConfluence)
     real_get_dsn, real_get_meta = reg.get_dsn, reg.get_meta
@@ -166,7 +166,7 @@ def test_a_confluence_metric_page_becomes_staged_candidates(stores, monkeypatch)
     assert page["url"] == "https://acme.atlassian.net/wiki/spaces/FIN/pages/9001"
     assert page["tables_seen"] == 2 and page["tables_mapped"] == 1
 
-    from aughor.intake import store
+    from pramanyx.intake import store
     b = store.get_bundle(page["bundle_id"], org_id="default")
     assert b["source"] == page["url"]
     kinds = sorted(c["kind"] for c in store.list_candidates(page["bundle_id"],
@@ -179,7 +179,7 @@ def test_a_confluence_metric_page_becomes_staged_candidates(stores, monkeypatch)
                       json={"actor": "ana@example.com",
                             "accept": [c["id"] for c in cands]})
     assert res.status_code == 200 and res.json()["errors"] == 0
-    from aughor.semantic.metrics import get_metric
+    from pramanyx.semantic.metrics import get_metric
     assert get_metric("net_revenue", connection_id=CONN).status == "proposed"
 
 
@@ -230,8 +230,8 @@ class _FakeNotion:
 
 
 def test_notion_pages_and_databases_both_mine(stores, monkeypatch):
-    from aughor.connectors.knowledge import notion as notion_mod
-    from aughor.db import registry as reg
+    from pramanyx.connectors.knowledge import notion as notion_mod
+    from pramanyx.db import registry as reg
 
     monkeypatch.setattr(notion_mod, "NotionSync", _FakeNotion)
     real_get_dsn, real_get_meta = reg.get_dsn, reg.get_meta

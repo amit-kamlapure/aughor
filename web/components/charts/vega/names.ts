@@ -3,7 +3,7 @@
  *
  * The analyst names columns for itself — `r28`, `r29`, `d` — and every chart printed them: the
  * Daily Briefing's legend read "r28 · r29" over an axis called "Value". The backend reads what
- * each column IS from its SQL (`aughor/answer/series_names.py`) and hands the names over as
+ * each column IS from its SQL (`pramanyx/answer/series_names.py`) and hands the names over as
  * `{ labels: { column: name }, y_title }`. They are applied HERE, after the spec is resolved,
  * and never as renamed columns: the resolver classifies a grid by its column names, and a column
  * renamed "Oct 28" was read as a date — the chart lost a series (measured on the 09:00 grid).

@@ -1,4 +1,4 @@
-"""Tests for CIDR-E1 result-trust checks (aughor/sql/trust_checks.py).
+"""Tests for CIDR-E1 result-trust checks (pramanyx/sql/trust_checks.py).
 
 Contract: deterministic, execution-free caveats for the function-semantics footguns that silently
 return wrong rows — timestamp-vs-date-literal boundary, lexicographic ordering of numeric text,
@@ -6,7 +6,7 @@ text-vs-numeric comparison. Emit labelled findings; never raise; never guess whe
 """
 from __future__ import annotations
 
-from aughor.sql.trust_checks import run_trust_checks
+from pramanyx.sql.trust_checks import run_trust_checks
 
 
 def _patterns(sql, **kw):
@@ -86,7 +86,7 @@ def test_unparseable_returns_empty_not_raise():
 def _mem_conn(conn_id, ddl):
     import duckdb
     from pathlib import Path
-    from aughor.db.connection import DuckDBConnection
+    from pramanyx.db.connection import DuckDBConnection
     c = DuckDBConnection.__new__(DuckDBConnection)
     c._path = Path(":memory:"); c._conn = duckdb.connect(":memory:")
     c._connection_id = conn_id; c._schema_name = None
@@ -98,7 +98,7 @@ def test_connection_column_types_not_truncated_over_500_columns():
     """A wide schema (>500 columns) must resolve ALL types — the introspection goes through
     execute_bounded, not the 500-row answer cap that would drop most columns and revert the
     E1 checks to the name heuristic (the WP-1f false positive)."""
-    from aughor.sql import trust_checks
+    from pramanyx.sql import trust_checks
     trust_checks._COLTYPE_CACHE.clear()
     cols = ", ".join(f"c{i} INTEGER" for i in range(600))
     ct = trust_checks.connection_column_types("wide", _mem_conn("wide", f"CREATE TABLE t ({cols})"))
@@ -109,7 +109,7 @@ def test_connection_column_types_not_truncated_over_500_columns():
 def test_connection_column_types_does_not_cache_transient_failure():
     """A failed introspection returns {} but is NOT cached — a later call retries instead of
     pinning the connection to the name heuristic for the whole process."""
-    from aughor.sql import trust_checks
+    from pramanyx.sql import trust_checks
     trust_checks._COLTYPE_CACHE.clear()
 
     class _FailDB:
@@ -127,7 +127,7 @@ def test_connection_column_types_does_not_cache_transient_failure():
 def test_connection_column_types_caches_id_less_by_path():
     """An id-less connection (empty _connection_id, e.g. the fixture) still caches — keyed by
     its path — instead of re-scanning information_schema on every answer."""
-    from aughor.sql import trust_checks
+    from pramanyx.sql import trust_checks
     trust_checks._COLTYPE_CACHE.clear()
     conn = _mem_conn("", "CREATE TABLE t (a INT)")
     conn._path = "data/some_fixture.duckdb"                    # a stable path stands in as the key

@@ -1,0 +1,520 @@
+"""Action triggers, recommendation execution, action logs, a declared action's outbox and edit history,
+knowledge sync, federation, CRM sync."""
+from __future__ import annotations
+
+import asyncio
+import logging
+from typing import Any, Optional
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from pydantic import BaseModel
+
+from pramanyx.licensing import Capability, gate
+
+from pramanyx.db.connection import open_connection_for
+from pramanyx.db.registry import BUILTIN_ID, add_connection, get_dsn, get_meta
+from pramanyx.security.authz import caller, connection_owner_guard, investigation_owner_guard
+
+logger = logging.getLogger(__name__)
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["actions"], dependencies=[Depends(connection_owner_guard), Depends(investigation_owner_guard)])
+
+
+# ── A declared action's calls and edits (Arc OC-6) ──────────────────────────────
+# The outbox a declared action's calls wait in (`actions/outbox.py`) and the history of the edits its runs made.
+
+class _Dismissal(BaseModel):
+    note: str = ""
+
+
+def _send_view(s) -> dict:
+    effect = s.effect()
+    return {**s.model_dump(exclude={"action"}), "effect": {"kind": effect.get("kind"), "lane": effect.get("lane", "after"),
+                                                           "target": (effect.get("config") or {}).get("destination")
+                                                                     or (effect.get("config") or {}).get("url") or ""},
+            "action_name": (s.action or {}).get("display_name") or s.action_id}
+
+
+@router.get("/actions/outbox")
+def list_outbox(connection_id: str = BUILTIN_ID, status: Optional[str] = Query(default=None,
+                description="comma-separated: queued, sending, delivered, unknown, dead, dismissed")):
+    """Arc OC-6 — a declared action's calls in the outbox, newest first: delivered, waiting to be sent again and why,
+    and those that wait for a person — `dead` (not deliverable by the worker) and `unknown`."""
+    from pramanyx.actions import outbox
+    wanted = [x.strip() for x in (status or "").split(",") if x.strip()] or None
+    return {"sends": [_send_view(s) for s in outbox.list_sends(connection_id, wanted)]}
+
+
+@router.post("/actions/outbox/{send_id}/retry")
+def retry_send(send_id: str, connection_id: str = BUILTIN_ID):
+    """Arc OC-6 — a person sends a call that waits for them again, now. One whose fate was unknown is sent without a
+    check: the person decided."""
+    from pramanyx.actions import outbox
+    send = outbox.get(send_id)
+    if send is None or send.connection_id != connection_id:
+        raise HTTPException(status_code=404, detail=f"no call '{send_id}' in this connection's outbox")
+    if send.status not in ("dead", "unknown"):
+        raise HTTPException(status_code=409, detail=f"the call is {send.status} — only one that waits for a person is retried")
+    return {"send": _send_view(outbox.retry(send_id, by=caller()))}
+
+
+@router.post("/actions/outbox/{send_id}/dismiss")
+def dismiss_send(send_id: str, body: _Dismissal, connection_id: str = BUILTIN_ID):
+    """Arc OC-6 — a person leaves a call that waits for them undelivered, with why; it is never sent."""
+    from pramanyx.actions import outbox
+    send = outbox.get(send_id)
+    if send is None or send.connection_id != connection_id:
+        raise HTTPException(status_code=404, detail=f"no call '{send_id}' in this connection's outbox")
+    if send.status not in ("dead", "unknown"):
+        raise HTTPException(status_code=409, detail=f"the call is {send.status} — only one that waits for a person is dismissed")
+    return {"send": _send_view(outbox.dismiss(send_id, by=caller(), note=body.note))}
+
+
+@router.get("/actions/edits/history")
+def get_edit_history(connection_id: str = BUILTIN_ID, object_type: str = "", row_key: str = "", column: str = ""):
+    """Arc OC-6 — every version of the edits on this connection's objects, newest first: who set what, the value it
+    replaced, who withdrew it. Narrowed to one entity, one object (`row_key`) and one property."""
+    from pramanyx.actions.overlay import edit_history
+    from pramanyx.ontology import security_sql
+    from pramanyx.org.context import current_org_id
+    history = edit_history(connection_id, object_type=object_type, row_key=row_key, column=column,
+                           org_id=current_org_id() or None)
+    # Arc ED, ED-1 — as the reader may read it: a masked property's values emptied, an object outside their rows withheld
+    shown, withheld = security_sql.history_as_read(connection_id, history)
+    return {"history": shown, **({"withheld": withheld} if withheld else {})}
+
+
+@router.get("/actions/edits/changes")
+def get_object_changes(object_type: str, row_key: str, connection_id: str = BUILTIN_ID):
+    """Arc TC, TC-2 — one object's changes, oldest first: every edit and every declared action on it, each with who or
+    what made it, through which run (a question asked, an automation, a monitor, an agent's work) and that run's model
+    cost when it was metered — "not metered" said, never zero. Read as the edit history is: a masked property's values
+    are emptied and an object outside the reader's rows is withheld and counted."""
+    from pramanyx.actions import attribution
+    from pramanyx.ontology import security_sql
+    from pramanyx.org.context import current_org_id
+    out = attribution.object_changes(connection_id, object_type, row_key, org_id=current_org_id() or None)
+    shown, withheld = security_sql.history_as_read(connection_id, out["changes"])
+    return {**out, "changes": shown, **({"withheld": withheld} if withheld else {})}
+
+
+# ── Action Triggers ───────────────────────────────────────────────────────────
+
+@router.get("/actions/triggers")
+def list_action_triggers():
+    from pramanyx.notifications.store import list_triggers
+    # to_safe_dict masks the credential URL — the raw secret never leaves the server.
+    return {"triggers": [t.to_safe_dict() for t in list_triggers()]}
+
+
+class _TriggerBody(BaseModel):
+    name:       str
+    type:       str = "webhook"
+    url:        str
+    headers:    dict = {}
+    enabled:    bool = True
+    channel:    Optional[str] = None
+    project:    Optional[str] = None
+    issue_type: Optional[str] = None
+
+
+@router.post("/actions/triggers", status_code=201, dependencies=[gate(Capability.ACTION_HUB)])
+def create_action_trigger(body: _TriggerBody,
+                          idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key")):
+    from pramanyx.notifications.models import ActionTrigger
+    from pramanyx.notifications.store  import save_trigger, get_trigger
+    from pramanyx.util.url_guard import is_safe_webhook_url
+    from pramanyx.util.idempotency import lookup, remember
+    prior = lookup("action_trigger", idempotency_key)  # API-03: retry returns the same trigger
+    if prior and (existing := get_trigger(prior)):
+        return existing.to_safe_dict()
+    if not is_safe_webhook_url(body.url):
+        raise HTTPException(status_code=400, detail="Refusing to save trigger: URL is not an "
+                            "allowed public http(s) endpoint (SSRF guard).")
+    trigger = ActionTrigger(
+        id="", name=body.name, type=body.type, url=body.url,
+        headers=body.headers, enabled=body.enabled,
+        channel=body.channel, project=body.project, issue_type=body.issue_type,
+    )
+    saved = save_trigger(trigger)
+    remember("action_trigger", idempotency_key, saved.id)
+    return saved.to_safe_dict()
+
+
+@router.put("/actions/triggers/{trigger_id}", dependencies=[gate(Capability.ACTION_HUB)])
+def update_action_trigger(trigger_id: str, body: _TriggerBody):
+    from pramanyx.notifications.models import ActionTrigger
+    from pramanyx.notifications.store  import save_trigger, get_trigger
+    from pramanyx.secretvault    import is_masked
+    from pramanyx.util.url_guard  import is_safe_webhook_url
+    existing = get_trigger(trigger_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Trigger not found")
+    # The API returns masked secrets; if the UI sends a mask back unchanged, keep the
+    # real value rather than overwriting it with bullets.
+    url = existing.url if is_masked(body.url) else body.url
+    # Only re-validate a genuinely new URL (a masked value is the unchanged stored one).
+    if not is_masked(body.url) and not is_safe_webhook_url(url):
+        raise HTTPException(status_code=400, detail="Refusing to save trigger: URL is not an "
+                            "allowed public http(s) endpoint (SSRF guard).")
+    headers = {k: (existing.headers.get(k) if is_masked(v) else v)
+               for k, v in (body.headers or {}).items()}
+    trigger = ActionTrigger(
+        id=trigger_id, name=body.name, type=body.type, url=url,
+        headers=headers, enabled=body.enabled,
+        channel=body.channel, project=body.project, issue_type=body.issue_type,
+    )
+    return save_trigger(trigger).to_safe_dict()
+
+
+@router.delete("/actions/triggers/{trigger_id}", status_code=200)
+def delete_action_trigger(trigger_id: str):
+    from pramanyx.notifications.store import delete_trigger
+    if not delete_trigger(trigger_id):
+        raise HTTPException(status_code=404, detail="Trigger not found")
+    return {"message": "Trigger deleted"}
+
+
+@router.post("/actions/triggers/{trigger_id}/test")
+def test_action_trigger(trigger_id: str):
+    """Fire a test payload to the trigger URL."""
+    import datetime
+    from pramanyx.notifications.store    import get_trigger
+    from pramanyx.notifications.models   import ActionPayload
+    from pramanyx.notifications.executor import fire_action
+    trigger = get_trigger(trigger_id)
+    if not trigger:
+        raise HTTPException(status_code=404, detail="Trigger not found")
+    test_payload = ActionPayload(
+        investigation_id="test_inv", rec_index=0,
+        recommendation="[TEST] This is a test action from Pramanyx",
+        metric_name="test_metric", headline="Test fire from Action Hub",
+        trigger_id=trigger_id,
+        triggered_at=datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
+    )
+    log = fire_action(trigger, test_payload)
+    return {"status": log.status, "http_status": log.http_status, "error": log.error}
+
+
+def recommendation_text(report: Any, rec_index: int, fallback: str) -> str:
+    """The words a person pressed Execute on, out of a stored report.
+
+    🔴 This was four lines inside the route and it read the wrong field. `actions.py` asked
+    for `report["recommended_actions"]` and each item's `text`; every stored report carries
+    `recommendations`, with items keyed `action`, `expected_impact`, `owner`, `timeline`.
+    Measured 2026-09-19 over the live history: of the reports holding recommendations, ALL
+    use `recommendations` and NONE uses `recommended_actions`.
+
+    The cost was not a blank message, which is why it survived. The caller's placeholder
+    ("Recommendation #N from investigation X") stayed, and that placeholder was dispatched
+    to the trigger **and handed to the departure gate as its text**. So HB-2 law 1 — every
+    stated magnitude must sit in the measurement this message departs on — was asked about
+    a sentence with no magnitudes in it, and passed. **A recommendation full of numbers
+    departed past a gate that never saw it.** The guard passed for the wrong reason.
+
+    A function rather than four lines in a route body, because the bug was invisible where
+    it lived: nothing could assert on it without standing up the gate, the trigger store
+    and the dispatcher. Now a test names it directly.
+
+    `recommended_actions` stays as a FALLBACK: the prompt that writes reports still names
+    it (`prompts_explore.py`), so an older or hand-built report may use it. A fallback
+    costs nothing; an assumption about history costs a silent placeholder.
+    """
+    try:
+        if isinstance(report, str):
+            import json as _json
+            report = _json.loads(report)
+        if not isinstance(report, dict):
+            return fallback
+        recs = report.get("recommendations") or report.get("recommended_actions") or []
+        if not isinstance(recs, list) or not (0 <= rec_index < len(recs)):
+            return fallback
+        item = recs[rec_index]
+        if isinstance(item, str):
+            return item.strip() or fallback
+        if isinstance(item, dict):
+            # `action` is what the model writes; `text` kept for any older shape.
+            return str(item.get("action") or item.get("text") or "").strip() or fallback
+    except Exception as exc:  # noqa: BLE001
+        # NOT a bare pass. A swallowed failure is what let the wrong field name live: the
+        # route kept answering 200 with a placeholder and nothing anywhere said so.
+        from pramanyx.kernel.errors import tolerate
+        tolerate(exc, "could not read the recommendation text; a placeholder departs instead",
+                 counter="actions.rec_text_unreadable")
+    return fallback
+
+
+@router.post("/investigations/{inv_id}/recommendations/{rec_index}/execute")
+def execute_recommendation_action(inv_id: str, rec_index: int, body: dict):
+    """Fire a configured trigger for a specific recommendation."""
+    import datetime
+    from pramanyx.notifications.store    import get_trigger
+    from pramanyx.notifications.models   import ActionPayload
+    from pramanyx.notifications.executor import fire_action
+    from pramanyx.db.history       import get_investigation
+
+    trigger_id = body.get("trigger_id")
+    if not trigger_id:
+        raise HTTPException(status_code=400, detail="trigger_id required")
+    trigger = get_trigger(trigger_id)
+    if not trigger:
+        raise HTTPException(status_code=404, detail="Trigger not found")
+    inv = get_investigation(inv_id)
+    if not inv:
+        raise HTTPException(status_code=404, detail="Investigation not found")
+
+    fallback_text = f"Recommendation #{rec_index} from investigation {inv_id}"
+    rec_text = recommendation_text(inv.get("report_json") or {}, rec_index, fallback_text)
+    if rec_text == fallback_text:
+        # The gate is about to inspect this string. Saying so is the difference between a
+        # receipt that records what a person sent and one that records a placeholder.
+        logger.warning("recommendation %s#%s not found in the report — dispatching a "
+                       "placeholder, and the departure gate will inspect that",
+                       inv_id, rec_index)
+
+    # HB-2 — the departure gate. A person pressed Execute, so probation and the repeat law
+    # do not apply; the accuracy laws do — the recommendation's numbers must be in the
+    # analysis it came from, and a forecast never leaves. A hold answers 200 with the
+    # verdict, so the screen can say WHY instead of reporting a failed request.
+    from pramanyx.govern.departure import PERSON, gate_departure
+    from pramanyx.govern.departure_basis import measurement_for_analysis
+    from pramanyx.org.context import current_org_id, current_user_id
+    from pramanyx.security.authz import caller
+    conn_id = str(inv.get("connection_id") or "")
+    verdict = gate_departure(
+        kind="recommendation", org_id=current_org_id(), conn_id=conn_id, text=rec_text,
+        target=trigger_id, actor=f"user:{current_user_id() or caller()}",
+        investigation_id=inv_id, origin=PERSON, source_kind="analysis", source_id=inv_id,
+        source_name=str(inv.get("headline") or "")[:120],
+        measurement=measurement_for_analysis(inv_id, conn_id))
+    if verdict.held:
+        return {"status": "held", "http_status": None, "departure_id": verdict.record_id,
+                "error": f"held at departure — {verdict.reason_sentence()}"}
+
+    payload = ActionPayload(
+        investigation_id=inv_id, rec_index=rec_index, recommendation=rec_text,
+        metric_name=body.get("metric_name", ""), headline=inv.get("headline"),
+        trigger_id=trigger_id,
+        triggered_at=datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
+        context={"receipt": verdict.receipt, "receipt_line": verdict.receipt_line()},
+    )
+    return {**fire_action(trigger, payload).to_dict(), "departure_id": verdict.record_id}
+
+
+class _SendFindingBody(BaseModel):
+    text:        str                    # the finding / claim to share
+    metric_name: Optional[str] = None
+    headline:    Optional[str] = None   # context line (e.g. domain · angle)
+    source_id:   Optional[str] = None   # insight_id / canvas_id / conn_id for provenance
+    #: HB-2 — the connection the finding was measured on, so the departure gate can re-run
+    #: its query and check its definitions. Absent (an older client), the share departs on
+    #: no measurement and law 1 judges its magnitudes on that.
+    conn_id:     Optional[str] = None
+
+
+@router.post("/actions/triggers/{trigger_id}/send", dependencies=[gate(Capability.ACTION_HUB)])
+def send_finding_to_trigger(trigger_id: str, body: _SendFindingBody):
+    """Share an arbitrary finding (Briefing/Hub insight) to a configured trigger.
+
+    Powers the finding-level 'Share' action — fires the same Slack/webhook/Jira
+    delivery path as recommendation execution, but with a free-form finding payload
+    instead of an investigation recommendation.
+    """
+    import datetime
+    from pramanyx.notifications.store    import get_trigger
+    from pramanyx.notifications.models   import ActionPayload
+    from pramanyx.notifications.executor import fire_action
+
+    if not (body.text or "").strip():
+        raise HTTPException(status_code=400, detail="text required")
+    trigger = get_trigger(trigger_id)
+    if not trigger:
+        raise HTTPException(status_code=404, detail="Trigger not found")
+
+    # HB-2 — the departure gate. A person pressed Share: the accuracy laws apply (the
+    # finding's query is re-run at departure and its numbers must still be in it; its
+    # definitions must be approved; a causal or forecast sentence does not leave), probation
+    # and the repeat law do not. A hold answers 200 with the verdict and its reasons.
+    from pramanyx.govern.departure import PERSON, gate_departure
+    from pramanyx.govern.departure_basis import measurement_for_finding
+    from pramanyx.org.context import current_org_id, current_user_id
+    from pramanyx.security.authz import caller
+    conn_id = (body.conn_id or "").strip()
+    source_id = (body.source_id or "").strip()
+    verdict = gate_departure(
+        kind="finding_share", org_id=current_org_id(), conn_id=conn_id, text=body.text,
+        target=trigger_id, actor=f"user:{current_user_id() or caller()}",
+        origin=PERSON, source_kind="finding", source_id=source_id,
+        source_name=(body.headline or "")[:120],
+        measurement=measurement_for_finding(source_id, conn_id) if conn_id and source_id else None)
+    if verdict.held:
+        return {"status": "held", "http_status": None, "departure_id": verdict.record_id,
+                "error": f"held at departure — {verdict.reason_sentence()}"}
+
+    payload = ActionPayload(
+        investigation_id=body.source_id or "", rec_index=0,
+        recommendation=body.text,
+        metric_name=body.metric_name or "", headline=body.headline,
+        trigger_id=trigger_id,
+        triggered_at=datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
+        context={"receipt": verdict.receipt, "receipt_line": verdict.receipt_line()},
+    )
+    return {**fire_action(trigger, payload).to_dict(), "departure_id": verdict.record_id}
+
+
+@router.get("/actions/logs")
+def list_action_logs(limit: int = 100, trigger_id: Optional[str] = None):
+    from pramanyx.notifications.store import list_logs
+    return {"logs": list_logs(limit=limit, trigger_id=trigger_id)}
+
+
+# ── Knowledge Sync ────────────────────────────────────────────────────────────
+
+@router.post("/connections/{conn_id}/knowledge-sync", status_code=202)
+async def trigger_knowledge_sync(conn_id: str):
+    """Trigger a Confluence or Notion knowledge sync for a connection."""
+    try:
+        conn_type, _ = get_dsn(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    meta = get_meta(conn_id)
+
+    async def _run():
+        try:
+            if conn_type == "confluence":
+                from pramanyx.connectors.knowledge.confluence import ConfluenceSync
+                syncer = ConfluenceSync(conn_id, meta)
+            elif conn_type == "notion":
+                from pramanyx.connectors.knowledge.notion import NotionSync
+                syncer = NotionSync(conn_id, meta)
+            else:
+                return
+            result = syncer.sync()
+            logger.info("Knowledge sync complete for %s: %s", conn_id, result)
+        except Exception as exc:
+            logger.warning("Knowledge sync failed for %s: %s", conn_id, exc)
+
+    # Tracked: an untracked task holds no reference to itself and can be collected
+    # part-way through a sync.
+    from pramanyx.kernel.concurrency import spawn
+    spawn(_run(), name=f"knowledge-sync-{conn_id}")
+    return {"message": f"Knowledge sync triggered for {conn_id} ({conn_type})", "async": True}
+
+
+@router.get("/connections/{conn_id}/knowledge-sync/status")
+def get_knowledge_sync_status(conn_id: str):
+    try:
+        conn_type, _ = get_dsn(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    meta = get_meta(conn_id)
+    try:
+        if conn_type == "confluence":
+            from pramanyx.connectors.knowledge.confluence import ConfluenceSync
+            syncer = ConfluenceSync(conn_id, meta)
+        elif conn_type == "notion":
+            from pramanyx.connectors.knowledge.notion import NotionSync
+            syncer = NotionSync(conn_id, meta)
+        else:
+            return {"message": "Not a knowledge connector"}
+        return syncer.status()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ── Federation ────────────────────────────────────────────────────────────────
+
+class _FederateRequest(BaseModel):
+    name: str
+    connection_ids: list[str]
+
+
+@router.post("/connections/federate", status_code=201, dependencies=[gate(Capability.FEDERATION)])
+async def create_federated_connection(req: _FederateRequest):
+    if len(req.connection_ids) < 2:
+        raise HTTPException(status_code=400, detail="Provide at least 2 connection_ids to federate")
+    from pramanyx.connectors.federated import FederatedConnection
+    meta = {"connection_ids": req.connection_ids}
+    try:
+        fed = FederatedConnection(connection_id="preview", meta=meta)
+        ok, msg = fed.test()
+        fed.close()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Federation failed: {e}")
+    if not ok:
+        raise HTTPException(status_code=400, detail=f"Federation test failed: {msg}")
+    conn_id = add_connection(name=req.name, conn_type="federated", dsn="", meta=meta)
+    return {"id": conn_id, "message": "Federated connection created", "test_result": msg}
+
+
+@router.get("/connections/{conn_id}/federation-members")
+async def get_federation_members(conn_id: str):
+    loop = asyncio.get_running_loop()
+    try:
+        conn = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    if not hasattr(conn, "federation_members"):
+        raise HTTPException(status_code=400, detail="Not a federated connection")
+
+    def _work():
+        try:
+            return conn.federation_members()
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    try:
+        members = await loop.run_in_executor(None, _work)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"connection_id": conn_id, "members": members}
+
+
+# ── CRM / API Sync ────────────────────────────────────────────────────────────
+
+@router.post("/connections/{conn_id}/sync")
+async def trigger_sync(conn_id: str, incremental: bool = True):
+    try:
+        conn = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    if not hasattr(conn, "sync_all"):
+        raise HTTPException(status_code=400, detail="Not a syncable API connector")
+
+    async def _run():
+        try:
+            conn.sync_all(incremental=incremental)
+        except Exception as exc:
+            logger.warning("Sync failed for %s: %s", conn_id, exc)
+
+    from pramanyx.kernel.concurrency import spawn
+    spawn(_run(), name=f"sync-{conn_id}")
+    return {"message": f"Sync triggered for {conn_id}", "incremental": incremental}
+
+
+@router.get("/connections/{conn_id}/sync-status")
+async def get_sync_status(conn_id: str):
+    loop = asyncio.get_running_loop()
+    try:
+        conn = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    if not hasattr(conn, "sync_status"):
+        return {"message": "Not a syncable connector"}
+
+    def _work():
+        try:
+            return conn.sync_status()
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    try:
+        return await loop.run_in_executor(None, _work)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

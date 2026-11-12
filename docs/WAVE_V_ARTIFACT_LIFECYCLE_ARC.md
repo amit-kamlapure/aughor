@@ -121,7 +121,7 @@ caches, not four."* This PR cashes that in.
 
 **Scope**
 
-1. `aughor/kernel/freshness.py` — move `StalenessState`, `ChangeClass`, `FreshnessVerdict` and
+1. `pramanyx/kernel/freshness.py` — move `StalenessState`, `ChangeClass`, `FreshnessVerdict` and
    `classify`'s *shape* (not its ontology-specific inputs) into the kernel. `graph_freshness`
    becomes its first caller and keeps its public API byte-identical.
 2. A **fingerprint registry**: named fingerprint kinds with adapters that reproduce today's hashes
@@ -181,7 +181,7 @@ path):** a brief whose source tables did **not** change is **not** rebuilt after
 (cost saved, measured in requests + tokens); a brief whose source **did** change is rebuilt **before**
 its TTL lapses (correctness gained). A PR that shows only the cost half has not met the gate.
 
-> ✅ **BUILT** (2026-07-26) — `aughor/kernel/rebuild.py`, wired into `knowledge/briefing.py`'s cache
+> ✅ **BUILT** (2026-07-26) — `pramanyx/kernel/rebuild.py`, wired into `knowledge/briefing.py`'s cache
 > decision. Gate met on the live path against the real `samples` connection (**5 real tables probed**,
 > fingerprint `8dcad6c5…`, stable across re-probe):
 > **cost half** — TTL expired ⇒ `rebuild=False, staleness=fresh, saved_a_rebuild=True`
@@ -226,7 +226,7 @@ unpublished edit is invisible to a viewer; publish makes it visible; revert rest
 prior content; and the changelog names a moved element as a move. With the flag off, every one of
 these stores behaves byte-identically to today.
 
-> ✅ **BUILT** (2026-07-26) — `aughor/kernel/lifecycle.py` + `Ledger.artifact_versions()`, wired into
+> ✅ **BUILT** (2026-07-26) — `pramanyx/kernel/lifecycle.py` + `Ledger.artifact_versions()`, wired into
 > `savedquery` (the store with no version at all, whose update was a destructive `UPDATE`). All four
 > gate parts proved live on a real saved query: after an edit **viewer=None while editor sees the
 > draft** → publish → **viewer sees v2 while the author's WIP stays invisible** → revert to v2 landed
@@ -274,7 +274,7 @@ backing snapshot, and it **errors with a named reason** instead of rendering; a 
 be pinned **refuses the freeze up front** instead of accepting one it cannot honour; unfreezing
 restores live following.
 
-> ✅ **BUILT** (2026-07-26) — `aughor/kernel/freeze.py`. Gate met: a pin whose storage loses AS-OF
+> ✅ **BUILT** (2026-07-26) — `pramanyx/kernel/freeze.py`. Gate met: a pin whose storage loses AS-OF
 > support reads `gone` and `read_frozen` raises `FrozenDataGoneError` carrying the as-of stamp and
 > *"Unfreeze it to follow live data"*; an unpinnable or unopenable connection raises `FreezeRefused`
 > and **leaves the artifact live**; unfreeze restores following.
@@ -311,8 +311,8 @@ invalidator but is not reached by the delete cascade **fails a test**.
 > `purge_hooks.registered_hook_names()`.
 >
 > **Scope corrected — the registry already existed.** Reading the code first (rather than trusting
-> this doc) showed `aughor/kernel/registries/purge_hooks` with `register_purge_hook` /
-> `register_schema_purge_hook`, orchestrated by `aughor/db/purge.py`, whose design deliberately keeps
+> this doc) showed `pramanyx/kernel/registries/purge_hooks` with `register_purge_hook` /
+> `register_schema_purge_hook`, orchestrated by `pramanyx/db/purge.py`, whose design deliberately keeps
 > the platform from importing the agent. Building a second bus beside it would have been this wave's
 > own headline mistake. The real gap was narrower and sharper: `purge.py`'s docstring *instructs* an
 > author to register a hook "otherwise a deleted catalog orphans it", and **nothing failed when they
@@ -321,7 +321,7 @@ invalidator but is not reached by the delete cascade **fails a test**.
 >
 > Two things the build taught, both recorded in the test:
 > * A first attempt derived each hook's module from its **bytecode** `co_names`; that is a guess
->   (`from aughor.monitors import store as monitor_store` binds a *local*, so the alias never appears)
+>   (`from pramanyx.monitors import store as monitor_store` binds a *local*, so the alias never appears)
 >   and **a ratchet built on a guess is worse than none** — so the registry now reports only the hook
 >   labels it genuinely knows, and coverage is read from the registration source.
 > * The ratchet **found a real thing on its first run** (`type_overrides`) and was wrong about it:
@@ -351,7 +351,7 @@ panel with diff + revert; a freeze/unfreeze control with the lock and as-of stam
 two distinct versions; a refused freeze is a **409 with the reason**; an unhonourable pin is a **410
 with the as-of stamp** — never a silent fall-back to live data.
 
-> ✅ **BUILT — the serving surface** (2026-07-26): `aughor/routers/lifecycle.py`, six routes
+> ✅ **BUILT — the serving surface** (2026-07-26): `pramanyx/routers/lifecycle.py`, six routes
 > (history · diff · publish · revert · freeze GET/POST/DELETE · frozen-content), wired into `api.py`
 > and regenerated into `web/lib/api.gen.ts` (codegen verified deterministic, so CI's drift gate
 > passes; `tsc --noEmit` clean against the new client).

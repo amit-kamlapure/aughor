@@ -1,4 +1,4 @@
-# The logistics, 3PL and freight industry vocabulary (AUGHOR_ATLAS_INDUSTRY_VOCABULARY_v1, 2026-11-11: 59 reference
+# The logistics, 3PL and freight industry vocabulary (PRAMANYX_ATLAS_INDUSTRY_VOCABULARY_v1, 2026-11-11: 59 reference
 # types) as an industry map: expectations matched to tables by name or alias, never facts. Fifty-six objects; three
 # reference types are folded into a near-identical one and kept as its aliases:
 #   * Consignment     → Shipment (the vocabulary's Shipment Order)

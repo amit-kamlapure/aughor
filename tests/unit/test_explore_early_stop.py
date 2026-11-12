@@ -4,10 +4,10 @@ When the metric reads statistically uniform across several dimensions, the remai
 segment drills only re-confirm the flat baseline — they cost LLM+SQL round-trips and
 add no signal (#3 adaptivity, #13 redundancy). route_after_reason short-circuits to
 synthesis once enough dimensions have converged AND the next step is just another drill.
-See aughor/agent/explore.py.
+See pramanyx/agent/explore.py.
 """
-from aughor.agent.explore import _should_early_stop, route_after_reason, _UNIFORM_CONVERGENCE
-from aughor.agent.state import QueryResult, SubQuestion, StatResult
+from pramanyx.agent.explore import _should_early_stop, route_after_reason, _UNIFORM_CONVERGENCE
+from pramanyx.agent.state import QueryResult, SubQuestion, StatResult
 
 
 def _uniform_qr(hid):

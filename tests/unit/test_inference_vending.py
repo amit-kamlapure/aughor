@@ -12,9 +12,9 @@ the process config and builds no network clients beyond what `get_provider` alre
 """
 from __future__ import annotations
 
-import aughor.llm.provider as provider
-from aughor.org import using_org
-from aughor.control_plane import InferenceCapability, capability_for, vend_llm
+import pramanyx.llm.provider as provider
+from pramanyx.org import using_org
+from pramanyx.control_plane import InferenceCapability, capability_for, vend_llm
 
 
 # ── the capability profile (pure: strings → declared behaviour) ───────────────
@@ -22,7 +22,7 @@ from aughor.control_plane import InferenceCapability, capability_for, vend_llm
 class TestProfile:
     def test_anthropic_is_explicit_breakpoint_public_paid(self, monkeypatch):
         # The context window is the PROVIDER's declared number now, not a name match.
-        monkeypatch.setattr("aughor.llm.profile.declared_context", lambda m: 200_000)
+        monkeypatch.setattr("pramanyx.llm.profile.declared_context", lambda m: 200_000)
         cap = capability_for("anthropic", "vendor/model", "narrator", "")
         assert cap.cache_mode == "explicit_breakpoint"
         assert cap.privacy_class == "public_api"
@@ -35,7 +35,7 @@ class TestProfile:
         # "tools-capable" is what the model DECLARES via /api/show, not what its name
         # looks like — the keyword list this replaced did not recognise the deployment's
         # own binding, which then ran every structured call in JSON mode.
-        monkeypatch.setattr("aughor.llm.provider.model_supports_tools", lambda m: True)
+        monkeypatch.setattr("pramanyx.llm.provider.model_supports_tools", lambda m: True)
         cap = capability_for("ollama", "declares/tools:latest", "coder",
                              "http://localhost:11434/v1")
         assert cap.cache_mode == "auto_prefix"
@@ -45,7 +45,7 @@ class TestProfile:
         assert cap.structured_output == "native"
 
     def test_an_undeclared_ollama_model_stays_conservative(self, monkeypatch):
-        monkeypatch.setattr("aughor.llm.provider.model_supports_tools", lambda m: None)
+        monkeypatch.setattr("pramanyx.llm.provider.model_supports_tools", lambda m: None)
         cap = capability_for("ollama", "never/asked", "coder", "http://localhost:11434/v1")
         assert cap.tooling == "none"
         assert cap.structured_output == "instructor_emulated"
@@ -79,7 +79,7 @@ class TestProfile:
         assert cap.token_accounting == "exact"
 
     def test_gemini_is_public_paid_native_million_context(self, monkeypatch):
-        monkeypatch.setattr("aughor.llm.profile.declared_context", lambda m: 1_048_576)
+        monkeypatch.setattr("pramanyx.llm.profile.declared_context", lambda m: 1_048_576)
         cap = capability_for("gemini", "vendor/wide", "coder",
                              "https://generativelanguage.googleapis.com/v1beta/openai/")
         assert cap.privacy_class == "public_api"          # Google's hosted API — governance routes it as such
@@ -114,7 +114,7 @@ class TestParityWithProvider:
     def test_vend_matches_role_default_binding(self, monkeypatch):
         # An explicit binding: nothing ships one, and get_provider on an unbound role
         # raises. Parity between the describer and the real client is what this asserts.
-        monkeypatch.setenv("AUGHOR_CODER_MODEL", "configured/coder")
+        monkeypatch.setenv("PRAMANYX_CODER_MODEL", "configured/coder")
         cap = vend_llm("coder")
         p = provider.get_provider("coder")
         assert (cap.backend, cap.model) == (p.backend, p._model)
@@ -134,7 +134,7 @@ class TestParityWithProvider:
         assert vend_llm("coder").model != "run-scoped-model"          # default restored
 
     def test_provider_capability_property_matches_vend(self, monkeypatch):
-        monkeypatch.setenv("AUGHOR_NARRATOR_MODEL", "configured/narrator")
+        monkeypatch.setenv("PRAMANYX_NARRATOR_MODEL", "configured/narrator")
         p = provider.get_provider("narrator")
         cap = p.capability
         assert isinstance(cap, InferenceCapability)
@@ -172,6 +172,6 @@ class TestGeminiProvider:
 
     def test_instructor_mode_is_env_overridable(self, monkeypatch):
         import instructor
-        monkeypatch.setenv("AUGHOR_GEMINI_INSTRUCTOR_MODE", "JSON")
+        monkeypatch.setenv("PRAMANYX_GEMINI_INSTRUCTOR_MODE", "JSON")
         client = provider._build_gemini_client(self.URL, "test-key")
         assert getattr(client, "mode", None) == instructor.Mode.JSON

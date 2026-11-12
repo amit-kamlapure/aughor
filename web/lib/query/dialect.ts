@@ -8,8 +8,8 @@
  * lives here once rather than as two `switch` statements that drift.
  *
  * The engine vocabulary is the backend's, not an invented one: `conn_type` values come
- * from `aughor/connectors/registry.py`, and `dialect` (the SE-0 field, when present)
- * from `aughor/db/dialects.py`, whose rule table knows bigquery · snowflake · mysql ·
+ * from `pramanyx/connectors/registry.py`, and `dialect` (the SE-0 field, when present)
+ * from `pramanyx/db/dialects.py`, whose rule table knows bigquery · snowflake · mysql ·
  * postgres. Anything unrecognised resolves to StandardSQL rather than guessing — a
  * wrong dialect mis-tokenizes the user's SQL, which is worse than a neutral one.
  *
@@ -43,12 +43,12 @@ export type EngineFamily =
   | "standard";
 
 /** DE-3b: the family is one fact on each engine's declaration (`engineFamily` in
- *  `lib/connectors.gen.ts`, generated from `aughor/connectors/declarations.py`), looked up by
+ *  `lib/connectors.gen.ts`, generated from `pramanyx/connectors/declarations.py`), looked up by
  *  connector type or by dialect. The dialect names below are the ones a connection row can
  *  carry that are not themselves a connector type. DuckDB is the load-bearing entry: it is
  *  this product's default engine and has no CM6 dialect, and its grammar is Postgres-shaped. */
 const DIALECT_FAMILY: Record<string, EngineFamily> = {
-  duckdb: "postgres", postgres: "postgres", postgresql: "postgres", aughor_ops: "postgres",
+  duckdb: "postgres", postgres: "postgres", postgresql: "postgres", pramanyx_ops: "postgres",
   mysql: "mysql", mariadb: "mysql", sqlite: "sqlite", bigquery: "bigquery", snowflake: "snowflake",
 };
 

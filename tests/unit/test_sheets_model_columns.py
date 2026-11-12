@@ -41,19 +41,19 @@ class Scripted:
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana")
-    from aughor.actions import overlay
+    monkeypatch.setenv("PRAMANYX_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "system.db"))
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ana")
+    from pramanyx.actions import overlay
     monkeypatch.setattr(overlay, "_DB_PATH", tmp_path / "overlay.db")
-    from aughor.sheets import projection
+    from pramanyx.sheets import projection
     projection.reset()
     yield tmp_path
     projection.reset()
 
 
 def _sheet(env, n=60):
-    from aughor.sheets import files, service
+    from pramanyx.sheets import files, service
     path = env / "olist_order_reviews_dataset.csv"
     path.write_text(_reviews(n))
     return service.create_from_file(files.stage(path, path.name), name="Olist reviews", by="user:ana",
@@ -61,7 +61,7 @@ def _sheet(env, n=60):
 
 
 def _topic(env, n=60):
-    from aughor.sheets import model, model_columns
+    from pramanyx.sheets import model, model_columns
     sheet = _sheet(env, n)
     msg = sheet.column("review_comment_message").id
     model_columns.add(sheet, name="Complaint topic", instruction="the complaint, in two or three words",
@@ -74,7 +74,7 @@ LOW_JSON = [{"column": "c3", "op": "lte", "value": 2}]   # review_score is the t
 
 
 def _low():
-    from aughor.sheets.model import Condition
+    from pramanyx.sheets.model import Condition
     return [Condition(**c) for c in LOW_JSON]
 
 
@@ -82,7 +82,7 @@ def _client():
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from aughor.routers import sheets as sheets_router
+    from pramanyx.routers import sheets as sheets_router
     app = FastAPI()
     app.include_router(sheets_router.router)
     return TestClient(app)
@@ -91,8 +91,8 @@ def _client():
 # ── as it was ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 def test_a_column_no_model_writes_is_stored_as_before(env):
-    from aughor.kernel.ledger import Ledger
-    from aughor.sheets import model
+    from pramanyx.kernel.ledger import Ledger
+    from pramanyx.sheets import model
     sheet = _sheet(env)
     assert _client().post(f"/sheets/{sheet.id}/columns", json={"name": "Note"}).status_code == 200
     for art in Ledger.default().artifacts_of_kind(model.KIND, conn_id=model.SHEETS_CONNECTION, org_id="default"):
@@ -102,7 +102,7 @@ def test_a_column_no_model_writes_is_stored_as_before(env):
 # ── a column a model writes ──────────────────────────────────────────────────────────────────────────────────────────
 
 def test_a_model_column_says_what_it_writes_from_what(env):
-    from aughor.sheets import model, model_columns, service
+    from pramanyx.sheets import model, model_columns, service
     sheet = _sheet(env)
     with pytest.raises(service.Refused, match="say what the model writes"):
         model_columns.add(sheet, name="Topic", instruction="  ", reads=["c4"], by="user:ana")
@@ -118,8 +118,8 @@ def test_a_model_column_says_what_it_writes_from_what(env):
 
 
 def test_a_fill_is_said_before_it_runs_rows_calls_and_cost(env, monkeypatch):
-    from aughor.obs import usage
-    from aughor.sheets import model_columns
+    from pramanyx.obs import usage
+    from pramanyx.sheets import model_columns
     sheet, topic = _topic(env, n=600)                 # 200 low scores: rows 3, 6, …, 600
     plan = model_columns.plan(sheet, topic.id, conditions=_low(), sort=[], provider=Scripted())
     assert (plan["rows"], plan["unfilled"], plan["of"], plan["calls"]) == (200, 200, 200, 8)
@@ -132,8 +132,8 @@ def test_a_fill_is_said_before_it_runs_rows_calls_and_cost(env, monkeypatch):
 
 
 def test_a_fill_writes_the_views_rows_25_a_call_as_one_change_undone_whole(env):
-    from aughor.actions import overlay
-    from aughor.sheets import model, model_columns, projection, service
+    from pramanyx.actions import overlay
+    from pramanyx.sheets import model, model_columns, projection, service
     sheet, topic = _topic(env)
     model_ = Scripted(empty={9}, extra=[4])          # row 4 was never asked about
     out = model_columns.fill(sheet, topic.id, conditions=_low(), sort=[], by="user:ana", provider=model_)
@@ -152,7 +152,7 @@ def test_a_fill_writes_the_views_rows_25_a_call_as_one_change_undone_whole(env):
 
 
 def test_a_failed_call_leaves_its_rows_unfilled_and_says_so_and_the_next_fill_takes_only_the_rest(env):
-    from aughor.sheets import model, model_columns
+    from pramanyx.sheets import model, model_columns
     sheet, topic = _topic(env, n=150)                 # 50 low scores
     out = model_columns.fill(sheet, topic.id, conditions=_low(), sort=[], by="user:ana", provider=Scripted(fail_calls={1}))
     assert (out["filled"], out["failed"], out["calls"]) == (25, 25, 2)
@@ -165,8 +165,8 @@ def test_a_failed_call_leaves_its_rows_unfilled_and_says_so_and_the_next_fill_ta
 # ── never a figure ───────────────────────────────────────────────────────────────────────────────────────────────────
 
 def test_nothing_is_counted_from_what_a_model_wrote(env):
-    from aughor.sheets import chat, combine, dashboard, model, model_columns, projection, service, views
-    from aughor.sheets.model import Condition, Rule, View
+    from pramanyx.sheets import chat, combine, dashboard, model, model_columns, projection, service, views
+    from pramanyx.sheets.model import Condition, Rule, View
     sheet, topic = _topic(env)
     model_columns.fill(sheet, topic.id, conditions=_low(), sort=[], by="user:ana", provider=Scripted())
     sheet = model.get(sheet.id)
@@ -179,7 +179,7 @@ def test_nothing_is_counted_from_what_a_model_wrote(env):
     with pytest.raises(service.Refused, match="a rule by it is not made"):
         service.save_rule(sheet, Rule(name="Broken", conditions=[Condition(column=topic.id, op="contains",
                                                                            value="topic")]), by="user:ana")
-    from aughor.sheets import files
+    from pramanyx.sheets import files
     path = env / "topics.csv"
     path.write_text("topic,owner\ntopic 3,ops\n")
     other = service.create_from_file(files.stage(path, path.name), name="Topics", by="user:ana")
@@ -193,7 +193,7 @@ def test_nothing_is_counted_from_what_a_model_wrote(env):
 # ── the routes ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
 def test_the_routes_add_preview_and_fill_and_the_cell_says_a_model_wrote_it(env, monkeypatch):
-    import aughor.llm.provider as provider_mod
+    import pramanyx.llm.provider as provider_mod
     sheet = _sheet(env)
     scripted = Scripted()
     monkeypatch.setattr(provider_mod, "get_provider", lambda role="coder", **_: scripted)
@@ -212,8 +212,8 @@ def test_the_routes_add_preview_and_fill_and_the_cell_says_a_model_wrote_it(env,
 
 
 def test_with_no_model_set_up_the_plan_says_so_and_a_fill_is_refused(env, monkeypatch):
-    import aughor.llm.provider as provider_mod
-    from aughor.sheets import model_columns, service
+    import pramanyx.llm.provider as provider_mod
+    from pramanyx.sheets import model_columns, service
 
     def no_model(role="coder", **_):
         raise RuntimeError("no backend is configured")

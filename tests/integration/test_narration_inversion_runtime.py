@@ -30,10 +30,10 @@ VARYING = [[1, 3], [2, 5], [3, 2]]
 # provider (the narrator), so this needs a live LLM and is excluded from CI (-m "not e2e").
 @pytest.mark.e2e
 def test_chat_caveat_fires_on_real_endpoint(client: TestClient, builtin_conn_id: str, monkeypatch) -> None:
-    import aughor.llm.provider as prov
-    from aughor.routers.investigations import _ChatAnswer
+    import pramanyx.llm.provider as prov
+    from pramanyx.routers.investigations import _ChatAnswer
 
-    monkeypatch.setenv("AUGHOR_COMPILER", "0")  # run the injected SQL verbatim, not the compiler
+    monkeypatch.setenv("PRAMANYX_COMPILER", "0")  # run the injected SQL verbatim, not the compiler
     real = prov.get_provider
 
     class FakeCoder:
@@ -70,8 +70,8 @@ def test_chat_caveat_fires_on_real_endpoint(client: TestClient, builtin_conn_id:
 # ── ADA: an inverted report gets a DataQualityNote on the real synthesize_report ─
 
 def test_ada_caveat_note_lands_on_real_node(monkeypatch) -> None:
-    import aughor.agent.nodes as nodes
-    from aughor.agent.state import AnalysisReport, Finding, QueryResult
+    import pramanyx.agent.nodes as nodes
+    from pramanyx.agent.state import AnalysisReport, Finding, QueryResult
 
     class FakeNarrator:
         def complete(self, *a, **k):
@@ -107,12 +107,12 @@ def test_explorer_phase8_drops_inversion_on_real_loop(monkeypatch) -> None:
     import logging
     from types import SimpleNamespace
 
-    import aughor.llm.provider as prov
-    import aughor.ontology.store as ostore
-    import aughor.business_profile.infer as pinfer
-    import aughor.sql.writer as wmod
-    from aughor.db.connection import open_connection_for
-    from aughor.explorer.agent import SchemaExplorer
+    import pramanyx.llm.provider as prov
+    import pramanyx.ontology.store as ostore
+    import pramanyx.business_profile.infer as pinfer
+    import pramanyx.sql.writer as wmod
+    from pramanyx.db.connection import open_connection_for
+    from pramanyx.explorer.agent import SchemaExplorer
 
     # Phase 8 makes more live LLM calls than the two modelled below — business-profile
     # inference is one, and it degrades to None silently, so a leaked call would not error.
@@ -121,7 +121,7 @@ def test_explorer_phase8_drops_inversion_on_real_loop(monkeypatch) -> None:
     # 120s wait_for raced network latency — the intermittent full-suite TimeoutError this file
     # shared with test_explorer_grain_runtime.py. `_ENABLED` is import-time, so patch the attr.
     monkeypatch.setattr(pinfer, "get_or_infer", lambda cid, schema_name=None: None)
-    monkeypatch.setattr("aughor.semantic.autoseed._ENABLED", False)
+    monkeypatch.setattr("pramanyx.semantic.autoseed._ENABLED", False)
 
     # SqlWriter reporting a schema where the forced SQL's columns are REAL, so the
     # schema-grounding pre-flight (invented-identifiers guard) doesn't drop the
@@ -160,7 +160,7 @@ def test_explorer_phase8_drops_inversion_on_real_loop(monkeypatch) -> None:
                 pass
 
     handler = _Cap()
-    lg = logging.getLogger("aughor.explorer.agent")
+    lg = logging.getLogger("pramanyx.explorer.agent")
     lg.addHandler(handler)
     lg.setLevel(logging.INFO)
     try:
@@ -191,8 +191,8 @@ def test_explorer_phase8_drops_inversion_on_real_loop(monkeypatch) -> None:
         monkeypatch.setattr(prov, "get_provider", lambda role="coder": FakeLLM())
         # the run's question budget and pace are not what this test is about: a few slots, no pause — a run now asks
         # up to `explorer.budget.COVERAGE_QUERIES` questions, which this 120 s deadlock guard was never sized for
-        monkeypatch.setattr("aughor.explorer.budget.domain_cap", lambda n: 4)
-        monkeypatch.setattr("aughor.explorer.agent._RATE_SECONDS_INTEL", 0.0)
+        monkeypatch.setattr("pramanyx.explorer.budget.domain_cap", lambda n: 4)
+        monkeypatch.setattr("pramanyx.explorer.agent._RATE_SECONDS_INTEL", 0.0)
         asyncio.run(asyncio.wait_for(ex._pass_questions(), timeout=120))
     finally:
         lg.removeHandler(handler)

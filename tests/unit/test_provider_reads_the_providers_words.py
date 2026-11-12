@@ -16,8 +16,8 @@ import pytest
 from instructor.core.exceptions import InstructorRetryException
 from pydantic import BaseModel, ValidationError
 
-from aughor.llm import coordination as C
-from aughor.llm import provider as P
+from pramanyx.llm import coordination as C
+from pramanyx.llm import provider as P
 
 #: Words a model may well write — in an investigation spec, an answer, a note — each one a provider marker.
 MODEL_WROTE = ("orders per day by region; the daily limit of the warehouse; a rate limit of 429 per minute; "
@@ -86,7 +86,7 @@ def test_the_same_words_from_the_provider_still_count():
 
 
 def test_a_structured_failure_whose_reply_came_back_names_no_provider_fault():
-    from aughor.llm.reliability import SCHEMA_MISMATCH, UNAVAILABLE, Diagnosis, StructuredOutputError
+    from pramanyx.llm.reliability import SCHEMA_MISMATCH, UNAVAILABLE, Diagnosis, StructuredOutputError
     answered = StructuredOutputError(Diagnosis(SCHEMA_MISMATCH, MODEL_WROTE, MODEL_WROTE), _failed_validation())
     assert not P._is_quota_exhausted(answered) and not P._is_rate_limited(answered)
     assert P.classify_provider_error(answered) == "unknown"
@@ -108,8 +108,8 @@ def _chain(monkeypatch, primary_fails_with: Exception, link_fails_first_with: Ex
     class _Out(BaseModel):
         text: str = "ok"
 
-    monkeypatch.delenv("AUGHOR_FALLBACK_DISABLED", raising=False)
-    monkeypatch.setenv("AUGHOR_FALLBACK_BACKENDS", "openrouter")
+    monkeypatch.delenv("PRAMANYX_FALLBACK_DISABLED", raising=False)
+    monkeypatch.setenv("PRAMANYX_FALLBACK_BACKENDS", "openrouter")
     monkeypatch.setattr(P, "_active_key", lambda b: "k")
     monkeypatch.setattr(P, "usable_key", lambda b: "k")
     seen: list[str] = []

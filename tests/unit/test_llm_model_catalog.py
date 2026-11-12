@@ -14,7 +14,7 @@ The contract now:
   * no role, backend, agent or tier carries a built-in model id;
   * asking for a binding that was never configured raises, loudly.
 
-Live fetches are disabled here (``AUGHOR_LLM_MODEL_FETCH=0``) so the suite never depends
+Live fetches are disabled here (``PRAMANYX_LLM_MODEL_FETCH=0``) so the suite never depends
 on a remote host being up.
 """
 from __future__ import annotations
@@ -25,8 +25,8 @@ import re
 
 import pytest
 
-from aughor.llm import models as M
-from aughor.llm import provider as P
+from pramanyx.llm import models as M
+from pramanyx.llm import provider as P
 
 #: A binding for the tests that need one. Arbitrary and meaningless on purpose — the
 #: point of the change is that the product no longer knows any real ids, so a test must
@@ -42,7 +42,7 @@ def _isolated_config(tmp_path, monkeypatch):
     cfg.write_text(json.dumps({"backend": "openrouter", "models": dict(_TEST_MODELS)}))
     original = P._CONFIG_PATH
     P._CONFIG_PATH = cfg          # restored below, NOT via monkeypatch: the reload
-    monkeypatch.setenv("AUGHOR_LLM_MODEL_FETCH", "0")   # in teardown must happen AFTER
+    monkeypatch.setenv("PRAMANYX_LLM_MODEL_FETCH", "0")   # in teardown must happen AFTER
     P.load_config()               # the path is put back, or the module keeps the tmp
     M.clear_cache()               # config cached and later tests see this backend.
     yield
@@ -160,7 +160,7 @@ def test_remove_custom_model():
 def test_a_live_entry_is_not_removable(monkeypatch):
     """Hiding a model the backend actually serves would make the picker disagree
     with reality — removal is for entries the user added."""
-    monkeypatch.setenv("AUGHOR_LLM_MODEL_FETCH", "1")
+    monkeypatch.setenv("PRAMANYX_LLM_MODEL_FETCH", "1")
     monkeypatch.setattr(M, "fetch_live_models",
                         lambda backend, timeout=6.0: ([{"id": "vendor/served", "source": "live"}], ""))
     M.clear_cache()
@@ -179,7 +179,7 @@ def test_add_rejects_blank_and_unknown_backend():
 def test_custom_entry_wins_when_it_also_appears_live(monkeypatch):
     """A live model the user also kept stays removable — the custom marking is
     what the UI keys its remove affordance on."""
-    monkeypatch.setenv("AUGHOR_LLM_MODEL_FETCH", "1")
+    monkeypatch.setenv("PRAMANYX_LLM_MODEL_FETCH", "1")
     monkeypatch.setattr(M, "fetch_live_models",
                         lambda backend, timeout=6.0: ([{"id": "vendor/m", "source": "live"}], ""))
     M.clear_cache()
@@ -193,7 +193,7 @@ def test_live_failure_surfaces_the_reason_and_shows_nothing(monkeypatch):
     """A failed fetch must be stated, not hidden behind a fallback that then poses as
     the real catalogue. It used to still show the floor; now there is nothing to show,
     which is the honest answer to "what does this provider serve?" when we could not ask."""
-    monkeypatch.setenv("AUGHOR_LLM_MODEL_FETCH", "1")
+    monkeypatch.setenv("PRAMANYX_LLM_MODEL_FETCH", "1")
     monkeypatch.setattr(M, "fetch_live_models",
                         lambda backend, timeout=6.0: ([], "ConnectError: refused"))
     M.clear_cache()
@@ -241,7 +241,7 @@ def test_a_bare_array_catalogue_parses_like_the_envelope(monkeypatch):
 
 
 def test_live_results_are_cached(monkeypatch):
-    monkeypatch.setenv("AUGHOR_LLM_MODEL_FETCH", "1")
+    monkeypatch.setenv("PRAMANYX_LLM_MODEL_FETCH", "1")
     calls = {"n": 0}
 
     def _fetch(backend, timeout=6.0):
@@ -262,10 +262,10 @@ def test_a_live_context_window_is_recorded_for_the_tier(monkeypatch):
     """What replaced the hardcoded capability table: the provider's own declared
     context window, captured when the catalogue is fetched and read back by
     `profile.tier_for`. Without this the derived tier has nothing to derive from."""
-    from aughor.llm.profile import declared_context
+    from pramanyx.llm.profile import declared_context
 
-    monkeypatch.setenv("AUGHOR_LLM_MODEL_FETCH", "1")
-    monkeypatch.delenv("AUGHOR_MODEL_CONTEXT_TOKENS", raising=False)
+    monkeypatch.setenv("PRAMANYX_LLM_MODEL_FETCH", "1")
+    monkeypatch.delenv("PRAMANYX_MODEL_CONTEXT_TOKENS", raising=False)
     monkeypatch.setattr(M, "fetch_live_models", lambda backend, timeout=6.0: (
         [{"id": "vendor/wide", "source": "live", "context": 200_000}], ""))
     M.clear_cache()
@@ -327,9 +327,9 @@ def test_no_model_id_ships_in_the_product():
     catalogue that this repo has no way to keep true, and every one of them went stale
     silently: retired mid-life, quietly made subscription-only, or never real at all.
 
-    Tests may name ids (they need something concrete to assert on); `aughor/` may not.
+    Tests may name ids (they need something concrete to assert on); `pramanyx/` may not.
     """
-    root = pathlib.Path(__file__).resolve().parents[2] / "aughor"
+    root = pathlib.Path(__file__).resolve().parents[2] / "pramanyx"
     offenders: list[str] = []
     for path in sorted(root.rglob("*.py")):
         for i, line in enumerate(path.read_text(errors="ignore").splitlines(), 1):
@@ -351,7 +351,7 @@ def test_no_model_id_ships_in_the_product():
 def test_no_charter_recommends_a_model():
     """`recommended_models` and POST /agents/apply-recommended-models are gone: the
     feature's entire content was six hardcoded ids."""
-    from aughor.kernel.agents import AGENTS
+    from pramanyx.kernel.agents import AGENTS
 
     for charter in AGENTS:
         assert not hasattr(charter, "recommended_models"), \
@@ -364,7 +364,7 @@ def test_the_apply_recommended_route_is_gone(client):
 
 def test_the_vouched_matrix_module_is_gone():
     with pytest.raises(ImportError):
-        import aughor.llm.matrix  # noqa: F401
+        import pramanyx.llm.matrix  # noqa: F401
 
 
 # ── every registered backend must actually be constructible ───────────────────
@@ -380,7 +380,7 @@ def test_every_backend_builds_a_client(monkeypatch):
     passed explicitly now: with no defaults, resolution would raise before the
     dispatch this test is about is ever reached.
     """
-    from aughor.llm.provider import LLMProvider
+    from pramanyx.llm.provider import LLMProvider
 
     for backend in P.BACKENDS:
         # every keyed backend gets a dummy so the builders do not bail on a missing key
@@ -399,7 +399,7 @@ def test_openrouter_uses_the_openai_compatible_client(monkeypatch):
     monkeypatch.setattr(P, "_build_openai_compat",
                         lambda url, key: built.append((url, key)) or object())
 
-    from aughor.llm.provider import LLMProvider
+    from pramanyx.llm.provider import LLMProvider
     LLMProvider("openrouter", "coder", model="test/model")
 
     assert built, "openrouter did not route to the OpenAI-compatible builder"
@@ -475,7 +475,7 @@ def test_agent_pins_are_tested_when_asked(monkeypatch):
                         lambda b, m, role="coder": pinged.append(m) or
                         {"model": m, "ok": True, "ms": 1.0})
     monkeypatch.setattr(P, "_active_backend", lambda: "openrouter")
-    monkeypatch.setattr("aughor.kernel.agents.effective_governance",
+    monkeypatch.setattr("pramanyx.kernel.agents.effective_governance",
                         lambda aid, ws=None: type("G", (), {"model": "pinned/only-for-agents"})())
 
     out = P.test_provider(backend="openrouter", include_agents=True)
@@ -497,12 +497,12 @@ def test_an_unconfigured_binding_is_a_400_not_an_internal_error(client, monkeypa
     """A loud failure the UI renders as "internal_error" is not loud. The catch-all
     handler hides exception text — correct for internal faults, exactly wrong for the
     one error the operator can actually fix."""
-    from aughor.llm.provider import NoModelConfigured
+    from pramanyx.llm.provider import NoModelConfigured
 
     def _boom(*a, **k):
         raise NoModelConfigured("openrouter", "coder")
 
-    monkeypatch.setattr("aughor.llm.provider.test_provider", _boom)
+    monkeypatch.setattr("pramanyx.llm.provider.test_provider", _boom)
     r = client.post("/llm/config/test", json={"backend": "openrouter"})
     assert r.status_code == 400, r.text
     body = r.json()
@@ -556,11 +556,11 @@ def test_a_declared_tools_capability_selects_TOOLS_mode(monkeypatch):
 
 
 def test_tool_support_round_trips_through_the_config(monkeypatch):
-    monkeypatch.delenv("AUGHOR_MODEL_TOOLS", raising=False)
+    monkeypatch.delenv("PRAMANYX_MODEL_TOOLS", raising=False)
     assert P.model_supports_tools("vendor/x") is None      # nobody has asked yet
     M._record_model_facts([{"id": "vendor/x", "tools": True, "context": 200_000}])
     assert P.model_supports_tools("vendor/x") is True
-    from aughor.llm.profile import declared_context
+    from pramanyx.llm.profile import declared_context
     assert declared_context("vendor/x") == 200_000
 
 
@@ -568,9 +568,9 @@ def test_max_context_is_the_declared_window_not_a_name_match(monkeypatch):
     """The substring table this replaced was wrong in the dangerous direction on a real
     binding: it claimed qwen2.5-coder held 131,072 where Ollama reports 32,768, and its
     own comment says an over-estimate silences the overflow guard."""
-    from aughor.control_plane.inference import _DEFAULT_CONTEXT, _max_context
+    from pramanyx.control_plane.inference import _DEFAULT_CONTEXT, _max_context
 
-    monkeypatch.setattr("aughor.llm.profile.declared_context",
+    monkeypatch.setattr("pramanyx.llm.profile.declared_context",
                         lambda m: 32_768 if m == "qwen2.5-coder:14b" else None)
     assert _max_context("qwen2.5-coder:14b") == 32_768
     assert _max_context("never/asked") == _DEFAULT_CONTEXT
@@ -589,5 +589,5 @@ def test_an_anthropic_model_declares_the_providers_context_floor(monkeypatch):
     monkeypatch.setattr(httpx, "get", lambda *a, **k: _R())
     out = M._anthropic_models("k", timeout=1.0)
     assert out == [{"id": "claude-sonnet-5-5", "source": "live", "context": 200_000, "label": "Claude Sonnet 5.5"}]
-    from aughor.llm.profile import _CAPABLE_CONTEXT_TOKENS
+    from pramanyx.llm.profile import _CAPABLE_CONTEXT_TOKENS
     assert out[0]["context"] >= _CAPABLE_CONTEXT_TOKENS

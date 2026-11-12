@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.starters import (
+from pramanyx.starters import (
     STARTERS,
     curated_questions,
     named_starters,
@@ -38,8 +38,8 @@ def test_payload_speaks_the_chip_contract():
 def test_explore_starters_phrase_wide_by_construction():
     """The template and R9's router must agree: even a client that drops the
     `mode` field gets the explore wave by its own declared path (R9's automatic route left 2026-10-28)."""
-    from aughor.agent.ask_router import is_wide_question
-    from aughor.agent.complexity import assess_complexity
+    from pramanyx.agent.ask_router import is_wide_question
+    from pramanyx.agent.complexity import assess_complexity
     for s in STARTERS:
         if s.mode == "explore":
             assert is_wide_question(s.question, assess_complexity(s.question)), s.id
@@ -53,7 +53,7 @@ def _boom_classifier(question):
 
 @pytest.mark.parametrize("mode", ["investigate", "explore"])
 def test_mode_override_pins_route_without_classifier(mode):
-    from aughor.agent.ask_router import decide_ask_route
+    from pramanyx.agent.ask_router import decide_ask_route
     route = decide_ask_route("anything at all", mode_override=mode,
                              classifier=_boom_classifier)
     assert route.depth == "deep"
@@ -62,13 +62,13 @@ def test_mode_override_pins_route_without_classifier(mode):
 
 
 def test_mode_override_none_leaves_routing_unchanged():
-    from aughor.agent.ask_router import decide_ask_route
+    from pramanyx.agent.ask_router import decide_ask_route
     route = decide_ask_route("what tables are available?", mode_override=None)
     assert route.forced != "mode"
 
 
 def test_mode_override_degrades_without_deep_capability():
-    from aughor.agent.ask_router import decide_ask_route
+    from pramanyx.agent.ask_router import decide_ask_route
     route = decide_ask_route("anything", mode_override="explore", has_deep=False)
     assert route.depth == "quick" and route.downgraded_from == "deep"
 
@@ -76,8 +76,8 @@ def test_mode_override_degrades_without_deep_capability():
 # ── curated questions from the R8 doc tree ───────────────────────────────────
 
 def _tree():
-    from aughor.ontology.doctree import build_doc_tree
-    from aughor.ontology.models import EntityProperty, OntologyEntity, OntologyGraph
+    from pramanyx.ontology.doctree import build_doc_tree
+    from pramanyx.ontology.models import EntityProperty, OntologyEntity, OntologyGraph
     def ent(eid, measure):
         return OntologyEntity(
             id=eid, display_name=eid.title(), source_tables=[eid],
@@ -107,7 +107,7 @@ def test_curated_questions_round_robin_popularity_first():
 
 
 def test_curated_questions_empty_without_tree(monkeypatch, tmp_path):
-    monkeypatch.setattr("aughor.ontology.doctree.load_doc_tree", lambda c, s: None)
+    monkeypatch.setattr("pramanyx.ontology.doctree.load_doc_tree", lambda c, s: None)
     assert curated_questions("c-none", "s") == []
 
 
@@ -124,7 +124,7 @@ def test_suggestions_always_carries_starters(client, monkeypatch):
     def _fake_suggestions(*a, **k):
         return [{"text": "q", "mode": "ask"}]
     # Avoid the LLM: serve from the fingerprint cache.
-    monkeypatch.setattr("aughor.semantic.suggestions_cache.get_cached",
+    monkeypatch.setattr("pramanyx.semantic.suggestions_cache.get_cached",
                         lambda cid, fp: [{"text": "cached q", "mode": "ask"}])
 
     r = client.get("/suggestions", params={"connection_id": "fixture"})

@@ -2,7 +2,7 @@
 
 The ontology package is a knowledge STORE plane: overrides, doc trees, graph
 structure — deterministic, hermetic, replayable. The inference plane
-(``aughor/llm``) is none of those things, so the dependency direction must be
+(``pramanyx/llm``) is none of those things, so the dependency direction must be
 one-way: **the llm plane may serve ontology content, but ontology modules must not
 reach into the llm plane**. A store that quietly calls a model stops being
 deterministic exactly where determinism is the contract (the same reasoning that
@@ -24,19 +24,19 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-AUGHOR = Path(__file__).resolve().parents[2] / "aughor"
-ONTOLOGY = AUGHOR / "ontology"
+PRAMANYX = Path(__file__).resolve().parents[2] / "pramanyx"
+ONTOLOGY = PRAMANYX / "ontology"
 
 # ── Edges that existed when the ratchet landed (2026-08-08) ───────────────────
-# file (relative to repo root) -> the aughor.llm submodules it still imports.
+# file (relative to repo root) -> the pramanyx.llm submodules it still imports.
 # Adding a row (or a submodule to a row) is a regression, not a fix. Removal notes:
 # doctree's provider edge is already an injectable seam (`provider_factory=None`
 # defaults to it) — the cheapest to invert; the context_budget edges are a token
 # ESTIMATOR (deterministic today, but the import still couples the store plane to
 # the inference plane's module graph).
 TOLERATED: dict[str, set[str]] = {
-    "aughor/ontology/graph_tour.py": {"llm.provider"},
-    "aughor/ontology/doctree.py": {"llm.context_budget", "llm.provider"},
+    "pramanyx/ontology/graph_tour.py": {"llm.provider"},
+    "pramanyx/ontology/doctree.py": {"llm.context_budget", "llm.provider"},
 }
 
 
@@ -57,7 +57,7 @@ def _llm_submodules_imported(path: Path) -> set[str]:
             mods.extend(a.name for a in node.names)
         for mod in mods:
             parts = mod.split(".")
-            if len(parts) >= 2 and parts[0] == "aughor" and parts[1] == "llm":
+            if len(parts) >= 2 and parts[0] == "pramanyx" and parts[1] == "llm":
                 found.add(".".join(parts[1:3]))   # "llm" bare, or "llm.<submodule>"
     return found
 
@@ -67,7 +67,7 @@ def _current_violations() -> dict[str, set[str]]:
     for f in _ontology_files():
         mods = _llm_submodules_imported(f)
         if mods:
-            out[str(f.relative_to(AUGHOR.parent))] = mods
+            out[str(f.relative_to(PRAMANYX.parent))] = mods
     return out
 
 
@@ -108,8 +108,8 @@ def test_the_ratchet_can_actually_fire(tmp_path):
     function-local deferred shape every existing edge uses."""
     probe = tmp_path / "probe.py"
     probe.write_text(
-        "import aughor.llm.matrix\n"
+        "import pramanyx.llm.matrix\n"
         "def later():\n"
-        "    from aughor.llm.provider import get_provider\n"
+        "    from pramanyx.llm.provider import get_provider\n"
     )
     assert _llm_submodules_imported(probe) == {"llm.matrix", "llm.provider"}

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.govern.actions import ActionRisk, classify
+from pramanyx.govern.actions import ActionRisk, classify
 
 
 def test_deleting_a_metric_is_declared_destructive():
@@ -24,7 +24,7 @@ def test_deleting_a_metric_is_declared_destructive():
     the fail-safe returns HIGH for anything unknown — so the assertion that carries this
     test is MEMBERSHIP. A vacuous guard is how a premise that is itself a bug survives.
     """
-    from aughor.govern.actions import _RISK
+    from pramanyx.govern.actions import _RISK
 
     assert "metric.delete" in _RISK, "declared, not inferred from the unknown-verb default"
     assert classify("metric.delete") is ActionRisk.HIGH
@@ -39,20 +39,20 @@ def metrics_api(monkeypatch, tmp_path):
     """The router with an isolated catalogue and governance auto-allowed."""
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.json"))
+    from pramanyx.api import app
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.json"))
     return TestClient(app)
 
 
 def test_the_deletion_lands_in_the_same_trail_as_every_other_transition(metrics_api, monkeypatch):
     """A trail that records approving a formula and not removing it is worse than none:
     it reads as a complete history."""
-    from aughor.semantic.metrics import MetricDefinition, save_metric
+    from pramanyx.semantic.metrics import MetricDefinition, save_metric
 
     emitted: list[tuple] = []
-    monkeypatch.setattr("aughor.kernel.ledger.Ledger.default",
+    monkeypatch.setattr("pramanyx.kernel.ledger.Ledger.default",
                         lambda: type("L", (), {"emit": lambda self, k, p, **kw: emitted.append((k, p))})())
-    monkeypatch.setattr("aughor.govern.guard", lambda *a, **k: None)
+    monkeypatch.setattr("pramanyx.govern.guard", lambda *a, **k: None)
 
     save_metric(MetricDefinition(name="revenue", label="Revenue", sql="SUM(x)",
                                  owner="Revenue team", approved_by="Finance"))
@@ -71,7 +71,7 @@ def test_the_deletion_lands_in_the_same_trail_as_every_other_transition(metrics_
 
 def test_the_guard_is_asked_before_anything_is_removed(metrics_api, monkeypatch):
     """A guard consulted after the write is not a guard."""
-    from aughor.semantic.metrics import MetricDefinition, get_metric, save_metric
+    from pramanyx.semantic.metrics import MetricDefinition, get_metric, save_metric
 
     save_metric(MetricDefinition(name="aov", label="AOV", sql="AVG(x)"))
 
@@ -79,7 +79,7 @@ def test_the_guard_is_asked_before_anything_is_removed(metrics_api, monkeypatch)
         assert action == "metric.delete"
         raise RuntimeError("approval required")
 
-    monkeypatch.setattr("aughor.govern.guard", _refuse)
+    monkeypatch.setattr("pramanyx.govern.guard", _refuse)
     with pytest.raises(RuntimeError):
         metrics_api.delete("/metrics/aov")
 

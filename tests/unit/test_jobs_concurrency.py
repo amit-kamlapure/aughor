@@ -1,4 +1,4 @@
-"""K1 — user-initiated jobs are bounded by AUGHOR_MAX_CONCURRENT_JOBS so a
+"""K1 — user-initiated jobs are bounded by PRAMANYX_MAX_CONCURRENT_JOBS so a
 /investigate loop can't exhaust the single process (AUDIT_2026-06-27.md #4).
 Background explorers are exempt (idempotency-bounded per connection) and must
 still run while user jobs are saturated.
@@ -9,12 +9,12 @@ import asyncio
 
 import pytest
 
-from aughor.kernel.jobs import JobKernel, JobState
+from pramanyx.kernel.jobs import JobKernel, JobState
 
 
 @pytest.fixture()
 def ledger(tmp_path):
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     return Ledger(tmp_path / "system.db")
 
 
@@ -23,7 +23,7 @@ def run(coro):
 
 
 def test_bounded_kind_respects_the_cap(ledger, monkeypatch):
-    monkeypatch.setenv("AUGHOR_MAX_CONCURRENT_JOBS", "2")
+    monkeypatch.setenv("PRAMANYX_MAX_CONCURRENT_JOBS", "2")
 
     async def main():
         k = JobKernel(ledger)
@@ -56,7 +56,7 @@ def test_bounded_kind_respects_the_cap(ledger, monkeypatch):
 
 
 def test_exploration_is_exempt_from_the_cap(ledger, monkeypatch):
-    monkeypatch.setenv("AUGHOR_MAX_CONCURRENT_JOBS", "1")
+    monkeypatch.setenv("PRAMANYX_MAX_CONCURRENT_JOBS", "1")
 
     async def main():
         k = JobKernel(ledger)
@@ -84,7 +84,7 @@ def test_exploration_is_exempt_from_the_cap(ledger, monkeypatch):
 
 
 def test_queued_job_cancel_closes_the_row(ledger, monkeypatch):
-    monkeypatch.setenv("AUGHOR_MAX_CONCURRENT_JOBS", "1")
+    monkeypatch.setenv("PRAMANYX_MAX_CONCURRENT_JOBS", "1")
 
     async def main():
         k = JobKernel(ledger)
@@ -113,6 +113,6 @@ def test_queued_job_cancel_closes_the_row(ledger, monkeypatch):
 
 
 def test_default_cap_when_env_unset(monkeypatch):
-    monkeypatch.delenv("AUGHOR_MAX_CONCURRENT_JOBS", raising=False)
-    from aughor.kernel.jobs import _max_concurrent_jobs
+    monkeypatch.delenv("PRAMANYX_MAX_CONCURRENT_JOBS", raising=False)
+    from pramanyx.kernel.jobs import _max_concurrent_jobs
     assert _max_concurrent_jobs() == 8

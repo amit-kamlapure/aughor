@@ -3,7 +3,7 @@
  * corrections, the authority table, the attention budget and the ledger API's read side.
  *
  * These doors return the ledger's own entries as plain objects, so the generated client carries
- * no shape for them; the types here are read off `aughor/record/*.py` and the routers that serve
+ * no shape for them; the types here are read off `pramanyx/record/*.py` and the routers that serve
  * them. A refusal's reason is the server's sentence — `RecordError.message` carries `detail`
  * through, so a screen can say why something was refused instead of "request failed".
  */
@@ -669,7 +669,7 @@ export const restoreItem = (kind: SetAsideKind, ref: string, by?: string) =>
   send<SetAside>("/record/set-aside/restore", { kind, ref, by });
 
 /** Told to the rail when what waits on a person changed on this page, so its badge re-reads now. */
-export const WAITING_CHANGED_EVENT = "aughor:waiting-changed";
+export const WAITING_CHANGED_EVENT = "pramanyx:waiting-changed";
 
 // ── the attention budget (triage at the departure gate) ──────────────────────────────────
 

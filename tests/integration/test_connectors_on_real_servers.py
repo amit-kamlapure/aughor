@@ -5,16 +5,16 @@ profile a table, and have a write refused: by the door, and by the server itself
 
 It writes a table called `proof_orders` to each server, so it runs only when asked, against throwaway containers:
 
-    docker run -d --name aughor-proof-cockroach -p 26257:26257 cockroachdb/cockroach:latest-v24.3 start-single-node --insecure
-    docker run -d --name aughor-proof-timescale -p 5433:5432 -e POSTGRES_PASSWORD=proof -e POSTGRES_DB=proof timescale/timescaledb:latest-pg16
-    docker run -d --name aughor-proof-mariadb -p 3307:3306 -e MARIADB_ROOT_PASSWORD=proof -e MARIADB_DATABASE=proof mariadb:11
-    docker run -d --name aughor-proof-mysql -p 3308:3306 -e MYSQL_ROOT_PASSWORD=proof -e MYSQL_DATABASE=proof mysql:8.4
-    docker run -d --name aughor-proof-tidb -p 4000:4000 pingcap/tidb:v8.5.1
-    docker run -d --name aughor-proof-clickhouse -p 8123:8123 -e CLICKHOUSE_USER=proof -e CLICKHOUSE_PASSWORD=proof -e CLICKHOUSE_DB=proof clickhouse/clickhouse-server:24.8
-    docker run -d --name aughor-proof-mssql --platform linux/amd64 -p 1433:1433 -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD=Proof_12345 mcr.microsoft.com/mssql/server:2022-latest
-    docker run -d --name aughor-proof-oracle -p 1521:1521 -e ORACLE_PASSWORD=proof -e APP_USER=proof -e APP_USER_PASSWORD=proof gvenzl/oracle-free:23-slim
+    docker run -d --name pramanyx-proof-cockroach -p 26257:26257 cockroachdb/cockroach:latest-v24.3 start-single-node --insecure
+    docker run -d --name pramanyx-proof-timescale -p 5433:5432 -e POSTGRES_PASSWORD=proof -e POSTGRES_DB=proof timescale/timescaledb:latest-pg16
+    docker run -d --name pramanyx-proof-mariadb -p 3307:3306 -e MARIADB_ROOT_PASSWORD=proof -e MARIADB_DATABASE=proof mariadb:11
+    docker run -d --name pramanyx-proof-mysql -p 3308:3306 -e MYSQL_ROOT_PASSWORD=proof -e MYSQL_DATABASE=proof mysql:8.4
+    docker run -d --name pramanyx-proof-tidb -p 4000:4000 pingcap/tidb:v8.5.1
+    docker run -d --name pramanyx-proof-clickhouse -p 8123:8123 -e CLICKHOUSE_USER=proof -e CLICKHOUSE_PASSWORD=proof -e CLICKHOUSE_DB=proof clickhouse/clickhouse-server:24.8
+    docker run -d --name pramanyx-proof-mssql --platform linux/amd64 -p 1433:1433 -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD=Proof_12345 mcr.microsoft.com/mssql/server:2022-latest
+    docker run -d --name pramanyx-proof-oracle -p 1521:1521 -e ORACLE_PASSWORD=proof -e APP_USER=proof -e APP_USER_PASSWORD=proof gvenzl/oracle-free:23-slim
 
-    AUGHOR_PROOF_SERVERS=1 pytest tests/integration/test_connectors_on_real_servers.py
+    PRAMANYX_PROOF_SERVERS=1 pytest tests/integration/test_connectors_on_real_servers.py
 """
 from __future__ import annotations
 
@@ -26,9 +26,9 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from aughor.db.connection import open_connection
+from pramanyx.db.connection import open_connection
 
-pytestmark = pytest.mark.skipif(not os.environ.get("AUGHOR_PROOF_SERVERS"), reason="writes to local servers: set AUGHOR_PROOF_SERVERS=1")
+pytestmark = pytest.mark.skipif(not os.environ.get("PRAMANYX_PROOF_SERVERS"), reason="writes to local servers: set PRAMANYX_PROOF_SERVERS=1")
 
 ROWS = [
     (1, "2026-01-10 08:00:00", "10.50", "north"),
@@ -268,7 +268,7 @@ def test_the_server_refuses_a_write_where_the_declaration_says_so(server):
 
 
 def test_the_connection_says_which_engine_it_is(server):
-    from aughor.db.metadata import read_declared_metadata
+    from pramanyx.db.metadata import read_declared_metadata
 
     s, conn = server
     read = read_declared_metadata(conn)
@@ -278,7 +278,7 @@ def test_the_connection_says_which_engine_it_is(server):
 
 def test_a_profile_reads_the_table(server):
     """What adding a connection builds first: without columns here the catalog and the ontology come up empty."""
-    from aughor.tools.profiler import profile_connection
+    from pramanyx.tools.profiler import profile_connection
 
     _, conn = server
     table = re.search(r"(?i)TABLE: (proof_orders)", conn.get_schema()).group(1)
@@ -306,7 +306,7 @@ def test_a_profile_reads_the_table(server):
 
 def test_the_screens_read_it(server, client):
     """The doors the Catalog and the connection's tabs call, on a connection in the registry."""
-    from aughor.db.registry import add_connection, delete_connection
+    from pramanyx.db.registry import add_connection, delete_connection
 
     s, conn = server
     conn_id = add_connection(name=f"proof {s.type}", conn_type=s.type, dsn=s.dsn, meta=dict(s.meta))
@@ -327,7 +327,7 @@ def test_the_screens_read_it(server, client):
         assert table in str(tree), tree
         assert "_timescaledb_" not in str(tree), tree
 
-        from aughor.routers._shared import schemas_of_connection
+        from pramanyx.routers._shared import schemas_of_connection
         assert schemas_of_connection(conn_id) == [s.explored], "the Explorer fans out over this list, and spends on each"
 
         schema = client.get(f"/connections/{conn_id}/schema")
@@ -338,7 +338,7 @@ def test_the_screens_read_it(server, client):
 
 def test_a_server_that_is_not_running_says_so(server):
     """The 503 that names the database, not a 500. Nothing listens on port 1."""
-    from aughor.db.errors import ConnectionUnreachable
+    from pramanyx.db.errors import ConnectionUnreachable
 
     s, _ = server
     dsn = re.sub(r":\d+/", ":1/", s.dsn)
@@ -348,7 +348,7 @@ def test_a_server_that_is_not_running_says_so(server):
 
 @pytest.mark.parametrize("type_", ["timescaledb", "mysql", "mariadb", "clickhouse", "mssql", "oracle"])
 def test_a_wrong_password_is_not_called_unreachable(type_):
-    from aughor.db.errors import ConnectionUnreachable
+    from pramanyx.db.errors import ConnectionUnreachable
 
     s = SERVERS[type_]
     if not _running(s.port):

@@ -43,7 +43,7 @@ def _args(tmp_path, **over):
     base = dict(model="stub-model", models=None, dataset=str(tmp_path / "ds.jsonl"),
                 connection="samples", limit=0, mode="full", temperature=0.0,
                 tracking_uri=str(tmp_path / "mlruns"),  # file store: skinny has no sqlite
-                experiment="aughor-bakeoff-test", output_dir=str(tmp_path / "out"))
+                experiment="pramanyx-bakeoff-test", output_dir=str(tmp_path / "out"))
     base.update(over)
     return argparse.Namespace(**base)
 
@@ -53,7 +53,7 @@ def _clean_env(monkeypatch):
     monkeypatch.delenv("MLFLOW_GENAI_EVAL_MAX_WORKERS", raising=False)
     monkeypatch.setenv("MLFLOW_ENABLE_ASYNC_TRACE_LOGGING", "false")
     monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")  # ≥3.14 gates file stores
-    monkeypatch.setenv("AUGHOR_CODER_MODEL", "pre-existing")  # restored by monkeypatch
+    monkeypatch.setenv("PRAMANYX_CODER_MODEL", "pre-existing")  # restored by monkeypatch
     yield
     os.environ.pop("MLFLOW_GENAI_EVAL_MAX_WORKERS", None)
     # mlflow.set_tracking_uri (driven with a tmp file store above) writes
@@ -61,7 +61,7 @@ def _clean_env(monkeypatch):
     # the 2026-07-31 flag strategy made telemetry._mlflow() self-gate on that env var,
     # a leaked tmp URI would make every later test init real mlflow. Pop it so the
     # bakeoff cannot pollute the rest of the suite.
-    for _k in ("MLFLOW_TRACKING_URI", "AUGHOR_MLFLOW_TRACKING_URI"):
+    for _k in ("MLFLOW_TRACKING_URI", "PRAMANYX_MLFLOW_TRACKING_URI"):
         os.environ.pop(_k, None)
 
 
@@ -177,7 +177,7 @@ def test_run_arm_end_to_end(tmp_path, monkeypatch):
     assert arm["trust_verify"] == 1.0
     assert arm["n"] == 2
     assert arm["run_id"]
-    assert os.environ["AUGHOR_CODER_MODEL"] == "stub-model"  # the arm pinned it
+    assert os.environ["PRAMANYX_CODER_MODEL"] == "stub-model"  # the arm pinned it
     out = json.loads((tmp_path / "out" / "stub-model.json").read_text())
     assert out["model"] == "stub-model"
     assert out["execution_accuracy"] == 1.0

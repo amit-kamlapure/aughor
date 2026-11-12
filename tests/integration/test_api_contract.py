@@ -113,7 +113,7 @@ def test_every_route_declares_a_single_method(client):
     `api_route` is a collision by construction even before the spec is dumped."""
     from fastapi.routing import APIRoute
 
-    from aughor.api import app   # imported through the client fixture's isolation
+    from pramanyx.api import app   # imported through the client fixture's isolation
 
     offenders = []
     for route in app.routes:

@@ -25,10 +25,10 @@ from __future__ import annotations
 import duckdb
 import pytest
 
-from aughor.automations.engine import _dispatch_metric_value, _dispatch_trusted_query
-from aughor.automations.models import Automation, Condition, Effect
-from aughor.semantic import trusted_queries as tq
-from aughor.semantic.metrics import MetricDefinition, list_metrics, save_metric
+from pramanyx.automations.engine import _dispatch_metric_value, _dispatch_trusted_query
+from pramanyx.automations.models import Automation, Condition, Effect
+from pramanyx.semantic import trusted_queries as tq
+from pramanyx.semantic.metrics import MetricDefinition, list_metrics, save_metric
 
 CONN = "ds12-conn"
 
@@ -53,7 +53,7 @@ def warehouse(tmp_path, monkeypatch):
     finally:
         w.close()
 
-    from aughor.db.connection import DuckDBConnection
+    from pramanyx.db.connection import DuckDBConnection
     opened: list = []
     closed: list = []
 
@@ -71,7 +71,7 @@ def warehouse(tmp_path, monkeypatch):
         opened.append(db)
         return db
 
-    import aughor.db.connection as dbmod
+    import pramanyx.db.connection as dbmod
     monkeypatch.setattr(dbmod, "open_connection_for", _open)
     yield {"opened": opened, "closed": closed}
 
@@ -81,7 +81,7 @@ def _virgin_stores():
     """Both ontology stores are SESSION-scoped copies in the temp dir, so what this file
     saves is still there when the next file reads.
 
-    The vetted-query file is a copy (conftest redirects `AUGHOR_TRUSTED_QUERIES_PATH`), so
+    The vetted-query file is a copy (conftest redirects `PRAMANYX_TRUSTED_QUERIES_PATH`), so
     these saves cannot reach the tracked one — but they DO reach the next test. Found the
     expensive way: the metrics this suite defines leaked into the shared catalog and made
     `test_metric_dedup` fail in the full run while passing on its own. Every metric named
@@ -93,7 +93,7 @@ def _virgin_stores():
     yield
     for q in tq.list_trusted():
         tq.delete_trusted(q.id)
-    from aughor.semantic.metrics import delete_metric
+    from pramanyx.semantic.metrics import delete_metric
     for m in list_metrics():
         if m.name.startswith("ds12_"):
             delete_metric(m.name)
@@ -195,7 +195,7 @@ def test_a_trusted_query_publishes_rows_columns_and_a_count(warehouse):
 def test_rows_is_the_declared_list_and_count_is_not():
     """Declared per KEY. Reopening the published set would have bought one list at the
     price of every unknown-key refusal on this kind."""
-    from aughor.automations.dataflow import PUBLISHED_KEYS, publishes_list
+    from pramanyx.automations.dataflow import PUBLISHED_KEYS, publishes_list
     assert set(PUBLISHED_KEYS["trusted_query"]) == {"rows", "columns", "count"}
     assert publishes_list("trusted_query", "rows")
     assert not publishes_list("trusted_query", "count")
@@ -215,7 +215,7 @@ def test_a_query_on_another_connection_is_not_found(warehouse):
 def test_too_many_rows_is_REFUSED_not_truncated(warehouse):
     """W2's law one plane over. The cap is the fan-out cap on purpose: the reason to
     publish rows at all is to run once per one."""
-    from aughor.automations.dataflow import MAX_FAN_OUT
+    from pramanyx.automations.dataflow import MAX_FAN_OUT
     _query(qid="tq_many", sql=f"SELECT i FROM range(0, {MAX_FAN_OUT + 5}) t(i)")
     out = _dispatch_trusted_query(
         Effect(kind="trusted_query", config={"query_id": "tq_many"}), AUTO)
@@ -227,7 +227,7 @@ def test_too_many_rows_is_REFUSED_not_truncated(warehouse):
 def test_exactly_the_cap_is_allowed(warehouse):
     """Off-by-one guard: the cap is a maximum, not a forbidden value. Asking for cap+1
     rows to detect overflow must not make cap rows look like overflow."""
-    from aughor.automations.dataflow import MAX_FAN_OUT
+    from pramanyx.automations.dataflow import MAX_FAN_OUT
     _query(qid="tq_exact", sql=f"SELECT i FROM range(0, {MAX_FAN_OUT}) t(i)")
     out = _dispatch_trusted_query(
         Effect(kind="trusted_query", config={"query_id": "tq_exact"}), AUTO)
@@ -240,7 +240,7 @@ def test_the_row_query_is_NOT_declared_internal(warehouse):
     seen: dict = {}
     _query(qid="tq_label")
 
-    import aughor.db.connection as dbmod
+    import pramanyx.db.connection as dbmod
     real = dbmod.open_connection_for
 
     def _spy(conn_id):

@@ -21,7 +21,7 @@ depending on whatever happens to be in a developer's ledger.
 """
 from __future__ import annotations
 
-from aughor.evals.promotion import evaluate_graduation
+from pramanyx.evals.promotion import evaluate_graduation
 
 FLAGS = {"explore.route_wide", "_synthetic.other_off", "graph.readback"}
 
@@ -109,7 +109,7 @@ def test_override_drift_ignores_an_override_that_restates_the_default(
         monkeypatch, synthetic_default_on):
     """Measured 2026-07-31: 15 of 16 overrides on the reference box merely restated the
     code default. An audit that counts overrides reports 16 problems where there is 1."""
-    import aughor.kernel.flags as flags
+    import pramanyx.kernel.flags as flags
 
     monkeypatch.setattr(flags, "_override",
                         lambda name: True if name == synthetic_default_on else None)
@@ -119,7 +119,7 @@ def test_override_drift_ignores_an_override_that_restates_the_default(
 
 def test_override_drift_catches_a_flag_forced_against_its_default(
         monkeypatch, synthetic_default_on):
-    import aughor.kernel.flags as flags
+    import pramanyx.kernel.flags as flags
 
     monkeypatch.setattr(flags, "_override",
                         lambda name: False if name == synthetic_default_on else None)
@@ -139,7 +139,7 @@ def test_override_drift_compares_against_resolution_not_flag_default(monkeypatch
     under test is the COMPARISON BASIS, not any one tier, and writing it against a tier
     is what made this test die with the tier.
     """
-    import aughor.kernel.flags as flags
+    import pramanyx.kernel.flags as flags
 
     victim = synthetic_default_off        # a plain default-OFF flag, registered for the test (no product flag is left)
     assert flags.FLAG_DEFAULT.get(victim, False) is False, "picked a flag with a real default"

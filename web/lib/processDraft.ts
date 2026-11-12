@@ -174,7 +174,7 @@ export function toSpec(d: ProcessDraft, takenIds: Iterable<string> = []): Declar
 
 // ── a draft kept in this browser — a convenience, never the record ───────────────────────────────────────────────────
 
-const KEY = (connectionId: string, schema?: string) => `aughor:process-draft:${connectionId}:${schema ?? ""}`;
+const KEY = (connectionId: string, schema?: string) => `pramanyx:process-draft:${connectionId}:${schema ?? ""}`;
 
 export function keepDraft(connectionId: string, schema: string | undefined, d: ProcessDraft): boolean {
   try { localStorage.setItem(KEY(connectionId, schema), JSON.stringify(d)); return true; } catch { return false; }

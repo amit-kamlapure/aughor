@@ -1,6 +1,6 @@
-"""Persist-a-fix helpers — see aughor/explorer/fix_persist.py.
+"""Persist-a-fix helpers — see pramanyx/explorer/fix_persist.py.
 (The full persist_fixed_finding path is DB+LLM integration, live-verified separately.)"""
-from aughor.explorer.fix_persist import _parse_think, _is_domain_intel
+from pramanyx.explorer.fix_persist import _parse_think, _is_domain_intel
 
 
 def test_parse_phase8_think():

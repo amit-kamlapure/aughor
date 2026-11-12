@@ -41,7 +41,7 @@ OUT_OF_SCOPE = {"paraphrase"}
 
 
 def load_graphs() -> dict:
-    from aughor.ontology.models import OntologyGraph
+    from pramanyx.ontology.models import OntologyGraph
     return {host: OntologyGraph.model_validate(json.loads((REPO / path).read_text())) for host, path in GRAPHS.items()}
 
 
@@ -98,7 +98,7 @@ def reading_of(frame: dict) -> dict:
 
 
 def run(split: str = "all", keyed: bool = False, readings: bool = False) -> dict:
-    from aughor.ontology.framing import frame_question
+    from pramanyx.ontology.framing import frame_question
     graphs = load_graphs()
     metrics = load_keyed(statements=readings) if keyed or readings else {}
     records = [json.loads(line) for line in DATASET.read_text().splitlines() if line.strip()]

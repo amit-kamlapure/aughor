@@ -17,11 +17,11 @@ from datetime import date, datetime, timezone
 
 import pytest
 
-import aughor.llm.provider as prov
-from aughor.automations.temporal import complete_period, observation_note
-from aughor.knowledge import briefing as briefing_mod
-from aughor.knowledge import period_brief
-from aughor.knowledge.briefing import BriefingCitation, BriefingNarrative, _SYSTEM
+import pramanyx.llm.provider as prov
+from pramanyx.automations.temporal import complete_period, observation_note
+from pramanyx.knowledge import briefing as briefing_mod
+from pramanyx.knowledge import period_brief
+from pramanyx.knowledge.briefing import BriefingCitation, BriefingNarrative, _SYSTEM
 
 TODAY = date(2026, 9, 23)          # a Wednesday; with the one-day lag the anchor is Tue 22 Sep
 
@@ -44,7 +44,7 @@ def narrator(monkeypatch, tmp_path):
     fake = FakeNarrator()
     monkeypatch.setattr(prov, "get_provider", lambda role=None: fake)
     # each test its own brief cache
-    from aughor.util.json_store import KeyedJsonStore
+    from pramanyx.util.json_store import KeyedJsonStore
     store = KeyedJsonStore(tmp_path / "briefing_cache.json")
     monkeypatch.setattr(briefing_mod, "_store", lambda: store)
     return fake
@@ -94,7 +94,7 @@ def test_a_monthly_run_on_the_first_observes_the_month_that_just_ended():
 # ── measuring a period ──────────────────────────────────────────────────────────────────────
 
 def test_a_period_move_is_phrased_the_way_the_triage_reads_a_change():
-    from aughor.knowledge.triage import extract_change
+    from pramanyx.knowledge.triage import extract_change
     covers, against = period_brief.phrases(complete_period("week", TODAY))
     block = {"covers": covers, "compared_with": against}
     line = period_brief.metric_line({"name": "Revenue", "unit": "USD", "current": 119.0,
@@ -160,7 +160,7 @@ def test_the_standing_brief_prompt_and_cache_key_are_unchanged(narrator):
 
 
 def test_an_alert_summary_subscription_is_stored_exactly_as_before():
-    from aughor.briefing.models import BriefSubscription
+    from pramanyx.briefing.models import BriefSubscription
     row = BriefSubscription(conn_id="c1", name="n", trigger_id="t").to_dict()
     assert "content" not in row
     assert BriefSubscription(conn_id="c1", name="n", trigger_id="t",
@@ -170,7 +170,7 @@ def test_an_alert_summary_subscription_is_stored_exactly_as_before():
 def test_subscription_periods_and_contents():
     from fastapi import HTTPException
 
-    from aughor.routers.briefs import _validate_period
+    from pramanyx.routers.briefs import _validate_period
     _validate_period("day")
     _validate_period("week")
     for period in ("day", "week", "month", "year"):
@@ -187,9 +187,9 @@ def test_subscription_periods_and_contents():
 
 
 def test_the_daily_alert_summary_is_headed_daily():
-    from aughor.briefing.delivery import brief_summary
-    from aughor.briefing.models import BriefSubscription
-    from aughor.monitors.alert_summary import AlertSummary
+    from pramanyx.briefing.delivery import brief_summary
+    from pramanyx.briefing.models import BriefSubscription
+    from pramanyx.monitors.alert_summary import AlertSummary
     summary = AlertSummary(conn_id="c1", period="day", generated_at="2026-09-23T08:00:00Z",
                           sections=[], alert_count=0, critical_count=0)
     assert summary.to_markdown().startswith("# Pramanyx Intelligence Digest — Daily")
@@ -200,10 +200,10 @@ def test_the_daily_alert_summary_is_headed_daily():
 def test_a_briefing_subscription_can_be_paused(monkeypatch):
     """Branch review, 2026-09-24: pause re-sends period and content, which are validated only when
     they change — so a saved briefing subscription can always be paused."""
-    from aughor.briefing.models import BriefSubscription
-    from aughor.briefing.store import save_subscription
-    from aughor.routers.briefs import _SubscriptionBody, update_briefing_subscription
-    import aughor.notifications.store as triggers
+    from pramanyx.briefing.models import BriefSubscription
+    from pramanyx.briefing.store import save_subscription
+    from pramanyx.routers.briefs import _SubscriptionBody, update_briefing_subscription
+    import pramanyx.notifications.store as triggers
     monkeypatch.setattr(triggers, "get_trigger", lambda tid: object())
     sub = save_subscription(BriefSubscription(conn_id="c1", name="m", trigger_id="t", period="month",
                                               content="briefing"))

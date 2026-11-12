@@ -8,7 +8,7 @@
  *
  * So the workspace rides as a HEADER applied in one place, rather than a parameter every
  * call site has to remember. `installWorkspaceHeader()` wraps the global `fetch` once and
- * stamps `X-Aughor-Workspace` on requests bound for the API; the server binds it to a
+ * stamps `X-Pramanyx-Workspace` on requests bound for the API; the server binds it to a
  * contextvar for the life of the request and every gate reads it ambiently.
  *
  * Deliberately NOT persisted here. `page.tsx` already stores the last workspace for its
@@ -33,7 +33,7 @@ export function getActiveWorkspace(): string {
 let installed = false;
 
 /**
- * Stamp `X-Aughor-Workspace` on every request to the API base. Idempotent, and a no-op
+ * Stamp `X-Pramanyx-Workspace` on every request to the API base. Idempotent, and a no-op
  * on the server (there is no shared global `fetch` to patch per user there, and a header
  * set process-wide would be one user's workspace applied to everyone's requests).
  */
@@ -61,8 +61,8 @@ export function installWorkspaceHeader(): void {
     const headers = new Headers(
       init?.headers ?? (input instanceof Request ? input.headers : undefined),
     );
-    if (!headers.has("X-Aughor-Workspace")) {
-      headers.set("X-Aughor-Workspace", activeWorkspace);
+    if (!headers.has("X-Pramanyx-Workspace")) {
+      headers.set("X-Pramanyx-Workspace", activeWorkspace);
     }
     return original(input, { ...init, headers });
   };

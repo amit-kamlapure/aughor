@@ -2,7 +2,7 @@ name: CI
 
 # Minimal gate (REC-07 / OPS-01): nothing ran the 2200+ tests on a change before
 # this. Runs on every PR and on pushes to main. The test env is hermetic — all
-# stores honour AUGHOR_*_DB overrides (REC-04) so CI never depends on real data.
+# stores honour PRAMANYX_*_DB overrides (REC-04) so CI never depends on real data.
 on:
   pull_request:
     # Pure docs / data-file changes can't affect the tests, the build, or codegen,
@@ -45,7 +45,7 @@ permissions:
 
 jobs:
   backend:
-    name: Backend · pytest (py${{ matrix.python }})
+    name: Backend · pytest (py${{ matrix.python }} · ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -60,26 +60,30 @@ jobs:
           ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
               && fromJSON('["3.11","3.12","3.13"]')
               || fromJSON('["3.11"]') }}
+        # The suite runs as four parallel jobs, a quarter of the test FILES each (tests/_shard.py):
+        # one process per job and the files in the same order, as before — it was ~24 min in one job.
+        # Every file runs in exactly one shard (tests/unit/test_test_shards.py).
+        shard: [1, 2, 3, 4]
     # Track B1 (docs/TENX_PROGRAM_2026-11-05.md): a real Postgres, so the shared-state tests RUN.
     # Until 2026-11-06 every one of them skipped here ("no live Postgres to prove against") — 23 of
     # 36, including claim contention, peer-boot recovery, schema isolation and migrations-run-once —
     # so "Postgres as the source of truth" had never been proven by a run anyone could point to.
     # The pgvector image, so the semantic index's pgvector backend (4 more tests) is proven by the
-    # same server. AUGHOR_REQUIRE_PG_TESTS makes a missing service a FAILURE, not quiet skips.
+    # same server. PRAMANYX_REQUIRE_PG_TESTS makes a missing service a FAILURE, not quiet skips.
     services:
       postgres:
         image: pgvector/pgvector:pg16@sha256:0dd3149a06e4579a0d70d8fef9945636cd514005e7237deb27f9b67886f8dc4f
         env:
-          POSTGRES_PASSWORD: aughor
-          POSTGRES_DB: aughor
+          POSTGRES_PASSWORD: pramanyx
+          POSTGRES_DB: pramanyx
         ports: ["5544:5432"]
         options: >-
-          --health-cmd "pg_isready -U postgres -d aughor"
+          --health-cmd "pg_isready -U postgres -d pramanyx"
           --health-interval 5s --health-timeout 5s --health-retries 12
     env:
-      AUGHOR_PG_TEST_URL: postgres://postgres:aughor@localhost:5544/aughor
-      AUGHOR_PGVECTOR_TEST_URL: postgres://postgres:aughor@localhost:5544/aughor
-      AUGHOR_REQUIRE_PG_TESTS: "1"
+      PRAMANYX_PG_TEST_URL: postgres://postgres:pramanyx@localhost:5544/pramanyx
+      PRAMANYX_PGVECTOR_TEST_URL: postgres://postgres:pramanyx@localhost:5544/pramanyx
+      PRAMANYX_REQUIRE_PG_TESTS: "1"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - name: Install uv
@@ -98,6 +102,8 @@ jobs:
         # Exclude the live-LLM suites (e2e ~100s/test, eval = accuracy ratchet).
         # Both need a real model + network and would hang/flake in CI.
         # -rs lists every skip with its reason, so a Postgres test that stopped running is said in the log.
+        env:
+          PRAMANYX_TEST_SHARD: ${{ matrix.shard }}/4
         run: uv run --python ${{ matrix.python }} pytest -q -rs -m "not e2e and not eval"
 
   frontend:
@@ -143,22 +149,22 @@ jobs:
         # were the root cause of the light-theme drift fixed in Wave 1.
         run: npm run lint:vars
       - name: Chart-SSR bundle drift
-        # CA-4 one renderer: aughor/export/chart_ssr.bundle.mjs is the web
+        # CA-4 one renderer: pramanyx/export/chart_ssr.bundle.mjs is the web
         # resolver bundled for the Python export path (esbuild pinned in the
         # script). Rebuild and fail if the committed bundle is stale — the same
         # philosophy as the api.gen.ts codegen-drift job.
         run: |
           npm run build:chart-ssr
-          git diff --exit-code ../aughor/export/chart_ssr.bundle.mjs
+          git diff --exit-code ../pramanyx/export/chart_ssr.bundle.mjs
       - name: Cockpit-validator bundle drift
-        # Arc CT, CT-2: aughor/dashboards/validate.bundle.mjs is web/lib/dashboards/rules.ts
+        # Arc CT, CT-2: pramanyx/dashboards/validate.bundle.mjs is web/lib/dashboards/rules.ts
         # bundled for the server, so a spec is checked by the function the browser
         # draws it with. Rebuild and fail if the committed bundle is stale — a rule
         # changed in the web and not rebuilt is a server that accepts what the
         # browser refuses, or refuses what it draws.
         run: |
           npm run build:dashboard-validate
-          git diff --exit-code ../aughor/dashboards/validate.bundle.mjs
+          git diff --exit-code ../pramanyx/dashboards/validate.bundle.mjs
       - name: Chart-palette gate
         # CA-4: the six-check palette validator (lightness band, chroma floor,
         # CVD separation, normal-vision floor, contrast vs the real card

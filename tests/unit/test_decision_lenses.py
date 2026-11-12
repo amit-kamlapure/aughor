@@ -15,9 +15,9 @@ from types import SimpleNamespace
 
 import duckdb
 
-from aughor.agent.opportunity import annotate_opportunity, compute_opportunity
-from aughor.db.connection import DuckDBConnection
-from aughor.overview.build import _lens_named_outlier
+from pramanyx.agent.opportunity import annotate_opportunity, compute_opportunity
+from pramanyx.db.connection import DuckDBConnection
+from pramanyx.overview.build import _lens_named_outlier
 
 
 # ── (1) the opportunity computation ──────────────────────────────────────────
@@ -375,7 +375,7 @@ def test_lens_findings_keep_their_own_measure_label():
     terminal alias pass stamps the INTAKE's metric onto every phase, and a forward-chained
     lens measures something else. Each lens records its own label; only phases that ran the
     primary metric may take the primary label."""
-    from aughor.agent.investigate import _lens_phase_from_run
+    from pramanyx.agent.investigate import _lens_phase_from_run
     from types import SimpleNamespace
     run = SimpleNamespace(
         ok=True,

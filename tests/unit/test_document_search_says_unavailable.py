@@ -17,19 +17,19 @@ import json
 import pytest
 from fastapi import HTTPException
 
-import aughor.knowledge.indexer as idx
+import pramanyx.knowledge.indexer as idx
 
 
 @pytest.fixture()
 def plane(monkeypatch, tmp_path):
     """One registered document; the embedder and the store fail on request."""
     registry = tmp_path / "documents.json"
-    monkeypatch.setenv("AUGHOR_DOCUMENTS_REGISTRY", str(registry))
-    monkeypatch.setattr("aughor.db.registry.get_connection_org", lambda _c: None)
-    monkeypatch.setattr("aughor.security.authz.tenant_scope", lambda: None)
-    monkeypatch.setattr("aughor.custom_agents.context.agent_doc_ids", lambda: None)
+    monkeypatch.setenv("PRAMANYX_DOCUMENTS_REGISTRY", str(registry))
+    monkeypatch.setattr("pramanyx.db.registry.get_connection_org", lambda _c: None)
+    monkeypatch.setattr("pramanyx.security.authz.tenant_scope", lambda: None)
+    monkeypatch.setattr("pramanyx.custom_agents.context.agent_doc_ids", lambda: None)
     # What the old first check read: a store that is down answers 0, as an empty one does.
-    monkeypatch.setattr("aughor.semantic.vector_store.collection_count", lambda _c: 0)
+    monkeypatch.setattr("pramanyx.semantic.vector_store.collection_count", lambda _c: 0)
     calls = {"embed": 0}
 
     def _set(*, registered=True, embed_ok=True, store_ok=True):
@@ -54,10 +54,10 @@ def plane(monkeypatch, tmp_path):
                 raise ConnectionError("qdrant did not answer")
             return [{"id": "1", "payload": {"doc_id": "d1", "text": "a passage", "title": "d1"}}]
 
-        monkeypatch.setattr("aughor.semantic.embedder.embed_one", _embed)
-        monkeypatch.setattr("aughor.semantic.vector_store.search", _search)
+        monkeypatch.setattr("pramanyx.semantic.embedder.embed_one", _embed)
+        monkeypatch.setattr("pramanyx.semantic.vector_store.search", _search)
         # an embedder that is down is searched by words (FA-1): the store's passages are read for that
-        monkeypatch.setattr("aughor.semantic.vector_store.scroll_points", _scroll)
+        monkeypatch.setattr("pramanyx.semantic.vector_store.scroll_points", _scroll)
         return calls
     return _set
 
@@ -90,7 +90,7 @@ def test_a_healthy_search_still_answers(plane):
 
 
 def test_the_chat_tool_says_so_over_the_real_indexer(plane):
-    from aughor.agent import platform_tools as pt
+    from pramanyx.agent import platform_tools as pt
 
     plane(embed_ok=False, store_ok=False)
     out = pt.search_documents("c1", {"query": "refund policy"})
@@ -108,7 +108,7 @@ def test_a_prompt_reads_nothing_when_nothing_is_indexed(plane):
 
 
 def test_the_http_door_answers_503_not_an_empty_list(plane):
-    from aughor.routers.knowledge import search_documents_endpoint
+    from pramanyx.routers.knowledge import search_documents_endpoint
 
     plane(embed_ok=False, store_ok=False)
     with pytest.raises(HTTPException) as exc:

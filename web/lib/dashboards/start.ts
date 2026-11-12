@@ -7,7 +7,7 @@
  *
  * Or, since 2026-10-10, from an object (design-mockups/cockpit-from-object.html): the server proposes what the object
  * holds — its categories as filters, its numbers as figures, a chart of it per day, a table with a detail and its
- * declared actions (`aughor/dashboards/from_object.py`) — the person ticks what they want, and it is laid out here.
+ * declared actions (`pramanyx/dashboards/from_object.py`) — the person ticks what they want, and it is laid out here.
  */
 import { keepDashboard, type DashboardFromObject } from "@/lib/api";
 import { CHART_DAYS, MAX_LABEL, MAX_TITLE } from "@/lib/dashboards/catalog";
@@ -70,7 +70,7 @@ export function processDashboardHolds(process: Pick<ProcessDetail, "stages">): s
 export async function startDashboard(connectionId: string, title: string, spec: unknown, note: string): Promise<string> {
   const id = dashboardIdFor(title);
   await keepDashboard(connectionId, id, spec, note);
-  try { localStorage.setItem(`aughor:cockpit:${connectionId}`, id); } catch { /* the dashboard opens on its own tab */ }
+  try { localStorage.setItem(`pramanyx:cockpit:${connectionId}`, id); } catch { /* the dashboard opens on its own tab */ }
   return id;
 }
 

@@ -1,5 +1,5 @@
-"""Temporal Tier 1 — current-regime detection. See aughor/explorer/regime.py."""
-from aughor.explorer.regime import detect_current_regime, adaptive_window
+"""Temporal Tier 1 — current-regime detection. See pramanyx/explorer/regime.py."""
+from pramanyx.explorer.regime import detect_current_regime, adaptive_window
 
 
 def test_flat_series_has_no_regime_shift():

@@ -1,6 +1,6 @@
 /**
  * A finding's novelty, as the reader sees it. The explorer scores novelty 1–5 and clamps it there
- * (`aughor/explorer/verify.py` `clamp_novelty`); the Briefing read it out of 10 — "High" at 7, a meter full at 10 —
+ * (`pramanyx/explorer/verify.py` `clamp_novelty`); the Briefing read it out of 10 — "High" at 7, a meter full at 10 —
  * so on theLook's 44 findings (scored 1–5) "High" never showed, the top score read "Notable", and the meter stopped
  * half way (2026-10-13). One scale, here.
  */

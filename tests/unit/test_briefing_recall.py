@@ -7,7 +7,7 @@ from datetime import date, datetime, timezone
 
 import pytest
 
-from aughor.briefing import recall, versions
+from pramanyx.briefing import recall, versions
 
 
 def _brief(**metrics) -> dict:
@@ -106,7 +106,7 @@ def test_the_recall_reads_the_warehouse_not_the_cache():
 def test_every_comparison_window_is_read_at_the_same_age():
     """BR-9 already gives each comparison its own as-of; BR-6 depends on it, so it is pinned
     here. August read on 15 September is 14 days old, so July is read at 14 days too."""
-    from aughor.briefing.ranges import RangeSpec
+    from pramanyx.briefing.ranges import RangeSpec
 
     spec = RangeSpec(preset="custom", start=date(2026, 8, 1), end=date(2026, 9, 1),
                      previous_start=date(2026, 7, 1), previous_end=date(2026, 8, 1),
@@ -126,7 +126,7 @@ class _Metric:
 @pytest.mark.parametrize("kind,status", [("flow", "final"), ("cohort", "provisional"),
                                          ("cohort", "to_date"), ("stock", "final")])
 def test_a_comparison_that_is_at_equal_age_says_nothing(kind, status):
-    from aughor.briefing.ranges import equal_age
+    from pramanyx.briefing.ranges import equal_age
     out = equal_age(_Metric(kind), status)
     assert out["equal"] is True and out["why"] == ""
 
@@ -135,7 +135,7 @@ def test_a_comparison_that_is_at_equal_age_says_nothing(kind, status):
 def test_a_provisional_flow_figure_says_it_is_not_at_equal_age(status):
     """Its rows arrive late with no outcome date, so there is nothing to bound — the honest
     comparison needs BR-8's daily readings, and until then the page SAYS so."""
-    from aughor.briefing.ranges import equal_age
+    from pramanyx.briefing.ranges import equal_age
     out = equal_age(_Metric("flow"), status)
 
     assert out["equal"] is False
@@ -154,8 +154,8 @@ def test_an_over_cap_metric_is_not_reported_as_undefined(monkeypatch):
     Drives the real `measure_range`, so it fails if the reporting regresses."""
     from datetime import date
 
-    from aughor.briefing import ranges
-    from aughor.semantic import metric_time as mt
+    from pramanyx.briefing import ranges
+    from pramanyx.semantic import metric_time as mt
 
     class _M:
         def __init__(self, n):
@@ -164,7 +164,7 @@ def test_an_over_cap_metric_is_not_reported_as_undefined(monkeypatch):
             self.time_source, self.time_confirmed_by = "rule", None
 
     governed = [_M(f"m{i}") for i in range(ranges.MAX_METRICS + 2)]
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda **k: governed)
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda **k: governed)
     monkeypatch.setattr(mt, "ensure_dates", lambda *a, **k: {})
     monkeypatch.setattr(mt, "declared", lambda m: True)
     monkeypatch.setattr(mt, "run_measure", lambda *a, **k: ([], "measured elsewhere"))
@@ -188,7 +188,7 @@ def test_an_over_cap_metric_is_not_reported_as_undefined(monkeypatch):
 def test_a_plain_magnitude_is_rounded_not_shown_to_float_noise():
     """theLook's ship-to-delivery lead time read "1.95529" days on the Briefing: `:g` gives six
     significant figures, which is right for a count and wrong for anything measured."""
-    from aughor.knowledge.metric_moves import format_value
+    from pramanyx.knowledge.metric_moves import format_value
 
     assert format_value(1.9552912223133716, "Lead Time", "days, roughly 0-30", "$") == "1.96"
     assert format_value(6951.0, "Units Sold", "count", "$") == "6951"      # a count stays whole

@@ -1,11 +1,11 @@
-"""Tests for sharded-table schema compression (aughor/tools/schema_linker.compress_schema).
+"""Tests for sharded-table schema compression (pramanyx/tools/schema_linker.compress_schema).
 
 Contract: collapse families of dated/sharded tables to one representative + a count note, keep every
 non-sharded table in full, and be a no-op on ordinary schemas (recall-safe wide-warehouse lever).
 """
 from __future__ import annotations
 
-from aughor.tools.schema_linker import compress_schema, _shard_stem, link_schema
+from pramanyx.tools.schema_linker import compress_schema, _shard_stem, link_schema
 
 
 def _sharded_schema(n=12):

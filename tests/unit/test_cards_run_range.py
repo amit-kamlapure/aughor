@@ -11,11 +11,11 @@ from datetime import date
 
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.briefing.ranges import RangeSpec
-from aughor.control_plane.contracts.execution import QueryResult
-from aughor.cards.models import StoredCard
-from aughor.cards.store import get_card, upsert_card
+from pramanyx.api import app
+from pramanyx.briefing.ranges import RangeSpec
+from pramanyx.control_plane.contracts.execution import QueryResult
+from pramanyx.cards.models import StoredCard
+from pramanyx.cards.store import get_card, upsert_card
 
 client = TestClient(app)
 SPEC = RangeSpec(preset="last_week", start=date(2026, 8, 17), end=date(2026, 8, 24),
@@ -25,15 +25,15 @@ PROFILE = {"tables": {"orders": {"primary_timestamp": "created_at"}, "products":
 
 
 def _stub(monkeypatch, seen: dict):
-    monkeypatch.setattr("aughor.db.connection.open_connection_for",
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for",
                         lambda conn: types.SimpleNamespace(close=lambda: None, dialect="duckdb"))
 
     def run(db, sql, **kw):
         seen["sql"] = sql
         return QueryResult(hypothesis_id="c", sql=sql, columns=["n"], rows=[[7]], row_count=1)
-    monkeypatch.setattr("aughor.sql.executor.execute_guarded", run)
-    monkeypatch.setattr("aughor.briefing.ranges.resolve_for", lambda cid, preset=None, **kw: (SPEC, ""))
-    monkeypatch.setattr("aughor.tools.profile_cache.latest_profile_entry", lambda cid: PROFILE)
+    monkeypatch.setattr("pramanyx.sql.executor.execute_guarded", run)
+    monkeypatch.setattr("pramanyx.briefing.ranges.resolve_for", lambda cid, preset=None, **kw: (SPEC, ""))
+    monkeypatch.setattr("pramanyx.tools.profile_cache.latest_profile_entry", lambda cid: PROFILE)
 
 
 def test_a_range_cuts_the_card_on_its_tables_date_and_never_rolls_into_the_history(monkeypatch):
@@ -67,7 +67,7 @@ def test_a_run_says_its_own_figure_and_the_standing_one_stays_the_cards(monkeypa
         def run(db, sql, **kw):
             seen["sql"] = sql
             return QueryResult(hypothesis_id="c", sql=sql, columns=["n"], rows=[[figure]], row_count=1)
-        monkeypatch.setattr("aughor.sql.executor.execute_guarded", run)
+        monkeypatch.setattr("pramanyx.sql.executor.execute_guarded", run)
 
     answering("8416308.73")                      # as the warehouse answers: text
     standing = client.post(f"/cards/{card.id}/run").json()
@@ -83,7 +83,7 @@ def test_a_run_says_its_own_figure_and_the_standing_one_stays_the_cards(monkeypa
 
 def test_a_table_has_no_figure(monkeypatch):
     _stub(monkeypatch, {})
-    monkeypatch.setattr("aughor.sql.executor.execute_guarded", lambda db, sql, **kw: QueryResult(
+    monkeypatch.setattr("pramanyx.sql.executor.execute_guarded", lambda db, sql, **kw: QueryResult(
         hypothesis_id="c", sql=sql, columns=["region", "n"], rows=[["NA", 3], ["EU", 2]], row_count=2))
     card = upsert_card(StoredCard(connection_id="c-range", scope="connection", scope_ref="c-range",
                                      sql="SELECT region, COUNT(*) AS n FROM orders GROUP BY 1", title="by region"))
@@ -107,7 +107,7 @@ def _answers(monkeypatch, seen: list, by_window: dict):
         seen.append(sql)
         figure = next((v for day, v in by_window.items() if day in sql), None)
         return QueryResult(hypothesis_id="c", sql=sql, columns=["n"], rows=[[figure]], row_count=1)
-    monkeypatch.setattr("aughor.sql.executor.execute_guarded", run)
+    monkeypatch.setattr("pramanyx.sql.executor.execute_guarded", run)
 
 
 def test_asked_to_compare_a_cut_figure_is_read_for_its_comparison_the_same_way(monkeypatch):
@@ -120,7 +120,7 @@ def test_asked_to_compare_a_cut_figure_is_read_for_its_comparison_the_same_way(m
                                      sql="SELECT COUNT(*) AS n FROM orders", title="orders"))
     body = client.post(f"/cards/{card.id}/run", params={"preset": "last_week", "compare": True}).json()
     assert body["value"] == 7
-    from aughor.briefing.ranges import phrases
+    from pramanyx.briefing.ranges import phrases
     assert body["previous"] == {"covers": phrases(SPEC)["compared_with"], "word": "the week before",
                                 "equal_age": True, "value": 5, "why": ""}
     assert len(seen) == 2 and "2026-08-10" in seen[1] and "2026-08-17" in seen[1]
@@ -130,7 +130,7 @@ def test_asked_to_compare_a_cut_figure_is_read_for_its_comparison_the_same_way(m
 def test_a_comparison_before_the_range_settles_says_it_is_not_at_equal_age(monkeypatch):
     _stub(monkeypatch, {})
     young = RangeSpec(**{**SPEC.__dict__, "as_of": date(2026, 8, 26)})
-    monkeypatch.setattr("aughor.briefing.ranges.resolve_for", lambda cid, preset=None, **kw: (young, ""))
+    monkeypatch.setattr("pramanyx.briefing.ranges.resolve_for", lambda cid, preset=None, **kw: (young, ""))
     _answers(monkeypatch, [], {"2026-08-24": 7, "2026-08-10": 5})
     card = upsert_card(StoredCard(connection_id="c-range", scope="connection", scope_ref="c-range",
                                      sql="SELECT COUNT(*) AS n FROM orders", title="orders"))
@@ -142,7 +142,7 @@ def test_a_comparison_on_a_table_never_seen_to_settle_is_not_at_equal_age_howeve
     _stub(monkeypatch, {})
     for moving, equal in ((("orders",), False), (("users",), True)):
         spec = RangeSpec(**{**SPEC.__dict__, "still_moving": moving})
-        monkeypatch.setattr("aughor.briefing.ranges.resolve_for", lambda cid, preset=None, spec=spec, **kw: (spec, ""))
+        monkeypatch.setattr("pramanyx.briefing.ranges.resolve_for", lambda cid, preset=None, spec=spec, **kw: (spec, ""))
         _answers(monkeypatch, [], {"2026-08-24": 7, "2026-08-10": 5})
         card = upsert_card(StoredCard(connection_id="c-range", scope="connection", scope_ref="c-range",
                                          sql="SELECT COUNT(*) AS n FROM orders", title="orders"))
@@ -153,7 +153,7 @@ def test_a_comparison_on_a_table_never_seen_to_settle_is_not_at_equal_age_howeve
 def test_a_card_joining_a_table_never_seen_to_settle_is_held_back_by_it_though_another_dates_it(monkeypatch):
     _stub(monkeypatch, {})
     spec = RangeSpec(**{**SPEC.__dict__, "still_moving": ("items",)})
-    monkeypatch.setattr("aughor.briefing.ranges.resolve_for", lambda cid, preset=None, **kw: (spec, ""))
+    monkeypatch.setattr("pramanyx.briefing.ranges.resolve_for", lambda cid, preset=None, **kw: (spec, ""))
     _answers(monkeypatch, [], {"2026-08-24": 7, "2026-08-10": 5})
     card = upsert_card(StoredCard(connection_id="c-range", scope="connection", scope_ref="c-range",
                                      sql="SELECT COUNT(*) AS n FROM orders JOIN items ON orders.id = items.order_id", title="orders"))

@@ -22,9 +22,9 @@ from datetime import datetime, timezone
 
 import pytest
 
-from aughor.automations.engine import _dispatch_investigate
-from aughor.automations.models import Automation, Condition, Effect
-from aughor.custom_agents import create_agent, delete_agent, list_agents, update_agent
+from pramanyx.automations.engine import _dispatch_investigate
+from pramanyx.automations.models import Automation, Condition, Effect
+from pramanyx.custom_agents import create_agent, delete_agent, list_agents, update_agent
 
 NOW = datetime(2026, 7, 29, 12, 0, tzinfo=timezone.utc)
 
@@ -39,7 +39,7 @@ def _clean_agents():
 @pytest.fixture(autouse=True)
 def _agents_flag_on(monkeypatch):
     """H1 rides `agents.user_defined`; the flag-off case is asserted explicitly below."""
-    import aughor.kernel.flags as flags
+    import pramanyx.kernel.flags as flags
     monkeypatch.setattr(flags, "flag_enabled",
                         lambda name: True if name == "agents.user_defined" else False)
 
@@ -62,7 +62,7 @@ def _capture_submit(monkeypatch, *, job_id="job-1"):
         captured.append({"kind": kind, "work": work, "conn_id": conn_id, "idem": idempotency_key})
         return job_id
 
-    monkeypatch.setattr("aughor.kernel.jobs.submit_background_tick", fake_submit)
+    monkeypatch.setattr("pramanyx.kernel.jobs.submit_background_tick", fake_submit)
     return captured
 
 
@@ -79,7 +79,7 @@ def _capture_ask(monkeypatch):
 
         return _gen()
 
-    monkeypatch.setattr("aughor.routers.investigations.build_ask_stream", fake_stream)
+    monkeypatch.setattr("pramanyx.routers.investigations.build_ask_stream", fake_stream)
     return seen
 
 
@@ -91,7 +91,7 @@ def _capture_ask(monkeypatch):
     ({"days": 3, "source": "learned", "still_moving": [], "horizon": 14, "rewrites": []}, False),
 ])
 def test_a_scheduled_run_is_told_of_a_source_never_seen_to_settle(monkeypatch, lag, told):
-    monkeypatch.setattr("aughor.settling.store.connection_lag", lambda cid: lag)
+    monkeypatch.setattr("pramanyx.settling.store.connection_lag", lambda cid: lag)
     submitted = _capture_submit(monkeypatch)
     seen = _capture_ask(monkeypatch)
     _dispatch_investigate(Effect(kind="investigate", config={"question": "why did refunds spike?"}), _automation())
@@ -220,7 +220,7 @@ def test_a_waited_run_publishes_answer_AND_summary(monkeypatch):
     20KB report Slack never saw; a chain must be able to bind the part worth reading."""
     import json as _json
 
-    from aughor.automations.engine import AWAIT_KEY
+    from pramanyx.automations.engine import AWAIT_KEY
 
     def fake_stream(req, request):
         async def _gen():
@@ -233,7 +233,7 @@ def test_a_waited_run_publishes_answer_AND_summary(monkeypatch):
 
         return _gen()
 
-    monkeypatch.setattr("aughor.routers.investigations.build_ask_stream", fake_stream)
+    monkeypatch.setattr("pramanyx.routers.investigations.build_ask_stream", fake_stream)
     effect = Effect(kind="investigate",
                     config={"question": "what changed?", AWAIT_KEY: True})
 

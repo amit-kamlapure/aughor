@@ -1,24 +1,24 @@
 """AST read-only / mutation gate — the cases the regex first-token check misses.
 
-Locks the contract for aughor/sql/readonly.py (is_mutating / is_destructive /
-disallowed_functions) and aughor/sql/tables.py (CTE-safe extraction), plus the
+Locks the contract for pramanyx/sql/readonly.py (is_mutating / is_destructive /
+disallowed_functions) and pramanyx/sql/tables.py (CTE-safe extraction), plus the
 SafetyChecker integration that now blocks AST-detected mutations.
 
 High-precision: a real SELECT must NEVER be flagged mutating.
 """
-from aughor.db.connection import _validate
-from aughor.sql.readonly import disallowed_functions, is_destructive, is_mutating
-from aughor.sql.tables import extract_tables
-from aughor.security.safety import SafetyChecker, SafetyVerdict
+from pramanyx.db.connection import _validate
+from pramanyx.sql.readonly import disallowed_functions, is_destructive, is_mutating
+from pramanyx.sql.tables import extract_tables
+from pramanyx.security.safety import SafetyChecker, SafetyVerdict
 
 
 # ── connection-level _validate: keyword-in-string is data, not a statement ────
 
 def test_validate_allows_dml_keyword_inside_a_string_literal():
-    # The natural aughor_ops self-investigation query — task names literally
+    # The natural pramanyx_ops self-investigation query — task names literally
     # contain 'execute'/'delete'-ish words; these must not be mistaken for DML.
     for sql in [
-        "SELECT input FROM aughor_ops.task_history WHERE task = 'sql.execute'",
+        "SELECT input FROM pramanyx_ops.task_history WHERE task = 'sql.execute'",
         "SELECT * FROM orders WHERE note = 'please DELETE this later'",
         "SELECT 'DROP TABLE x' AS s",
         "SELECT task FROM t WHERE task IN ('sql.execute', 'briefing.run')",
@@ -32,7 +32,7 @@ def test_validate_still_blocks_real_mutations_even_with_strings():
     # must still be rejected (the fix only blanks string DATA, not the statement).
     for sql in [
         "DELETE FROM t WHERE note = 'keep this'",
-        "DROP TABLE aughor_ops.task_history",
+        "DROP TABLE pramanyx_ops.task_history",
         "UPDATE t SET x = 1 WHERE label = 'select me'",
         "INSERT INTO t (a) VALUES ('sql.execute')",
     ]:
@@ -129,7 +129,7 @@ def test_duckdb_file_readers_are_disallowed_in_any_position():
         ("SELECT * FROM sniff_csv('/etc/passwd')", "SNIFF_CSV"),
         ("SELECT * FROM postgres_scan('host=h', 'public', 't')", "POSTGRES_SCAN"),
         ("SELECT * FROM duckdb_secrets()", "DUCKDB_SECRETS"),
-        ("SELECT getenv('AUGHOR_SECRET_KEY')", "GETENV"),
+        ("SELECT getenv('PRAMANYX_SECRET_KEY')", "GETENV"),
         # CTE position — the reader must be found anywhere in the tree
         ("WITH t AS (SELECT * FROM read_blob('/etc/shadow')) SELECT * FROM t", "READ_BLOB"),
     ]:

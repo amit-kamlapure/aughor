@@ -25,9 +25,9 @@ export interface ChartRequest {
 export type ChartRenderer = (req: ChartRequest) => Promise<Buffer | null>;
 
 interface Env {
-  AUGHOR_API_URL?: string;
-  AUGHOR_API_KEY?: string;
-  AUGHOR_CONNECTION_ID?: string;
+  PRAMANYX_API_URL?: string;
+  PRAMANYX_API_KEY?: string;
+  PRAMANYX_CONNECTION_ID?: string;
 }
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -36,11 +36,11 @@ export function createChartRenderer(
   env: Env = process.env,
   fetchImpl: typeof fetch = fetch,
 ): ChartRenderer {
-  const base = (env.AUGHOR_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
+  const base = (env.PRAMANYX_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
   // The connection names the org whose currency the axis should read in. It is
   // never on the `/ask` wire, so the renderer supplies it the same way the ask
   // stream does — otherwise a euro business gets charts in bare numbers.
-  const connection = env.AUGHOR_CONNECTION_ID ?? "workspace";
+  const connection = env.PRAMANYX_CONNECTION_ID ?? "workspace";
 
   return async function renderChart(req) {
     try {
@@ -48,7 +48,7 @@ export function createChartRenderer(
         method: "POST",
         headers: {
           "content-type": "application/json",
-          ...(env.AUGHOR_API_KEY ? { "x-api-key": env.AUGHOR_API_KEY } : {}),
+          ...(env.PRAMANYX_API_KEY ? { "x-api-key": env.PRAMANYX_API_KEY } : {}),
         },
         body: JSON.stringify({ ...req, connection_id: connection }),
       });

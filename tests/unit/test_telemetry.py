@@ -1,5 +1,5 @@
 """
-Unit tests for aughor.telemetry.
+Unit tests for pramanyx.telemetry.
 
 All tests run without Langfuse or OTel credentials — the module must be
 completely no-op (no crash, correct return values) when env vars are absent.
@@ -13,21 +13,21 @@ import pytest
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _reload_telemetry():
-    """Force a fresh import of aughor.telemetry (clears the lazy-init flags).
+    """Force a fresh import of pramanyx.telemetry (clears the lazy-init flags).
 
     Rebinds the PACKAGE ATTRIBUTE as well as the `sys.modules` entry. Deleting only the
-    latter leaves `aughor.telemetry` (the attribute on the parent package) pointing at the
+    latter leaves `pramanyx.telemetry` (the attribute on the parent package) pointing at the
     old module, so the two import spellings resolve to DIFFERENT module objects with
-    different ContextVars: `import aughor.telemetry as t` reads the stale attribute while
-    `from aughor.telemetry import f` reads the fresh entry. A trace bound through one is
+    different ContextVars: `import pramanyx.telemetry as t` reads the stale attribute while
+    `from pramanyx.telemetry import f` reads the fresh entry. A trace bound through one is
     then invisible through the other, silently — which is how MI-1's tests came to pass
     alone and fail in the suite on 2026-09-03."""
-    import aughor
+    import pramanyx
     for mod in list(sys.modules.keys()):
-        if "aughor.telemetry" in mod or mod == "aughor.telemetry":
+        if "pramanyx.telemetry" in mod or mod == "pramanyx.telemetry":
             del sys.modules[mod]
-    import aughor.telemetry as tel
-    aughor.telemetry = tel
+    import pramanyx.telemetry as tel
+    pramanyx.telemetry = tel
     return tel
 
 
@@ -35,25 +35,25 @@ def _reload_telemetry():
 def _restore_telemetry_module():
     """Put the original module object back — in BOTH places — when this file is done, so
     the reload above cannot leak a divergent module into every file that runs after."""
-    import aughor
-    import aughor.telemetry as original
+    import pramanyx
+    import pramanyx.telemetry as original
     yield
-    sys.modules["aughor.telemetry"] = original
-    aughor.telemetry = original
+    sys.modules["pramanyx.telemetry"] = original
+    pramanyx.telemetry = original
 
 
 # ── new_trace ─────────────────────────────────────────────────────────────────
 
 def test_new_trace_returns_investigation_id_when_disabled():
     """new_trace must return investigation_id even when Langfuse is not configured."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     result = tel.new_trace("inv-abc123", "Why did sales drop?", "conn-1")
     assert result == "inv-abc123"
 
 
 def test_new_trace_idempotent_on_same_id():
     """Calling new_trace twice with the same id should not raise."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     r1 = tel.new_trace("inv-dup", "Q1", "c1")
     r2 = tel.new_trace("inv-dup", "Q1", "c1")
     assert r1 == r2 == "inv-dup"
@@ -72,7 +72,7 @@ def test_new_trace_works_without_env_vars(monkeypatch):
 
 def test_span_context_manager_no_crash_when_disabled():
     """span() must work as a no-op context manager when telemetry is disabled."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     with tel.span("", "some_node", {"meta": "data"}) as sp:
         result = 42
     # sp is None (no backend configured), result should be computed normally
@@ -82,7 +82,7 @@ def test_span_context_manager_no_crash_when_disabled():
 
 def test_span_with_unknown_trace_id_no_crash():
     """span() with a trace_id that was never registered should not crash."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     with tel.span("ghost-trace-id", "decompose", {"iteration": 0}) as sp:
         x = "inner work"
     assert x == "inner work"
@@ -91,7 +91,7 @@ def test_span_with_unknown_trace_id_no_crash():
 
 def test_span_exception_propagates():
     """Exceptions raised inside span() must propagate normally."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     with pytest.raises(ValueError, match="intentional"):
         with tel.span("", "node", {}):
             raise ValueError("intentional")
@@ -101,13 +101,13 @@ def test_span_exception_propagates():
 
 def test_end_trace_no_crash_on_unknown_id():
     """end_trace on a trace that was never registered must not raise."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     tel.end_trace("nonexistent-trace-id")  # should be silent no-op
 
 
 def test_end_trace_removes_from_internal_dict():
     """After end_trace, the trace is removed from the internal _traces dict."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     # Manually insert a sentinel so we can verify removal
     tel._traces["test-end-trace"] = object()
     tel.end_trace("test-end-trace")
@@ -118,7 +118,7 @@ def test_end_trace_removes_from_internal_dict():
 
 def test_log_generation_no_crash_when_disabled():
     """log_generation must be a silent no-op when no endpoint is configured."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     tel.log_generation(
         trace_id="",
         name="decompose",
@@ -134,7 +134,7 @@ def test_log_generation_no_crash_when_disabled():
 
 def test_log_generation_with_unknown_trace_id_no_crash():
     """log_generation on an unregistered trace_id must not crash."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     tel.log_generation(
         trace_id="unknown-id",
         name="synthesize",
@@ -147,7 +147,7 @@ def test_log_generation_with_unknown_trace_id_no_crash():
 
 def test_node_span_return_value_preserved():
     """@node_span must not alter the wrapped function's return value."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
 
     @tel.node_span("test_node")
     def my_node(state):
@@ -159,7 +159,7 @@ def test_node_span_return_value_preserved():
 
 def test_node_span_two_arg_signature():
     """@node_span works for (state, conn) two-argument node functions."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
 
     @tel.node_span("two_arg_node")
     def my_node(state, conn):
@@ -174,7 +174,7 @@ def test_node_span_two_arg_signature():
 
 def test_node_span_exception_propagates():
     """Exceptions inside a @node_span-wrapped function must propagate."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
 
     @tel.node_span("failing_node")
     def bad_node(state):
@@ -186,7 +186,7 @@ def test_node_span_exception_propagates():
 
 def test_node_span_no_crash_with_empty_hypotheses():
     """@node_span with no hypotheses in state must not raise."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
 
     @tel.node_span("scan")
     def scan_node(state):
@@ -198,8 +198,8 @@ def test_node_span_no_crash_with_empty_hypotheses():
 
 def test_node_span_reads_hypothesis_id_from_state():
     """@node_span correctly extracts hypothesis_id from the current index."""
-    from aughor.agent.state import Hypothesis
-    import aughor.telemetry as tel
+    from pramanyx.agent.state import Hypothesis
+    import pramanyx.telemetry as tel
 
     captured_meta = {}
 
@@ -235,7 +235,7 @@ def test_node_span_reads_hypothesis_id_from_state():
 
 def test_node_span_non_dict_state_passthrough():
     """If state is not a dict (unusual), the decorator must still call the function."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
 
     @tel.node_span("direct")
     def direct_node(state):
@@ -250,7 +250,7 @@ def test_node_span_non_dict_state_passthrough():
 
 def test_agent_state_typeddict_has_trace_id():
     """AgentState TypedDict must include trace_id as an annotated key."""
-    from aughor.agent.state import AgentState
+    from pramanyx.agent.state import AgentState
     annotations = AgentState.__annotations__
     assert "trace_id" in annotations, (
         "trace_id missing from AgentState — SSE start event and LangGraph state will break"
@@ -272,8 +272,8 @@ def test_sse_start_event_trace_id_format():
       2. _sse() serialises it into the event payload correctly.
     """
     import json
-    from aughor import telemetry as tel
-    from aughor.routers.investigations import _sse
+    from pramanyx import telemetry as tel
+    from pramanyx.routers.investigations import _sse
 
     inv_id = "inv-sse-format-check"
     trace_id = tel.new_trace(inv_id, "Why did revenue drop?", "conn-test")
@@ -297,7 +297,7 @@ def test_sse_start_event_trace_id_format():
 
 def test_flat_attrs_converts_to_otel_compatible_types():
     """_flat_attrs must produce only str/int/float/bool values."""
-    from aughor.telemetry import _flat_attrs
+    from pramanyx.telemetry import _flat_attrs
     result = _flat_attrs({"a": 1, "b": 3.14, "c": True, "d": "text", "e": [1, 2]})
     for v in result.values():
         assert isinstance(v, (str, int, float, bool)), f"Non-scalar OTel attribute: {v!r}"
@@ -326,17 +326,17 @@ def spans(monkeypatch):
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import SimpleSpanProcessor
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
 
     exporter = InMemorySpanExporter()
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
-    monkeypatch.setattr(tel, "_otel_tracer", provider.get_tracer("aughor-test"))
+    monkeypatch.setattr(tel, "_otel_tracer", provider.get_tracer("pramanyx-test"))
     monkeypatch.setattr(tel, "_otel_provider", provider)
     monkeypatch.setattr(tel, "_otel_init_done", True)
     monkeypatch.setattr(tel, "_traces", {})
     # The ledger emit is a separate sink and writes to the live data dir; off here.
-    monkeypatch.setenv("AUGHOR_KERNEL_EVENTS", "0")
+    monkeypatch.setenv("PRAMANYX_KERNEL_EVENTS", "0")
     return exporter
 
 
@@ -347,7 +347,7 @@ def _trace_ids(exporter) -> set[str]:
 def test_span_from_another_invocation_joins_the_same_trace(spans):
     """The memo is EMPTY — as it is in every invocation but the creating one. The
     span must still land on the investigation's trace, not a fresh one."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     with tel.span("inv-sliced", "phase8_angle", {"slice": 3}) as sp:
         pass
     assert sp is not None, "span was orphaned"
@@ -357,7 +357,7 @@ def test_span_from_another_invocation_joins_the_same_trace(spans):
 def test_two_invocations_produce_one_trace(spans):
     """The property that matters, stated directly: spans emitted by separate
     invocations — with no shared state between them — share a trace id."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     tel.new_trace("inv-sliced", "Why did sales drop?", "conn-1")
     with tel.span("inv-sliced", "decompose"):
         pass
@@ -376,8 +376,8 @@ def test_first_span_carries_the_trace_level_attributes(spans, monkeypatch):
     MI-0: the question inside that input is now custody-gated, so this opens the capture
     window to keep proving what the test is for — that the attributes ride the first span.
     The gate itself is proven in `test_mi1_graded_ledger.py`."""
-    import aughor.telemetry as tel
-    from aughor.obs import prompt_window
+    import pramanyx.telemetry as tel
+    from pramanyx.obs import prompt_window
     monkeypatch.setattr(prompt_window, "active", lambda: True)
 
     tel.new_trace("inv-attrs", "Why did sales drop?", "conn-1")
@@ -394,8 +394,8 @@ def test_the_trace_attribute_withholds_the_question_with_the_window_shut(spans, 
     """MI-0's gate, asserted where the export actually happens. The trace stays named,
     sessioned and rooted — only the question is withheld, so nothing about finding or
     correlating a trace depends on the custody window."""
-    import aughor.telemetry as tel
-    from aughor.obs import prompt_window
+    import pramanyx.telemetry as tel
+    from pramanyx.obs import prompt_window
     monkeypatch.setattr(prompt_window, "active", lambda: False)
 
     tel.new_trace("inv-shut", "Why did sales drop?", "conn-1")
@@ -411,7 +411,7 @@ def test_the_trace_attribute_withholds_the_question_with_the_window_shut(spans, 
 def test_only_the_first_span_claims_the_root(spans):
     """Popped, not read: a second span restating the trace's input would make every
     node look like the start of its own investigation."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     tel.new_trace("inv-once", "Q", "c1")
     with tel.span("inv-once", "first"):
         pass
@@ -424,7 +424,7 @@ def test_only_the_first_span_claims_the_root(spans):
 
 def test_generation_is_typed_so_langfuse_renders_it_as_a_model_call(spans):
     """The observation type is what separates a generation from a plain span."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     tel.log_generation("inv-sliced", "narrator", "llama-3.3-70b", backend="groq",
                        content={"user_prompt": "q", "response": "out"})
     (gen,) = spans.get_finished_spans()
@@ -441,8 +441,8 @@ def test_generation_is_typed_so_langfuse_renders_it_as_a_model_call(spans):
 def test_generation_carries_the_genai_conventions_every_other_backend_reads(spans):
     """Langfuse's keys make it render; these make it legible in Jaeger, Tempo,
     Grafana or a bare collector — the point of VA-3."""
-    import aughor.telemetry as tel
-    from aughor.obs import genai
+    import pramanyx.telemetry as tel
+    from pramanyx.obs import genai
     tel.log_generation("inv-sliced", "narrator", "gemini-3.1-flash-lite",
                        backend="gemini", prompt_tokens=1200, completion_tokens=85,
                        duration_ms=1500.0, temperature=0.2)
@@ -458,7 +458,7 @@ def test_generation_span_has_the_duration_the_call_actually_took(spans):
     """Written retroactively — the caller already knows the latency, so the span is
     back-dated instead of arriving zero-width. A generation with no duration makes
     a waterfall useless, which is the surface this data exists for."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     tel.log_generation("inv-sliced", "narrator", "m", backend="groq", duration_ms=1500.0)
     (gen,) = spans.get_finished_spans()
     elapsed_ms = (gen.end_time - gen.start_time) / 1_000_000
@@ -468,7 +468,7 @@ def test_generation_span_has_the_duration_the_call_actually_took(spans):
 def test_generation_without_a_capture_window_exports_no_content(spans):
     """The user's decision, pinned: turning telemetry on must not start shipping
     prompt text off-box. Content rides only what `capture_prompt` already stored."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     tel.log_generation("inv-sliced", "narrator", "m", backend="groq",
                        prompt_tokens=10, completion_tokens=2, content=None)
     (gen,) = spans.get_finished_spans()
@@ -481,8 +481,8 @@ def test_generation_without_a_capture_window_exports_no_content(spans):
 def test_unreported_usage_never_becomes_zero_tokens_on_the_wire(spans):
     """Local backends report no usage; a zero would make every downstream cost
     aggregate silently understate itself."""
-    import aughor.telemetry as tel
-    from aughor.obs import genai
+    import pramanyx.telemetry as tel
+    from pramanyx.obs import genai
     tel.log_generation("inv-sliced", "narrator", "llama3", backend="ollama",
                        prompt_tokens=None, completion_tokens=None)
     (gen,) = spans.get_finished_spans()
@@ -492,7 +492,7 @@ def test_unreported_usage_never_becomes_zero_tokens_on_the_wire(spans):
 
 def test_end_trace_finalises_a_trace_it_did_not_create(spans):
     """The finalising invocation is routinely not the creating one in a sliced run."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     tel.end_trace("inv-sliced", output={"headline": "done"})
     (end,) = spans.get_finished_spans()
     assert "done" in end.attributes[tel._LF_TRACE_OUTPUT]
@@ -502,7 +502,7 @@ def test_end_trace_finalises_a_trace_it_did_not_create(spans):
 def test_end_trace_flushes_because_serverless_freezes_on_response(spans, monkeypatch):
     """The batch processor exports on a timer; a Vercel invocation is frozen the
     moment it responds, so an unflushed batch dies with the process."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
     flushed = []
     monkeypatch.setattr(tel._otel_provider, "force_flush", lambda *a: flushed.append(a))
     tel.end_trace("inv-sliced", output={"headline": "done"})
@@ -511,7 +511,7 @@ def test_end_trace_flushes_because_serverless_freezes_on_response(spans, monkeyp
 
 def test_a_broken_tracer_does_not_break_the_node_it_wraps(spans, monkeypatch):
     """A down collector must never propagate into the work being traced."""
-    import aughor.telemetry as tel
+    import pramanyx.telemetry as tel
 
     class _Boom:
         def start_as_current_span(self, *a, **kw):

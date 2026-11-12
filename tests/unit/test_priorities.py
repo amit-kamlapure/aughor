@@ -8,8 +8,8 @@ finding that bears on one, and the brief's citation says which goal it bears on.
 """
 from __future__ import annotations
 
-from aughor.knowledge.triage import impact_score, north_star_tokens, priority_hit, priority_tokensets
-from aughor.orgsettings.models import OrgSettings, Priority
+from pramanyx.knowledge.triage import impact_score, north_star_tokens, priority_hit, priority_tokensets
+from pramanyx.orgsettings.models import OrgSettings, Priority
 
 PRIORITIES = [{"metric": "return rate", "target": "< 8%", "direction": "down", "by": "Q4"},
               {"metric": "net revenue", "target": "£1.2M", "direction": "up"}]
@@ -29,10 +29,10 @@ class TestPeopleWriteThem:
         assert [(p.metric, p.target) for p in kept] == [("", "< 8%"), ("return rate", "< 8%")]
 
     def test_a_workspace_with_no_priorities_inherits_the_organisations(self, monkeypatch):
-        from aughor.orgsettings import store as S
+        from pramanyx.orgsettings import store as S
         from types import SimpleNamespace
         monkeypatch.setattr(S, "load_org_settings", lambda: OrgSettings(priorities=[Priority(metric="return rate")]))
-        monkeypatch.setattr("aughor.workspace.store.get_workspace", lambda wid: SimpleNamespace(settings_override={"priorities": [], "currency_code": "EUR"}))
+        monkeypatch.setattr("pramanyx.workspace.store.get_workspace", lambda wid: SimpleNamespace(settings_override={"priorities": [], "currency_code": "EUR"}))
         eff = S.effective_settings("ws1")
         assert [p.metric for p in eff.priorities] == ["return rate"] and eff.currency_code == "EUR"
 
@@ -55,7 +55,7 @@ class TestTriageCountsThem:
 
 class TestTheBriefSaysWhichGoal:
     def test_the_citation_carries_the_goal_and_the_narrator_sees_the_priorities(self, monkeypatch):
-        from aughor.knowledge import briefing as B
+        from pramanyx.knowledge import briefing as B
         from types import SimpleNamespace
         seen = {}
 
@@ -64,8 +64,8 @@ class TestTheBriefSaysWhichGoal:
                 seen["user"] = user
                 return SimpleNamespace(narrative="Return rate rose to 9.4% [1].", headline_theme="Returns",
                                        citations=[SimpleNamespace(ref="1", insight_id="i1", domain="ops", angle="returns", finding="")])
-        monkeypatch.setattr("aughor.llm.provider.get_provider", lambda role: _Prov())
-        monkeypatch.setattr("aughor.orgsettings.effective_settings",
+        monkeypatch.setattr("pramanyx.llm.provider.get_provider", lambda role: _Prov())
+        monkeypatch.setattr("pramanyx.orgsettings.effective_settings",
                             lambda wid=None: OrgSettings(priorities=[Priority(metric="return rate", target="< 8%", direction="down", by="Q4")]))
         monkeypatch.setattr(B, "update_dossier", lambda *a, **k: None, raising=False)
         out = B.generate_narrative({"ops": [{"id": "i1", "finding": "Return rate rose from 6.1% to 9.4% in September",

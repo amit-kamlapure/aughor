@@ -2,12 +2,12 @@
 
 select_pack picks the owning specialist by intent overlap (active packs only, above a floor);
 build_injection assembles the steering payload with template tokens filled from the binding +
-profile. See aughor/packs/routing.py, inject.py.
+profile. See pramanyx/packs/routing.py, inject.py.
 """
 from pathlib import Path
 
-from aughor.packs import load_pack, select_pack, rank_packs, build_injection
-from aughor.packs.models import Pack, PackManifest, PackQuestions
+from pramanyx.packs import load_pack, select_pack, rank_packs, build_injection
+from pramanyx.packs.models import Pack, PackManifest, PackQuestions
 
 REPO = Path(__file__).resolve().parents[2]
 

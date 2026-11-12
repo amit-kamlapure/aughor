@@ -23,13 +23,13 @@ _POINTS = [
 
 
 def _patched(monkeypatch):
-    monkeypatch.setattr("aughor.semantic.vector_store.scroll_points",
+    monkeypatch.setattr("pramanyx.semantic.vector_store.scroll_points",
                         lambda collection, limit=10_000, strict=False: list(_POINTS))
 
 
 def test_unscoped_returns_everything_newest_first(monkeypatch):
     _patched(monkeypatch)
-    from aughor.knowledge.org_intelligence import list_org_intelligence
+    from pramanyx.knowledge.org_intelligence import list_org_intelligence
 
     out = list_org_intelligence()
     assert [r["insight_id"] for r in out] == ["c", "b", "a", "legacy"]
@@ -37,7 +37,7 @@ def test_unscoped_returns_everything_newest_first(monkeypatch):
 
 def test_connection_scope_filters(monkeypatch):
     _patched(monkeypatch)
-    from aughor.knowledge.org_intelligence import list_org_intelligence
+    from pramanyx.knowledge.org_intelligence import list_org_intelligence
 
     out = list_org_intelligence(connection_id="conn1")
     assert {r["insight_id"] for r in out} == {"a", "b"}
@@ -45,7 +45,7 @@ def test_connection_scope_filters(monkeypatch):
 
 def test_connection_and_schema_scope_filters(monkeypatch):
     _patched(monkeypatch)
-    from aughor.knowledge.org_intelligence import list_org_intelligence
+    from pramanyx.knowledge.org_intelligence import list_org_intelligence
 
     out = list_org_intelligence(connection_id="conn1", schema="sales")
     assert [r["insight_id"] for r in out] == ["a"]
@@ -55,7 +55,7 @@ def test_legacy_unattributed_rows_stay_out_of_scoped_views(monkeypatch):
     """Insights promoted before scoping carry no connection_id; they appear only
     in the unscoped org-wide view, never inside another connection's Hub."""
     _patched(monkeypatch)
-    from aughor.knowledge.org_intelligence import list_org_intelligence
+    from pramanyx.knowledge.org_intelligence import list_org_intelligence
 
     for conn in ("conn1", "conn2", "conn3"):
         assert all(r["insight_id"] != "legacy" for r in list_org_intelligence(connection_id=conn))
@@ -68,19 +68,19 @@ def test_a_store_that_could_not_be_read_is_said_not_listed_as_empty(monkeypatch)
     """Org said "Nothing promoted yet" over an outage: the read swallowed the failure into []."""
     import pytest
 
-    from aughor.knowledge.org_intelligence import OrgIntelUnavailable, list_org_intelligence
+    from pramanyx.knowledge.org_intelligence import OrgIntelUnavailable, list_org_intelligence
 
     def down(collection, limit=10_000, strict=False):
         if strict:
             raise ConnectionError("qdrant refused the connection")
         return []
-    monkeypatch.setattr("aughor.semantic.vector_store.scroll_points", down)
+    monkeypatch.setattr("pramanyx.semantic.vector_store.scroll_points", down)
     with pytest.raises(OrgIntelUnavailable):
         list_org_intelligence()
 
 
 def test_a_collection_never_created_is_still_empty():
-    from aughor.semantic.vector_store import _collection_missing
+    from pramanyx.semantic.vector_store import _collection_missing
     assert _collection_missing(RuntimeError("Not found: Collection `org_intelligence` doesn't exist!"))
     assert not _collection_missing(ConnectionError("connection refused"))
 
@@ -91,9 +91,9 @@ def test_a_promotion_org_could_not_store_is_refused_and_the_finding_is_not_flagg
     import pytest
     from fastapi import HTTPException
 
-    from aughor.explorer import store
-    from aughor.knowledge import org_intelligence
-    from aughor.routers.exploration import promote_connection_finding
+    from pramanyx.explorer import store
+    from pramanyx.knowledge import org_intelligence
+    from pramanyx.routers.exploration import promote_connection_finding
 
     finding = {"id": "f1", "finding": "Returns rose", "domain": "Sales"}
     monkeypatch.setattr(store, "find_connection_finding", lambda conn, fid: finding)

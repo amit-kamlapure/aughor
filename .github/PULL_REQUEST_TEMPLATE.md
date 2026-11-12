@@ -28,7 +28,7 @@ If you ran it against a live warehouse, say which, and what you saw.
       function exists.
 - [ ] No ratchet baseline was raised (ruff stays at zero; the raw-element count
       only shrinks).
-- [ ] Any new persistent store honours its `AUGHOR_*_DB` env override and is
+- [ ] Any new persistent store honours its `PRAMANYX_*_DB` env override and is
       wired into `tests/conftest.py`.
 - [ ] Docs updated if this changes user-facing behaviour.
 

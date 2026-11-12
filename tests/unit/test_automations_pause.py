@@ -32,11 +32,11 @@ The properties this file pins, each one something a plausible implementation get
 from __future__ import annotations
 
 
-from aughor.actions.inbox import _resolve_once, proposals_for_run, reject_proposal
-from aughor.automations.engine import resume_run, run_automation
-from aughor.routers import kinetic as actions_router
-from aughor.automations.models import Automation, Condition, Effect, EffectOutcome
-from aughor.automations.store import get_run, get_runs, upsert_automation
+from pramanyx.actions.inbox import _resolve_once, proposals_for_run, reject_proposal
+from pramanyx.automations.engine import resume_run, run_automation
+from pramanyx.routers import kinetic as actions_router
+from pramanyx.automations.models import Automation, Condition, Effect, EffectOutcome
+from pramanyx.automations.store import get_run, get_runs, upsert_automation
 
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
@@ -109,7 +109,7 @@ def _resolve(proposal_id: str, status: str, *, outcome=None):
     what DS-8 owns is what happens to the RUN once a proposal reaches a terminal state."""
     assert _resolve_once(proposal_id, status, "person:amit")
     if outcome is not None:
-        from aughor.actions.inbox import _record_outcome
+        from pramanyx.actions.inbox import _record_outcome
         _record_outcome(proposal_id, status, "approved", outcome)
 
 
@@ -207,7 +207,7 @@ def test_rejecting_through_the_door_ends_the_wait():
     test's job."""
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
 
     a = _automation(_governed(), _post())
     parked = _run(a, Dispatcher())
@@ -340,7 +340,7 @@ def test_pausing_the_automation_does_not_strand_an_approved_write():
     parked = _run(a, d)
     _resolve(proposals_for_run(parked.id)[0].id, "executed", outcome={"refund_id": "rf_9"})
 
-    from aughor.automations.store import set_automation_enabled
+    from pramanyx.automations.store import set_automation_enabled
     set_automation_enabled(a.id, False)
 
     done = _resume(parked.id, d)
@@ -359,7 +359,7 @@ def test_deleting_an_automation_strands_neither_a_parked_run_nor_a_pending_propo
     store must never import the actions plane."""
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
 
     a = _automation(_governed(), _post())
     parked = _run(a, Dispatcher())
@@ -382,7 +382,7 @@ def test_a_run_whose_automation_vanished_does_not_stay_paused_forever():
 
     # Drop the automation row WITHOUT the store's own run cascade, which is the only way
     # this state is reachable — a torn delete, a restored backup, a hand-edited row.
-    from aughor.automations import store as astore
+    from pramanyx.automations import store as astore
     conn = astore._connect()
     conn.execute("DELETE FROM automations WHERE id = ?", (a.id,))
     conn.commit()
@@ -437,7 +437,7 @@ def test_the_heartbeat_resumes_a_run_no_surface_remembered_to_wake():
     resolve and the resume, a proposal that lapses with nobody clicking. The heartbeat that
     already visits every automation checks for parked runs too, which is what makes the
     resume a property of the system rather than of a code path."""
-    from aughor.automations.engine import resume_parked_runs
+    from pramanyx.automations.engine import resume_parked_runs
 
     a = _automation(_governed(), _post())
     parked = _run(a, Dispatcher())
@@ -450,7 +450,7 @@ def test_the_heartbeat_resumes_a_run_no_surface_remembered_to_wake():
 
 
 def test_the_sweep_leaves_a_run_that_is_still_waiting_alone():
-    from aughor.automations.engine import resume_parked_runs
+    from pramanyx.automations.engine import resume_parked_runs
 
     a = _automation(_governed(), _post())
     parked = _run(a, Dispatcher())
@@ -461,7 +461,7 @@ def test_the_sweep_leaves_a_run_that_is_still_waiting_alone():
 def test_the_heartbeat_reports_what_it_resumed():
     """`tick_once` returns per-family counts so a caller holding an external clock can tell a
     tick that did something from one that found nothing. A resume is something."""
-    from aughor.automations.scheduler import tick_once
+    from pramanyx.automations.scheduler import tick_once
 
     a = _automation(_governed(), _post())
     parked = _run(a, Dispatcher())
@@ -482,14 +482,14 @@ def test_the_inbox_never_imports_the_automation_engine():
     import ast
     from pathlib import Path
 
-    src = Path("aughor/actions/inbox.py").read_text(encoding="utf-8")
+    src = Path("pramanyx/actions/inbox.py").read_text(encoding="utf-8")
     imported = set()
     for node in ast.walk(ast.parse(src)):
         if isinstance(node, ast.ImportFrom) and node.module:
             imported.add(node.module)
         elif isinstance(node, ast.Import):
             imported.update(n.name for n in node.names)
-    assert not {m for m in imported if m.startswith("aughor.automations")}
+    assert not {m for m in imported if m.startswith("pramanyx.automations")}
 
 
 def test_the_accept_route_resumes_the_parked_run(monkeypatch):
@@ -497,7 +497,7 @@ def test_the_accept_route_resumes_the_parked_run(monkeypatch):
     than by reading the code, because the whole point of moving the call here was that the
     door is what a surface actually presses."""
     woke: list[str] = []
-    monkeypatch.setattr("aughor.automations.engine.resume_run",
+    monkeypatch.setattr("pramanyx.automations.engine.resume_run",
                         lambda rid, **kw: woke.append(rid))
 
     a = _automation(_governed(), _post())
@@ -509,9 +509,9 @@ def test_the_accept_route_resumes_the_parked_run(monkeypatch):
 def test_only_automation_sourced_proposals_reach_the_engine(monkeypatch):
     """An agent's proposal and an HTTP proposal have no run to resume; the door must not
     reach into the automations plane on every accept in the deployment."""
-    from aughor.actions.inbox import stage_proposal, StagedProposal
+    from pramanyx.actions.inbox import stage_proposal, StagedProposal
     woke: list[str] = []
-    monkeypatch.setattr("aughor.automations.engine.resume_run",
+    monkeypatch.setattr("pramanyx.automations.engine.resume_run",
                         lambda rid, **kw: woke.append(rid))
 
     agent_prop = stage_proposal(StagedProposal(
@@ -528,7 +528,7 @@ def test_a_failing_resume_never_breaks_the_accept(monkeypatch):
     def _boom(_rid, **_kw):
         raise RuntimeError("store is down")
 
-    monkeypatch.setattr("aughor.automations.engine.resume_run", _boom)
+    monkeypatch.setattr("pramanyx.automations.engine.resume_run", _boom)
     a = _automation(_governed(), _post())
     parked = _run(a, Dispatcher())
     prop = proposals_for_run(parked.id)[0]
@@ -549,7 +549,7 @@ def test_one_approval_is_one_row_in_the_needs_human_queue():
     """
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
 
     a = _automation(_governed(), _post())
     parked = _run(a, Dispatcher())
@@ -572,8 +572,8 @@ def test_an_agent_s_proposal_still_gets_its_own_row():
     has nothing else listing it, and dropping it would hide a real decision."""
     from fastapi.testclient import TestClient
 
-    from aughor.actions.inbox import StagedProposal, stage_proposal
-    from aughor.api import app
+    from pramanyx.actions.inbox import StagedProposal, stage_proposal
+    from pramanyx.api import app
 
     loose = stage_proposal(StagedProposal(
         connection_id="conn-pause", action_id="issue_refund", params={},
@@ -598,8 +598,8 @@ def test_a_resume_waits_while_an_accepted_write_is_still_in_flight():
     """
     from types import SimpleNamespace
 
-    from aughor.automations.engine import ACCEPT_SETTLE_SECONDS, _settling
-    from aughor.util.time import now_iso_z
+    from pramanyx.automations.engine import ACCEPT_SETTLE_SECONDS, _settling
+    from pramanyx.util.time import now_iso_z
 
     mid_write = SimpleNamespace(status="accepted", outcome={}, status_message="",
                                 resolved_at=now_iso_z())

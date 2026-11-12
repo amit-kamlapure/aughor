@@ -10,7 +10,7 @@ import asyncio
 
 from starlette.requests import Request
 
-from aughor import api
+from pramanyx import api
 
 
 def _request(origin: str) -> Request:

@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-import aughor.agent.spotlight_guide as guide
+import pramanyx.agent.spotlight_guide as guide
 
 WEB = Path(__file__).resolve().parents[2] / "web"
 TOPICS = ["create_agent", "create_automation", "connect_data", "appearance", "limits"]

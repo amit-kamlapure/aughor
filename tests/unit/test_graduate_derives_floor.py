@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 
-from aughor.routers import evals as R
+from pramanyx.routers import evals as R
 
 
 def _run(cell: str, flag_on: bool, pass_rate: float, flag: str = "graph.readback",

@@ -12,9 +12,9 @@ from code; one stored answer opened on the live canvas; the per-site prompt weig
 
 ## 1. What actually runs
 
-Two pipelines produce the same report shape (`AnswerReport`, `aughor/agent/state.py:401`):
+Two pipelines produce the same report shape (`AnswerReport`, `pramanyx/agent/state.py:401`):
 
-* **The analyst loop** (`aughor/agent/analyst.py:1759`) — the default for an Agent question
+* **The analyst loop** (`pramanyx/agent/analyst.py:1759`) — the default for an Agent question
   on the canvas since `ask.converse` graduated. Intake once, then a tool loop (`run_sql`,
   `list_tables`, `describe_table`, `z_score`, `value_lookup`, `profile_column`, plus the four
   phase tools `baseline` / `decompose` / `cross_section` / `premise_check`), then the model's
@@ -370,7 +370,7 @@ ask or moves a rule into a check; none adds a call.
 * **P5 and the Lux guards proven live (2026-10-14, 22:30 UTC, `:8000` pid 17362 on `77791271`, nine envs):** the same
   Lux question re-run as `2f8ad418`. Against `99201af8`: the spec's date column is `orders.order_date` (was the
   invented `orders.order_ts`); the intake took one model call (was two — the correction retry); **no
-  `aughor.sql.writer:fix` calls (was nine)**; 18 model calls over 141k prompt tokens (was 30); the analyst ran
+  `pramanyx.sql.writer:fix` calls (was nine)**; 18 model calls over 141k prompt tokens (was 30); the analyst ran
   `baseline`, `decompose`, `decompose`, `conclude` — its second decomposition is `decomposition_2` with ids
   `decomp_0_2 … decomp_2_2`, no duplicate id in the report (was two `decomposition` phases carrying `decomp_0..2`
   twice); the baseline phase carries `verdict = {sigma 0.97, significant false, "σ = 0.97 — within normal
@@ -412,7 +412,7 @@ ask or moves a rule into a check; none adds a call.
   exhibits (z-score, orders-vs-AOV, by channel, by region), the gaps sentence, the first exhibit as the grid; its
   Slack message and its export read in the canvas's order. The envelope stored on a run is the one folded at its
   end, so runs before this carry v1; a new run folds v2 — not re-proven live. Tests: `test_answer_envelope.py`
-  (five cases), `bots/slack/src/aughor.test.ts`. Not done, named: the web still renders the report, not the
+  (five cases), `bots/slack/src/pramanyx.test.ts`. Not done, named: the web still renders the report, not the
   envelope (the envelope frame stays unrendered there by design — the parts were already drawn from the frames);
   the Slack bot renders the first exhibit only, as its one-grid rule says.
 * **The named-not-done items, measured and built (2026-10-15, the user's "Lets do"):**
@@ -517,7 +517,7 @@ ask or moves a rule into a check; none adds a call.
   on every checkpointed run), the Agent turn spoke its own shape (describe · check · diagnose), and the ask router
   consulted the model on every "moderate" question while the Agent read the same question by code. Built: a
   question's **shape** is the one word for its kind — describe · check · diagnose · **survey** (the wide/landscape
-  detector, moved in from the router) — in one light module, `aughor/agent/question_shape.py`, with the rules in
+  detector, moved in from the router) — in one light module, `pramanyx/agent/question_shape.py`, with the rules in
   order (why outranks everything; a landscape ask is a survey; advice or a weakness hunt is a diagnosis; a check's own
   words make a check; a clear ask to read is a describe) and a caller-chosen `default` for a question no rule reads:
   the Agent keeps its investigation, the router asks the model. The body is DERIVED — `body_for(shape, depth)`,

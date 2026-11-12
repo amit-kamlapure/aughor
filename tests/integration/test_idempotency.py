@@ -7,7 +7,7 @@ from __future__ import annotations
 
 
 def test_store_roundtrip_and_no_key_is_noop():
-    from aughor.util import idempotency
+    from pramanyx.util import idempotency
     assert idempotency.lookup("canvas", "k1") is None
     idempotency.remember("canvas", "k1", "res1")
     assert idempotency.lookup("canvas", "k1") == "res1"
@@ -18,8 +18,8 @@ def test_store_roundtrip_and_no_key_is_noop():
 
 
 def test_keys_are_org_scoped():
-    from aughor.org.context import using_org
-    from aughor.util import idempotency
+    from pramanyx.org.context import using_org
+    from pramanyx.util import idempotency
     with using_org("orgA"):
         idempotency.remember("canvas", "shared-key", "canvasA")
     with using_org("orgB"):
@@ -29,7 +29,7 @@ def test_keys_are_org_scoped():
 
 
 def test_scopes_do_not_collide():
-    from aughor.util import idempotency
+    from pramanyx.util import idempotency
     idempotency.remember("canvas", "dup", "the-canvas")
     idempotency.remember("connection", "dup", "the-connection")
     assert idempotency.lookup("canvas", "dup") == "the-canvas"

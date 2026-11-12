@@ -1,6 +1,6 @@
 /**
  * graphView.ts — what the Graph tab says about a connection's knowledge graph, as pure functions (the panel and the
- * canvas only lay these out). Redone to `aughor-v2/CLARITY.md`, 2026-10-13: the tab leads with the picture, one line of
+ * canvas only lay these out). Redone to `pramanyx-v2/CLARITY.md`, 2026-10-13: the tab leads with the picture, one line of
  * what the graph holds above it, and beside it what waits on a person — said once, repeats folded into a count.
  */
 import type { CGNode, ConnectionGraph, GraphReviewItem } from "@/lib/api";

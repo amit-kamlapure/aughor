@@ -16,23 +16,23 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.agent import spotlight_explain as ex
-from aughor.api import app
-from aughor.govern.departure_store import record_departure
+from pramanyx.agent import spotlight_explain as ex
+from pramanyx.api import app
+from pramanyx.govern.departure_store import record_departure
 
 client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
 def _own_ledger(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_DEPARTURES_DB", str(tmp_path / "departures.db"))
+    monkeypatch.setenv("PRAMANYX_DEPARTURES_DB", str(tmp_path / "departures.db"))
 
 
 def _held():
     return record_departure(
         id="073097487898", org_id="default", kind="briefing", state="held", conn_id="c1",
         automation_id="3440db08", automation_name="The Look - Daily Briefing",
-        actor="automation:3440db08", target="sb_e2d5:#aughor_canvas",
+        actor="automation:3440db08", target="sb_e2d5:#pramanyx_canvas",
         reasons=json.dumps(["re-measure: 1,648.08, 1,151.01 not in analysis ecb56660"]),
         checks=json.dumps({"trust": "clean", "definition": "cites metric revenue v1",
                            "remeasure": "1,648.08, 1,151.01, 23,776.00, 4,702.23 not in analysis ecb56660"}),
@@ -44,8 +44,8 @@ def _held():
 # ── the roster ────────────────────────────────────────────────────────────────────────
 
 def test_explain_is_declared_on_every_transport():
-    from aughor.agent.converse_tools import converse_tools
-    from aughor.agent.spotlight_roster import spotlight_roster
+    from pramanyx.agent.converse_tools import converse_tools
+    from pramanyx.agent.spotlight_roster import spotlight_roster
     assert "explain" in {t.name for t in spotlight_roster("c1")}
     assert "explain" in {t.name for t in converse_tools("c1")}
     listed = {t["name"]: t for t in client.get("/spotlight/tools").json()["tools"]}
@@ -109,7 +109,7 @@ def test_an_automation_answers_from_its_record(monkeypatch):
         effects=[SimpleNamespace(kind="investigate", config={"question": "Top sellers yesterday?"}, alias=""),
                  SimpleNamespace(kind="notify", config={"target": "sb_1:#ops"}, alias="")],
     )
-    from aughor.agent import spotlight_act
+    from pramanyx.agent import spotlight_act
     monkeypatch.setattr(spotlight_act, "resolve_automation", lambda conn, ref: (a, "") if ref in ("auto-9", "Top sellers") else (None, "no such automation"))
     _held()   # a departure on another automation must not be listed under this one
     out = ex.explain_object("c1", {"kind": "automation", "id": "auto-9"})
@@ -126,11 +126,11 @@ def test_an_automation_answers_from_its_record(monkeypatch):
 
 
 def test_a_metric_answers_with_its_lifecycle_and_tests(monkeypatch):
-    from aughor.semantic.metrics import MetricDefinition
+    from pramanyx.semantic.metrics import MetricDefinition
     m = MetricDefinition(name="return_rate", label="Return rate", sql="SUM(returned)/COUNT(*)",
                          status="draft", quality_tests=["SELECT COUNT(*) > 0 FROM orders"],
                          freshness_sla="daily by 06:00 UTC")
-    monkeypatch.setattr("aughor.semantic.metrics.get_metric",
+    monkeypatch.setattr("pramanyx.semantic.metrics.get_metric",
                         lambda name, path=None, connection_id=None: m if name == "return_rate" else None)
     out = ex.explain_object("c1", {"kind": "metric", "id": "return_rate"})
     assert out["found"] and out["status"] == "draft" and out["approved"] is False
@@ -142,7 +142,7 @@ def test_a_metric_answers_with_its_lifecycle_and_tests(monkeypatch):
 
 def test_every_offered_tool_is_on_the_converse_roster(monkeypatch):
     """SP-4's law applied to explain: an offer names a door the roster has, or no tool."""
-    from aughor.agent.converse_tools import converse_tools
+    from pramanyx.agent.converse_tools import converse_tools
     roster = {t.name for t in converse_tools("c1")}
     dep = _held()
     offers = [ex.explain_object("c1", {"kind": "departure", "id": dep})["offer"]]
@@ -157,7 +157,7 @@ def test_every_offered_tool_is_on_the_converse_roster(monkeypatch):
 # ── the structural handoff ────────────────────────────────────────────────────────────
 
 def test_a_summoned_turn_hands_the_object_to_the_conversation_without_a_tool_call():
-    from aughor.routers.investigations import AskFocus, _focus_prose_for
+    from pramanyx.routers.investigations import AskFocus, _focus_prose_for
     dep = _held()
     req = SimpleNamespace(focus=AskFocus(kind="departure", id=dep))
     prose = _focus_prose_for(req, "c1")
@@ -170,7 +170,7 @@ def test_a_summoned_turn_hands_the_object_to_the_conversation_without_a_tool_cal
 
 
 def test_the_ask_body_accepts_a_focus_and_refuses_an_unknown_kind():
-    from aughor.routers.investigations import AskRequest
+    from pramanyx.routers.investigations import AskRequest
     req = AskRequest(question="why was this held?", focus={"kind": "departure", "id": "d1"})
     assert req.focus.kind == "departure" and req.focus.id == "d1"
     with pytest.raises(ValueError):
@@ -182,15 +182,15 @@ def test_the_ask_body_accepts_a_focus_and_refuses_an_unknown_kind():
 def test_an_agent_answers_with_its_scope_grants_evaluation_and_runs(monkeypatch):
     from types import SimpleNamespace as NS
 
-    from aughor.agent import spotlight_explain as ex
-    from aughor.agent.spotlight_guide import eval_sentence
+    from pramanyx.agent import spotlight_explain as ex
+    from pramanyx.agent.spotlight_guide import eval_sentence
     agent = NS(id="ag-1", name="Returns analyst", purpose="watch returns", instructions="Be terse.",
                connection_id="c1", schema_scope="", doc_ids=["d1", "d2"], pack_ids=["retail"],
                tool_grants=["notify.slack"], workspace_id="", owner="user:amit", enabled=True,
                last_eval={"passed": 4, "total": 5}, eval_basis="stale", created_at="2026-09-01", updated_at="2026-09-20")
-    monkeypatch.setattr("aughor.custom_agents.store.get_agent", lambda ref: agent if ref == "ag-1" else None)
-    monkeypatch.setattr("aughor.custom_agents.store.list_agents", lambda: [agent])
-    monkeypatch.setattr("aughor.db.history.list_investigations_for_agent",
+    monkeypatch.setattr("pramanyx.custom_agents.store.get_agent", lambda ref: agent if ref == "ag-1" else None)
+    monkeypatch.setattr("pramanyx.custom_agents.store.list_agents", lambda: [agent])
+    monkeypatch.setattr("pramanyx.db.history.list_investigations_for_agent",
                         lambda agent_id, limit=50: [{"id": "r1", "kind": "chat", "status": "complete",
                                                      "question": "how many returns?", "started_at": "2026-09-25"}])
     out = ex.explain_object("c1", {"kind": "agent", "id": "Returns analyst"})     # by exact name
@@ -205,9 +205,9 @@ def test_an_agent_answers_with_its_scope_grants_evaluation_and_runs(monkeypatch)
 
 
 def test_an_analysis_answers_with_its_run_its_verdict_and_the_departures_that_cite_it():
-    from aughor.agent import spotlight_explain as ex
-    from aughor.db.history import complete_investigation, create_investigation
-    from aughor.feedback.verdicts import record_verdict
+    from pramanyx.agent import spotlight_explain as ex
+    from pramanyx.db.history import complete_investigation, create_investigation
+    from pramanyx.feedback.verdicts import record_verdict
     inv_id = create_investigation("why did returns rise?", "c1")
     complete_investigation(inv_id, {"headline": "Returns rose 12% on footwear", "confidence": 0.8,
                                     "executive_summary": "Footwear drove it.", "recommendations": [{"a": 1}],
@@ -233,8 +233,8 @@ def test_an_analysis_answers_with_its_run_its_verdict_and_the_departures_that_ci
 
 
 def test_every_kind_is_declared_and_the_new_offers_exist_on_the_roster():
-    from aughor.agent import spotlight_explain as ex
-    from aughor.agent.converse_tools import converse_tools
+    from pramanyx.agent import spotlight_explain as ex
+    from pramanyx.agent.converse_tools import converse_tools
     roster = {t.name for t in converse_tools("c1")}
     listed = {t["name"]: t for t in client.get("/spotlight/tools").json()["tools"]}
     assert listed["explain"]["parameters"]["properties"]["kind"]["enum"] == ["departure", "automation", "metric", "agent", "analysis"]

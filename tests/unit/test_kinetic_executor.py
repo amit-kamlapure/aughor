@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-import aughor.govern.actions as govern
-from aughor.actions.executor import (
+import pramanyx.govern.actions as govern
+from pramanyx.actions.executor import (
     CriterionError,
     ParamError,
     coerce_params,
@@ -19,7 +19,7 @@ from aughor.actions.executor import (
     evaluate_predicate,
     execute_kinetic_action,
 )
-from aughor.ontology.models import ActionParameter, KineticAction, SideEffect, SubmissionCriterion
+from pramanyx.ontology.models import ActionParameter, KineticAction, SideEffect, SubmissionCriterion
 
 MSG = "Refunds over €10,000 need finance sign-off — route to the approvals queue instead."
 
@@ -52,7 +52,7 @@ def _approval_off(monkeypatch):
     # These tests exercise the executor with the gate switched OFF; the gate has been on by
     # default since 2026-10-04 (phase 0 of the 2027 study), and `test_govern_actions` proves
     # the default. The tests that need it on set "1" themselves.
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "0")
 
 
 # ── the safe submission-criterion evaluator ──────────────────────────────────────
@@ -133,7 +133,7 @@ def test_criterion_fail_returns_authored_message_and_never_dispatches():
 def test_criterion_short_circuits_before_the_approval_gate(monkeypatch):
     # Approval ON + HIGH + not allowlisted would 428 — but a criterion failure must win first.
     # If it returns criterion_failed (not approval_required), criteria ran before the guard.
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "1")
     d = _recorder()
     r = execute_kinetic_action(_action(), {"amount": 20000}, scope="conn-crit", dispatch=d)
     assert r.status == "criterion_failed" and d.calls == []
@@ -147,14 +147,14 @@ def test_invalid_params_never_dispatches():
 
 def test_approval_off_high_risk_auto_executes(monkeypatch):
     # Governance switched off ⇒ guard is a no-op ⇒ byte-for-byte the pre-Wave-K posture.
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "0")
     d = _recorder()
     r = execute_kinetic_action(_action(), {"amount": 500}, scope="s", dispatch=d)
     assert r.ok and len(d.calls) == 1
 
 
 def test_high_risk_blocks_then_executes_once_after_approval(monkeypatch):
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "1")
     d = _recorder()
     r1 = execute_kinetic_action(_action(), {"amount": 500}, scope="conn-approve", dispatch=d)
     assert r1.status == "approval_required" and r1.detail.get("risk") == "high"
@@ -169,7 +169,7 @@ def test_high_risk_blocks_then_executes_once_after_approval(monkeypatch):
 def test_low_risk_declared_action_is_not_treated_as_high(monkeypatch):
     # The risk-override fix: a declared LOW action is unregistered in govern._RISK, which would
     # classify it HIGH by default — but the executor passes the DECLARED risk, so it auto-runs.
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "1")
     d = _recorder()
     r = execute_kinetic_action(_action(risk="low"), {"amount": 500}, scope="conn-low", dispatch=d)
     assert r.ok and r.status == "executed" and len(d.calls) == 1
@@ -178,7 +178,7 @@ def test_low_risk_declared_action_is_not_treated_as_high(monkeypatch):
 # ── the default dispatcher: webhook is wired; the rest are clean seams ────────────
 
 def test_default_webhook_dispatch_posts(monkeypatch):
-    monkeypatch.setattr("aughor.util.url_guard.is_safe_webhook_url", lambda u: True)
+    monkeypatch.setattr("pramanyx.util.url_guard.is_safe_webhook_url", lambda u: True)
     import httpx
 
     class _Resp:
@@ -196,7 +196,7 @@ def test_default_webhook_dispatch_posts(monkeypatch):
 def test_default_webhook_ssrf_is_blocked(monkeypatch):
     """The guard refuses the call: the outbox keeps it, never sends it again by itself, and the press says it waits for
     a person, and why (Arc OC-6)."""
-    monkeypatch.setattr("aughor.util.url_guard.is_safe_webhook_url", lambda u: False)
+    monkeypatch.setattr("pramanyx.util.url_guard.is_safe_webhook_url", lambda u: False)
     a = _action(side_effects=[SideEffect(kind="webhook", config={"url": "http://169.254.169.254/"})])
     r = execute_kinetic_action(a, {"amount": 500})
     [send] = r.outcome["outbox"]
@@ -216,7 +216,7 @@ def test_annotate_names_the_row_by_the_param_its_key_column_names(monkeypatch):
     # "order_id"): the note lands on that order's row, not on the whole column — and an explicit
     # row_key still wins.
     saved = []
-    monkeypatch.setattr("aughor.actions.overlay.save_edit", lambda edit: saved.append(edit) or edit)
+    monkeypatch.setattr("pramanyx.actions.overlay.save_edit", lambda edit: saved.append(edit) or edit)
     a = _action(id="flag_order_for_review", kind="annotate", side_effects=[], submission_criteria=[])
     default_dispatch(a, {"order_id": "O000123", "key_column": "order_id", "table": "orders",
                          "column": "status", "body": "check the refund"}, "c1")
@@ -240,21 +240,21 @@ def test_trigger_investigation_without_a_question_is_refused():
 # ── the HTTP surface ─────────────────────────────────────────────────────────────
 
 def _graph_with(action):
-    from aughor.ontology.models import OntologyGraph
+    from pramanyx.ontology.models import OntologyGraph
     g = OntologyGraph(connection_id="c", schema_name="s", schema_fingerprint="fp")
     g.kinetic_actions[action.id] = action
     return g
 
 
 def _flag_on(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda n: n == "kinetic.actions")
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled", lambda n: n == "kinetic.actions")
 
 
 def test_router_404_when_flag_off(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda n: False)
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled", lambda n: False)
     from fastapi import HTTPException
 
-    from aughor.routers import kinetic as K
+    from pramanyx.routers import kinetic as K
     with pytest.raises(HTTPException) as e:
         K.execute_action("refund", K.ExecuteRequest(params={"amount": 1}),
                          connection_id="c", schema_name=None)
@@ -263,11 +263,11 @@ def test_router_404_when_flag_off(monkeypatch):
 
 def test_router_criterion_fail_is_422_with_authored_message(monkeypatch):
     _flag_on(monkeypatch)
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology",
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology",
                         lambda *a, **k: _graph_with(_action()))
     from fastapi import HTTPException
 
-    from aughor.routers import kinetic as K
+    from pramanyx.routers import kinetic as K
     with pytest.raises(HTTPException) as e:
         K.execute_action("refund", K.ExecuteRequest(params={"amount": 20000}),
                          connection_id="c", schema_name=None)
@@ -276,12 +276,12 @@ def test_router_criterion_fail_is_422_with_authored_message(monkeypatch):
 
 def test_router_approval_required_is_428(monkeypatch):
     _flag_on(monkeypatch)
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology",
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "1")
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology",
                         lambda *a, **k: _graph_with(_action()))
     from fastapi import HTTPException
 
-    from aughor.routers import kinetic as K
+    from pramanyx.routers import kinetic as K
     with pytest.raises(HTTPException) as e:
         K.execute_action("refund", K.ExecuteRequest(params={"amount": 500}),
                          connection_id="c", schema_name=None)
@@ -291,8 +291,8 @@ def test_router_approval_required_is_428(monkeypatch):
 def test_router_success_is_200(monkeypatch):
     _flag_on(monkeypatch)
     a = _action(side_effects=[SideEffect(kind="webhook", config={"url": "https://ok.example.com"})])
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", lambda *x, **k: _graph_with(a))
-    monkeypatch.setattr("aughor.util.url_guard.is_safe_webhook_url", lambda u: True)
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology", lambda *x, **k: _graph_with(a))
+    monkeypatch.setattr("pramanyx.util.url_guard.is_safe_webhook_url", lambda u: True)
     import httpx
 
     class _Resp:
@@ -300,7 +300,7 @@ def test_router_success_is_200(monkeypatch):
         is_success = True
 
     monkeypatch.setattr(httpx, "post", lambda url, **k: _Resp())
-    from aughor.routers import kinetic as K
+    from pramanyx.routers import kinetic as K
     out = K.execute_action("refund", K.ExecuteRequest(params={"amount": 500}),
                            connection_id="c", schema_name=None)
     assert out["status"] == "executed"
@@ -308,11 +308,11 @@ def test_router_success_is_200(monkeypatch):
 
 def test_router_unknown_action_is_404(monkeypatch):
     _flag_on(monkeypatch)
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology",
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology",
                         lambda *a, **k: _graph_with(_action()))
     from fastapi import HTTPException
 
-    from aughor.routers import kinetic as K
+    from pramanyx.routers import kinetic as K
     with pytest.raises(HTTPException) as e:
         K.execute_action("nope", K.ExecuteRequest(), connection_id="c", schema_name=None)
     assert e.value.status_code == 404

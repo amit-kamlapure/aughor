@@ -3,12 +3,12 @@
 A pack declares ROLES, not tables; the resolver proposes role→table/column for a specific
 warehouse with evidence + confidence, which is why packs are portable. This tests the pure
 proposal engine against synthetic SchemaFacts (the profiler adapter + dry-run verify are the
-deferred live-connection half). See aughor/packs/resolver.py.
+deferred live-connection half). See pramanyx/packs/resolver.py.
 """
-from aughor.packs import (
+from pramanyx.packs import (
     SchemaFacts, TableFact, ColumnFact, propose_bindings, binding_report, load_pack,
 )
-from aughor.packs.models import RoleSpec
+from pramanyx.packs.models import RoleSpec
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -122,7 +122,7 @@ def test_retail_on_luxexperience_proposes_what_is_named_for_each_role_and_never_
     """2026-10-13: the retail pack's customer and product are kinds `party` and `catalog`, which the resolver had no
     rule for, so no entity resolved; each event then fell to the table with the most date columns — `ownership`, for
     both order_item and cart — and the Bind dialog pre-picked it."""
-    from aughor.packs.adapter import schema_facts_from_table_cols
+    from pramanyx.packs.adapter import schema_facts_from_table_cols
     facts = schema_facts_from_table_cols({t: [c for c, _ in cols] for t, cols in _LUX.items()},
                                          col_types={t: dict(cols) for t, cols in _LUX.items()})
     props = propose_bindings(load_pack(REPO / "packs" / "retail").entities, facts)

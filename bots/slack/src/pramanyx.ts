@@ -1,0 +1,555 @@
+/**
+ * The transport half of RC-1/RC-2: one Pramanyx `/ask` turn, folded into an
+ * `AsyncIterable` that `thread.post` can stream into Slack.
+ *
+ * Deliberately thin. The question goes to the `/ask` door at `depth: "auto"` —
+ * the same deterministic router the web chat's auto path uses, so a quick
+ * question answers in seconds and a deep or wide one runs the full governed
+ * path — and the Slack thread id rides as `session_id`, so the turn files under
+ * a conversation (FL-6) exactly as a web turn does.
+ *
+ * Frame → text mapping is REPLACE-aware: Pramanyx's `*_delta` partials carry the
+ * FULL text-so-far per frame (the resume hub's snapshot contract), while a
+ * `thread.post` iterable APPENDS every yield. So this tracks what it already
+ * yielded per channel and emits only suffixes — the one non-obvious piece of
+ * the whole file.
+ *
+ * RC-2 adds three things that do not change that shape:
+ *   - progress frames become `task_update` chunks (see `progress.ts`), yielded
+ *     into the same stream the text rides;
+ *   - the turn's grid and chart ride out through `onTurn` once the run settles,
+ *     for the caller to post as a table, a CSV and a picture;
+ *   - an abandoned run is CANCELLED, not merely disconnected. Since FL-1
+ *     detached the producer from its viewer, dropping the SSE connection no
+ *     longer stops the work — it just stops anyone watching it burn budget.
+ */
+import type { StreamChunk } from "chat";
+
+import { createProgressCards } from "./progress.js";
+
+/** CP-4 — the answer, whole, as the platform folded it: what every door selects from. */
+export interface AnswerEnvelope {
+  version: number;
+  question: string;
+  headline: string;
+  body: string;
+  grid: { columns: string[]; rows: unknown[][]; caption?: string } | null;
+  chart: { chart_type: string; chart_config: Record<string, unknown> } | null;
+  caveats: string[];
+  follow_ups: string[];
+  provenance: Record<string, unknown>;
+  error: string;
+  lifted_tables: number;
+  /** P6 (envelope v2): the concluded answer's own structure — absent on an older fold. */
+  figures?: { label: string; value: string; note?: string }[];
+  exhibits?: { claim: string; grid: { columns: string[]; rows: unknown[][]; caption?: string }; chart: { chart_type: string } }[];
+  gaps?: string;
+}
+
+/** The figures an answer rests on, in one line — `label value (note) · …` — as the canvas's figure row. */
+export function figuresLine(figures: unknown): string {
+  if (!Array.isArray(figures)) return "";
+  return figures
+    .filter((f): f is { label?: unknown; value?: unknown; note?: unknown } => !!f && typeof f === "object" && asText((f as { value?: unknown }).value) !== "")
+    .map((f) => {
+      const head = `${asText(f.label)} ${asText(f.value)}`.trim();
+      const note = asText(f.note);
+      return note ? `${head} (${note})` : head;
+    })
+    .join(" · ");
+}
+
+/** What the turn produced besides prose — the visual half of the answer. */
+export interface TurnArtifacts {
+  investigationId: string;
+  question: string;
+  sessionId: string;
+  columns: string[];
+  rows: unknown[][];
+  chartType: string;
+  chartConfig: Record<string, unknown>;
+  /** The folded answer — the LAST frame of a completed ask. Absent on an older
+   *  platform or an interrupted stream; the grid frames above are the fallback. */
+  envelope?: AnswerEnvelope | null;
+}
+
+export interface AskOptions {
+  sessionId: string;
+  /** The platform's cancellation signal — Slack's stop button aborts it. */
+  signal?: AbortSignal;
+  /** Called once, when a turn settles with a grid worth showing. */
+  onTurn?: (artifacts: TurnArtifacts) => void;
+  /**
+   * RC-4 — who is asking, as `slack:<user id>`. The bot authenticates as itself and
+   * reports the human on whose behalf it asks, so a turn is attributed to a person
+   * rather than to nobody. Pramanyx honours it only when no authenticated identity is
+   * already in scope, so this can never be used to claim to BE someone else.
+   */
+  principalRef?: string;
+}
+
+export type AskChunk = string | StreamChunk;
+export type AskStream = (question: string, opts: AskOptions) => AsyncIterable<AskChunk>;
+
+interface Env {
+  PRAMANYX_API_URL?: string;
+  PRAMANYX_API_KEY?: string;
+  PRAMANYX_CONNECTION_ID?: string;
+  /**
+   * RC-5 — the UserAgent this bot answers as. One process serves N bots that differ
+   * ONLY in their connection and their agent: the transport is identical and the
+   * platform decides how each one thinks. Per-BOT rather than per-call because that is
+   * what it is — a property of the record, fixed for the life of the socket.
+   */
+  PRAMANYX_AGENT_ID?: string;
+}
+
+const asText = (v: unknown): string => (typeof v === "string" ? v : "");
+
+/** Yield only what `full` adds beyond `seen` (REPLACE partial → APPEND stream). */
+function suffix(seen: string, full: string): string {
+  if (!full || full.length <= seen.length) return "";
+  return full.startsWith(seen) ? full.slice(seen.length) : "";
+}
+
+export function createAskStream(
+  env: Env = process.env,
+  fetchImpl: typeof fetch = fetch,
+): AskStream {
+  const base = (env.PRAMANYX_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
+  const connection = env.PRAMANYX_CONNECTION_ID ?? "workspace";
+  const authHeaders: Record<string, string> =
+    env.PRAMANYX_API_KEY ? { "x-api-key": env.PRAMANYX_API_KEY } : {};
+  const agentId = env.PRAMANYX_AGENT_ID ?? "";
+
+  /**
+   * Stop the run itself, not just our view of it.
+   *
+   * FL-1 detached the producer from its SSE consumers so a refresh would stop
+   * killing a deep run. The cost of that win is this: after detachment, walking
+   * away leaves a supervised kernel job running to completion against a budget
+   * nobody is watching. Cancelling the job is the only legitimate kill, and
+   * `/investigations/{id}/cancel` is the door to it.
+   *
+   * Sent WITHOUT the aborted signal — the whole point is that this request must
+   * outlive the one that was just abandoned.
+   */
+  async function cancel(investigationId: string): Promise<void> {
+    try {
+      await fetchImpl(`${base}/investigations/${encodeURIComponent(investigationId)}/cancel`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...authHeaders },
+      });
+    } catch {
+      // Best-effort: the run's own budget still bounds it, and there is no
+      // longer a thread to report this into.
+    }
+  }
+
+  return async function* ask(question, { sessionId, signal, onTurn, principalRef }) {
+    const res = await fetchImpl(`${base}/ask`, {
+      method: "POST",
+      signal,
+      headers: {
+        "content-type": "application/json",
+        accept: "text/event-stream",
+        ...authHeaders,
+      },
+      body: JSON.stringify({
+        question,
+        connection_id: connection,
+        depth: "auto",
+        session_id: sessionId,
+        ...(principalRef ? { principal_ref: principalRef } : {}),
+        ...(agentId ? { agent_id: agentId } : {}),
+      }),
+    });
+    if (!res.ok || !res.body) {
+      yield `⚠️ Pramanyx did not answer (HTTP ${res.status}) — is the API running at ${base}?`;
+      return;
+    }
+
+    let headline = "";
+    let narrative = "";
+    let sawText = false;
+    let settled = false;
+    const cards = createProgressCards();
+    const artifacts: TurnArtifacts = {
+      investigationId: "", question, sessionId,
+      columns: [], rows: [], chartType: "", chartConfig: {},
+    };
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        // SSE frames are `data: {json}` blocks separated by a blank line.
+        for (;;) {
+          const cut = buffer.indexOf("\n\n");
+          if (cut < 0) break;
+          const block = buffer.slice(0, cut);
+          buffer = buffer.slice(cut + 2);
+          const line = block.split("\n").find((l) => l.startsWith("data: "));
+          if (!line) continue;
+          let frame: Record<string, unknown>;
+          try {
+            frame = JSON.parse(line.slice(6));
+          } catch {
+            continue; // a malformed frame must not kill the whole answer
+          }
+
+          // Progress frames become task cards; every other frame maps to none.
+          for (const card of cards(frame)) yield card;
+
+          switch (frame.type) {
+            case "start":
+              // The run's identity, and the only handle a cancel has.
+              artifacts.investigationId = asText(frame.investigation_id);
+              break;
+
+            case "done":
+              // A QUICK answer mints its turn id late and names it here as `inv_id`; its
+              // start frame carries none. Without this a ✅ on every quick answer found no
+              // turn and recorded nothing (receipt 2026-10-03, through the agent door).
+              if (!artifacts.investigationId) {
+                artifacts.investigationId = asText(frame.inv_id ?? frame.investigation_id);
+              }
+              break;
+
+            // The grid and its chart, kept for the artifacts post. Last-wins: a
+            // conversational turn may run several queries, and the one the
+            // closing prose is about is the one it finished on.
+            case "columns":
+              artifacts.columns = (frame.columns as string[]) ?? [];
+              break;
+            case "rows":
+              artifacts.rows = (frame.rows as unknown[][]) ?? [];
+              break;
+            case "chart_type":
+              artifacts.chartType = asText(frame.chart_type);
+              break;
+            case "chart_config":
+              artifacts.chartConfig = (frame.chart_config as Record<string, unknown>) ?? {};
+              break;
+
+            case "headline_delta": {
+              const add = suffix(headline, asText(frame.headline));
+              if (add) {
+                headline += add;
+                sawText = true;
+                yield add;
+              }
+              break;
+            }
+            case "narrative_delta": {
+              const full = asText(frame.narrative);
+              const add = suffix(narrative, full);
+              if (add) {
+                if (!narrative && sawText) yield "\n\n";
+                narrative += add;
+                sawText = true;
+                yield add;
+              }
+              break;
+            }
+            case "headline":
+            case "answer": {
+              // Settled text wins over its stream — yield whatever the partial missed.
+              const full = asText(frame.headline) || asText(frame.text) || asText(frame.answer);
+              const add = suffix(headline, full);
+              if (add) {
+                headline = full;
+                sawText = true;
+                yield add;
+              }
+              break;
+            }
+            case "answer_report":
+            case "report":
+            case "explore_report": {
+              // A deep or wide turn lands as a report. The full artifact lives in
+              // Pramanyx; the thread gets the report's own words, never a summary
+              // this transport invented.
+              const rep = (frame.answer_report ?? frame.report ?? frame.explore_report ?? {}) as Record<string, unknown>;
+              const head = asText(rep.headline) || asText(rep.answer) || asText(rep.summary);
+              const body = asText(rep.summary) !== head ? asText(rep.summary) : "";
+              // P6 — the figures the answer rests on and what it could not answer, as the canvas shows them.
+              const text = [head, figuresLine(rep.figures), body, asText(rep.gaps)].filter(Boolean).join("\n\n")
+                || "Deep analysis complete — open Pramanyx for the full report.";
+              yield (sawText ? "\n\n" : "") + text;
+              sawText = true;
+              break;
+            }
+            case "error": {
+              // The error frame carries R4's typed tail (reason/hint) AND the raw
+              // provider text — which for a rate-limited chain is a wall of repeated
+              // 429 JSON (seen live in a thread). A Slack surface gets ONE honest
+              // sentence: the hint if the backend classified the error, else the
+              // first attempt's text, bounded.
+              const hint = asText(frame.hint);
+              const first = (asText(frame.message) || asText(frame.error) || "the run failed")
+                .split(" · ")[0]
+                .trim();
+              const short = first.length > 240 ? `${first.slice(0, 240)}…` : first;
+              yield (sawText ? "\n\n" : "") + `⚠️ ${hint || short}`;
+              // No artifacts: a failed turn has no result to exhibit, and half a
+              // grid posted under a failure reads as a partial answer.
+              return;
+            }
+            case "envelope":
+              // CP-4 — the answer folded whole, emitted last. What `postExhibits`
+              // selects from: the grid once, the chart decision, the top caveats.
+              artifacts.envelope = (frame.envelope as AnswerEnvelope) ?? null;
+              break;
+            case "done":
+              // Not the last frame: the quick path streams its narrative, its
+              // follow-ups and the envelope AFTER `done`. The stream's end is the
+              // turn's end; `settled` only records that the platform said so.
+              settled = true;
+              break;
+            default:
+              break; // receipt/telemetry frames are web-surface concerns, not Slack text
+          }
+        }
+      }
+      // The turn ends when the stream does. A settled answer that never got its
+      // terminal frame still earned its exhibits.
+      if (settled || sawText) onTurn?.(artifacts);
+    } finally {
+      reader.releaseLock();
+      // Abandoned, not finished: the platform's stop button (or any abort)
+      // reached us mid-run, so kill the work rather than merely stop watching.
+      if (!settled && signal?.aborted && artifacts.investigationId) {
+        await cancel(artifacts.investigationId);
+      }
+    }
+  };
+}
+
+/** HB-5 — one arrival: a thread reply filed as a note on the object the thread is
+ *  about. The Python door does the customs (cap, control-strip, PII redaction) and
+ *  the staging; this is transport only, like everything in this file. */
+export interface ArrivalBody {
+  channel: string;
+  threadTs: string;
+  text: string;
+  author?: string;
+  authorRef?: string;
+}
+
+export interface ArrivalResult {
+  ok: boolean;
+  status: number;
+  /** The door's sentence — the staged note's why, or the honest refusal. */
+  detail: string;
+}
+
+export type ArrivalPoster = (body: ArrivalBody) => Promise<ArrivalResult>;
+
+/** TJ-4 — a reaction is a verdict. ✅ / ❌ on an answer the bot posted record accept /
+ *  reject on the turn it came from, through the same door every other verdict uses
+ *  (`POST /verify/verdict`). The message carries no receipt and the reaction needs none. */
+export interface VerdictBody {
+  investigationId: string;
+  /** `correct`: the answer was wrong and the person said what is right — a lesson the
+   *  planner and the agent's own loop read back, as they read a reject. */
+  verdict: "accept" | "reject" | "correct";
+  note?: string;
+  headline?: string;
+}
+export interface VerdictResult { ok: boolean; status: number; detail: string }
+export type VerdictPoster = (body: VerdictBody) => Promise<VerdictResult>;
+
+export function createVerdictPoster(
+  env: Env = process.env,
+  fetchImpl: typeof fetch = fetch,
+): VerdictPoster {
+  const base = (env.PRAMANYX_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
+  const authHeaders: Record<string, string> =
+    env.PRAMANYX_API_KEY ? { "x-api-key": env.PRAMANYX_API_KEY } : {};
+  return async function postVerdict(body: VerdictBody): Promise<VerdictResult> {
+    try {
+      const res = await fetchImpl(`${base}/verify/verdict`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...authHeaders },
+        body: JSON.stringify({
+          // AO-7b — the same fallback the ask stream uses (it said "workspace", this said
+          // ""), and the rest is left EMPTY on purpose: the verdict door reads the agent,
+          // the headline and the SQL from the turn's own record, which is truer than
+          // anything this process remembers.
+          connection_id: env.PRAMANYX_CONNECTION_ID ?? "workspace",
+          investigation_id: body.investigationId,
+          verdict: body.verdict,
+          note: body.note ?? "",
+          headline: body.headline ?? "",
+        }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      const detail = asText(payload.detail) || (res.ok ? "recorded" : `the verdict door said ${res.status}`);
+      return { ok: res.ok, status: res.status, detail };
+    } catch (err) {
+      return { ok: false, status: 0, detail: `could not reach the verdict door: ${String(err)}` };
+    }
+  };
+}
+
+export function createArrivalPoster(
+  env: Env = process.env,
+  fetchImpl: typeof fetch = fetch,
+): ArrivalPoster {
+  const base = (env.PRAMANYX_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
+  const authHeaders: Record<string, string> =
+    env.PRAMANYX_API_KEY ? { "x-api-key": env.PRAMANYX_API_KEY } : {};
+  return async function postArrival(body: ArrivalBody): Promise<ArrivalResult> {
+    try {
+      const res = await fetchImpl(`${base}/arrivals/slack`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...authHeaders },
+        body: JSON.stringify({
+          channel: body.channel,
+          thread_ts: body.threadTs,
+          text: body.text,
+          author: body.author ?? "",
+          author_ref: body.authorRef ?? "",
+        }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      const detail = asText(payload.why) || asText(payload.detail) ||
+        (res.ok ? "noted" : `the arrivals door said ${res.status}`);
+      return { ok: res.ok, status: res.status, detail };
+    } catch (err) {
+      return { ok: false, status: 0, detail: `could not reach the arrivals door: ${String(err)}` };
+    }
+  };
+}
+
+/** The decision-framework study §3.2 — "@bot decide: <what was decided>" books a decision in the Record from the
+ *  thread, citing the answer the bot gave there; the people named after the verb are its approvers. The Python door
+ *  does the customs and the booking; this is transport only. */
+export interface DecisionBody {
+  channel: string;
+  threadTs: string;
+  /** What was decided, as the person wrote it after `decide:`, mentions removed. */
+  decided: string;
+  /** What was being decided: the question the thread's answer was to, when the bot answered one. */
+  question: string;
+  /** The answer's run, when the bot answered in this thread — the door cites what it booked. */
+  investigationId?: string;
+  author?: string;
+  authorRef?: string;
+  /** The people named as approvers, as `slack:<id>`. */
+  approverRefs?: string[];
+}
+export interface DecisionResult {
+  ok: boolean;
+  status: number;
+  detail: string;
+  decisionId?: string;
+  reviewOn?: string;
+  /** How many claims the decision cites. */
+  cited?: number;
+}
+export type DecisionPoster = (body: DecisionBody) => Promise<DecisionResult>;
+
+/** A ✅ (approve) or ❌ (dissent) on a decision card, by the person who reacted. */
+export interface ApprovalBody { decisionId: string; verdict: "approve" | "dissent"; author?: string; authorRef?: string }
+export interface ApprovalResult { ok: boolean; status: number; detail: string }
+export type ApprovalPoster = (body: ApprovalBody) => Promise<ApprovalResult>;
+
+export function createDecisionPoster(
+  env: Env = process.env,
+  fetchImpl: typeof fetch = fetch,
+): DecisionPoster {
+  const base = (env.PRAMANYX_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
+  const authHeaders: Record<string, string> =
+    env.PRAMANYX_API_KEY ? { "x-api-key": env.PRAMANYX_API_KEY } : {};
+  return async function postDecision(body: DecisionBody): Promise<DecisionResult> {
+    try {
+      const res = await fetchImpl(`${base}/arrivals/slack/decision`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...authHeaders },
+        body: JSON.stringify({
+          channel: body.channel, thread_ts: body.threadTs, text: body.decided, question: body.question,
+          investigation_id: body.investigationId ?? "", connection_id: env.PRAMANYX_CONNECTION_ID ?? "",
+          author: body.author ?? "", author_ref: body.authorRef ?? "", approver_refs: body.approverRefs ?? [],
+        }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok) {
+        return { ok: false, status: res.status, detail: asText(payload.detail) || `the decision door said ${res.status}` };
+      }
+      return {
+        ok: true, status: res.status, detail: asText(payload.why),
+        decisionId: asText(payload.decision_id), reviewOn: asText(payload.review_on),
+        cited: typeof payload.cited === "number" ? payload.cited : 0,
+      };
+    } catch (err) {
+      return { ok: false, status: 0, detail: `could not reach the decision door: ${String(err)}` };
+    }
+  };
+}
+
+export function createApprovalPoster(
+  env: Env = process.env,
+  fetchImpl: typeof fetch = fetch,
+): ApprovalPoster {
+  const base = (env.PRAMANYX_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
+  const authHeaders: Record<string, string> =
+    env.PRAMANYX_API_KEY ? { "x-api-key": env.PRAMANYX_API_KEY } : {};
+  return async function postApproval(body: ApprovalBody): Promise<ApprovalResult> {
+    try {
+      const res = await fetchImpl(`${base}/arrivals/slack/decision/${encodeURIComponent(body.decisionId)}/approval`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...authHeaders },
+        body: JSON.stringify({ verdict: body.verdict, author: body.author ?? "", author_ref: body.authorRef ?? "" }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      const detail = asText(payload.why) || asText(payload.detail) || (res.ok ? "recorded" : `the decision door said ${res.status}`);
+      return { ok: res.ok, status: res.status, detail };
+    } catch (err) {
+      return { ok: false, status: 0, detail: `could not reach the decision door: ${String(err)}` };
+    }
+  };
+}
+
+/** Idea 7 — "@bot check: <memo>": every number in the text checked against the data.
+ *  The door returns an answer envelope (Arc CP), so the thread renders it the way it
+ *  renders any answer: the headline and body as prose, the verdict grid as the exhibit. */
+export interface FactCheckResult {
+  ok: boolean;
+  status: number;
+  /** The door's refusal, or "" when it checked. */
+  detail: string;
+  envelope: AnswerEnvelope | null;
+}
+
+export type FactChecker = (text: string) => Promise<FactCheckResult>;
+
+export function createFactChecker(
+  env: Env = process.env,
+  fetchImpl: typeof fetch = fetch,
+): FactChecker {
+  const base = (env.PRAMANYX_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
+  const authHeaders: Record<string, string> =
+    env.PRAMANYX_API_KEY ? { "x-api-key": env.PRAMANYX_API_KEY } : {};
+  return async function factCheck(text: string): Promise<FactCheckResult> {
+    try {
+      const res = await fetchImpl(`${base}/factcheck`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...authHeaders },
+        body: JSON.stringify({ text, connection_id: env.PRAMANYX_CONNECTION_ID ?? "" }),
+      });
+      const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      if (!res.ok) {
+        return { ok: false, status: res.status, detail: asText(body.detail) || `HTTP ${res.status}`, envelope: null };
+      }
+      return { ok: true, status: res.status, detail: "", envelope: (body.envelope as AnswerEnvelope) ?? null };
+    } catch (err) {
+      return { ok: false, status: 0, detail: err instanceof Error ? err.message : String(err), envelope: null };
+    }
+  };
+}

@@ -2,7 +2,7 @@
 /**
  * Idea 5 — a restored answer whose own query now returns different numbers says so under the
  * answer: what it said, what it is now, and why (late rows, a restatement, or "cannot tell").
- * The shape is `aughor/answer/recheck.py`'s entry, as `data-recheck` carries it.
+ * The shape is `pramanyx/answer/recheck.py`'s entry, as `data-recheck` carries it.
  */
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";

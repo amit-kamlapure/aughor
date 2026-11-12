@@ -19,14 +19,14 @@ from pathlib import Path
 
 import pytest
 
-from aughor.connectors.file.local_upload import LocalUploadConnection
+from pramanyx.connectors.file.local_upload import LocalUploadConnection
 
 
 @pytest.fixture
 def conn(tmp_path, monkeypatch):
     """A workspace connector rooted in tmp_path — this ingests, so it must not touch
     the real upload store."""
-    from aughor.control_plane import vending
+    from pramanyx.control_plane import vending
 
     monkeypatch.setattr(vending, "STORAGE_ROOT", tmp_path / "uploads")
     c = LocalUploadConnection(dsn="local://", connection_id="upload_fmt_test")
@@ -116,7 +116,7 @@ def test_analyze_error_reaches_the_caller(tmp_path, monkeypatch) -> None:
     encoding from a missing extension from a corrupt file."""
     import inspect
 
-    from aughor.routers import connections as route_mod
+    from pramanyx.routers import connections as route_mod
 
     src = inspect.getsource(route_mod.analyze_connection_file)
     assert 'detail=f"Analyze failed: {exc}"' in src, (
@@ -134,7 +134,7 @@ def test_a_file_duckdb_refuses_in_every_encoding_is_transcoded(conn, tmp_path, m
     Simulated by making DuckDB reject the `encoding=` form, since the point is what
     happens when that step does not save us.
     """
-    from aughor.connectors.file import local_upload as lu
+    from pramanyx.connectors.file import local_upload as lu
 
     p = _write(tmp_path, "stubborn.csv", "id,name\n1,café\n".encode("cp1252"))
 
@@ -170,7 +170,7 @@ def test_the_transcode_happens_once_per_file(conn, tmp_path, monkeypatch) -> Non
     the CSV that prompted this, into a temp directory nobody deletes. Thirty-four of
     them (2.7 GB) accumulated before it was caught.
     """
-    from aughor.connectors.file import local_upload as lu
+    from pramanyx.connectors.file import local_upload as lu
 
     lu._TRANSCODE_CACHE.clear()
     p = _write(tmp_path, "repeat.csv", "id,name\n1,café\n".encode("cp1252"))
@@ -197,7 +197,7 @@ def test_an_edited_file_is_transcoded_again(conn, tmp_path) -> None:
     """Cache on (path, size, mtime): re-uploading different content under the same
     name must not serve the previous copy."""
     import os
-    from aughor.connectors.file import local_upload as lu
+    from pramanyx.connectors.file import local_upload as lu
 
     lu._TRANSCODE_CACHE.clear()
     p = _write(tmp_path, "changing.csv", "id,name\n1,café\n".encode("cp1252"))
@@ -218,8 +218,8 @@ def test_a_second_connection_reuses_the_materialized_workspace(tmp_path, monkeyp
     """The connector is built fresh on every connection open and used to rebuild the
     whole workspace each time — 4.7s for 58 tables, 9.7s once a 96 MB CSV joined
     them, paid by every catalog browse and every explorer spawn."""
-    from aughor.control_plane import vending
-    from aughor.connectors.file import local_upload as lu
+    from pramanyx.control_plane import vending
+    from pramanyx.connectors.file import local_upload as lu
 
     monkeypatch.setattr(vending, "STORAGE_ROOT", tmp_path / "uploads")
     lu.evict_base("reuse_test")
@@ -254,8 +254,8 @@ def test_a_second_connection_reuses_the_materialized_workspace(tmp_path, monkeyp
 
 def test_a_new_upload_invalidates_the_cached_workspace(tmp_path, monkeypatch) -> None:
     """Reuse must never serve a workspace that no longer matches its files."""
-    from aughor.control_plane import vending
-    from aughor.connectors.file import local_upload as lu
+    from pramanyx.control_plane import vending
+    from pramanyx.connectors.file import local_upload as lu
 
     monkeypatch.setattr(vending, "STORAGE_ROOT", tmp_path / "uploads")
     lu.evict_base("inval_test")
@@ -273,8 +273,8 @@ def test_each_connection_keeps_its_own_search_path(tmp_path, monkeypatch) -> Non
     """Cursors share the data but NOT the session. This is the property that makes
     sharing safe: `search_path` is scoped per connection precisely so one schema's
     query cannot resolve to a sibling's same-named table."""
-    from aughor.control_plane import vending
-    from aughor.connectors.file import local_upload as lu
+    from pramanyx.control_plane import vending
+    from pramanyx.connectors.file import local_upload as lu
 
     monkeypatch.setattr(vending, "STORAGE_ROOT", tmp_path / "uploads")
     lu.evict_base("path_test")
@@ -294,8 +294,8 @@ def test_each_connection_keeps_its_own_search_path(tmp_path, monkeypatch) -> Non
 def test_a_reader_clone_shares_rather_than_rebuilds(tmp_path, monkeypatch) -> None:
     """`make_reader` exists to make reads parallel; rebuilding per reader made each
     one pay a full workspace materialization."""
-    from aughor.control_plane import vending
-    from aughor.connectors.file import local_upload as lu
+    from pramanyx.control_plane import vending
+    from pramanyx.connectors.file import local_upload as lu
 
     monkeypatch.setattr(vending, "STORAGE_ROOT", tmp_path / "uploads")
     lu.evict_base("reader_test")

@@ -4,7 +4,7 @@ Reuses the quarantine flag: sets invalid=True + reason (hidden from intel via th
 store read filter, KEPT in the store, reversible) and logs the reason for the guard
 backlog. No hand-edited JSON required.
 """
-import aughor.explorer.store as store
+import pramanyx.explorer.store as store
 
 
 def test_dismiss_flags_invalid_with_reason(monkeypatch):

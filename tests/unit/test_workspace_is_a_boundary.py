@@ -13,8 +13,8 @@ resolver honouring the ambient workspace, and the routes actually applying it.
 """
 import pytest
 
-from aughor.metastore.sync import scoped_to_workspace
-from aughor.workspace.context import (
+from pramanyx.metastore.sync import scoped_to_workspace
+from pramanyx.workspace.context import (
     current_workspace_id,
     set_workspace_id,
     reset_workspace_id,
@@ -87,7 +87,7 @@ def test_objects_are_filtered_like_mappings():
 @pytest.fixture(scope="module")
 def client():
     from fastapi.testclient import TestClient
-    from aughor.api import app
+    from pramanyx.api import app
     with TestClient(app) as c:
         yield c
 
@@ -95,7 +95,7 @@ def client():
 def _ambient_probe() -> None:
     """The route these tests read the request's workspace through — registered once, by whichever test runs first. Each
     test registering it for itself left the second unable to run alone: it read a route only the first had made."""
-    from aughor.api import app
+    from pramanyx.api import app
 
     if any(getattr(r, "path", "") == "/_test/ambient-workspace" for r in app.routes):
         return
@@ -109,7 +109,7 @@ def test_header_binds_the_workspace_for_the_request(client):
     """The middleware is the whole point: without it the gate is opt-in per handler."""
     _ambient_probe()
     assert client.get("/_test/ambient-workspace").json()["workspace"] is None
-    r = client.get("/_test/ambient-workspace", headers={"X-Aughor-Workspace": "ws_hdr"})
+    r = client.get("/_test/ambient-workspace", headers={"X-Pramanyx-Workspace": "ws_hdr"})
     assert r.json()["workspace"] == "ws_hdr"
     # …and it must not leak into the next request.
     assert client.get("/_test/ambient-workspace").json()["workspace"] is None
@@ -127,7 +127,7 @@ def test_connections_list_is_scoped(client):
     """The widest hole: this list returned the whole org whatever workspace was active."""
     unscoped = client.get("/connections")
     assert unscoped.status_code == 200
-    scoped = client.get("/connections", headers={"X-Aughor-Workspace": "no-such-workspace"})
+    scoped = client.get("/connections", headers={"X-Pramanyx-Workspace": "no-such-workspace"})
     assert scoped.status_code == 200
     assert scoped.json() == [], "an unknown workspace must see no connections"
     # Unscoped behaviour is unchanged — this change adds a gate, it does not close one.
@@ -172,10 +172,10 @@ def test_unowned_rows_are_untouched_by_ownership():
 def test_every_operational_model_can_carry_an_owner():
     """The filter is only half of it — a store that cannot PERSIST an owner makes the
     rule above unreachable, which is how a feature ships tested and inert."""
-    from aughor.automations.models import Automation
-    from aughor.briefing.models import BriefSubscription
-    from aughor.custom_agents.models import UserAgent
-    from aughor.slackbots.models import SlackBot
+    from pramanyx.automations.models import Automation
+    from pramanyx.briefing.models import BriefSubscription
+    from pramanyx.custom_agents.models import UserAgent
+    from pramanyx.slackbots.models import SlackBot
     for model in (UserAgent, Automation, SlackBot, BriefSubscription):
         assert "workspace_id" in model.model_fields, model.__name__
         assert model.model_fields["workspace_id"].default == "", model.__name__

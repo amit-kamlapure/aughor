@@ -16,9 +16,9 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from aughor.agent.state import AgentState
+from pramanyx.agent.state import AgentState
 
-_AGENT_DIR = Path(__file__).resolve().parents[2] / "aughor" / "agent"
+_AGENT_DIR = Path(__file__).resolve().parents[2] / "pramanyx" / "agent"
 _READ_RE = re.compile(r'state(?:\.get\(|\[)\s*"(_[a-z][a-z0-9_]*)"')
 
 
@@ -52,7 +52,7 @@ def test_compiled_graph_carries_the_plan_channel():
     """The annotation is the claim; the compiled graph's channel table is the proof.
     This is what LangGraph actually filters node output against."""
     import duckdb
-    from aughor.agent.graph import build_graph
+    from pramanyx.agent.graph import build_graph
 
     graph = build_graph(duckdb.connect())
     channels = set(getattr(graph, "channels", {}).keys())

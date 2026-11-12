@@ -25,16 +25,16 @@ describe("the registry read", () => {
       { id: "b", enabled: false, bot_token: "xoxb", app_token: "xapp" },
       { id: "c", enabled: true, bot_token: "", app_token: "xapp" },
     ] });
-    const read = createRegistry({ AUGHOR_API_URL: "http://api/", AUGHOR_RUNTIME_KEY: "k1" }, impl);
+    const read = createRegistry({ PRAMANYX_API_URL: "http://api/", PRAMANYX_RUNTIME_KEY: "k1" }, impl);
     const bots = await read();
     expect(bots.map(b => b.id)).toEqual(["a"]);
     expect(calls[0].url).toBe("http://api/slack-bots/runtime");
-    expect((calls[0].init?.headers as Record<string, string>)["x-aughor-runtime-key"]).toBe("k1");
+    expect((calls[0].init?.headers as Record<string, string>)["x-pramanyx-runtime-key"]).toBe("k1");
   });
 
   it("names the remedy on a 503", async () => {
     const { impl } = fakeFetch(503);
-    await expect(createRegistry({ AUGHOR_API_URL: "http://api" }, impl)()).rejects.toThrow(
+    await expect(createRegistry({ PRAMANYX_API_URL: "http://api" }, impl)()).rejects.toThrow(
       /supervisor key/);
   });
 });
@@ -56,18 +56,18 @@ describe("the heartbeat", () => {
 
   it("POSTs what is listening, with the same key the registry read sends", async () => {
     const { calls, impl } = fakeFetch(200, { ok: true });
-    const post = createHeartbeat({ AUGHOR_API_URL: "http://api", AUGHOR_RUNTIME_KEY: "k1" }, impl);
+    const post = createHeartbeat({ PRAMANYX_API_URL: "http://api", PRAMANYX_RUNTIME_KEY: "k1" }, impl);
     expect(await post(beat)).toBe(true);
     expect(calls[0].url).toBe("http://api/slack-bots/runtime/heartbeat");
     expect(calls[0].init?.method).toBe("POST");
-    expect((calls[0].init?.headers as Record<string, string>)["x-aughor-runtime-key"]).toBe("k1");
+    expect((calls[0].init?.headers as Record<string, string>)["x-pramanyx-runtime-key"]).toBe("k1");
     expect(JSON.parse(String(calls[0].init?.body))).toEqual(beat);
   });
 
   it("never throws — a refused or unreachable API is a false, not a crash", async () => {
-    const refused = createHeartbeat({ AUGHOR_API_URL: "http://api" }, fakeFetch(503).impl);
+    const refused = createHeartbeat({ PRAMANYX_API_URL: "http://api" }, fakeFetch(503).impl);
     expect(await refused(beat)).toBe(false);
-    const down = createHeartbeat({ AUGHOR_API_URL: "http://api" },
+    const down = createHeartbeat({ PRAMANYX_API_URL: "http://api" },
       (async () => { throw new Error("ECONNREFUSED"); }) as unknown as typeof fetch);
     expect(await down(beat)).toBe(false);
   });

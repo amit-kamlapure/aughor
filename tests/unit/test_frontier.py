@@ -6,7 +6,7 @@ concrete measure×dimension cells. The frontier must (a) read covered cells out 
 executed SQL, (b) subtract them from the universe of valuable cells, and (c) hand
 back the uncovered ones ranked so the generator gets a concrete target.
 """
-from aughor.explorer.frontier import (
+from pramanyx.explorer.frontier import (
     Cut, insight_cuts, covered_cuts, build_universe, rank_frontier, render_frontier_block,
 )
 

@@ -14,8 +14,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.custom_agents import create_agent, delete_agent, get_agent, list_agents
-from aughor.custom_agents.store import add_candidate, add_golden, certify_golden, list_goldens
+from pramanyx.custom_agents import create_agent, delete_agent, get_agent, list_agents
+from pramanyx.custom_agents.store import add_candidate, add_golden, certify_golden, list_goldens
 
 
 @pytest.fixture(autouse=True)
@@ -27,23 +27,23 @@ def _clean_agents():
 
 @pytest.fixture()
 def client(monkeypatch):
-    import aughor.kernel.flags as flags
+    import pramanyx.kernel.flags as flags
     monkeypatch.setattr(flags, "flag_enabled", lambda name: name == "agents.user_defined")
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
 def _flags(monkeypatch, *on):
     """The loop and the testing centre are one organisation setting since 2026-10-28 (ROADMAP §3.65)."""
-    import aughor.kernel.flags as flags
-    import aughor.orgsettings.allows as allows
+    import pramanyx.kernel.flags as flags
+    import pramanyx.orgsettings.allows as allows
     monkeypatch.setattr(flags, "flag_enabled", lambda name: name == "agents.user_defined")
     monkeypatch.setattr(allows, "allows", lambda setting: bool(on) and setting == "scheduled_model_work")
 
 
 def _turn(monkeypatch, *, agent_id="", sql="SELECT 1", headline="There were 49.",
           question="How many?", connection_id="conn-t"):
-    from aughor.feedback import verdicts
+    from pramanyx.feedback import verdicts
     monkeypatch.setattr(verdicts, "_turn_record", lambda inv: {
         "agent_id": agent_id, "connection_id": connection_id, "headline": headline,
         "sql": sql, "question": question} if inv else {})
@@ -52,7 +52,7 @@ def _turn(monkeypatch, *, agent_id="", sql="SELECT 1", headline="There were 49."
 # ── AO-7a/7b · a verdict knows its agent, and is whole ──────────────────────────────
 
 def test_a_verdict_is_backfilled_from_the_turns_record(monkeypatch):
-    from aughor.feedback.verdicts import list_corrections, record_verdict
+    from pramanyx.feedback.verdicts import list_corrections, record_verdict
     _turn(monkeypatch, agent_id="ua_x", sql="SELECT COUNT(*) FROM orders")
     # The Slack ✅ arrives with an investigation id and nothing else.
     v = record_verdict("", "inv-1", "reject", note="wrong window")
@@ -66,7 +66,7 @@ def test_a_verdict_is_backfilled_from_the_turns_record(monkeypatch):
 
 
 def test_what_the_caller_says_wins_over_the_backfill(monkeypatch):
-    from aughor.feedback.verdicts import record_verdict
+    from pramanyx.feedback.verdicts import record_verdict
     _turn(monkeypatch, agent_id="ua_x")
     v = record_verdict("conn-said", "inv-2", "correct", headline="said", sql_source="SELECT 2",
                        agent_id="ua_said")
@@ -85,8 +85,8 @@ def test_the_route_takes_the_agent(client, monkeypatch):
 # ── AO-7a · the agent's own corrections lead its brief and its priors ───────────────
 
 def test_the_brief_carries_the_agents_own_corrections_only_with_the_loop_on(monkeypatch):
-    from aughor.custom_agents.context import agent_brief_for
-    from aughor.feedback.verdicts import record_verdict
+    from pramanyx.custom_agents.context import agent_brief_for
+    from pramanyx.feedback.verdicts import record_verdict
     a = create_agent("Learner", instructions="Count carefully.")
     _turn(monkeypatch, agent_id=a.id, headline="There were 108 orders.")
     record_verdict("", "inv-4", "reject", note="it counted lines, not orders")
@@ -105,8 +105,8 @@ def test_the_brief_carries_the_agents_own_corrections_only_with_the_loop_on(monk
 
 
 def test_an_agents_lesson_outranks_the_connections_at_equal_resemblance(monkeypatch):
-    from aughor.feedback.priors import _match_corrections
-    from aughor.feedback.verdicts import record_verdict
+    from pramanyx.feedback.priors import _match_corrections
+    from pramanyx.feedback.verdicts import record_verdict
     _turn(monkeypatch, agent_id="ua_other", headline="revenue by month was wrong")
     record_verdict("conn-p", "inv-5", "reject", headline="revenue by month was wrong")
     _turn(monkeypatch, agent_id="ua_mine", headline="revenue by month was wrong")
@@ -119,7 +119,7 @@ def test_an_agents_lesson_outranks_the_connections_at_equal_resemblance(monkeypa
 # ── AO-7c/7d · an accepted answer becomes a candidate; verdicts re-evaluate ────────
 
 def test_an_accepted_answer_becomes_an_uncertified_candidate(monkeypatch):
-    from aughor.feedback.verdicts import record_verdict
+    from pramanyx.feedback.verdicts import record_verdict
     a = create_agent("Candidate", instructions="x")
     _flags(monkeypatch, "agents.learning_loop")
     _turn(monkeypatch, agent_id=a.id, sql="SELECT COUNT(DISTINCT order_id) FROM orders",
@@ -154,8 +154,8 @@ def test_certifying_a_candidate_makes_it_count(client, monkeypatch):
 
 
 def test_every_fifth_verdict_and_a_configuration_change_reevaluate(monkeypatch):
-    from aughor.custom_agents import learning, update_agent
-    from aughor.feedback.verdicts import record_verdict
+    from pramanyx.custom_agents import learning, update_agent
+    from pramanyx.feedback.verdicts import record_verdict
     a = create_agent("Reeval", instructions="v1")
     add_golden(a.id, "q", "SELECT 1")
     _flags(monkeypatch, "agents.learning_loop")
@@ -172,8 +172,8 @@ def test_every_fifth_verdict_and_a_configuration_change_reevaluate(monkeypatch):
 
 
 def test_the_loop_is_inert_when_off(monkeypatch):
-    from aughor.custom_agents import learning, update_agent
-    from aughor.feedback.verdicts import record_verdict
+    from pramanyx.custom_agents import learning, update_agent
+    from pramanyx.feedback.verdicts import record_verdict
     a = create_agent("Off", instructions="v1")
     add_golden(a.id, "q", "SELECT 1")
     ran: list = []
@@ -201,8 +201,8 @@ def _db():
 
 
 def test_the_suite_counts_certified_goldens_only_and_writes_the_diff():
-    from aughor.custom_agents.quality import evaluate_agent
-    from aughor.custom_agents.store import previous_eval
+    from pramanyx.custom_agents.quality import evaluate_agent
+    from pramanyx.custom_agents.store import previous_eval
     a = create_agent("Diff", instructions="x")
     g1 = add_golden(a.id, "one", "SELECT 1")
     add_candidate(a.id, "a candidate", source="synthetic")
@@ -220,7 +220,7 @@ def test_the_suite_counts_certified_goldens_only_and_writes_the_diff():
 
 def test_the_drafter_needs_its_flag_and_writes_questions_not_sql(client, monkeypatch):
     import types as _types
-    from aughor.custom_agents import learning
+    from pramanyx.custom_agents import learning
     a = create_agent("Draft", instructions="x", purpose="Churn questions")
     assert client.post(f"/agents/custom/{a.id}/goldens/draft").status_code == 409
     _flags(monkeypatch, "agents.testing_centre")
@@ -235,7 +235,7 @@ def test_the_drafter_needs_its_flag_and_writes_questions_not_sql(client, monkeyp
                 {"question": "What was revenue by region in Q3?", "why": "catalogue"},
             ])
 
-    monkeypatch.setattr("aughor.llm.provider.get_provider", lambda role, **k: _Prov())
+    monkeypatch.setattr("pramanyx.llm.provider.get_provider", lambda role, **k: _Prov())
     monkeypatch.setattr(learning, "_catalogue_lines", lambda c, s: ["- Churn rate: customers lost / customers"])
     r = client.post(f"/agents/custom/{a.id}/goldens/draft")
     assert r.status_code == 201, r.text
@@ -250,8 +250,8 @@ def test_the_drafter_needs_its_flag_and_writes_questions_not_sql(client, monkeyp
 
 def test_the_nightly_run_is_once_a_day_and_behind_its_flag(monkeypatch):
     from datetime import datetime, timezone
-    from aughor.custom_agents import learning
-    from aughor.custom_agents import quality
+    from pramanyx.custom_agents import learning
+    from pramanyx.custom_agents import quality
     a = create_agent("Nightly", instructions="x")
     add_golden(a.id, "q", "SELECT 1")
     create_agent("NoGoldens", instructions="x")
@@ -268,7 +268,7 @@ def test_the_nightly_run_is_once_a_day_and_behind_its_flag(monkeypatch):
 
 
 def test_the_learning_receipt(client, monkeypatch):
-    from aughor.feedback.verdicts import record_verdict
+    from pramanyx.feedback.verdicts import record_verdict
     a = create_agent("Receipt", instructions="x")
     _flags(monkeypatch, "agents.learning_loop")
     _turn(monkeypatch, agent_id=a.id, question="Q1")
@@ -286,23 +286,23 @@ def test_the_learning_receipt(client, monkeypatch):
 # ── AO-7e · evidence from what runs carry; a skill is staged, never saved ────────────
 
 def test_record_run_derives_evidence_from_the_manifest_or_the_label(monkeypatch):
-    from aughor.memory import _derive_evidence
+    from pramanyx.memory import _derive_evidence
     manifest_state = {"exploration_report": {"verification": {
         "earned_confidence": 0.82, "confidence_band": "high", "checks": [{"name": "rows"}]}}}
     assert _derive_evidence(manifest_state) == (True, 0.82, "verification_manifest")
     low = {"exploration_report": {"verification": {"earned_confidence": 0.1, "confidence_band": "low",
                                                     "checks": [{"name": "rows"}]}}}
     assert _derive_evidence(low)[0] is False
-    monkeypatch.setattr("aughor.obs.trajectory.trajectory_of", lambda t: {"t": t})
-    monkeypatch.setattr("aughor.learning.reward.run_label", lambda tr: {"label": "positive"})
+    monkeypatch.setattr("pramanyx.obs.trajectory.trajectory_of", lambda t: {"t": t})
+    monkeypatch.setattr("pramanyx.learning.reward.run_label", lambda tr: {"label": "positive"})
     assert _derive_evidence({"trace_id": "tr-1"}) == (True, None, "reward_label")
-    monkeypatch.setattr("aughor.learning.reward.run_label", lambda tr: {"label": "unlabeled"})
+    monkeypatch.setattr("pramanyx.learning.reward.run_label", lambda tr: {"label": "unlabeled"})
     assert _derive_evidence({"trace_id": "tr-1"})[2] == "unknown"
     assert _derive_evidence({"grounded": True, "confidence": 0.5}) == (True, 0.5, "state_keys")
 
 
 def test_a_crystallised_skill_is_staged_to_the_inbox_not_saved(monkeypatch):
-    from aughor.memory import skills
+    from pramanyx.memory import skills
     staged: list = []
     monkeypatch.setattr(skills, "_autonomy_level", lambda conn: 2)
     monkeypatch.setattr(skills, "_run_signals", lambda inv: {"grounded": True, "read_only": True})
@@ -310,7 +310,7 @@ def test_a_crystallised_skill_is_staged_to_the_inbox_not_saved(monkeypatch):
                         lambda inv, table_to_entity=None: type("C", (), {"id": "sk_1", "name": "Orders by day"})())
     monkeypatch.setattr(skills, "resolve_active_schema", lambda conn: "main")
     monkeypatch.setattr(skills, "save_skill", lambda *a, **k: (_ for _ in ()).throw(AssertionError("saved directly")))
-    monkeypatch.setattr("aughor.actions.inbox.stage_proposal", lambda p: staged.append(p) or p)
+    monkeypatch.setattr("pramanyx.actions.inbox.stage_proposal", lambda p: staged.append(p) or p)
     skills.auto_crystallize("inv-s1", "conn-s")
     assert len(staged) == 1
     p = staged[0]
@@ -319,8 +319,8 @@ def test_a_crystallised_skill_is_staged_to_the_inbox_not_saved(monkeypatch):
 
 
 def test_accepting_the_staged_skill_saves_through_the_governed_door(monkeypatch):
-    from aughor.actions import inbox
-    from aughor.memory import skills
+    from pramanyx.actions import inbox
+    from pramanyx.memory import skills
     monkeypatch.setattr(skills, "accept_skill_draft", lambda inv, conn: (True, "saved learned skill sk_1"))
     outcomes: list = []
     monkeypatch.setattr(inbox, "_record_outcome", lambda pid, status, msg, out: outcomes.append((status, msg)))
@@ -338,9 +338,9 @@ def test_the_workspace_reads_the_samples_metrics_it_folds_in(monkeypatch, tmp_pa
     and `aov` applied to no listed connection and the drafter had no governed metric. The
     tables and their metrics travel together; the Workspace's own entry of a name still
     wins, a global one still fills the gaps, and any other connection folds nothing."""
-    from aughor.db import registry
-    from aughor.semantic import metrics as m
-    from aughor.semantic.metrics import MetricDefinition
+    from pramanyx.db import registry
+    from pramanyx.semantic import metrics as m
+    from pramanyx.semantic.metrics import MetricDefinition
     path = tmp_path / "metrics.instance.json"
     m.save_metric(MetricDefinition(name="revenue", connection="samples", label="Rev samples",
                                    sql="SUM(total_amount)"), path=path)

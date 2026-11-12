@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.learning import reward as rw
+from pramanyx.api import app
+from pramanyx.learning import reward as rw
 
 client = TestClient(app)
 
@@ -62,8 +62,8 @@ def test_unlabeled_is_the_default_and_carries_its_reason():
 
 
 def test_the_trajectory_and_the_bronze_tier_read_the_one_rule(monkeypatch):
-    from aughor.learning import exporters
-    from aughor.obs import trajectory as tj
+    from pramanyx.learning import exporters
+    from pramanyx.obs import trajectory as tj
     good = {"executions": OK_EXEC, "guards": [], "answers": [], "steps": [{"tool": "run_sql", "sql": "SELECT 1"}],
             "reward": {"execution": "ok"}}
     bad = {**good, "executions": [{"sql": "s", "row_count": 0, "error": "boom"}]}
@@ -84,12 +84,12 @@ def test_the_distribution_says_whether_the_label_discriminates():
 
 
 def test_the_door_labels_recent_answers_from_their_trajectories(monkeypatch):
-    monkeypatch.setattr("aughor.db.history.recent_runs", lambda since, limit=200: [
+    monkeypatch.setattr("pramanyx.db.history.recent_runs", lambda since, limit=200: [
         {"id": "i1", "kind": "chat", "question": "q1", "connection_id": "c", "completed_at": "2026-09-26T10:00:00",
          "trace_id": "t1", "sql": "SELECT 1"},
         {"id": "i2", "kind": "investigation", "question": "q2", "connection_id": "c", "completed_at": "2026-09-26T09:00:00",
          "trace_id": "t2", "sql": "SELECT 2"}])
-    monkeypatch.setattr("aughor.obs.trajectory.trajectory_of", lambda trace: (
+    monkeypatch.setattr("pramanyx.obs.trajectory.trajectory_of", lambda trace: (
         {"executions": OK_EXEC, "guards": [], "answers": []} if trace == "t1"
         else {"executions": [{"error": "boom"}], "guards": [], "answers": []}))
     body = client.get("/learning/run-labels", params={"days": 7, "limit": 10, "rows": "true"}).json()

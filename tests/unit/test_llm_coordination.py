@@ -19,8 +19,8 @@ from __future__ import annotations
 
 import threading
 
-from aughor.llm import coordination as C
-from aughor.llm import provider as P
+from pramanyx.llm import coordination as C
+from pramanyx.llm import provider as P
 
 INTERVAL = 0.1          # 600 RPM — the spacing a declared limit would demand
 
@@ -155,7 +155,7 @@ def test_provider_pacing_goes_through_the_seam(monkeypatch):
     fake = _RecordingCoordinator()
     C.set_default(fake)
     try:
-        monkeypatch.setenv("AUGHOR_LLM_RPM", "600")
+        monkeypatch.setenv("PRAMANYX_LLM_RPM", "600")
         P._pace("https://api.test")
         assert fake.reserved == [("https://api.test", 0.1)]
     finally:
@@ -177,7 +177,7 @@ def test_provider_concurrency_goes_through_the_seam(monkeypatch):
     fake = _RecordingCoordinator()
     C.set_default(fake)
     try:
-        monkeypatch.setenv("AUGHOR_LLM_MAX_CONCURRENCY", "4")
+        monkeypatch.setenv("PRAMANYX_LLM_MAX_CONCURRENCY", "4")
         with P._concurrency_slot("https://api.test"):
             pass
         assert fake.slots == [("https://api.test", 4)]
@@ -193,7 +193,7 @@ def test_a_retry_reacquires_the_gate_rather_than_reentering_it(monkeypatch):
     C.set_default(fake)
     try:
         monkeypatch.setattr(P.time, "sleep", lambda *_: None)
-        monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "2")
+        monkeypatch.setenv("PRAMANYX_LLM_MAX_RETRIES", "2")
         calls = {"n": 0}
 
         def do():
@@ -236,4 +236,4 @@ def test_provider_keeps_no_private_coordination_state():
                     offenders.append(t.id)
     assert not offenders, (
         f"coordination state back at module scope in provider.py: {offenders}. "
-        "It belongs in aughor/llm/coordination.py so a shared backend can hold it.")
+        "It belongs in pramanyx/llm/coordination.py so a shared backend can hold it.")

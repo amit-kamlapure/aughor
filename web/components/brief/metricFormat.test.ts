@@ -2,7 +2,7 @@
  * A KPI tile shows a figure at the scale its unit/range text STATES, and hides it only by a bound that text states.
  *
  * The reading is not this file's to make: `GET /business-profile` ships it beside each metric's `unit_or_range` as
- * `stated_range`, from the one reader the value audit uses (`aughor/business_profile/validate.py::stated_range`).
+ * `stated_range`, from the one reader the value audit uses (`pramanyx/business_profile/validate.py::stated_range`).
  * The formatter used to read the text with regexes of its own, and every case below is one it got wrong (measured
  * 2026-09-17): it held anything containing "ratio" to 0..1, so an inventory turnover of 5 and a net review ratio of
  * -0.2 never showed; it read "0-1000" as "0-100", so a €404 AOV never showed; and it read the airline package's

@@ -1,4 +1,4 @@
-# Extends b2b-saas with the rest of the B2B SaaS industry vocabulary (AUGHOR_ATLAS_INDUSTRY_VOCABULARY_v1, 2026-11-11:
+# Extends b2b-saas with the rest of the B2B SaaS industry vocabulary (PRAMANYX_ATLAS_INDUSTRY_VOCABULARY_v1, 2026-11-11:
 # industry `saas`, 65 reference types). Fourteen of them are the parent's objects, some under another name:
 #   Account       ← Organization Account, Tenant, Workspace (the parent already reads `tenants` and `workspaces` so)
 #   Contact       ← User, Lead (the parent already reads `users` and `leads` so)

@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from aughor.govern import departure_store as store
+from pramanyx.govern import departure_store as store
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -68,18 +68,18 @@ def receiver():
 
 @pytest.fixture(autouse=True)
 def _local(monkeypatch):
-    monkeypatch.setattr("aughor.util.url_guard.is_safe_webhook_url", lambda url: True)
+    monkeypatch.setattr("pramanyx.util.url_guard.is_safe_webhook_url", lambda url: True)
     # One HTTP attempt per send, so a refusal is the send's answer rather than the transport's
     # inner retry's — the engine's retry is the one under test.
-    monkeypatch.setattr("aughor.notifications.executor._MAX_ATTEMPTS", 1)
+    monkeypatch.setattr("pramanyx.notifications.executor._MAX_ATTEMPTS", 1)
 
 
 def test_a_refused_notify_is_retried_and_arrives(receiver):
     """The probe, kept: the receiver refuses the first send and takes the second."""
-    from aughor.automations.engine import run_automation
-    from aughor.automations.models import Automation, Condition, Effect
-    from aughor.notifications.models import ActionTrigger
-    from aughor.notifications.store import save_trigger
+    from pramanyx.automations.engine import run_automation
+    from pramanyx.automations.models import Automation, Condition, Effect
+    from pramanyx.notifications.models import ActionTrigger
+    from pramanyx.notifications.store import save_trigger
     rx = receiver(500, 200)
     trigger = save_trigger(ActionTrigger(id=f"dd-{uuid.uuid4().hex[:6]}", name="dd", type="webhook", url=rx.url))
     auto = Automation(id=f"dd-auto-{uuid.uuid4().hex[:6]}", conn_id="c1", name="weekly signups", max_retries=1,
@@ -130,7 +130,7 @@ def test_a_held_row_takes_no_delivery():
     ({"ok": False, "error": "channel_not_found"}, False, "not_delivered"),
 ])
 def test_a_slack_post_writes_its_outcome_onto_its_departure(receiver, monkeypatch, answer, ok_expected, outcome):
-    from aughor.slackbots import post
+    from pramanyx.slackbots import post
     rx = receiver(200, body=answer)
     monkeypatch.setattr(post, "_POST_URL", rx.url)
     dep = _departed(kind="slack_post")
@@ -139,7 +139,7 @@ def test_a_slack_post_writes_its_outcome_onto_its_departure(receiver, monkeypatc
 
 
 def test_an_unreachable_slack_post_is_uncertain_on_its_departure(monkeypatch):
-    from aughor.slackbots import post
+    from pramanyx.slackbots import post
     monkeypatch.setattr(post, "_POST_URL", "http://127.0.0.1:9/never")      # discard port: refused
     dep = _departed(kind="slack_post")
     ok, info = post.post_as_bot("test-token", "C1", "hello", departure_id=dep)
@@ -160,11 +160,11 @@ def _own_nodes(fn: ast.AST):
 
 
 def _gated_sends() -> dict[str, bool]:
-    """``{"aughor/x.py::function": names_its_departure}`` for every function that asks the gate and
+    """``{"pramanyx/x.py::function": names_its_departure}`` for every function that asks the gate and
     calls a transport — `post_as_bot(..., departure_id=…)`, or a payload whose context carries the
     gate's receipt (where `fire_action` reads the departure from)."""
     out: dict[str, bool] = {}
-    for path in sorted((ROOT / "aughor").rglob("*.py")):
+    for path in sorted((ROOT / "pramanyx").rglob("*.py")):
         rel = path.relative_to(ROOT).as_posix()
         for fn in ast.walk(ast.parse(path.read_text(encoding="utf-8"), filename=rel)):
             if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):

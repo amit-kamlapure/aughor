@@ -47,8 +47,8 @@ def _shm_inode(db: Path):
 def store(tmp_path, monkeypatch):
     """A real platform store redirected at a temp file."""
     db = tmp_path / "rbac.db"
-    monkeypatch.setenv("AUGHOR_RBAC_DB", str(db))
-    from aughor.rbac import store as rs
+    monkeypatch.setenv("PRAMANYX_RBAC_DB", str(db))
+    from pramanyx.rbac import store as rs
     importlib.reload(rs)
     return rs, db
 
@@ -59,7 +59,7 @@ def test_the_wal_survives_a_single_operation(store):
     rs.assign_role("org", "u0", "viewer")
     gc.collect()                       # finalize the per-operation connection
 
-    from aughor.db import backend
+    from pramanyx.db import backend
     assert _shm_inode(db) is not None, (
         "the WAL index was unlinked after one operation — a concurrent reader holding "
         f"that mapping takes SIGBUS on its next page-in. DIAG: postgres={backend.is_postgres()} "
@@ -95,7 +95,7 @@ def test_the_wal_holds_under_concurrent_readers_and_writers(store, monkeypatch):
     this test's connections wait longer for the lock. A lock that never clears, or any
     other error, still fails it; so does a vanished or recreated ``-shm``.
     """
-    from aughor.db import sqlite_util
+    from pramanyx.db import sqlite_util
     # Before the first operation: every per-operation connection is tuned as it opens.
     monkeypatch.setattr(sqlite_util, "BUSY_TIMEOUT_MS", 60_000)
 
@@ -143,7 +143,7 @@ def test_a_keepalive_holds_no_lock_a_writer_needs(store):
 def test_the_keepalive_registry_is_bounded(monkeypatch, tmp_path):
     """Unbounded, this would exhaust file descriptors — a worse failure than the one it
     prevents. A caller that repoints a store path per-test is how that happens."""
-    from aughor.db import backend
+    from pramanyx.db import backend
 
     monkeypatch.setattr(backend, "_KEEPALIVE", backend.OrderedDict())
     monkeypatch.setattr(backend, "_KEEPALIVE_MAX", 3)
@@ -163,7 +163,7 @@ def test_a_full_registry_evicts_rather_than_refusing_a_live_store(monkeypatch, t
     Evicting is safe for the same reason any close is: SQLite finalizes the WAL only on
     the LAST close, so either another connection is open (ours is not last, nothing is
     unlinked) or ours is last (there is no reader left to strand)."""
-    from aughor.db import backend
+    from pramanyx.db import backend
 
     monkeypatch.setattr(backend, "_KEEPALIVE", backend.OrderedDict())
     monkeypatch.setattr(backend, "_KEEPALIVE_MAX", 2)
@@ -182,7 +182,7 @@ def test_a_full_registry_evicts_rather_than_refusing_a_live_store(monkeypatch, t
 def test_a_store_still_works_when_the_keepalive_cannot_be_held(store, monkeypatch):
     """Best-effort by construction: this exists to protect the store, so its own failure
     must never break the store."""
-    from aughor.db import backend
+    from pramanyx.db import backend
 
     def _boom(_path):
         raise OSError("no descriptors")

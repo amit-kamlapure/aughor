@@ -15,9 +15,9 @@ from __future__ import annotations
 
 from typing import get_args
 
-from aughor.ontology.builder import render_ontology_annotations
-from aughor.ontology.models import OntologyEntity, OntologyGraph
-from aughor.ontology.overrides import TargetKind
+from pramanyx.ontology.builder import render_ontology_annotations
+from pramanyx.ontology.models import OntologyEntity, OntologyGraph
+from pramanyx.ontology.overrides import TargetKind
 
 
 def _graph_with(**entity_kwargs) -> OntologyGraph:
@@ -80,7 +80,7 @@ def test_every_store_target_kind_is_deletable():
     could write an override that no request could remove. Asserting against `TargetKind`
     itself means a future kind cannot reintroduce the gap.
     """
-    from aughor.routers.ontology import delete_ontology_override
+    from pramanyx.routers.ontology import delete_ontology_override
 
     source = delete_ontology_override.__code__.co_consts
     assert "action" in get_args(TargetKind), "the store itself must still support actions"

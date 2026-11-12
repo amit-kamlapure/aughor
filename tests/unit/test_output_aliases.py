@@ -7,8 +7,8 @@ it dry-run-gated. Pure AST, fail-open.
 """
 from __future__ import annotations
 
-from aughor.sql.aliases import uniquify_output_columns as U
-from aughor.sql import safety
+from pramanyx.sql.aliases import uniquify_output_columns as U
+from pramanyx.sql import safety
 
 
 # ── the pure AST pass ─────────────────────────────────────────────────────────
@@ -95,7 +95,7 @@ def test_preflight_uniquifies_on_a_real_connection():
     (real dry_run) and executes with two DISTINCT output column names."""
     from pathlib import Path
     import duckdb
-    from aughor.db.connection import DuckDBConnection
+    from pramanyx.db.connection import DuckDBConnection
 
     conn = DuckDBConnection.__new__(DuckDBConnection)
     conn._path = Path(":memory:")

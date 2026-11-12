@@ -25,8 +25,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.business_profile.validate import stated_range, audit_value_sql, profile_metric_ranges
-from aughor.explorer.verify import is_degenerate_result
+from pramanyx.business_profile.validate import stated_range, audit_value_sql, profile_metric_ranges
+from pramanyx.explorer.verify import is_degenerate_result
 
 #: The shipped packages — the repository's own, not the suite's temp copy of `packs/`.
 PACKS = Path(__file__).resolve().parents[2] / "packs"

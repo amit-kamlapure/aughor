@@ -9,7 +9,7 @@ answered with the topic list, never a guessed walkthrough.
 """
 from __future__ import annotations
 
-import aughor.agent.spotlight_guide as guide
+import pramanyx.agent.spotlight_guide as guide
 
 
 # ── topic resolution ───────────────────────────────────────────────────────────────
@@ -32,7 +32,7 @@ def test_unknown_topic_lists_topics_and_routes_concepts_to_help():
 # ── the offers — every offered tool is a door the roster actually has ─────────────
 
 def test_every_offered_tool_exists_on_the_converse_roster():
-    from aughor.agent.converse_tools import converse_tools
+    from pramanyx.agent.converse_tools import converse_tools
     roster = {t.name for t in converse_tools("guard-conn")}
     for topic in guide.platform_guide({"topic": "nope"})["topics"]:
         out = guide.platform_guide({"topic": topic})
@@ -53,7 +53,7 @@ def test_connect_data_offers_no_chat_door_and_says_why():
 # ── grounding: live state, honest about failure ───────────────────────────────────
 
 def test_agent_walkthrough_cites_the_askers_agents_and_their_evaluations():
-    from aughor.custom_agents.store import create_agent, record_eval
+    from pramanyx.custom_agents.store import create_agent, record_eval
     a = create_agent("guide-cited", instructions="A scope and a stance.")
     record_eval(a.id, {"passed": 3, "total": 4, "at": "2026-09-06T00:00:00Z"})
     b = create_agent("guide-unproven", instructions="Never measured.")
@@ -66,7 +66,7 @@ def test_agent_walkthrough_cites_the_askers_agents_and_their_evaluations():
 
 
 def test_stale_evaluation_is_named_not_presented_as_current():
-    from aughor.custom_agents.store import create_agent, record_eval, update_agent
+    from pramanyx.custom_agents.store import create_agent, record_eval, update_agent
     a = create_agent("guide-stale", instructions="Original stance.")
     record_eval(a.id, {"passed": 2, "total": 2, "at": "2026-09-06T00:00:00Z"})
     update_agent(a.id, instructions="Edited stance — a different agent now.")
@@ -79,7 +79,7 @@ def test_stale_evaluation_is_named_not_presented_as_current():
 def test_failed_grounding_reads_as_unavailable_never_as_zero(monkeypatch):
     def boom():
         raise RuntimeError("store is gone")
-    monkeypatch.setattr("aughor.custom_agents.store.list_agents", boom)
+    monkeypatch.setattr("pramanyx.custom_agents.store.list_agents", boom)
     out = guide.platform_guide({"topic": "create_agent"})
     assert out["grounding"] is None
     assert "could not be read" in out["summary"]
@@ -88,7 +88,7 @@ def test_failed_grounding_reads_as_unavailable_never_as_zero(monkeypatch):
 
 
 def test_stopped_clock_is_disclosed_on_the_automation_walkthrough():
-    from aughor.automations import scheduler
+    from pramanyx.automations import scheduler
     state, _ = scheduler.clock()
     out = guide.platform_guide({"topic": "create_automation"})
     if state == "stopped":                             # the test process runs no clock
@@ -97,11 +97,11 @@ def test_stopped_clock_is_disclosed_on_the_automation_walkthrough():
 
 
 def test_appearance_grounds_in_the_stored_preferences(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_USER_PREFS_DB", str(tmp_path / "prefs.db"))
+    monkeypatch.setenv("PRAMANYX_USER_PREFS_DB", str(tmp_path / "prefs.db"))
     out = guide.platform_guide({"topic": "appearance"})
     assert "none set" in out["summary"]                # empty store, said honestly
 
-    from aughor.db.user_prefs import set_preference
+    from pramanyx.db.user_prefs import set_preference
     set_preference("theme", "dark")
     out2 = guide.platform_guide({"topic": "appearance"})
     assert "theme = dark" in out2["summary"]
@@ -129,6 +129,6 @@ def test_guide_roster_and_conversation_wiring():
     # declared FIRST because a question that names an object is answered from it.
     names = [t.name for t in guide.spotlight_guide_tools("c1")]
     assert names == ["explain", "platform_guide"]
-    from aughor.agent.converse_tools import converse_tools
+    from pramanyx.agent.converse_tools import converse_tools
     conversational = {t.name for t in converse_tools("c1")}
     assert {"platform_guide", "explain"} <= conversational

@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.dashboards import from_object, shapes
-from aughor.ontology.models import EditStateMachine, EntityProperty, Promise
+from pramanyx.dashboards import from_object, shapes
+from pramanyx.ontology.models import EditStateMachine, EntityProperty, Promise
 from tests.unit.test_dashboard_pieces import _graph
 
 
@@ -26,7 +26,7 @@ def _promised():
 
 
 def _sig(g, name):
-    from aughor.semantic.object_query import find_object_type
+    from pramanyx.semantic.object_query import find_object_type
     return shapes.signals(g, find_object_type(g, name))
 
 
@@ -54,7 +54,7 @@ def test_a_platform_owned_queue_waits_on_a_status_a_move_still_leaves():
     case = g.entities["Customer"]                                  # stands in for a platform-owned type
     case.edit_states = {"tier": EditStateMachine(states=["open", "working", "resolved"],
                                                  moves=[["", "open"], ["open", "working"], ["working", "resolved"]])}
-    from aughor.ontology.models import Backing
+    from pramanyx.ontology.models import Backing
     case.backing = Backing(kind="platform")
     q = shapes.signals(g, case)["queue"]
     assert q == {"kind": "states", "status": "tier", "final": ["resolved"], "moves": "open → working → resolved"}
@@ -134,7 +134,7 @@ def _counts(q):
 
 def test_the_starter_offers_shapes(monkeypatch):
     g = _promised()
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: False)
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled", lambda name: False)
     on = from_object.propose(g, "order", _counts)
     assert [o["shape"] for o in on["shapes"]] == ["queue", "overview", "timeline"]
     assert on["shapes"][0]["why"].startswith("Order has a dispatch promise of 2 days; 5 orders placed in the last 14 days")
@@ -144,7 +144,7 @@ def test_the_starter_offers_shapes(monkeypatch):
 def test_a_case_is_startable_its_counts_read_from_the_edit_layer():
     """The study measured the starter refusing a case: the starter's reader now counts a platform-owned type where its
     cases live."""
-    from aughor.ontology.models import Backing
+    from pramanyx.ontology.models import Backing
     g = _promised()
     g.entities["Customer"].backing = Backing(kind="platform")
     assert from_object.platform_counts(g, {"object_type": "order", "measures": [{"agg": "count"}]}, []) is None
@@ -156,10 +156,10 @@ def test_a_case_is_startable_its_counts_read_from_the_edit_layer():
 
 
 def test_the_route_says_each_objects_best_fit(monkeypatch):
-    from aughor.routers import dashboards as R
+    from pramanyx.routers import dashboards as R
     g = _promised()
-    monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema: g)
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: False)
+    monkeypatch.setattr("pramanyx.routers.ontology.served_ontology_graph", lambda conn, schema: g)
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled", lambda name: False)
     out = {o["type_id"]: (o["shape"], o["short"]) for o in R.suggested_shapes("c")["objects"]}
     assert out["Order"] == ("queue", "a dispatch promise · 1 action")
     assert out["Product"][0] == "overview" and out["Customer"][0] == "overview"
@@ -167,7 +167,7 @@ def test_the_route_says_each_objects_best_fit(monkeypatch):
 
 def test_an_action_needing_an_object_of_another_type_is_left_out_nothing_on_the_page_holds_one(tmp_path, monkeypatch):
     """Declared through the overrides tree, as a person's declaration is once published."""
-    from aughor.ontology import overrides as OV
+    from pramanyx.ontology import overrides as OV
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
     monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     g = _promised()
@@ -182,7 +182,7 @@ def test_an_action_needing_an_object_of_another_type_is_left_out_nothing_on_the_
 
 
 def test_a_platform_owned_count_keeps_to_the_rows_a_preview_asks_for():
-    from aughor.ontology.models import Backing
+    from pramanyx.ontology.models import Backing
     g = _promised()
     g.entities["Customer"].backing = Backing(kind="platform")
     from types import SimpleNamespace
@@ -213,7 +213,7 @@ def test_a_type_that_declares_no_key_is_never_listed_so_it_gets_an_overview_and_
     links = shapes.linked_to(g, g.entities["Customer"])
     assert [(x["entity"], x["listable"]) for x in links] == [("order", True), ("review", False)]   # listed ones first
     assert _sig(g, "customer")["lines"]["entity"] == "order"                                       # never a keyless one
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: False)
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled", lambda name: False)
     assert from_object.propose(g, "review", _counts)["listable"] is False
     assert from_object.propose(g, "order", _counts)["listable"] is True
 

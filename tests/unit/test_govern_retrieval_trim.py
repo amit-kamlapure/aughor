@@ -9,14 +9,14 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from aughor.govern.retrieval_trim import (
+from pramanyx.govern.retrieval_trim import (
     caller_clearances,
     clearance_context,
     partition,
     securable_for_table,
     sweep_edges,
 )
-from aughor.govern.tags import ClearanceDecision, Requirement
+from pramanyx.govern.tags import ClearanceDecision, Requirement
 
 
 def _node(nid: str, kind: str = "table", label: str = "",
@@ -171,8 +171,8 @@ def test_blank_clearances_are_ignored():
 # ── the read-back wiring ────────────────────────────────────────────────────────────
 
 def test_readback_trim_withholds_and_sweeps(monkeypatch):
-    from aughor.govern import tags as T
-    from aughor.ontology import context_graph_readback as RB
+    from pramanyx.govern import tags as T
+    from pramanyx.ontology import context_graph_readback as RB
 
     monkeypatch.setattr(
         T, "check",
@@ -192,8 +192,8 @@ def test_readback_trim_withholds_and_sweeps(monkeypatch):
 def test_a_fully_trimmed_slice_still_returns_the_notice(monkeypatch):
     """The sharpest case: everything was withheld, so the prior would otherwise be empty
     and read exactly like 'the graph knew nothing'."""
-    from aughor.govern import tags as T
-    from aughor.ontology import context_graph_readback as RB
+    from pramanyx.govern import tags as T
+    from pramanyx.ontology import context_graph_readback as RB
 
     monkeypatch.setattr(T, "check",
                         lambda securable, held, bypass=False: _blocked(securable))
@@ -238,7 +238,7 @@ def test_readback_resolves_securables_from_source_tables_not_the_label():
     """
     import inspect
 
-    from aughor.ontology import context_graph_readback as RB
+    from pramanyx.ontology import context_graph_readback as RB
 
     src = inspect.getsource(RB._TablesBehind.own)
     assert "source_tables" in src
@@ -246,8 +246,8 @@ def test_readback_resolves_securables_from_source_tables_not_the_label():
 
 
 def test_readback_trims_a_node_by_its_source_table(monkeypatch):
-    from aughor.govern import tags as T
-    from aughor.ontology import context_graph_readback as RB
+    from pramanyx.govern import tags as T
+    from pramanyx.ontology import context_graph_readback as RB
 
     monkeypatch.setattr(
         T, "check",
@@ -266,8 +266,8 @@ def test_readback_trims_a_node_by_its_source_table(monkeypatch):
 
 
 def test_a_table_node_with_no_source_tables_is_kept(monkeypatch):
-    from aughor.govern import tags as T
-    from aughor.ontology import context_graph_readback as RB
+    from pramanyx.govern import tags as T
+    from pramanyx.ontology import context_graph_readback as RB
 
     monkeypatch.setattr(T, "check",
                         lambda securable, held, bypass=False: _blocked(securable))

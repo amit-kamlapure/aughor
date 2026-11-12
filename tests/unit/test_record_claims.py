@@ -1,7 +1,7 @@
 """Phase 1 of the 2027 study (ROADMAP §3.53) — the Record: one claim ledger in the kernel, two
 clocks, supersede-not-delete, and decisions with their expectations booked as a by-product.
 
-Runs on the hermetic test ledger (conftest sets AUGHOR_SYSTEM_DB). Every key is unique per test
+Runs on the hermetic test ledger (conftest sets PRAMANYX_SYSTEM_DB). Every key is unique per test
 so versions do not leak between them.
 """
 from __future__ import annotations
@@ -11,8 +11,8 @@ import uuid
 
 import pytest
 
-from aughor.record import claims as C
-from aughor.record import decisions as D
+from pramanyx.record import claims as C
+from pramanyx.record import decisions as D
 
 
 def _key(*parts):
@@ -67,7 +67,7 @@ def test_a_booked_claim_carries_both_clocks_and_its_warrant_edge():
     assert got is not None and got.as_of == "2026-09-12" and got.recorded_at   # the data's date and the booking's
     assert got.version == 1 and got.supersedes == "" and got.superseded_by == ""
     assert got.confidence is None                                             # nothing counted yet
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     rec = Ledger.default().receipt_by_id(cid)
     assert any(e["relation"] == "warrant:run" and e["ref"] == "rcpt-1" for e in rec["lineage"])
 
@@ -92,7 +92,7 @@ def test_belief_is_a_view_as_recorded_on_a_date(monkeypatch):
     key = _key("obs")
     first = C.book(_observation(), key=key)
     # Put the first version two days back, so a cutoff can fall between the two bookings.
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     led = Ledger.default()
     past = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=2)).isoformat()
     with led._lock, led._conn:
@@ -120,7 +120,7 @@ def test_list_claims_filters_by_kind_and_about():
 # ── decisions, expectations, outcomes ──────────────────────────────────────────────
 
 def test_a_decision_books_its_expectation_as_a_prediction_and_records_what_it_relied_on(monkeypatch):
-    monkeypatch.setattr("aughor.settling.store.learned_lag_days", lambda cid: 8)
+    monkeypatch.setattr("pramanyx.settling.store.learned_lag_days", lambda cid: 8)
     relied = C.book(_observation(), key=_key("obs"))
     src = D.Source(kind="recommendation", ref="inv1_rec_0:" + uuid.uuid4().hex[:6])
     did = D.book_decision(D.Decision(question="raise the free-shipping threshold?", owner="user:ana",
@@ -165,6 +165,6 @@ def test_an_outcome_of_nothing_is_refused():
 
 
 def test_the_review_date_says_which_rule_it_used(monkeypatch):
-    monkeypatch.setattr("aughor.settling.store.learned_lag_days", lambda cid: None)
+    monkeypatch.setattr("pramanyx.settling.store.learned_lag_days", lambda cid: None)
     on, why = D.propose_review_on("conn-t", dt.datetime(2026, 10, 5, tzinfo=dt.timezone.utc))
     assert on == "2026-11-04" and "no learned settling lag" in why

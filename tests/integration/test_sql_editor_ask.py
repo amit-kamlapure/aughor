@@ -13,7 +13,7 @@ import uuid
 
 import pytest
 
-from aughor.routers import investigations as inv
+from pramanyx.routers import investigations as inv
 from tests.integration.test_stream_chat_transcript import _stub_providers
 
 
@@ -46,7 +46,7 @@ def test_an_abstention_is_said_and_saves_no_chat_turn(client, builtin_conn_id, m
     """The abstain path saved a turn even under `frame_only` — an agent's evaluation or an editor request would have
     appeared in the person's chat history."""
     _stub_providers(monkeypatch)
-    from aughor.semantic import answer_resolution as res
+    from pramanyx.semantic import answer_resolution as res
     monkeypatch.setattr(res, "resolve", lambda *a, **k: res.Resolution(
         question="q", not_found=["planet"], what_is_available="Countries are present."))
     r = client.post("/query/ask", json={"conn_id": builtin_conn_id, "request": "revenue by planet"})
@@ -70,10 +70,10 @@ def test_a_statement_that_writes_is_never_handed_back(client, monkeypatch):
 
 
 def test_a_statement_reading_a_table_turned_off_is_refused_in_words(client, monkeypatch):
-    from aughor.ontology.visibility import declare_exclusion
+    from pramanyx.ontology.visibility import declare_exclusion
     conn = f"ask-{uuid.uuid4().hex[:8]}"
     declare_exclusion(conn, "main", "orders_archive", "out_of_domain", declared_by="amit")
-    monkeypatch.setattr("aughor.routers.query._check_conn_org", lambda *a, **k: None)
+    monkeypatch.setattr("pramanyx.routers.query._check_conn_org", lambda *a, **k: None)
     _framed(monkeypatch, "SELECT COUNT(*) FROM orders_archive")
     r = client.post("/query/ask", json={"conn_id": conn, "request": "archived orders", "schema_name": "main"})
     assert r.status_code == 422

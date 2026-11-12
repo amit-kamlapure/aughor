@@ -10,8 +10,8 @@ consequences on the default path, plus the guard that nothing changes when no ax
 from __future__ import annotations
 
 
-import aughor.agent.investigate as I
-from aughor.agent.prompts_investigate import IntakeOutput
+import pramanyx.agent.investigate as I
+from pramanyx.agent.prompts_investigate import IntakeOutput
 
 
 # ── Fixtures / fakes ────────────────────────────────────────────────────────────
@@ -55,7 +55,7 @@ def _prep(monkeypatch, intake, axis):
         return axis
 
     monkeypatch.setattr(I, "_resolve_temporal_axis", fake_axis)
-    import aughor.agent.explore as ex
+    import pramanyx.agent.explore as ex
     monkeypatch.setattr(ex, "build_analysis_ledger", lambda state: "")
     return calls
 

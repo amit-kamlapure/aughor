@@ -2,9 +2,9 @@
 
 A MetricDefinition can DECLARE `additivity`; it overrides the SQL inference (the same
 gate the answer-summary concentration check uses). Surfaced in the metrics-catalog prompt
-so the generator never sums / shares-of-total a ratio metric. See aughor/semantic/metrics.py.
+so the generator never sums / shares-of-total a ratio metric. See pramanyx/semantic/metrics.py.
 """
-from aughor.semantic import metrics as M
+from pramanyx.semantic import metrics as M
 
 
 def _m(sql, additivity=None, name="m"):

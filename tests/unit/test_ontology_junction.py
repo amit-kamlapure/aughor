@@ -1,16 +1,16 @@
 """Arc NV-2 — the junction mark is a measured fact, and the N:N through it is said in both prompt blocks.
 
-The rule (`aughor.ontology.junction`): one table, no measure, exactly two value-verified (or engine-declared) foreign
+The rule (`pramanyx.ontology.junction`): one table, no measure, exactly two value-verified (or engine-declared) foreign
 keys to two different entities, nothing else but its own key and timestamps. Each test below is a table that fails one
 clause — the measure, the dimension, a third entity, an unmeasured edge — against the one that qualifies, so the mark
 cannot pass for the wrong reason. The study's own check is here too: an order line with measures is NOT a junction.
 """
 from __future__ import annotations
 
-from aughor.ontology.builder import render_ontology_annotations
-from aughor.ontology.junction import MIN_OVERLAP, mark_junctions, qualifies
-from aughor.ontology.models import EntityProperty, OntologyEntity, OntologyGraph, OntologyRelationship
-from aughor.ontology.semantic_block import render_relationship_block
+from pramanyx.ontology.builder import render_ontology_annotations
+from pramanyx.ontology.junction import MIN_OVERLAP, mark_junctions, qualifies
+from pramanyx.ontology.models import EntityProperty, OntologyEntity, OntologyGraph, OntologyRelationship
+from pramanyx.ontology.semantic_block import render_relationship_block
 
 
 def _entity(eid, table, props, key="", **kw):
@@ -141,7 +141,7 @@ def test_both_prompt_blocks_say_the_junction():
 def test_the_object_compiler_still_refuses_the_n_n_through_a_junction():
     """The study's falsifier keeps the compiler change waiting; until then the declared N:N is refused BY NAME, as
     every N:N is — the link is listed, and `link_problem` says why it may not be traversed."""
-    from aughor.semantic.object_query import link_problem, object_links
+    from pramanyx.semantic.object_query import link_problem, object_links
     g = _graph({"customer_id": _fk("customer_id"), "product_id": _fk("product_id")})
     mark_junctions(g)
     links = {h.rel.id: h for h in object_links(g, g.entities["Customer"])}

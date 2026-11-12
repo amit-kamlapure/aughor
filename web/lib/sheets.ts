@@ -1,5 +1,5 @@
 /**
- * Sheets — the tables people make, edit, combine and chat with (Arc SH; `aughor/routers/sheets.py`).
+ * Sheets — the tables people make, edit, combine and chat with (Arc SH; `pramanyx/routers/sheets.py`).
  *
  * The calls to the sheets' routes, the shapes they answer with, and the pure helpers the Spreadsheets screens share:
  * how a value of each kind is shown, how a typed value is read before it is sent, how a filter is said in words, and
@@ -962,7 +962,7 @@ export function monthWords(month: string): string {
   return NAMES[m - 1] ? `${NAMES[m - 1]} ${y}` : month;
 }
 
-// ── a dashboard from this sheet and a sentence (aughor/sheets/dashboard_draft.py) ──────────
+// ── a dashboard from this sheet and a sentence (pramanyx/sheets/dashboard_draft.py) ──────────
 
 /** A card a model drafted, already run on the sheet: its definition is read off its statement, never the model's words. */
 export interface DraftedCard {

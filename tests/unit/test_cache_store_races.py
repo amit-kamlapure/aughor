@@ -45,7 +45,7 @@ def test_whole_file_rewrite_loses_a_concurrent_writers_key(tmp_path):
 
 @pytest.fixture
 def briefing_store(tmp_path, monkeypatch):
-    from aughor.knowledge import briefing
+    from pramanyx.knowledge import briefing
     monkeypatch.setattr(briefing, "_CACHE_PATH", tmp_path / "briefing_cache.json")
     return briefing
 
@@ -99,7 +99,7 @@ def test_legacy_file_imports_once_then_rests(briefing_store, tmp_path):
 def test_schema_cache_mru_eviction_holds_through_the_store(tmp_path, monkeypatch):
     """The eviction contract the module used to hand-roll survives the move: oldest
     entry out past the cap, most-recently-touched retained."""
-    from aughor.db import schema_cache
+    from pramanyx.db import schema_cache
     monkeypatch.setattr(schema_cache, "_CACHE_PATH", tmp_path / "schema_cache.json")
     monkeypatch.setattr(schema_cache, "_MAX_ENTRIES", 3)
     for fp in ("fp1", "fp2", "fp3"):

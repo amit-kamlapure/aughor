@@ -9,12 +9,12 @@ stayed PENDING and the step waited on it forever. Automation ticks fill the cap 
 import asyncio
 import threading
 
-from aughor.kernel.jobs import JobKernel, JobState
-from aughor.kernel.ledger import Ledger
+from pramanyx.kernel.jobs import JobKernel, JobState
+from pramanyx.kernel.ledger import Ledger
 
 
 def test_a_job_from_another_loop_waits_for_a_slot_and_then_runs(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_MAX_CONCURRENT_JOBS", "1")
+    monkeypatch.setenv("PRAMANYX_MAX_CONCURRENT_JOBS", "1")
     seen: dict = {}
 
     async def main() -> None:

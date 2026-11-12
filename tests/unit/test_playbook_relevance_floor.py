@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.playbook import retriever as R
-from aughor.playbook.models import PlaybookEntry
+from pramanyx.playbook import retriever as R
+from pramanyx.playbook.models import PlaybookEntry
 
 
 def _play(pid: str, metric: str, rec: str, rate: float, tags: list[str] = ()) -> PlaybookEntry:
@@ -35,7 +35,7 @@ RETURNS = _play("p-returns", "ec_return_rate", "read returns by category against
 @pytest.fixture
 def plays(monkeypatch):
     monkeypatch.setattr(R, "list_active_entries", lambda: [PROVEN, FITTING, CAC, RETURNS])
-    monkeypatch.setattr("aughor.packs.industry_choice.readable_industries", lambda scope: None)
+    monkeypatch.setattr("pramanyx.packs.industry_choice.readable_industries", lambda scope: None)
 
 
 def test_without_a_fit_the_proven_play_wins_on_one_shared_word(plays):

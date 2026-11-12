@@ -9,8 +9,8 @@ has — so it never fired.
 """
 from __future__ import annotations
 
-from aughor.agent.investigate import _apply_no_usable_data_floor, _finding_has_rows
-from aughor.agent.prompts_investigate import ADASynthesisModel
+from pramanyx.agent.investigate import _apply_no_usable_data_floor, _finding_has_rows
+from pramanyx.agent.prompts_investigate import ADASynthesisModel
 
 
 def _synth(conf="HIGH") -> ADASynthesisModel:

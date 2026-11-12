@@ -31,7 +31,7 @@ def bakehouse(tmp_path):
         SELECT * FROM (VALUES (1, 'Flour Co'), (2, 'Sugar Co')) s(franchiseID, supplier)
     """)
     c.close()
-    from aughor.db.connection import DuckDBConnection
+    from pramanyx.db.connection import DuckDBConnection
     conn = DuckDBConnection(db, connection_id="bakehouse-test")
     yield conn
     conn.close()
@@ -40,7 +40,7 @@ def bakehouse(tmp_path):
 # ── Unit-conversion guard ──────────────────────────────────────────────────────
 
 def test_detect_unit_conversion_patterns():
-    from aughor.agent.investigate import _detect_unit_conversion
+    from pramanyx.agent.investigate import _detect_unit_conversion
 
     assert _detect_unit_conversion("SUM(totalPrice) / 100.0") == "totalPrice"
     assert _detect_unit_conversion("SUM(t.totalPrice)/100") == "totalPrice"
@@ -54,7 +54,7 @@ def test_detect_unit_conversion_patterns():
 def test_unit_conversion_disproved_by_sibling_relation(bakehouse):
     """totalPrice == unitPrice*quantity for every row ⇒ same unit as unitPrice ⇒
     the planner's ÷100 'cents' story is refuted by data."""
-    from aughor.agent.investigate import _unit_conversion_disproved
+    from pramanyx.agent.investigate import _unit_conversion_disproved
 
     assert _unit_conversion_disproved(bakehouse, "bakehouse-test",
                                       "sales_transactions", "totalPrice") is True
@@ -63,14 +63,14 @@ def test_unit_conversion_disproved_by_sibling_relation(bakehouse):
 def test_unit_conversion_not_disproved_without_relation(bakehouse):
     """quantity is not the product of two siblings — no proof, so the conversion
     would be kept-but-caveated (fail-open), never rewritten."""
-    from aughor.agent.investigate import _unit_conversion_disproved
+    from pramanyx.agent.investigate import _unit_conversion_disproved
 
     assert _unit_conversion_disproved(bakehouse, "bakehouse-test",
                                       "sales_transactions", "quantity") is False
 
 
 def test_strip_conversion_rewrite():
-    from aughor.agent.investigate import _STRIP_CONVERSION_RE
+    from pramanyx.agent.investigate import _STRIP_CONVERSION_RE
 
     assert _STRIP_CONVERSION_RE.sub("", "SUM(totalPrice) / 100.0") == "SUM(totalPrice)"
     assert _STRIP_CONVERSION_RE.sub("", "SUM(totalPrice)/100") == "SUM(totalPrice)"
@@ -81,7 +81,7 @@ def test_strip_conversion_rewrite():
 def test_join_coverage_flags_inner_join_loss(bakehouse):
     """Only franchises 1-2 have suppliers → the INNER JOIN covers ~half of
     totalPrice; the guard must say so."""
-    from aughor.sql.join_guard import check_join_coverage
+    from pramanyx.sql.join_guard import check_join_coverage
 
     sql = ("SELECT s.supplier, SUM(t.totalPrice) AS rev FROM sales_transactions t "
            "JOIN sales_suppliers s ON t.franchiseID = s.franchiseID GROUP BY s.supplier")
@@ -91,7 +91,7 @@ def test_join_coverage_flags_inner_join_loss(bakehouse):
 
 
 def test_join_coverage_silent_on_full_coverage_and_outer_joins(bakehouse):
-    from aughor.sql.join_guard import check_join_coverage
+    from pramanyx.sql.join_guard import check_join_coverage
 
     # LEFT JOIN preserves the base side — never flagged.
     left = ("SELECT s.supplier, SUM(t.totalPrice) AS rev FROM sales_transactions t "
@@ -112,7 +112,7 @@ def test_revenue_shares_not_treated_as_rates():
     """48 revenue shares (~2.08% each, summing to 1) must NOT go through a
     two-proportion uniformity test — the live report printed '45 of 48 segments
     differ significantly from the pooled 2.08% rate (Bonferroni)'."""
-    from aughor.tools.stats import _analyze_rate_segments
+    from pramanyx.tools.stats import _analyze_rate_segments
 
     rows = [[f"franchise_{i}", 1.0 / 48, 60 + i] for i in range(48)]
     out = _analyze_rate_segments(["franchise", "revenue_share", "txn_count"], rows)
@@ -120,7 +120,7 @@ def test_revenue_shares_not_treated_as_rates():
 
 
 def test_true_rates_still_analyzed():
-    from aughor.tools.stats import _analyze_rate_segments
+    from pramanyx.tools.stats import _analyze_rate_segments
 
     rows = [["a", 0.30, 400], ["b", 0.05, 380], ["c", 0.06, 420], ["d", 0.05, 390]]
     out = _analyze_rate_segments(["seg", "failure_rate", "txn_count"], rows)
@@ -136,7 +136,7 @@ def test_export_chart_never_plots_id_columns():
     # available, else the shared contract is covered by the web's own gates.
     import shutil
 
-    from aughor.export.echarts import _BUNDLE, render_chart_svg
+    from pramanyx.export.echarts import _BUNDLE, render_chart_svg
     if not shutil.which("node") or not _BUNDLE.exists():
         import pytest as _pytest
         _pytest.skip("chart SSR unavailable (node/bundle)")
@@ -152,7 +152,7 @@ def test_export_chart_never_plots_id_columns():
 def test_extreme_tie_note_names_all_cluster_members():
     """Three franchises tie at $3.00/txn; the note must name all three — the
     narrator dropped the third in the live report."""
-    from aughor.agent.investigate import _extreme_tie_note
+    from pramanyx.agent.investigate import _extreme_tie_note
 
     cols = ["franchise", "total_revenue", "per_txn"]
     rows = [["Sapporo Sweets", 177, 3.00], ["Naha Nibbles", 195, 3.00],
@@ -166,7 +166,7 @@ def test_extreme_tie_note_names_all_cluster_members():
 
 
 def test_extreme_tie_note_silent_without_a_real_cluster():
-    from aughor.agent.investigate import _extreme_tie_note
+    from pramanyx.agent.investigate import _extreme_tie_note
 
     # smooth ranking, no tie cluster → silent
     rows = [["a", 3.0], ["b", 4.1], ["c", 5.9], ["d", 9.4]]

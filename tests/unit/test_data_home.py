@@ -5,7 +5,7 @@ wave was measured on holds 1.4 GB under `data/` — a 266 MB `system.db`, 437 MB
 208 MB checkpoint store. A default that relocated because a home DIRECTORY existed would not
 delete any of it; it would make the connections, the history and the receipts invisible, which
 reads identically to a person and is harder to diagnose. So the home is the live answer only
-once `aughor migrate-state` has verified a copy and written its marker.
+once `pramanyx migrate-state` has verified a copy and written its marker.
 """
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ import sys
 
 import pytest
 
-from aughor.db import home, paths
-from aughor.db.sqlite_util import resolve_db_path
+from pramanyx.db import home, paths
+from pramanyx.db.sqlite_util import resolve_db_path
 
 
 @pytest.fixture
@@ -80,7 +80,7 @@ class TestPlatformDefaults:
     def test_posix_uses_a_dotfile_in_the_home_directory(self, monkeypatch):
         monkeypatch.delenv(home.HOME_ENV, raising=False)
         monkeypatch.setattr(sys, "platform", "darwin")
-        assert home.default_home() == paths.Path.home() / ".aughor"
+        assert home.default_home() == paths.Path.home() / ".pramanyx"
 
     def test_windows_uses_localappdata(self, monkeypatch):
         monkeypatch.delenv(home.HOME_ENV, raising=False)
@@ -89,21 +89,21 @@ class TestPlatformDefaults:
         # backslash is an ordinary character and `as_posix()` would not split the path.
         local = "/c/Users/x/AppData/Local"
         monkeypatch.setenv("LOCALAPPDATA", local)
-        assert home.default_home() == paths.Path(local) / "aughor"
+        assert home.default_home() == paths.Path(local) / "pramanyx"
 
     def test_windows_without_localappdata_falls_back_rather_than_raising(self, monkeypatch):
         """A bare service account can have it unset; that must not crash the resolver."""
         monkeypatch.delenv(home.HOME_ENV, raising=False)
         monkeypatch.setattr(sys, "platform", "win32")
         monkeypatch.delenv("LOCALAPPDATA", raising=False)
-        assert home.default_home() == paths.Path.home() / ".aughor"
+        assert home.default_home() == paths.Path.home() / ".pramanyx"
 
     def test_the_home_is_not_the_checkout(self, monkeypatch):
-        """`~/.aughor` is the data home, `~/aughor` is the checkout (`AUGHOR_DIR`), and
-        `<checkout>/.aughor/` is the installer's runtime dir. Three names one letter apart."""
+        """`~/.pramanyx` is the data home, `~/pramanyx` is the checkout (`PRAMANYX_DIR`), and
+        `<checkout>/.pramanyx/` is the installer's runtime dir. Three names one letter apart."""
         monkeypatch.delenv(home.HOME_ENV, raising=False)
         monkeypatch.setattr(sys, "platform", "linux")
-        assert home.default_home() != paths.Path.home() / "aughor"
+        assert home.default_home() != paths.Path.home() / "pramanyx"
 
 
 class TestTheFourConventionsAreReconciled:
@@ -112,7 +112,7 @@ class TestTheFourConventionsAreReconciled:
     CWD-relative and checkout-anchored halves DISAGREE about which `data/` a process reads.
     `rehome` reconciles them at one seam, and only once a migration has happened."""
 
-    CHECKOUT = paths.Path("/somewhere/aughor")
+    CHECKOUT = paths.Path("/somewhere/pramanyx")
 
     def test_nothing_moves_before_the_marker(self, clean_env):
         """The whole fleet's behaviour today: each convention keeps its own answer."""
@@ -150,7 +150,7 @@ class TestAuthoredContentStaysInTheCheckout:
     authored list with the 2027 study's close-out (C3): a projection of the ledger, rebuilt on
     demand, it is generated state and moves like the metrics instance."""
 
-    CHECKOUT = paths.Path("/somewhere/aughor")
+    CHECKOUT = paths.Path("/somewhere/pramanyx")
 
     @pytest.mark.parametrize("entry", ["glossary.yaml", "global_rules.md", "events.yaml", "seed.py"])
     def test_an_authored_file_does_not_move(self, clean_env, entry):
@@ -210,7 +210,7 @@ class TestAuthoredContentStaysInTheCheckout:
 # ── every store follows the home: the population is the SOURCE, not a list ───────────────────────
 #
 # IN-4 wired the home into `resolve_db_path` and every store that went through it — and left about
-# twenty that did not: the platform's main store (`Ledger.default()` read `AUGHOR_SYSTEM_DB` and the
+# twenty that did not: the platform's main store (`Ledger.default()` read `PRAMANYX_SYSTEM_DB` and the
 # checkout default itself), the model configuration, uploads, documents, the playbook, the demo
 # warehouses. A migration would have copied them and gone on reading the checkout, and the day the
 # code caught up, read a copy weeks stale. Found 2026-10-06 by reading, before the first real run.
@@ -223,16 +223,16 @@ _ROUTERS = {"resolve_db_path", "rehome", "_rehome", "state_dir", "follow_checkou
 #: The `data/` paths that do NOT follow the home, each for a reason. Asserted both ways: a new
 #: unrouted path fails, and an entry here that no longer exists fails too, so the list cannot rot.
 _STAYS = {
-    ("aughor/cli.py", "src"): "migrate-state's SOURCE — the checkout's data/ it copies from",
-    ("aughor/connectors/declarations.py", "'data/sales/'"): "a connect form's placeholder, not a path",
-    ("aughor/db/home.py", "'data'"): "checkout_data(): the data/ follow_checkout_file and a top-up map FROM",
-    ("aughor/db/home.py", "names"): "ledger_names: the OLD names a moved store's rows live under, never opened",
-    ("aughor/db/keyfile.py", "LEGACY_KEY_FILE"): "the fallback for a key not yet moved; the home's copy wins",
-    ("aughor/installer.py", "path"): "a stdlib mirror of the rule, held equal to the app in test_installer",
-    ("aughor/rules.py", "_RULES_FILE"): "authored, tracked",
-    ("aughor/semantic/glossary.py", "_DATA"): "the seed and frozen files are authored; the instance resolves",
-    ("aughor/semantic/metrics.py", "_DATA"): "the seed and frozen files are authored; the instance resolves",
-    ("aughor/tools/events.py", "_EVENTS_YAML"): "authored, tracked",
+    ("pramanyx/cli.py", "src"): "migrate-state's SOURCE — the checkout's data/ it copies from",
+    ("pramanyx/connectors/declarations.py", "'data/sales/'"): "a connect form's placeholder, not a path",
+    ("pramanyx/db/home.py", "'data'"): "checkout_data(): the data/ follow_checkout_file and a top-up map FROM",
+    ("pramanyx/db/home.py", "names"): "ledger_names: the OLD names a moved store's rows live under, never opened",
+    ("pramanyx/db/keyfile.py", "LEGACY_KEY_FILE"): "the fallback for a key not yet moved; the home's copy wins",
+    ("pramanyx/installer.py", "path"): "a stdlib mirror of the rule, held equal to the app in test_installer",
+    ("pramanyx/rules.py", "_RULES_FILE"): "authored, tracked",
+    ("pramanyx/semantic/glossary.py", "_DATA"): "the seed and frozen files are authored; the instance resolves",
+    ("pramanyx/semantic/metrics.py", "_DATA"): "the seed and frozen files are authored; the instance resolves",
+    ("pramanyx/tools/events.py", "_EVENTS_YAML"): "authored, tracked",
 }
 
 
@@ -292,7 +292,7 @@ def _unrouted_data_paths(root: _pathlib.Path) -> set[tuple[str, str]]:
     return found
 
 
-_PACKAGE = _pathlib.Path(__file__).resolve().parents[2] / "aughor"
+_PACKAGE = _pathlib.Path(__file__).resolve().parents[2] / "pramanyx"
 
 
 class TestEveryStoreFollowsTheHome:
@@ -306,21 +306,21 @@ class TestEveryStoreFollowsTheHome:
 
     def test_the_guard_sees_a_store_that_reads_its_default_directly(self, tmp_path):
         """Mutation-tested on the defect it was written for: `Ledger.default()` as it was."""
-        pkg = tmp_path / "aughor"
+        pkg = tmp_path / "pramanyx"
         pkg.mkdir()
         (pkg / "ledger.py").write_text(
             'import os\nfrom pathlib import Path\n'
             '_DEFAULT_DB = Path(__file__).parent / "data" / "system.db"\n'
-            'def default():\n    return Path(os.environ.get("AUGHOR_SYSTEM_DB", _DEFAULT_DB))\n')
+            'def default():\n    return Path(os.environ.get("PRAMANYX_SYSTEM_DB", _DEFAULT_DB))\n')
         (pkg / "fixed.py").write_text(
             'from pathlib import Path\nfrom x import resolve_db_path\n'
             '_D = Path(__file__).parent / "data" / "a.db"\n'
-            'def default():\n    return resolve_db_path("AUGHOR_A_DB", _D)\n')
-        assert _unrouted_data_paths(pkg) == {("aughor/ledger.py", "_DEFAULT_DB")}
+            'def default():\n    return resolve_db_path("PRAMANYX_A_DB", _D)\n')
+        assert _unrouted_data_paths(pkg) == {("pramanyx/ledger.py", "_DEFAULT_DB")}
 
     def test_the_ledger_follows_a_migrated_home(self, clean_env, monkeypatch):
-        from aughor.kernel import ledger as L
-        monkeypatch.delenv("AUGHOR_SYSTEM_DB", raising=False)
+        from pramanyx.kernel import ledger as L
+        monkeypatch.delenv("PRAMANYX_SYSTEM_DB", raising=False)
         (clean_env / home.MARKER).write_text("migrated")
         seen = []
         monkeypatch.setattr(L.Ledger, "__init__", lambda self, path: seen.append(path) or None)
@@ -368,7 +368,7 @@ class TestAConnectionsFileFollows:
 class TestAStoreKeepsItsNameWhenItsFileMoves:
     @pytest.fixture
     def ledger(self, clean_env, monkeypatch, tmp_path):
-        monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "ledger" / "system.db"))
+        monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "ledger" / "system.db"))
         (tmp_path / "ledger").mkdir()
         return clean_env
 
@@ -378,7 +378,7 @@ class TestAStoreKeepsItsNameWhenItsFileMoves:
         (home_dir / home.STATE_SUBDIR).mkdir(exist_ok=True)
 
     def test_a_state_dir_store_reads_its_rows_after_the_move(self, ledger):
-        from aughor.util.json_store import KeyedJsonStore
+        from pramanyx.util.json_store import KeyedJsonStore
         KeyedJsonStore(paths.state_dir() / "kt_cache.json").put("k", 1)
         self._move(ledger)
         moved = KeyedJsonStore(paths.state_dir() / "kt_cache.json")
@@ -386,7 +386,7 @@ class TestAStoreKeepsItsNameWhenItsFileMoves:
         assert moved.get("k") == 1 and moved._store_id == "data/kt_cache.json"
 
     def test_a_moved_store_never_reimports_its_stale_legacy_file(self, ledger):
-        from aughor.util.json_store import KeyedJsonStore
+        from pramanyx.util.json_store import KeyedJsonStore
         KeyedJsonStore(paths.state_dir() / "kt_legacy.json").put("k", "current")
         self._move(ledger)
         (ledger / home.STATE_SUBDIR / "kt_legacy.json").write_text(json.dumps({"k": "stale"}))
@@ -394,7 +394,7 @@ class TestAStoreKeepsItsNameWhenItsFileMoves:
 
     def test_a_store_anchored_on_its_module_keeps_its_absolute_name(self, ledger):
         """The ontology cache's shape: `Path(__file__)…/data/x.json`, routed through rehome."""
-        from aughor.util.json_store import KeyedJsonStore
+        from pramanyx.util.json_store import KeyedJsonStore
         anchored = _pathlib.Path(home.__file__).parent.parent.parent / "data" / "kt_anchored.json"
         KeyedJsonStore(anchored).put("k", "anchored")
         self._move(ledger)
@@ -403,21 +403,21 @@ class TestAStoreKeepsItsNameWhenItsFileMoves:
 
     def test_the_relative_name_wins_when_both_hold_rows(self, ledger):
         """theLook's schema profiles carry an orphaned absolute-name set beside the live one."""
-        from aughor.util.json_store import KeyedJsonStore
+        from pramanyx.util.json_store import KeyedJsonStore
         KeyedJsonStore(paths.state_dir() / "kt_both.json").put("k", "live")
         KeyedJsonStore(_pathlib.Path(home.__file__).parent.parent.parent / "data" / "kt_both.json").put("k", "orphan")
         self._move(ledger)
         assert KeyedJsonStore(paths.state_dir() / "kt_both.json").get("k") == "live"
 
     def test_a_store_new_since_the_move_takes_one_stable_name(self, ledger):
-        from aughor.util.json_store import KeyedJsonStore
+        from pramanyx.util.json_store import KeyedJsonStore
         self._move(ledger)
         KeyedJsonStore(paths.state_dir() / "kt_new.json").put("k", "after")
         again = KeyedJsonStore(paths.state_dir() / "kt_new.json")
         assert again.get("k") == "after" and again._store_id == "data/kt_new.json"
 
     def test_list_and_family_stores_keep_their_names_too(self, ledger):
-        from aughor.util.json_store import FileFamilyStore, LedgerListStore
+        from pramanyx.util.json_store import FileFamilyStore, LedgerListStore
         LedgerListStore(paths.state_dir() / "kt_bots.json").upsert({"id": "b1"})
         FileFamilyStore(paths.state_dir(), "kt_exploration_").put("canvas_c1", {"phase": "complete"})
         self._move(ledger)
@@ -427,7 +427,7 @@ class TestAStoreKeepsItsNameWhenItsFileMoves:
         assert fam.get_entry("canvas_c1") == {"phase": "complete"}
 
     def test_before_the_move_a_name_is_its_path_exactly(self, ledger, tmp_path):
-        from aughor.util.json_store import KeyedJsonStore
+        from pramanyx.util.json_store import KeyedJsonStore
         assert home.ledger_names(paths.state_dir() / "anything.json") == []
         store = KeyedJsonStore(tmp_path / "elsewhere.json")
         store.put("k", 1)

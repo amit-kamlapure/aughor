@@ -123,7 +123,7 @@ export interface ExplorationReport {
 // ── Overview mode types ──────────────────────────────────────────────────────
 // "Show me interesting facts about this schema" — a deterministic, notability-ranked
 // TOUR of diverse fact TYPES across the whole dataset (the default
-// first-look). Mirrors aughor/overview/build.py exactly: OverviewReport → OverviewFact[].
+// first-look). Mirrors pramanyx/overview/build.py exactly: OverviewReport → OverviewFact[].
 
 export type OverviewLens =
   | "scale" | "concentration" | "outlier" | "distribution"
@@ -183,7 +183,7 @@ export interface InvestigationFinding {
    *  point labels. Absent → legacy rendering. */
   exhibit?: import("@/components/charts/exhibit").ExhibitSpec;
   /** 2026-11-06 — `names`: what the model's cryptic columns read as, from their SQL
-   *  (`aughor/answer/series_names.py`). Absent on a finding from before it. */
+   *  (`pramanyx/answer/series_names.py`). Absent on a finding from before it. */
   chart_config?: Record<string, unknown>;
 }
 
@@ -215,7 +215,7 @@ export interface AnswerRecommendation {
   timeline: string;
 }
 
-/** ON-10 — one declared definition a question's words reached (`aughor/ontology/framing.py` FrameOutcome). */
+/** ON-10 — one declared definition a question's words reached (`pramanyx/ontology/framing.py` FrameOutcome). */
 export interface FrameOutcome {
   kind: "promise" | "lag" | "rule";
   name: string;

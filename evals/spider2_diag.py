@@ -32,7 +32,7 @@ if str(_REPO) not in sys.path:
 # Skipped when the caller has declared it wants a clean environment: this runs at
 # IMPORT, so a test importing anything from here gets the developer's `.env` in its
 # process — which is how a suite that is green in CI fails on a laptop.
-if not os.environ.get("AUGHOR_SKIP_DOTENV"):
+if not os.environ.get("PRAMANYX_SKIP_DOTENV"):
     try:
         from dotenv import load_dotenv
         load_dotenv(_REPO / ".env")

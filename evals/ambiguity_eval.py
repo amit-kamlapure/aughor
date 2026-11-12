@@ -2,7 +2,7 @@
 
 This is the measure-before-trust gate for 3b (the SOMA execution-grounded clarification half of
 the unified-answer-path arc, ``docs/UNIFIED_ANSWER_PATH.md``). Phase 3 ships a deterministic
-two-source detector (``aughor/agent/clarify.py: assess_clarification``):
+two-source detector (``pramanyx/agent/clarify.py: assess_clarification``):
 
   * Source A — under-specification (the complexity ``ambiguous`` flag).
   * Source B — value/term ambiguity (a subjective-qualifier lexicon).
@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from aughor.agent.clarify import assess_clarification
+from pramanyx.agent.clarify import assess_clarification
 
 # label ∈ {"none", "underspecified", "value_term", "structural"}.
 #   none          — well-specified; the detector must STAY QUIET (false positive if it asks)

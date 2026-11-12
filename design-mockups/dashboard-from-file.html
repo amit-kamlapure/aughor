@@ -215,7 +215,7 @@ const S = { month: new Set(), channel: new Set(), dept: new Set(), open: ["Proce
   tick: { fMonth: true, fChannel: true, fDept: true, sold: true, kept: true, back: true, open: true, weeks: true, channels: true, cats: true, rows: true, whatif: true } };
 const onlyProcessing = () => S.open.length === 1;
 const words = k => onlyProcessing() && D.cards[k].alt_words ? D.cards[k].alt_words : D.cards[k].words;
-// a query card reads a dashboard's value as {{name}}, bound and never pasted in (aughor/dashboards/queries.py)
+// a query card reads a dashboard's value as {{name}}, bound and never pasted in (pramanyx/dashboards/queries.py)
 const sqlOf = k => (onlyProcessing() && D.cards[k].alt_sql ? D.cards[k].alt_sql : D.cards[k].sql).replace(/:(\w+)/g, "{{$1}}");
 
 const passes = (m, c, d, skip) => (skip === "month" || !S.month.size || S.month.has(m)) && (skip === "channel" || !S.channel.size || S.channel.has(c)) && (skip === "dept" || !S.dept.size || S.dept.has(d));

@@ -9,7 +9,7 @@ tokens. So the flag's definition of done asks for one real turn, and this is it.
 
 Costs a handful of provider requests (a converse turn is several: one per loop step plus the
 answering turn). Prints the RESOLVED BINDING FIRST — `data/llm_config.json` outranks
-AUGHOR_BACKEND, so an env var does not make this a dry run.
+PRAMANYX_BACKEND, so an env var does not make this a dry run.
 """
 from __future__ import annotations
 
@@ -26,12 +26,12 @@ try:
 except ImportError:
     print("! python-dotenv not importable; relying on the ambient environment")
 
-CONN = os.environ.get("AUGHOR_PROBE_CONN", "8d36d4c2")     # Superstore demo
-QUESTION = os.environ.get("AUGHOR_PROBE_Q", "How many orders are there in total?")
+CONN = os.environ.get("PRAMANYX_PROBE_CONN", "8d36d4c2")     # Superstore demo
+QUESTION = os.environ.get("PRAMANYX_PROBE_Q", "How many orders are there in total?")
 
 
 def main() -> int:
-    from aughor.llm.provider import get_provider
+    from pramanyx.llm.provider import get_provider
     p = get_provider("coder")
     print(f"binding   : backend={p.backend!r} model={p._model!r}")
     if p.backend == "faux":
@@ -41,8 +41,8 @@ def main() -> int:
 
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
-    from aughor.routers.investigations import _converse_eligible
+    from pramanyx.api import app
+    from pramanyx.routers.investigations import _converse_eligible
 
     # Fail fast if the door would not route here anyway — otherwise a green run below
     # would be the QUICK body answering and we would have proven nothing about converse.

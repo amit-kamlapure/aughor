@@ -102,10 +102,10 @@ One figure worth a person's eye before any promise is set: returns cover **67,87
 the product could not fold a table without leaving its entity standing. That was wrong. The platform already has
 every piece:
 
-- **Parts and absorption** (ON-7, `aughor/ontology/parts.py`). A table is read under its entity through a binding,
+- **Parts and absorption** (ON-7, `pramanyx/ontology/parts.py`). A table is read under its entity through a binding,
   and its own entity is marked a part. Nothing is deleted: the part stays an entity, its objects, links and pages
   keep working by name, and it is hidden from the map and listed under its parent.
-- **An explorer that maps the business first** (ON-7b, `aughor/ontology/explorer.py`). It reads a connection's
+- **An explorer that maps the business first** (ON-7b, `pramanyx/ontology/explorer.py`). It reads a connection's
   source catalogue and proposes entities, parts and links; each is measured before it lands and stays proposed until
   a person confirms it. It runs on demand, because its falsifier fired once: a draft fused what the hand-made
   reference keeps apart.

@@ -21,8 +21,8 @@ import json
 
 import pytest
 
-from aughor.agent.converse_tools import answer_question
-from aughor.routers import investigations as inv
+from pramanyx.agent.converse_tools import answer_question
+from pramanyx.routers import investigations as inv
 from tests.integration.test_stream_chat_transcript import _stub_providers
 
 

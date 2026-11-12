@@ -1,12 +1,12 @@
-"""Per-connection overview drill priors (``aughor.overview.drills``) — capture + read-back.
+"""Per-connection overview drill priors (``pramanyx.overview.drills``) — capture + read-back.
 
-Hermetic: conftest points AUGHOR_OVERVIEW_DRILLS_DB at a throwaway temp DB, so these
+Hermetic: conftest points PRAMANYX_OVERVIEW_DRILLS_DB at a throwaway temp DB, so these
 exercise the real SQLite store without touching data/. Each test uses a UNIQUE
 connection id so they stay independent inside the shared session DB.
 """
 from __future__ import annotations
 
-from aughor.overview.drills import load_priors, record_drill
+from pramanyx.overview.drills import load_priors, record_drill
 
 
 def test_record_and_load_accumulates_lens_and_table_counts():

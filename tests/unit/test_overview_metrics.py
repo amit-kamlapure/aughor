@@ -1,6 +1,6 @@
 """Hermetic unit tests for the overview mode's pure notability math.
 
-Pure, fast, no DB, no LLM — every assertion runs against ``aughor.overview.metrics``
+Pure, fast, no DB, no LLM — every assertion runs against ``pramanyx.overview.metrics``
 directly. Covers the share/concentration/spread/deviation helpers, the ``notability_*``
 normalizers (bounds + monotonicity), and TOTALITY: none of the sequence-taking helpers
 may raise on ``[]`` / ``[None]`` / ``[0]`` / mixed signs / non-numeric strings.
@@ -11,7 +11,7 @@ import math
 
 import pytest
 
-from aughor.overview import metrics as M
+from pramanyx.overview import metrics as M
 
 
 # ── shares() ──────────────────────────────────────────────────────────────────

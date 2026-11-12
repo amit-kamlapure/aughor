@@ -12,9 +12,9 @@ from pathlib import Path
 
 import yaml
 
-from aughor.ontology.models import OntologyGraph
-from aughor.packs import ontology_map as OM
-from aughor.semantic.object_types import object_type_map
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.packs import ontology_map as OM
+from pramanyx.semantic.object_types import object_type_map
 
 REPO = Path(__file__).resolve().parents[2]
 THELOOK = REPO / "evals" / "ablation_thelook_business_ontology.json"
@@ -90,7 +90,7 @@ def test_the_web_composer_draws_by_the_same_list():
 
 
 def test_a_shape_asked_for_refines_a_role_the_object_has_or_is_not_used(monkeypatch):
-    from aughor.packs.models import ExpectedObject, PackOntology
+    from pramanyx.packs.models import ExpectedObject, PackOntology
     asked = PackOntology(objects=[ExpectedObject(name="Customer", roles=["party"], aliases=["users"], drawn_as="depot"),
                                   ExpectedObject(name="Product", roles=["catalog"], drawn_as="no-such-shape")])
     _deployed(monkeypatch, "any")
@@ -131,10 +131,10 @@ def test_a_shape_says_the_role_it_draws_and_the_web_knows_the_same_ones():
 
 
 def test_a_persons_shape_is_an_entity_field_a_release_reads_as_words_and_the_map_serves():
-    from aughor.ontology import compatibility
-    from aughor.ontology.models import OntologyEntity, OntologyGraph
-    from aughor.ontology.overrides import _EDITABLE
-    from aughor.semantic.object_types import describe_object_type, object_type_map
+    from pramanyx.ontology import compatibility
+    from pramanyx.ontology.models import OntologyEntity, OntologyGraph
+    from pramanyx.ontology.overrides import _EDITABLE
+    from pramanyx.semantic.object_types import describe_object_type, object_type_map
     assert "drawn_as" in _EDITABLE["entity"] and "drawn_as" in compatibility._WORDS
     e = OntologyEntity(id="Depot", display_name="Depot", source_tables=["depots"], identity_key="id", grain_verified=True,
                        drawn_as="depot")

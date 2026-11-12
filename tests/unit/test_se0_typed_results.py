@@ -22,8 +22,8 @@ import duckdb
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.db import registry
+from pramanyx.api import app
+from pramanyx.db import registry
 
 client = TestClient(app)
 
@@ -138,7 +138,7 @@ def test_pii_redaction_mirrors_into_typed_rows(typed_conn, tmp_path):
 
 def test_budget_slice_mirrors_into_typed_rows(typed_conn, monkeypatch):
     from types import SimpleNamespace
-    monkeypatch.setattr("aughor.security.sandbox.get_budget",
+    monkeypatch.setattr("pramanyx.security.sandbox.get_budget",
                         lambda cid: SimpleNamespace(max_rows=2))
     body = _run(typed_conn, "SELECT id FROM t ORDER BY id", format="typed")
     assert len(body["rows"]) <= 2, "the budget cap binds the typed rows too"
@@ -147,8 +147,8 @@ def test_budget_slice_mirrors_into_typed_rows(typed_conn, monkeypatch):
 def test_security_post_reconstruction_keeps_caveats():
     """The budget slice rebuilds the QueryResult — the rebuild must not drop the
     guard caveats SE-0 now forwards to the caller."""
-    from aughor.control_plane.contracts.execution import QueryResult
-    from aughor.db.connection import security_post
+    from pramanyx.control_plane.contracts.execution import QueryResult
+    from pramanyx.db.connection import security_post
 
     res = QueryResult(hypothesis_id="query_builder", sql="SELECT 1",
                       columns=["a"], rows=[[str(i)] for i in range(2000)],
@@ -161,7 +161,7 @@ def test_security_post_reconstruction_keeps_caveats():
 def test_typed_mirror_disarms_on_shape_mismatch():
     """Fail closed: a positional mirror that cannot line up must kill the capture,
     never guess."""
-    from aughor.db import connection as dbc
+    from pramanyx.db import connection as dbc
 
     token = dbc._TYPED_SINK.set({})
     try:
@@ -177,7 +177,7 @@ def test_typed_mirror_disarms_on_shape_mismatch():
 def test_no_label_disarms_a_typed_read(typed_conn, tmp_path):
     """A typed read cannot be declared internal, so every one passes the PII/audit post-pass and its capture is
     armed, whatever the label — an internal-looking one used to skip both (GM-5)."""
-    from aughor.db.connection import open_connection_for
+    from pramanyx.db.connection import open_connection_for
     db = open_connection_for(typed_conn)
     try:
         for label in ("__internal__", "query_workbench"):
@@ -213,7 +213,7 @@ def test_connections_list_carries_dialect(typed_conn):
 
 
 def test_query_run_policy_is_analysis_run():
-    from aughor.rbac.permissions import Permission
-    from aughor.rbac.policy import POLICY
+    from pramanyx.rbac.permissions import Permission
+    from pramanyx.rbac.policy import POLICY
     assert POLICY[("POST", "/query/run")] is Permission.ANALYSIS_RUN
     assert POLICY[("POST", "/query/validate")] is Permission.ANALYSIS_RUN

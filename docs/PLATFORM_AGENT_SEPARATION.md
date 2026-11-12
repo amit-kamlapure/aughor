@@ -16,7 +16,7 @@ Pramanyx is two things in one codebase:
   explorer, ADA/investigate, insight modes, the ontology + semantic compiler +
   metrics, knowledge & briefings, playbook, packs, profile, verify, evidence.
 
-The separation is **logical-first** (one `aughor` package, an enforced boundary; a
+The separation is **logical-first** (one `pramanyx` package, an enforced boundary; a
 physical two-package split is a later, now-mechanical move) and the boundary is built
 for an **extensible** future (a *different* agent could plug into the same platform).
 
@@ -38,19 +38,19 @@ Membership: **Platform** = `db`, `kernel`, `connectors`, `metastore`, `org`,
 ## The contract — two halves
 
 1. **Downward (what the platform offers the agent)** —
-   `aughor/control_plane/contracts/host.py`: a `HostCapabilities` Protocol + `default_host()`
+   `pramanyx/control_plane/contracts/host.py`: a `HostCapabilities` Protocol + `default_host()`
    naming the data plane, inference vending, the job/ledger substrate, the security
    gate, and the grant-scoped catalog view. The agent reaches these through their
    stable module functions today; the Protocol makes the surface explicit and
-   substitutable. Plus `aughor/control_plane/contracts/execution.py` — the `QueryResult`
+   substitutable. Plus `pramanyx/control_plane/contracts/execution.py` — the `QueryResult`
    execution-result contract every connector returns.
 
 2. **Upward (what the agent plugs into the platform)** — the registries under
-   `aughor/kernel/registries/`, populated by `aughor/agent/bootstrap.py`
+   `pramanyx/kernel/registries/`, populated by `pramanyx/agent/bootstrap.py`
    `register_agent_plugins()` (called at the api lifespan, the cli, and the test
    conftest). With nothing registered the platform runs **raw** — proven by
    `tests/unit/test_plug_and_play.py`. The live contributions are introspectable via
-   `aughor.kernel.registries.manifest()`.
+   `pramanyx.kernel.registries.manifest()`.
 
 | Registry | Seam it inverts | Agent contribution |
 |---|---|---|
@@ -76,7 +76,7 @@ Membership: **Platform** = `db`, `kernel`, `connectors`, `metastore`, `org`,
 
 ## Next (deferred, now cheap)
 
-- Physical two-package split (`dip/` + `aughor_agent/`) — a mechanical move once the
+- Physical two-package split (`dip/` + `pramanyx_agent/`) — a mechanical move once the
   boundary test is green, which it is.
 - Route the agent's platform access through `HostCapabilities` at call sites (currently
   direct module functions — already the allowed direction).

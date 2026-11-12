@@ -11,9 +11,9 @@ from __future__ import annotations
 import pytest
 import yaml
 
-from aughor.ontology import overrides as ov
-from aughor.ontology.overrides import OntologyOverride
-from aughor.ontology.prompt_reach import action_census
+from pramanyx.ontology import overrides as ov
+from pramanyx.ontology.overrides import OntologyOverride
+from pramanyx.ontology.prompt_reach import action_census
 
 
 @pytest.fixture

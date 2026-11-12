@@ -10,7 +10,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from aughor.routers import governance as G
+from pramanyx.routers import governance as G
 
 
 @pytest.fixture()
@@ -21,7 +21,7 @@ def client():
 
 
 def test_tags_route_serves_what_the_store_holds(client):
-    from aughor.govern import tag_store
+    from pramanyx.govern import tag_store
 
     tag_store.set_tag("table:c.s.orders", "cert", "gold", set_by="alice")
     try:
@@ -34,7 +34,7 @@ def test_tags_route_serves_what_the_store_holds(client):
 
 
 def test_tags_route_filters_by_key(client):
-    from aughor.govern import tag_store
+    from pramanyx.govern import tag_store
 
     tag_store.set_tag("table:c.s.k1", "pii", "email", set_by="alice")
     tag_store.set_tag("table:c.s.k2", "tier", "restricted", set_by="alice")

@@ -7,7 +7,7 @@ holds it to. The display layer read the same text with regexes of its own (measu
   ('ratio (units sold per unit avg. inventory)') and a net review ratio of -0.2 ('ratio -1 to 1') never showed; it
   read "0-1000" as "0-100", so a $404 AOV ('ratio 0-1000 (USD per order)') never showed; and it read the airline
   package's 'ratio 0..1 (0..100%)' as a percent, so a 0.82 load factor showed "0.8%".
-- `aughor/knowledge/metric_moves.py` phrased a move as a percent whenever the name or unit said percent, ratio,
+- `pramanyx/knowledge/metric_moves.py` phrased a move as a percent whenever the name or unit said percent, ratio,
   rate, margin, sentiment or share, multiplying anything up to 1.5 by 100: a 'ratio 0..∞' turnover moving 4 → 6
   read "from 4% to 6%", and a 'percent 0-100' defect rate moving 1.2 → 2.2 read "from 120% to 2%".
 
@@ -25,8 +25,8 @@ from pathlib import Path
 
 import pytest
 
-from aughor.business_profile.validate import stated_range
-from aughor.knowledge.metric_moves import Move, build_move_finding
+from pramanyx.business_profile.validate import stated_range
+from pramanyx.knowledge.metric_moves import Move, build_move_finding
 from tests.unit.test_sane_range_reading import SHIPPED
 
 REPO = Path(__file__).resolve().parents[2]
@@ -62,8 +62,8 @@ def _reading(text: str) -> dict:
 
 
 def test_the_profile_route_ships_each_metrics_reading_beside_its_text(tmp_path, monkeypatch):
-    from aughor.business_profile import store
-    from aughor.routers.profile import get_business_profile
+    from pramanyx.business_profile import store
+    from pramanyx.routers.profile import get_business_profile
 
     monkeypatch.setattr(store, "_DATA_DIR", tmp_path / "profiles")
     metrics = [{"name": metric, "unit_or_range": text, "value_sql": "SELECT 1"} for metric, text in MEASURED]
@@ -77,9 +77,9 @@ def test_the_profile_route_ships_each_metrics_reading_beside_its_text(tmp_path, 
 
 def test_the_web_suite_formats_by_the_readings_the_route_ships():
     """The fixture is the route's output for every measured text — regenerate it, never hand-edit it:
-    AUGHOR_WRITE_STATED_RANGES=1 uv run pytest tests/unit/test_stated_range_display.py -k web_suite"""
+    PRAMANYX_WRITE_STATED_RANGES=1 uv run pytest tests/unit/test_stated_range_display.py -k web_suite"""
     readings = {text: _reading(text) for _, text in MEASURED}
-    if os.environ.get("AUGHOR_WRITE_STATED_RANGES"):
+    if os.environ.get("PRAMANYX_WRITE_STATED_RANGES"):
         FIXTURE.write_text(json.dumps(readings, indent=1, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
     assert FIXTURE.is_file(), f"{FIXTURE} is missing — see this test's docstring"
     assert json.loads(FIXTURE.read_text(encoding="utf-8")) == readings, (

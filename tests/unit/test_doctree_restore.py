@@ -15,28 +15,28 @@ from __future__ import annotations
 
 import pytest
 
-import aughor.knowledge.indexer as idx
-import aughor.knowledge.reindex as rx
+import pramanyx.knowledge.indexer as idx
+import pramanyx.knowledge.reindex as rx
 
 
 @pytest.fixture()
 def env(monkeypatch, tmp_path):
     """A doc-tree root, an isolated registry, a fake store, and one live connection."""
     state = {"upserts": [], "deleted": [], "payloads": [], "owned": set()}
-    monkeypatch.setenv("AUGHOR_ONTOLOGY_DOCS_DIR", str(tmp_path / "ontology_docs"))
-    monkeypatch.setenv("AUGHOR_DOCUMENTS_REGISTRY", str(tmp_path / "documents.json"))
-    monkeypatch.setattr("aughor.semantic.embedder.embed",
+    monkeypatch.setenv("PRAMANYX_ONTOLOGY_DOCS_DIR", str(tmp_path / "ontology_docs"))
+    monkeypatch.setenv("PRAMANYX_DOCUMENTS_REGISTRY", str(tmp_path / "documents.json"))
+    monkeypatch.setattr("pramanyx.semantic.embedder.embed",
                         lambda texts: [[0.0] * 8 for _ in texts])
-    monkeypatch.setattr("aughor.semantic.vector_store.ensure_collection",
+    monkeypatch.setattr("pramanyx.semantic.vector_store.ensure_collection",
                         lambda coll, dim=None: None)
-    monkeypatch.setattr("aughor.semantic.vector_store.collection_dim", lambda coll: 8)
+    monkeypatch.setattr("pramanyx.semantic.vector_store.collection_dim", lambda coll: 8)
     # The ACTIVE width, stubbed rather than probed. `embedding_dim()` memoizes into a
     # module-level `_DIM_CACHE` keyed by (backend, model), and that cache outlives
     # monkeypatch: run alone this fixture's fake embedder probes 8, but in a full suite an
     # earlier test has already cached 768 for the same key, so `_ensure_collection` compares
     # 768 against the 8 above and refuses every write. The sibling fixture in
     # test_reindex_path.py stubs it for the same reason.
-    monkeypatch.setattr("aughor.semantic.embedder.embedding_dim", lambda: 8)
+    monkeypatch.setattr("pramanyx.semantic.embedder.embedding_dim", lambda: 8)
     # Capture only the documents this test persisted. Something in the wider suite
     # re-indexes a doc tree from a thread that outlives the request that started it, into
     # THIS collection — observed as `doc::doctree::fixture::default::0` landing in the
@@ -48,12 +48,12 @@ def env(monkeypatch, tmp_path):
         state["upserts"].extend(
             p for p in points
             if str((p.get("payload") or {}).get("doc_id") or "") in state["owned"])
-    monkeypatch.setattr("aughor.semantic.vector_store.upsert", _upsert)
-    monkeypatch.setattr("aughor.semantic.vector_store.scroll_payloads",
+    monkeypatch.setattr("pramanyx.semantic.vector_store.upsert", _upsert)
+    monkeypatch.setattr("pramanyx.semantic.vector_store.scroll_payloads",
                         lambda coll, limit=0: list(state["payloads"]))
     monkeypatch.setattr(idx, "_delete_doc_chunks",
                         lambda doc_id: state["deleted"].append(doc_id))
-    monkeypatch.setattr("aughor.db.registry.list_connections",
+    monkeypatch.setattr("pramanyx.db.registry.list_connections",
                         lambda org_id=None: [{"id": "connZ"}])
     return state
 
@@ -64,8 +64,8 @@ def _persist(env=None, conn: str = "connZ", schema: str = "s", *, tables: int = 
     Records the doc_id it created in `env["owned"]` so the upsert capture can tell this
     test's writes from a stranger's.
     """
-    from aughor.ontology.doctree import build_doc_tree, save_doc_tree
-    from aughor.ontology.models import EntityProperty, OntologyEntity, OntologyGraph
+    from pramanyx.ontology.doctree import build_doc_tree, save_doc_tree
+    from pramanyx.ontology.models import EntityProperty, OntologyEntity, OntologyGraph
 
     entities = {}
     for i in range(tables):
@@ -93,7 +93,7 @@ def _persist(env=None, conn: str = "connZ", schema: str = "s", *, tables: int = 
 
 def test_persisted_trees_are_read_from_the_manifest_not_the_directory_name(env):
     """`_safe` mangles an id into a directory name; un-mangling it would guess wrong."""
-    from aughor.ontology.doctree import list_persisted_trees
+    from pramanyx.ontology.doctree import list_persisted_trees
 
     _persist(env, conn="conn/Z:odd", schema="s")
     # The directory is mangled, so a reader that trusted it would report the wrong id.
@@ -101,7 +101,7 @@ def test_persisted_trees_are_read_from_the_manifest_not_the_directory_name(env):
 
 
 def test_an_unreadable_manifest_is_skipped_not_fatal(env, tmp_path):
-    from aughor.ontology.doctree import list_persisted_trees
+    from pramanyx.ontology.doctree import list_persisted_trees
 
     _persist(env)
     broken = tmp_path / "ontology_docs" / "broken" / "main"
@@ -146,13 +146,13 @@ def test_an_artifact_outliving_its_connection_is_skipped_with_the_reason(env, mo
     assert "no such connection" in plan["skipped"][0]["reason"]
 
     # Prove the guard is what excludes it: make the connection live and it comes back.
-    monkeypatch.setattr("aughor.db.registry.list_connections",
+    monkeypatch.setattr("pramanyx.db.registry.list_connections",
                         lambda org_id=None: [{"id": "connZ"}, {"id": "deleted_conn"}])
     assert len(rx.doctree_plan()["documents"]) == 2
 
 
 def test_plan_can_be_scoped_to_one_connection(env, monkeypatch):
-    monkeypatch.setattr("aughor.db.registry.list_connections",
+    monkeypatch.setattr("pramanyx.db.registry.list_connections",
                         lambda org_id=None: [{"id": "connZ"}, {"id": "other"}])
     _persist(env, conn="connZ", schema="s")
     _persist(env, conn="other", schema="s")
@@ -177,7 +177,7 @@ def test_restore_writes_the_artifact_back(env):
 
 
 def test_a_failing_document_is_named_and_does_not_stop_the_others(env, monkeypatch):
-    monkeypatch.setattr("aughor.db.registry.list_connections",
+    monkeypatch.setattr("pramanyx.db.registry.list_connections",
                         lambda org_id=None: [{"id": "connZ"}, {"id": "other"}])
     _persist(env, conn="connZ", schema="s")
     _persist(env, conn="other", schema="s")
@@ -204,7 +204,7 @@ def test_unrecoverable_excludes_what_an_artifact_can_supply(env, monkeypatch):
     """The claim was true for uploads and false for schema docs; both now report right."""
     _persist(env, tables=3)
     env["payloads"] = [{"doc_id": "doctree::connZ::s"}, {"doc_id": "upload::a"}]
-    monkeypatch.setattr("aughor.knowledge.indexer.list_documents", lambda: [
+    monkeypatch.setattr("pramanyx.knowledge.indexer.list_documents", lambda: [
         {"doc_id": "doctree::connZ::s", "chunk_count": 3},   # 2 missing, artifact has them
         {"doc_id": "upload::a", "chunk_count": 5},           # 4 missing, gone for good
     ])
@@ -217,7 +217,7 @@ def test_unrecoverable_excludes_what_an_artifact_can_supply(env, monkeypatch):
 def test_without_an_artifact_the_old_pessimistic_number_stands(env, monkeypatch):
     """Proves the correction is the artifact and not a change of arithmetic."""
     env["payloads"] = [{"doc_id": "doctree::connZ::s"}]
-    monkeypatch.setattr("aughor.knowledge.indexer.list_documents", lambda: [
+    monkeypatch.setattr("pramanyx.knowledge.indexer.list_documents", lambda: [
         {"doc_id": "doctree::connZ::s", "chunk_count": 3},
     ])
 
@@ -233,7 +233,7 @@ def test_the_route_plans_by_default_and_restores_when_asked(env):
     must get a plan, not a rebuild."""
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
     client = TestClient(app)
 
     _persist(env, tables=3)

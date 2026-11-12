@@ -8,12 +8,12 @@
 #        ./start.sh --api-port 8010 --web-port 3010
 #        ./start.sh --stop             — stop stray background processes (graceful TERM)
 #
-# `aughor up` never kills a busy port's owner — it reports who holds the port and
+# `pramanyx up` never kills a busy port's owner — it reports who holds the port and
 # exits so you can stop it yourself or pick another port.
 
 set -e
 
-AUGHOR_DIR="$(cd "$(dirname "$0")" && pwd)"
+PRAMANYX_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # Node.js may live behind nvm in interactive shells; make it available here too.
 export NVM_DIR="$HOME/.nvm"
@@ -26,11 +26,11 @@ if [ "${1:-}" = "--stop" ]; then
   # The bracket form stops the pkill from matching itself, but nothing else; anchoring on
   # this checkout's path is what makes the match specific, and it also stops one clone's
   # --stop from killing a sibling clone's servers. -u confines the sweep to this user.
-  pkill -u "$(id -u)" -f "^.*${AUGHOR_DIR}.*[u]vicorn aughor\.api" 2>/dev/null \
+  pkill -u "$(id -u)" -f "^.*${PRAMANYX_DIR}.*[u]vicorn pramanyx\.api" 2>/dev/null \
     && echo "API stopped" || echo "API was not running"
-  pkill -u "$(id -u)" -f "^.*${AUGHOR_DIR}/web.*[n]ext (dev|start)" 2>/dev/null \
+  pkill -u "$(id -u)" -f "^.*${PRAMANYX_DIR}/web.*[n]ext (dev|start)" 2>/dev/null \
     && echo "Web stopped" || echo "Web was not running"
   exit 0
 fi
 
-exec "$AUGHOR_DIR/install.sh" "$@"
+exec "$PRAMANYX_DIR/install.sh" "$@"

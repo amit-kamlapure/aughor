@@ -12,9 +12,9 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.custom_agents import create_agent, delete_agent, get_agent, list_agents
-from aughor.custom_agents.context import activate_agent, current_agent, release_agent
-from aughor.custom_agents.models import UserAgent
+from pramanyx.custom_agents import create_agent, delete_agent, get_agent, list_agents
+from pramanyx.custom_agents.context import activate_agent, current_agent, release_agent
+from pramanyx.custom_agents.models import UserAgent
 
 BRIEF_HEAD = "AGENT BRIEF — you are operating as the user-defined agent"
 INSTRUCTIONS = "Report yesterday's sales. Never estimate — if a figure is missing, say so."
@@ -36,7 +36,7 @@ def _agent(**kw) -> UserAgent:
 # ── AO-1a · the conversation body ───────────────────────────────────────────────────
 
 def test_the_converse_prompt_leads_with_the_agents_brief_when_handed_the_record():
-    from aughor.agent.converse_tools import converse_system_prompt
+    from pramanyx.agent.converse_tools import converse_system_prompt
     before = converse_system_prompt("conn-1")
     after = converse_system_prompt("conn-1", agent=_agent())
     assert not before.startswith(BRIEF_HEAD) and INSTRUCTIONS not in before
@@ -47,7 +47,7 @@ def test_the_converse_prompt_leads_with_the_agents_brief_when_handed_the_record(
 
 
 def test_the_converse_prompt_reads_the_active_agent_when_no_record_is_handed():
-    from aughor.agent.converse_tools import converse_system_prompt
+    from pramanyx.agent.converse_tools import converse_system_prompt
     token = activate_agent(_agent())
     try:
         prompt = converse_system_prompt("conn-1")
@@ -58,7 +58,7 @@ def test_the_converse_prompt_reads_the_active_agent_when_no_record_is_handed():
 
 
 def test_no_agent_means_the_converse_prompt_is_unchanged():
-    from aughor.agent.converse_tools import converse_system_prompt
+    from pramanyx.agent.converse_tools import converse_system_prompt
     assert current_agent() is None
     prompt = converse_system_prompt("conn-1")
     assert BRIEF_HEAD not in prompt
@@ -66,14 +66,14 @@ def test_no_agent_means_the_converse_prompt_is_unchanged():
 
 
 def test_an_agent_with_blank_instructions_adds_nothing():
-    from aughor.agent.converse_tools import converse_system_prompt
+    from pramanyx.agent.converse_tools import converse_system_prompt
     assert converse_system_prompt("c", agent=_agent(instructions="   ")) == \
         converse_system_prompt("c")
 
 
 def test_the_replay_arguments_name_the_agent(monkeypatch):
     """A replay that rebuilds the prompt without the agent rebuilds a prompt the turn never ran."""
-    from aughor.agent import converse_tools as ct
+    from pramanyx.agent import converse_tools as ct
     seen: dict = {}
 
     def _loop(provider, system, question, tools, **kw):
@@ -81,7 +81,7 @@ def test_the_replay_arguments_name_the_agent(monkeypatch):
         seen["system"] = system
         return None
 
-    monkeypatch.setattr("aughor.agent.tool_loop.run_tool_loop", _loop)
+    monkeypatch.setattr("pramanyx.agent.tool_loop.run_tool_loop", _loop)
     monkeypatch.setattr(ct, "get_provider", lambda role: object(), raising=False)
     monkeypatch.setattr(ct, "converse_tools", lambda *a, **k: [])
     ct.converse("conn-1", "how many orders?", agent=_agent(), provider=object())
@@ -92,7 +92,7 @@ def test_the_replay_arguments_name_the_agent(monkeypatch):
 # ── AO-1a · the analyst loop ────────────────────────────────────────────────────────
 
 def test_the_analyst_prompt_leads_with_the_active_agents_brief():
-    from aughor.agent.analyst import analyst_system_prompt
+    from pramanyx.agent.analyst import analyst_system_prompt
     plain = analyst_system_prompt("conn-1", {}, 8)
     token = activate_agent(_agent())
     try:
@@ -111,9 +111,9 @@ def _target():
 
 
 def test_the_hop_activates_the_delegate_and_releases_it(monkeypatch):
-    from aughor.agent.delegate_tool import _run_one
-    from aughor.agent.delegation import DelegationContext
-    import aughor.custom_agents as ca
+    from pramanyx.agent.delegate_tool import _run_one
+    from pramanyx.agent.delegation import DelegationContext
+    import pramanyx.custom_agents as ca
 
     rec = _agent(id="ua_delegate", name="Churn", instructions="Churn only.")
     monkeypatch.setattr(ca, "get_agent", lambda aid: rec if aid == "ua_delegate" else None)
@@ -132,9 +132,9 @@ def test_the_hop_activates_the_delegate_and_releases_it(monkeypatch):
 
 
 def test_the_hop_releases_the_delegate_even_when_it_raises(monkeypatch):
-    from aughor.agent.delegate_tool import _run_one
-    from aughor.agent.delegation import DelegationContext
-    import aughor.custom_agents as ca
+    from pramanyx.agent.delegate_tool import _run_one
+    from pramanyx.agent.delegation import DelegationContext
+    import pramanyx.custom_agents as ca
     monkeypatch.setattr(ca, "get_agent", lambda aid: _agent(id="ua_delegate"))
 
     def _boom(conn, args, **kw):
@@ -145,9 +145,9 @@ def test_the_hop_releases_the_delegate_even_when_it_raises(monkeypatch):
 
 
 def test_an_unreadable_delegate_record_is_said_not_papered_over(monkeypatch):
-    from aughor.agent.delegate_tool import _run_one
-    from aughor.agent.delegation import DelegationContext
-    import aughor.custom_agents as ca
+    from pramanyx.agent.delegate_tool import _run_one
+    from pramanyx.agent.delegation import DelegationContext
+    import pramanyx.custom_agents as ca
     monkeypatch.setattr(ca, "get_agent", lambda aid: None)
     row = _run_one(_target(), "q", DelegationContext(),
                    answer=lambda c, a, **k: {"headline": "x", "outcome": "answered"})
@@ -158,9 +158,9 @@ def test_an_unreadable_delegate_record_is_said_not_papered_over(monkeypatch):
 def test_the_hop_relays_the_headline_never_the_outcome_code(monkeypatch):
     """The real `answer_question` returns `headline` + `outcome`; it has never returned
     `answer`. The old `answer or outcome` relayed the CODE on every production hop."""
-    from aughor.agent.delegate_tool import _run_one
-    from aughor.agent.delegation import DelegationContext
-    import aughor.custom_agents as ca
+    from pramanyx.agent.delegate_tool import _run_one
+    from pramanyx.agent.delegation import DelegationContext
+    import pramanyx.custom_agents as ca
     monkeypatch.setattr(ca, "get_agent", lambda aid: None)
     real_shape = {"outcome": "answered", "headline": "There were 49 orders.", "sql": "SELECT 1",
                   "columns": ["n"], "row_count": 1, "caveats": [], "guard_receipts": [],
@@ -174,9 +174,9 @@ def test_the_hop_relays_the_headline_never_the_outcome_code(monkeypatch):
 
 def test_the_default_generator_frames_on_the_production_path(monkeypatch):
     import types as _types
-    from aughor.custom_agents.quality import evaluate_agent
-    from aughor.custom_agents.store import add_golden
-    import aughor.routers.investigations as inv
+    from pramanyx.custom_agents.quality import evaluate_agent
+    from pramanyx.custom_agents.store import add_golden
+    import pramanyx.routers.investigations as inv
 
     calls: list[dict] = []
 
@@ -213,9 +213,9 @@ def test_the_default_generator_frames_on_the_production_path(monkeypatch):
 
 def test_a_production_path_that_stops_before_sql_is_scored_as_that(monkeypatch):
     import types as _types
-    from aughor.custom_agents.quality import evaluate_agent
-    from aughor.custom_agents.store import add_golden
-    import aughor.routers.investigations as inv
+    from pramanyx.custom_agents.quality import evaluate_agent
+    from pramanyx.custom_agents.store import add_golden
+    import pramanyx.routers.investigations as inv
     monkeypatch.setattr(inv, "answer_core", lambda *a, **k: _types.SimpleNamespace(
         outcome="abstained", sql="", error="not answerable from this schema"))
 
@@ -237,7 +237,7 @@ def test_the_quality_module_builds_no_prompt_of_its_own():
     """Code, not prose: the module may EXPLAIN what it stopped doing, it may not do it."""
     import ast
     import inspect
-    from aughor.custom_agents import quality
+    from pramanyx.custom_agents import quality
     tree = ast.parse(inspect.getsource(quality))
     named = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
     named |= {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
@@ -250,10 +250,10 @@ def test_the_quality_module_builds_no_prompt_of_its_own():
 
 @pytest.fixture()
 def client(monkeypatch):
-    import aughor.kernel.flags as flags
+    import pramanyx.kernel.flags as flags
     monkeypatch.setattr(flags, "flag_enabled",
                         lambda name: name == "agents.user_defined")
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -272,7 +272,7 @@ def test_purpose_is_writable_on_create_and_patch(client):
 
 
 def test_the_pack_path_keeps_the_creators_instructions_documents_and_purpose(monkeypatch):
-    from aughor.custom_agents import templates as t
+    from pramanyx.custom_agents import templates as t
     monkeypatch.setattr(t, "get_template", lambda pid: {
         "pack_id": pid, "name": "Pack Analyst", "instructions": "THE PACK'S TEXT",
         "suggested_goldens": []})
@@ -290,7 +290,7 @@ def test_the_pack_path_keeps_the_creators_instructions_documents_and_purpose(mon
 
 
 def test_the_pack_path_falls_back_to_the_packs_stance_when_nothing_was_edited(monkeypatch):
-    from aughor.custom_agents import templates as t
+    from pramanyx.custom_agents import templates as t
     monkeypatch.setattr(t, "get_template", lambda pid: {
         "pack_id": pid, "name": "Pack Analyst", "instructions": "THE PACK'S TEXT",
         "suggested_goldens": []})
@@ -300,10 +300,10 @@ def test_the_pack_path_falls_back_to_the_packs_stance_when_nothing_was_edited(mo
 
 
 def test_the_pack_route_validates_the_connection_like_the_scratch_route(client, monkeypatch):
-    from aughor.custom_agents import templates as t
+    from pramanyx.custom_agents import templates as t
     monkeypatch.setattr(t, "get_template", lambda pid: {
         "pack_id": pid, "name": "P", "instructions": "s", "suggested_goldens": []})
-    monkeypatch.setattr("aughor.routers.agents._validate_agent_packs", lambda ids: None)
+    monkeypatch.setattr("pramanyx.routers.agents._validate_agent_packs", lambda ids: None)
     r = client.post("/agents/custom/from-template",
                     json={"pack_id": "p", "connection_id": "no-such-connection"})
     assert r.status_code == 422, r.text
@@ -313,13 +313,13 @@ def test_the_pack_route_validates_the_connection_like_the_scratch_route(client, 
 # ── AO-1e · delete cascades with a receipt ──────────────────────────────────────────
 
 def test_deleting_an_agent_disables_its_bots_detaches_its_automations_keeps_revisions(client):
-    from aughor.automations.models import Automation, Condition, Effect
-    from aughor.automations.store import get_automation, upsert_automation
-    from aughor.slackbots import store as bots
-    from aughor.slackbots.models import SlackBot
+    from pramanyx.automations.models import Automation, Condition, Effect
+    from pramanyx.automations.store import get_automation, upsert_automation
+    from pramanyx.slackbots import store as bots
+    from pramanyx.slackbots.models import SlackBot
 
     a = create_agent("Retiring", instructions="v1")
-    from aughor.custom_agents import update_agent
+    from pramanyx.custom_agents import update_agent
     update_agent(a.id, instructions="v2")          # a second revision
     bot = bots.save_bot(SlackBot(name="salesbot", agent_id=a.id, connection_id="c",
                                  bot_token="xoxb-x", app_token="xapp-x", signing_secret="s"))
@@ -350,9 +350,9 @@ def test_deleting_an_agent_disables_its_bots_detaches_its_automations_keeps_revi
 
 
 def test_resuming_a_bot_clears_the_platforms_reason(client, monkeypatch):
-    from aughor.slackbots import store as bots
-    from aughor.slackbots.models import SlackBot
-    monkeypatch.setattr("aughor.routers.slackbots._verify", lambda b: b)
+    from pramanyx.slackbots import store as bots
+    from pramanyx.slackbots.models import SlackBot
+    monkeypatch.setattr("pramanyx.routers.slackbots._verify", lambda b: b)
     bot = bots.save_bot(SlackBot(name="b", agent_id="gone", enabled=False,
                                  disabled_reason="its agent 'X' was deleted",
                                  bot_token="xoxb-x", app_token="xapp-x", signing_secret="s"))

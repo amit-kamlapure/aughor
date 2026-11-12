@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.kernel.registries import value_samples as vs_registry
-from aughor.sql.join_guard import _highcard_bind_warnings
+from pramanyx.kernel.registries import value_samples as vs_registry
+from pramanyx.sql.join_guard import _highcard_bind_warnings
 
 
 @pytest.fixture()
@@ -89,7 +89,7 @@ def test_existing_literal_is_never_second_guessed(samples):
 
 def test_prewarm_submits_one_supervised_job(client, monkeypatch):
     calls: list[str] = []
-    monkeypatch.setattr("aughor.routers.connections._warm_profiles",
+    monkeypatch.setattr("pramanyx.routers.connections._warm_profiles",
                         lambda cid: calls.append(cid) or {"tables": 0, "columns": 0})
     r = client.post("/connections/fixture/prewarm")
     assert r.status_code == 202
@@ -106,9 +106,9 @@ def test_prewarm_404_on_unknown_connection(client):
 
 
 def test_prewarm_skips_when_curator_disabled(client, monkeypatch):
-    monkeypatch.setattr("aughor.routers.connections.is_enabled",
+    monkeypatch.setattr("pramanyx.routers.connections.is_enabled",
                         lambda agent, ws=None: False, raising=False)
-    monkeypatch.setattr("aughor.kernel.agents.is_enabled", lambda agent, ws=None: False)
+    monkeypatch.setattr("pramanyx.kernel.agents.is_enabled", lambda agent, ws=None: False)
     r = client.post("/connections/fixture/prewarm")
     assert r.status_code == 202
     assert r.json() == {"submitted": False, "reason": "curator_disabled"}

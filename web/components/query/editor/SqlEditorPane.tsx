@@ -46,7 +46,7 @@ import {
 import { diagnosticCount, lintGutter } from "@codemirror/lint";
 import { refreshLint } from "@/components/query/editor/diagnostics";
 import { sql, type SQLDialect } from "@codemirror/lang-sql";
-import { aughorEditorTheme, aughorSyntaxHighlighting } from "@/components/query/editor/theme";
+import { pramanyxEditorTheme, pramanyxSyntaxHighlighting } from "@/components/query/editor/theme";
 import { askExtension, type AskHandler } from "@/components/query/editor/ask";
 
 export interface SqlEditorPaneProps {
@@ -302,8 +302,8 @@ export function SqlEditorPane({
       // The gutter marker is what makes a guard finding discoverable: a squiggle on a
       // table name three lines down is easy to miss, a marker in the gutter is not.
       ...(diagnostics ? [diagnostics, lintGutter()] : []),
-      aughorEditorTheme,
-      aughorSyntaxHighlighting,
+      pramanyxEditorTheme,
+      pramanyxSyntaxHighlighting,
       EditorView.lineWrapping,
       EditorState.readOnly.of(readOnly),
       EditorView.updateListener.of((u) => {

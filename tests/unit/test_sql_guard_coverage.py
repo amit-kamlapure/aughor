@@ -1,7 +1,7 @@
 """SQL-guard coverage ratchet — one guard battery, every agent that fires model-written SQL.
 
 **The rule this enforces:** a module that turns natural language into SQL and then EXECUTES that
-SQL must route the execution through ``aughor/sql/executor.py``, so every agent — Deep Analysis,
+SQL must route the execution through ``pramanyx/sql/executor.py``, so every agent — Deep Analysis,
 the autonomous Explorer, quick/Insight, monitors, dashboards, the Query Builder — shares ONE
 deterministic guard battery instead of hand-assembling its own.
 
@@ -25,7 +25,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2] / "aughor"
+ROOT = Path(__file__).resolve().parents[2] / "pramanyx"
 
 # A module "generates" SQL if it reaches for one of the LLM SQL writers…
 _GENERATES = re.compile(
@@ -34,12 +34,12 @@ _GENERATES = re.compile(
 # Internal SQLite/DuckDB stores use the 1-arg cursor form, so they never match.
 _EXECUTES = re.compile(r"\b\w+\.execute\(\s*[^,)]+,")
 # Compliance = the execution goes through the shared executor module.
-_ROUTES = re.compile(r"from aughor\.sql\.executor import|aughor\.sql\.executor\b")
+_ROUTES = re.compile(r"from pramanyx\.sql\.executor import|pramanyx\.sql\.executor\b")
 # The full battery vs. the pre-execute half only.
 _FULL_BATTERY = re.compile(r"\bexecute_guarded\b")
 
 # ── The declared inventory ────────────────────────────────────────────────────
-# Compliant: execution routes through aughor/sql/executor.py.
+# Compliant: execution routes through pramanyx/sql/executor.py.
 COMPLIANT = {
     "agent/investigate.py",   # Deep Analysis — execute_guarded (the original, extracted verbatim)
     "agent/nodes.py",         # quick / Insight — preflight_harden only (see PARTIAL below)
@@ -122,7 +122,7 @@ def test_every_generate_and_execute_module_is_classified():
     undeclared = found - declared
     assert not undeclared, (
         f"New generate-and-execute module(s) not classified in {Path(__file__).name}: "
-        f"{sorted(undeclared)}.\nRoute execution through aughor/sql/executor.py and add it to "
+        f"{sorted(undeclared)}.\nRoute execution through pramanyx/sql/executor.py and add it to "
         f"COMPLIANT, or add it to EXEMPT with a reason / UNGUARDED and raise nothing."
     )
     stale = declared - found
@@ -150,7 +150,7 @@ def test_compliant_modules_really_import_the_shared_executor():
     must not keep claiming it does."""
     for m in sorted(COMPLIANT - {"sql/executor.py"}):
         assert _ROUTES.search((ROOT / m).read_text()), (
-            f"{m} is listed COMPLIANT but no longer imports aughor.sql.executor"
+            f"{m} is listed COMPLIANT but no longer imports pramanyx.sql.executor"
         )
 
 

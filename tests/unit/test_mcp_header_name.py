@@ -13,9 +13,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from aughor.mcpservers import session as S
-from aughor.mcpservers import store
-from aughor.mcpservers.models import McpServer
+from pramanyx.mcpservers import session as S
+from pramanyx.mcpservers import store
+from pramanyx.mcpservers.models import McpServer
 
 _URL = "https://backend.composio.dev/v3/mcp/srv_test?user_id=u1"
 
@@ -74,7 +74,7 @@ def test_the_connection_sends_the_credential_in_the_named_header(monkeypatch):
 
 
 def test_a_read_names_the_header_and_an_update_that_omits_it_keeps_it():
-    from aughor.routers.mcpservers import router
+    from pramanyx.routers.mcpservers import router
     app = FastAPI()
     app.include_router(router)
     client = TestClient(app)

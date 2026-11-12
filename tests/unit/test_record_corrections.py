@@ -1,4 +1,4 @@
-"""Phase 5 of the 2027 study, P5-3 — Corrections as a first-class view (`aughor/record/corrections.py`,
+"""Phase 5 of the 2027 study, P5-3 — Corrections as a first-class view (`pramanyx/record/corrections.py`,
 `GET /record/corrections`).
 
 What these hold: the five records the study §N names are read back from the ledger under one
@@ -15,12 +15,12 @@ from datetime import date
 
 import pytest
 
-from aughor.monitors import missed as MM
-from aughor.record import claims as C
-from aughor.record import corrections as X
-from aughor.record import decisions as D
-from aughor.record import scenario as S
-from aughor.routers import record as R
+from pramanyx.monitors import missed as MM
+from pramanyx.record import claims as C
+from pramanyx.record import corrections as X
+from pramanyx.record import decisions as D
+from pramanyx.record import scenario as S
+from pramanyx.routers import record as R
 
 
 def _conn():

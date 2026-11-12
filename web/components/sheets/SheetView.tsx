@@ -58,7 +58,7 @@ const BAR: CSSProperties = {
 
 /** The widths a person gave a sheet's columns, on this browser — a convenience of theirs, so it lives in the browser and
  *  a page that cannot read it lays the columns out by their kinds. */
-const WIDTHS_KEY = (sheetId: string) => `aughor.sheets.widths.${sheetId}`;
+const WIDTHS_KEY = (sheetId: string) => `pramanyx.sheets.widths.${sheetId}`;
 function readWidths(sheetId: string): Record<string, number> {
   try {
     const v = JSON.parse(window.localStorage.getItem(WIDTHS_KEY(sheetId)) ?? "{}");
@@ -71,7 +71,7 @@ function keepWidths(sheetId: string, widths: Record<string, number>) {
   try { window.localStorage.setItem(WIDTHS_KEY(sheetId), JSON.stringify(widths)); } catch { /* the widths stay for this visit */ }
 }
 /** How many columns the person froze at the left of a sheet, on this browser — as the widths are. */
-const FROZEN_KEY = (sheetId: string) => `aughor.sheets.frozen.${sheetId}`;
+const FROZEN_KEY = (sheetId: string) => `pramanyx.sheets.frozen.${sheetId}`;
 function readFrozen(sheetId: string): number {
   try {
     const n = Number(window.localStorage.getItem(FROZEN_KEY(sheetId)) ?? 0);

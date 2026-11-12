@@ -15,8 +15,8 @@ from __future__ import annotations
 
 from datetime import date
 
-from aughor.briefing import ranges
-from aughor.semantic import metric_time as mt
+from pramanyx.briefing import ranges
+from pramanyx.semantic import metric_time as mt
 
 
 class _Metric:
@@ -49,7 +49,7 @@ def _run_sql(sql: str):
 
 
 def _measure(monkeypatch):
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda **k: [ORDERS, CLIENTELING])
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda **k: [ORDERS, CLIENTELING])
     monkeypatch.setattr(mt, "ensure_dates", lambda *a, **k: {})
     monkeypatch.setattr(mt, "measure_sql", lambda m, windows, **k: (
         f"Q {m.name} " + " ".join(f"{w.label}={w.start}" for w in windows), ""))
@@ -74,7 +74,7 @@ def test_its_own_last_week_is_not_read(monkeypatch):
     def spy(sql):
         asked.append(sql)
         return _run_sql(sql)
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda **k: [ORDERS, CLIENTELING])
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda **k: [ORDERS, CLIENTELING])
     monkeypatch.setattr(mt, "ensure_dates", lambda *a, **k: {})
     monkeypatch.setattr(mt, "measure_sql", lambda m, windows, **k: (
         f"Q {m.name} " + " ".join(f"{w.label}={w.start}" for w in windows), ""))
@@ -91,7 +91,7 @@ def test_the_narrator_is_offered_no_move_from_another_week(monkeypatch):
     assert [f["id"].rsplit("::", 1)[1] for f in found] == ["orders"]
     assert not any("2025" in f["finding"] for f in found), found
     # The note it writes from names the metric as not measured for this week, and forbids a value.
-    from aughor.knowledge.period_brief import period_note
+    from pramanyx.knowledge.period_brief import period_note
     note = period_note(block, today=date(2026, 10, 23))
     assert "Not measured for this week: Clienteling GMV. Do not state a value" in note, note
 

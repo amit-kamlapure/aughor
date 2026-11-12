@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from aughor.agent.investigate import (
+from pramanyx.agent.investigate import (
     _partial_terminal_period_note,
     _results_text_with_verdicts,
     _stamp_partial_period_verdicts,

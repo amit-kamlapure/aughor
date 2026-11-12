@@ -24,14 +24,14 @@ from pathlib import Path
 
 import pytest
 
-from aughor.actions.executor import execute_kinetic_action
-from aughor.ontology.models import ActionParameter, KineticAction, SideEffect
-from aughor.runners import InvestigationRequest, run_investigation
-from aughor.runners.investigation import DISPATCH_EVENT
-from aughor.custom_agents import create_agent, delete_agent, list_agents
+from pramanyx.actions.executor import execute_kinetic_action
+from pramanyx.ontology.models import ActionParameter, KineticAction, SideEffect
+from pramanyx.runners import InvestigationRequest, run_investigation
+from pramanyx.runners.investigation import DISPATCH_EVENT
+from pramanyx.custom_agents import create_agent, delete_agent, list_agents
 
 REPO = Path(__file__).resolve().parents[2]
-AUGHOR = REPO / "aughor"
+PRAMANYX = REPO / "pramanyx"
 
 
 @pytest.fixture(autouse=True)
@@ -43,7 +43,7 @@ def _clean_agents():
 
 @pytest.fixture(autouse=True)
 def _agents_flag_on(monkeypatch):
-    import aughor.kernel.flags as flags
+    import pramanyx.kernel.flags as flags
     monkeypatch.setattr(flags, "flag_enabled",
                         lambda name: name in ("agents.user_defined", "kinetic.actions"))
 
@@ -65,7 +65,7 @@ def _fake_ask(monkeypatch, *payloads: dict):
 
         return _gen()
 
-    monkeypatch.setattr("aughor.routers.investigations.build_ask_stream", fake_stream)
+    monkeypatch.setattr("pramanyx.routers.investigations.build_ask_stream", fake_stream)
     return seen
 
 
@@ -78,13 +78,13 @@ def _capture_submit(monkeypatch, *, job_id="job-1"):
                          "idem": idempotency_key})
         return job_id
 
-    monkeypatch.setattr("aughor.kernel.jobs.submit_background_tick", fake_submit)
+    monkeypatch.setattr("pramanyx.kernel.jobs.submit_background_tick", fake_submit)
     return captured
 
 
 def _no_loop(monkeypatch):
     """No live loop — submit declines and the caller runs the work inline."""
-    monkeypatch.setattr("aughor.kernel.jobs.submit_background_tick",
+    monkeypatch.setattr("pramanyx.kernel.jobs.submit_background_tick",
                         lambda *a, **kw: None)
 
 
@@ -163,7 +163,7 @@ def test_an_inline_run_the_RECORD_calls_failed_is_a_failure_even_with_no_error_e
     """
     _no_loop(monkeypatch)
     _fake_ask(monkeypatch, {"type": "start", "investigation_id": "inv-900"})
-    monkeypatch.setattr("aughor.db.history.get_investigation",
+    monkeypatch.setattr("pramanyx.db.history.get_investigation",
                         lambda i: {"status": "failed", "query_count": 0})
 
     run = run_investigation(_req(), idempotency_key="k")
@@ -179,7 +179,7 @@ def test_an_inline_run_the_RECORD_calls_failed_is_a_failure_even_with_no_error_e
 def test_every_non_answering_terminal_status_is_a_failure(monkeypatch, status):
     _no_loop(monkeypatch)
     _fake_ask(monkeypatch, {"type": "start", "investigation_id": "inv-t"})
-    monkeypatch.setattr("aughor.db.history.get_investigation",
+    monkeypatch.setattr("pramanyx.db.history.get_investigation",
                         lambda i: {"status": status, "query_count": 0})
     assert run_investigation(_req(), idempotency_key="k").status == "failed"
 
@@ -190,7 +190,7 @@ def test_a_completed_record_stays_an_executed_tick(monkeypatch):
     _fake_ask(monkeypatch,
               {"type": "start", "investigation_id": "inv-ok"},
               {"type": "headline", "headline": "Refunds rose 4%"})
-    monkeypatch.setattr("aughor.db.history.get_investigation",
+    monkeypatch.setattr("pramanyx.db.history.get_investigation",
                         lambda i: {"status": "complete", "query_count": 7})
 
     run = run_investigation(_req(), idempotency_key="k")
@@ -207,7 +207,7 @@ def test_an_unreadable_history_store_never_invents_a_failure(monkeypatch):
 
     def _boom(_i):
         raise RuntimeError("history store unreadable")
-    monkeypatch.setattr("aughor.db.history.get_investigation", _boom)
+    monkeypatch.setattr("pramanyx.db.history.get_investigation", _boom)
 
     run = run_investigation(_req(), idempotency_key="k")
     assert run.status == "executed" and run.ok
@@ -220,7 +220,7 @@ def test_the_stream_error_still_wins_and_is_reported_verbatim(monkeypatch):
     _fake_ask(monkeypatch,
               {"type": "start", "investigation_id": "inv-e"},
               {"type": "error", "message": "connection 'conn-h5' is unreachable"})
-    monkeypatch.setattr("aughor.db.history.get_investigation",
+    monkeypatch.setattr("pramanyx.db.history.get_investigation",
                         lambda i: {"status": "failed", "query_count": 0})
 
     run = run_investigation(_req(), idempotency_key="k")
@@ -230,7 +230,7 @@ def test_the_stream_error_still_wins_and_is_reported_verbatim(monkeypatch):
 # ── the join a submitted run cannot return ───────────────────────────────────────
 
 def test_the_dispatch_join_is_recorded_so_a_submitted_run_is_still_traceable(monkeypatch):
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     agent = create_agent(name="Refund Analyst")
     submitted = _capture_submit(monkeypatch)
     _fake_ask(monkeypatch,
@@ -356,7 +356,7 @@ def test_an_investigation_cannot_be_declared_read_only(monkeypatch):
     """H5's risk decision: starting a deep run spends the LLM budget, so `read_only` is not a
     truthful tier for it however the overlay declares it. The floor is LOW, and the audit
     ledger — not a comment — is where that is checked."""
-    from aughor.govern.actions import recent_audit
+    from pramanyx.govern.actions import recent_audit
     _capture_submit(monkeypatch)
     _fake_ask(monkeypatch)
 
@@ -373,28 +373,28 @@ def test_an_investigation_cannot_be_declared_read_only(monkeypatch):
 
 # ── the structural claim: neither package owns the runner ────────────────────────
 
-def _imported_aughor_modules(path: Path) -> set[str]:
-    """Every `aughor.*` module this file imports, however the import is spelled."""
+def _imported_pramanyx_modules(path: Path) -> set[str]:
+    """Every `pramanyx.*` module this file imports, however the import is spelled."""
     out: set[str] = set()
     tree = ast.parse(path.read_text())
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("aughor"):
+        if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("pramanyx"):
             out.add(node.module)
         elif isinstance(node, ast.Import):
-            out.update(a.name for a in node.names if a.name.startswith("aughor"))
+            out.update(a.name for a in node.names if a.name.startswith("pramanyx"))
     return out
 
 
 def _py(pkg: str) -> list[Path]:
-    return [p for p in (AUGHOR / pkg).rglob("*.py") if "__pycache__" not in p.parts]
+    return [p for p in (PRAMANYX / pkg).rglob("*.py") if "__pycache__" not in p.parts]
 
 
 def test_the_runner_imports_neither_of_its_callers():
     """If this fails, the runner has grown a caller's concern and stopped being neutral —
     the exact state H5 exists to leave behind."""
     for path in _py("runners"):
-        offending = {m for m in _imported_aughor_modules(path)
-                     if m.startswith(("aughor.automations", "aughor.actions"))}
+        offending = {m for m in _imported_pramanyx_modules(path)
+                     if m.startswith(("pramanyx.automations", "pramanyx.actions"))}
         assert not offending, f"{path.name} imports its own caller: {sorted(offending)}"
 
 
@@ -402,18 +402,18 @@ def test_kinetic_never_imports_automations():
     """The inversion H5 refused to make. A depends on K (its `kinetic_action` effect runs
     through K's executor); K reaching back for A's engine would close the cycle."""
     for path in _py("actions"):
-        offending = {m for m in _imported_aughor_modules(path)
-                     if m.startswith("aughor.automations")}
+        offending = {m for m in _imported_pramanyx_modules(path)
+                     if m.startswith("pramanyx.automations")}
         assert not offending, (
-            f"aughor/actions/{path.name} imports {sorted(offending)} — A already depends on K, "
-            f"so this closes the cycle. Call aughor.runners instead.")
+            f"pramanyx/actions/{path.name} imports {sorted(offending)} — A already depends on K, "
+            f"so this closes the cycle. Call pramanyx.runners instead.")
 
 
 def test_both_callers_go_through_the_runner():
     """The other half: a private copy of the drain reappearing in either package would pass
     the two tests above while defeating the point."""
-    for module in (AUGHOR / "automations" / "engine.py", AUGHOR / "actions" / "executor.py"):
-        assert any(m.startswith("aughor.runners") for m in _imported_aughor_modules(module)), \
+    for module in (PRAMANYX / "automations" / "engine.py", PRAMANYX / "actions" / "executor.py"):
+        assert any(m.startswith("pramanyx.runners") for m in _imported_pramanyx_modules(module)), \
             f"{module.name} no longer runs investigations through the neutral runner"
 
 
@@ -520,7 +520,7 @@ def test_record_failure_waits_out_the_reconcile_race(monkeypatch):
     """Measured 2026-09-22: a 900s budget kill closed the stream while the row still read
     `running`; the runner asked once, got nothing, and filed the killed run as `executed`.
     The verdict must WAIT for a terminal row — and then quote it."""
-    from aughor.runners import investigation as ri
+    from pramanyx.runners import investigation as ri
     reads = {"n": 0}
 
     def slow_reconcile(inv_id):
@@ -529,7 +529,7 @@ def test_record_failure_waits_out_the_reconcile_race(monkeypatch):
             return {"status": "running"}
         return {"status": "failed",
                 "error": "Stopped at the Analyst's 900s time budget before answering."}
-    monkeypatch.setattr("aughor.db.history.get_investigation", slow_reconcile)
+    monkeypatch.setattr("pramanyx.db.history.get_investigation", slow_reconcile)
     monkeypatch.setattr(ri, "_RECORD_POLL_S", 0.0)
     why = ri.record_failure("inv1")
     assert reads["n"] == 3, "the runner must poll past `running`, not trust the first read"
@@ -538,8 +538,8 @@ def test_record_failure_waits_out_the_reconcile_race(monkeypatch):
 
 def test_record_failure_still_reads_a_completed_run_as_success(monkeypatch):
     """The wait must not manufacture failures: a completed row answers on the first read."""
-    from aughor.runners import investigation as ri
-    monkeypatch.setattr("aughor.db.history.get_investigation",
+    from pramanyx.runners import investigation as ri
+    monkeypatch.setattr("pramanyx.db.history.get_investigation",
                         lambda inv_id: {"status": "completed"})
     assert ri.record_failure("inv2") == ""
 
@@ -547,8 +547,8 @@ def test_record_failure_still_reads_a_completed_run_as_success(monkeypatch):
 def test_record_failure_gives_up_at_the_deadline_without_inventing_a_verdict(monkeypatch):
     """A row that never turns terminal inside the window yields no failure — the stream's
     own reading stands, and nothing is fabricated."""
-    from aughor.runners import investigation as ri
-    monkeypatch.setattr("aughor.db.history.get_investigation",
+    from pramanyx.runners import investigation as ri
+    monkeypatch.setattr("pramanyx.db.history.get_investigation",
                         lambda inv_id: {"status": "running"})
     monkeypatch.setattr(ri, "_RECORD_POLL_S", 0.0)
     monkeypatch.setattr(ri, "_RECORD_TERMINAL_WAIT_S", 0.05)

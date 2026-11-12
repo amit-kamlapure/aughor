@@ -7,11 +7,11 @@ from __future__ import annotations
 
 import yaml
 
-from aughor.ontology.business_rules import rule_fields
-from aughor.ontology.declared import entity_fields, link_fields
-from aughor.ontology.models import Backing, OntologyEntity, OntologyGraph, OntologyMetric
-from aughor.ontology.filetree import export_tree, import_tree, read_declarations
-from aughor.ontology.overrides import OntologyOverride
+from pramanyx.ontology.business_rules import rule_fields
+from pramanyx.ontology.declared import entity_fields, link_fields
+from pramanyx.ontology.models import Backing, OntologyEntity, OntologyGraph, OntologyMetric
+from pramanyx.ontology.filetree import export_tree, import_tree, read_declarations
+from pramanyx.ontology.overrides import OntologyOverride
 
 
 def _graph() -> OntologyGraph:

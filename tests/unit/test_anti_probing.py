@@ -20,8 +20,8 @@ import inspect
 
 import pytest
 
-from aughor.control_plane.contracts.execution import QueryResult
-from aughor.tools.executor import format_result_for_llm
+from pramanyx.control_plane.contracts.execution import QueryResult
+from pramanyx.tools.executor import format_result_for_llm
 
 SUPPRESSION_WORDS = ("suppress", "redact", "hidden", "withheld", "filtered out",
                      "row policy", "row-level", "masked")
@@ -67,7 +67,7 @@ def test_the_true_row_count_is_still_reported():
 def test_the_pii_scanner_reports_its_count_out_of_band_only():
     """`_security_post` redacts in place and sends `redacted_count` to the AuditLogger.
     The count must not be threaded onto the result, where a render could pick it up."""
-    src = inspect.getsource(__import__("aughor.db.connection", fromlist=["_security_post"])._security_post)
+    src = inspect.getsource(__import__("pramanyx.db.connection", fromlist=["_security_post"])._security_post)
     # The count is computed and passed to the audit log…
     assert "pii_redacted=pii_count" in src
     # …and the QueryResult rebuilds carry only rows/columns, never the count.
@@ -81,7 +81,7 @@ def test_a_blocked_query_says_so_rather_than_returning_an_empty_result():
     and that must be a visible error — silently returning zero rows would make a
     permissions failure look like a finding of absence, which is a wrong answer, not a
     protected one."""
-    from aughor.db import connection as C
+    from pramanyx.db import connection as C
 
     src = inspect.getsource(C.enforce_row_policy)
     assert "fail" in src.lower() and "ROW POLICY" in src

@@ -15,7 +15,7 @@ from __future__ import annotations
 import threading
 import time
 
-from aughor.kernel.stage_timer import collect, record, stage
+from pramanyx.kernel.stage_timer import collect, record, stage
 
 
 def test_a_stage_is_timed_when_someone_is_collecting():

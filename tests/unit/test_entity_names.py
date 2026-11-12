@@ -1,6 +1,6 @@
 """A table's entity is named in the singular a reader would write — LuxExperience's `countries` and `corporate_entities`
 were the entities "Countrie" and "CorporateEntitie" (2026-10-14)."""
-from aughor.ontology.builder import _table_to_entity_name
+from pramanyx.ontology.builder import _table_to_entity_name
 
 
 def test_a_table_name_reads_as_its_singular():

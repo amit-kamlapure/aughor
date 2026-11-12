@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 
-from aughor.kernel.ledger import Ledger
+from pramanyx.kernel.ledger import Ledger
 
 
 def _corrupt(path) -> None:
@@ -44,7 +44,7 @@ def test_healthy_file_reports_no_error(tmp_path):
 def test_damaged_file_is_named_loudly_and_still_boots(tmp_path, caplog):
     path = tmp_path / "system.db"
     _corrupt(path)
-    with caplog.at_level(logging.CRITICAL, logger="aughor.kernel.ledger"):
+    with caplog.at_level(logging.CRITICAL, logger="pramanyx.kernel.ledger"):
         led = Ledger(path)          # must NOT raise
     assert led.integrity_error, "quick_check passed on a file we deliberately damaged"
     msgs = [r.getMessage() for r in caplog.records if r.levelno >= logging.CRITICAL]
@@ -54,7 +54,7 @@ def test_damaged_file_is_named_loudly_and_still_boots(tmp_path, caplog):
 def test_health_reports_degraded_when_the_ledger_is_damaged(client, monkeypatch, tmp_path):
     path = tmp_path / "system.db"
     _corrupt(path)
-    monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(path))
+    monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(path))
     Ledger._instances.pop(str(path), None)      # a fresh instance for this path
     body = client.get("/health").json()
     assert body["status"] == "degraded", body

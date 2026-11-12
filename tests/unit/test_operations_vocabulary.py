@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from aughor.ontology.operations import (
+from pramanyx.ontology.operations import (
     caveat_for,
     forbidden_operations,
     forbids_numeric_relationship,
@@ -90,7 +90,7 @@ def _emitted_concepts() -> set:
     found: set[str] = set()
 
     # the NAME layer — the rule table in the profiler
-    text = (_ROOT / "aughor" / "tools" / "profiler.py").read_text()
+    text = (_ROOT / "pramanyx" / "tools" / "profiler.py").read_text()
     block = text.split("_NAME_WITNESS_RULES", 1)[1].split("\ndef ", 1)[0]
     found |= set(re.findall(r'"([a-z_]+\.[a-z_]+)"', block))
 
@@ -99,7 +99,7 @@ def _emitted_concepts() -> set:
     # made the scan miss every grammar and set concept while still passing, because most of
     # them happen to have a name rule too — a guard that goes blind while reporting success
     # is the exact failure this file exists to prevent, and it had it.
-    text = (_ROOT / "aughor" / "tools" / "shape.py").read_text()
+    text = (_ROOT / "pramanyx" / "tools" / "shape.py").read_text()
     found |= set(re.findall(r'_witness\(\s*\n?\s*"([a-z_]+\.[a-z_]+)"', text))
     for table in ("_GRAMMARS", "_SETS"):
         block = text.split(f"{table}: tuple = (", 1)
@@ -107,12 +107,12 @@ def _emitted_concepts() -> set:
         found |= set(re.findall(r'\(\s*"([a-z_]+\.[a-z_]+)",', block[1].split("\n)", 1)[0]))
 
     # the PAIR layer — `roles=` tuples on each finding
-    text = (_ROOT / "aughor" / "tools" / "pairs.py").read_text()
+    text = (_ROOT / "pramanyx" / "tools" / "pairs.py").read_text()
     for roles in re.findall(r"roles=\(([^)]*)\)", text, re.DOTALL):
         found |= set(re.findall(r'"([a-z_]+\.[a-z_]+)"', roles))
 
     # the USAGE layer — the role→concept map
-    text = (_ROOT / "aughor" / "tools" / "usage.py").read_text()
+    text = (_ROOT / "pramanyx" / "tools" / "usage.py").read_text()
     block = text.split("_ROLE_CONCEPTS", 1)[1].split("\ndef ", 1)[0]
     found |= set(re.findall(r'\("([a-z_]+\.[a-z_]+)",', block))
 
@@ -138,7 +138,7 @@ def test_operations_covers_every_concept_the_layers_emit():
     assert not missing, (
         "these concepts can be resolved but the operations vocabulary has no row for "
         f"them: {missing}\n\nA missing row reads as 'no opinion', which reads as 'no "
-        "objection'. Add them to aughor/ontology/operations.yaml."
+        "objection'. Add them to pramanyx/ontology/operations.yaml."
     )
 
 

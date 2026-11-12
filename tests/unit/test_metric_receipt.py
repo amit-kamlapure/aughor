@@ -4,9 +4,9 @@ Deep-Analysis audit finding: every deep run silently resolved an ambiguous metri
 value-weighted refund$/revenue$ (18.8%) vs count-based orders-with-refund/orders (20.2%); "revenue"
 off invoices vs line items — with the definition buried in the intake spec and no disclosure of the
 reading chosen. `_metric_definition_receipt` surfaces the formula + interpretation on the report.
-See aughor/agent/investigate.py.
+See pramanyx/agent/investigate.py.
 """
-from aughor.agent.investigate import _metric_definition_receipt
+from pramanyx.agent.investigate import _metric_definition_receipt
 
 
 def test_ratio_receipt_names_the_value_weighted_reading():

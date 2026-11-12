@@ -1,12 +1,12 @@
 """Bets 1/3/5/6/7 logic — flywheel, org, standing agents, marketplace, instruments (2026-06-27).
 
-Pure cores; the engine/connection-dependent wiring is layered on later. See aughor/packs/.
+Pure cores; the engine/connection-dependent wiring is layered on later. See pramanyx/packs/.
 """
-from aughor.packs import (
+from pramanyx.packs import (
     distill_deltas, resolve_metric_definition, MetricClaim, route_escalation,
     Mandate, evaluate_mandate, import_readiness, Instrument, can_invoke,
 )
-from aughor.agent.state import VerificationManifest, DataQualityNote
+from pramanyx.agent.state import VerificationManifest, DataQualityNote
 
 
 def _verified_manifest():

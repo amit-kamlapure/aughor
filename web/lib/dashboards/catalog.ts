@@ -27,7 +27,7 @@
  * a number where a card id belongs and a prop nobody declared all pass. `rules.ts` checks
  * those; this file only declares them.
  *
- * The server reads this vocabulary through the validator bundle (`aughor/dashboards/validate.py`)
+ * The server reads this vocabulary through the validator bundle (`pramanyx/dashboards/validate.py`)
  * rather than holding a second copy.
  */
 import { defineCatalog } from "@json-render/core";
@@ -54,7 +54,7 @@ import { z } from "zod";
  *  a table, the sliders of a scenario, and adding a row to its sheet (2026-11-03). */
 export const DASHBOARD_VOCABULARY_VERSION = 13;
 
-/** The five tones an answer part may carry (`aughor/agent/present_tool.py`); parity is tested. */
+/** The five tones an answer part may carry (`pramanyx/agent/present_tool.py`); parity is tested. */
 export const TONES = ["good", "warn", "bad", "info", "neutral"] as const;
 export type Tone = (typeof TONES)[number];
 
@@ -252,7 +252,7 @@ export type ActionButtonDef = z.infer<typeof actionButton>;
 export const MAX_TABLE_COLUMNS = 8;
 /** The most properties a filter column offers. */
 export const MAX_FILTERS = 6;
-/** The aggregates a figure may take — the object door's own (`AggName` in `aughor/semantic/object_query.py`). */
+/** The aggregates a figure may take — the object door's own (`AggName` in `pramanyx/semantic/object_query.py`). */
 export const FIGURE_AGGS = ["count", "count_distinct", "sum", "avg", "min", "max"] as const;
 /** How a figure's value is written. */
 export const FIGURE_FORMATS = ["number", "money"] as const;
@@ -514,7 +514,7 @@ export const dashboardCatalog = defineCatalog(schema, {
     // PENDING 54 — a question a person keeps: the agent answers it on its rhythm, and the dashboard shows the answers kept.
     Question: {
       props: z.object({
-        /** The automation that asks it — its words, its rhythm and its session live there (`aughor/dashboards/questions.py`). */
+        /** The automation that asks it — its words, its rhythm and its session live there (`pramanyx/dashboards/questions.py`). */
         automation: z.string().regex(/^[A-Za-z0-9-]{8,64}$/),
         /** The Data Canvas answer it was kept from, when it was: its first answer. */
         first: z.string().regex(/^[A-Za-z0-9]{6,64}$/).optional(),
@@ -522,7 +522,7 @@ export const dashboardCatalog = defineCatalog(schema, {
       }),
       description: "A question the agent answers on its rhythm, and every answer it gave. A person keeps one; reading it asks nothing.",
     },
-    // A dashboard made from a file and a sentence (aughor/sheets/dashboard_draft.py): written by code, never by a model.
+    // A dashboard made from a file and a sentence (pramanyx/sheets/dashboard_draft.py): written by code, never by a model.
     QueryFilters: {
       props: z.object({
         /** The table the dashboard's query cards read: a reader's click narrows every card that reads it. */

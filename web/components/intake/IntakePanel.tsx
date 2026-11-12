@@ -3,7 +3,7 @@
 /**
  * IntakePanel — PX-3 (§3.14): the intake lane's door.
  *
- * The backend lane (KI-1…4, `aughor/routers/intake.py`) shipped complete and
+ * The backend lane (KI-1…4, `pramanyx/routers/intake.py`) shipped complete and
  * consumer-less: upload declared knowledge → a per-object PLAN against the live
  * stores → human verdicts → each accept applies through its target store's own
  * governance. This panel is that flow as a screen. Laws it inherits:

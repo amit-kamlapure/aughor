@@ -4,9 +4,9 @@ Deep-Analysis audit finding (inv2, explore mode): the narrator copied raw 17-sig
 straight into prose — "Klarna's failure rate of 0.20829576194770064" in the headline/conclusion/
 narrative. `round_long_decimals` collapses any decimal run with 4+ fractional digits in a prose
 string, using the same precision rule as the table-cell rounder (`_round_cell`), leaving short
-numbers, currency, and percentages untouched. See aughor/tools/executor.py.
+numbers, currency, and percentages untouched. See pramanyx/tools/executor.py.
 """
-from aughor.util.format import round_long_decimals
+from pramanyx.util.format import round_long_decimals
 
 
 def test_collapses_the_inv2_float():

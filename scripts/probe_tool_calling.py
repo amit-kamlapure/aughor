@@ -47,21 +47,21 @@ WEATHER_TOOL = [{
 
 
 def main() -> int:
-    from aughor.llm.provider import get_provider
+    from pramanyx.llm.provider import get_provider
 
     provider = get_provider("coder")
     print(f"binding      : backend={provider.backend!r} model={provider._model!r} "
           f"role={provider.role!r}")
-    # ⚠️ `data/llm_config.json` OUTRANKS the AUGHOR_BACKEND env var — setting the env var
+    # ⚠️ `data/llm_config.json` OUTRANKS the PRAMANYX_BACKEND env var — setting the env var
     # does NOT make this a dry run, and assuming it does spends a real request. The line
     # above is the authority on what this call will hit; read it before continuing.
-    if os.getenv("AUGHOR_BACKEND") and os.getenv("AUGHOR_BACKEND") != provider.backend:
-        print(f"! AUGHOR_BACKEND={os.getenv('AUGHOR_BACKEND')!r} was IGNORED — the stored "
+    if os.getenv("PRAMANYX_BACKEND") and os.getenv("PRAMANYX_BACKEND") != provider.backend:
+        print(f"! PRAMANYX_BACKEND={os.getenv('PRAMANYX_BACKEND')!r} was IGNORED — the stored "
               f"config in data/llm_config.json won. This call hits {provider.backend!r}.")
-    if not os.getenv("AUGHOR_SECRET_KEY"):
-        print("! AUGHOR_SECRET_KEY is unset — if this backend needs it, the call 401s")
+    if not os.getenv("PRAMANYX_SECRET_KEY"):
+        print("! PRAMANYX_SECRET_KEY is unset — if this backend needs it, the call 401s")
     if provider.backend == "faux":
-        print("VERDICT: backend is 'faux' — this proves nothing. Point AUGHOR_BACKEND at a "
+        print("VERDICT: backend is 'faux' — this proves nothing. Point PRAMANYX_BACKEND at a "
               "real provider and re-run.")
         return 2
     if provider.backend == "anthropic":

@@ -105,8 +105,8 @@ function decide(info: ApprovalInfo, replays: boolean): Promise<boolean> {
  */
 export function installApprovalInterceptor(): void {
   if (typeof window === "undefined") return;
-  const w = window as unknown as { __aughorApprovalPatched?: boolean; fetch: typeof fetch };
-  if (w.__aughorApprovalPatched) return;
+  const w = window as unknown as { __pramanyxApprovalPatched?: boolean; fetch: typeof fetch };
+  if (w.__pramanyxApprovalPatched) return;
   const orig = w.fetch.bind(window);
   w.fetch = async (...args: Parameters<typeof fetch>): Promise<Response> => {
     const res = await orig(...args);
@@ -118,5 +118,5 @@ export function installApprovalInterceptor(): void {
     const approved = await decide(info, replays);
     return approved && replays ? orig(...args) : res;
   };
-  w.__aughorApprovalPatched = true;
+  w.__pramanyxApprovalPatched = true;
 }

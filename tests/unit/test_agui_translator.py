@@ -1,14 +1,14 @@
-"""Hermetic tests for the AG-UI translator (aughor/routers/agui.py, CK-1.1).
+"""Hermetic tests for the AG-UI translator (pramanyx/routers/agui.py, CK-1.1).
 
 `translate_ask_stream` is PURE over the input SSE stream — no LLM, no DB — so we feed recorded
 Pramanyx `/ask` event sequences and assert the AG-UI event order + shapes (the mapping in
-`aughor/routers/agui.py`). No live server needed.
+`pramanyx/routers/agui.py`). No live server needed.
 """
 import asyncio
 import json
 
 from ag_ui.encoder import EventEncoder
-from aughor.routers.agui import translate_ask_stream
+from pramanyx.routers.agui import translate_ask_stream
 
 
 def _sse(ev: dict) -> str:
@@ -60,7 +60,7 @@ def test_quick_happy_path_order_and_run_finished_last():
     starts = [e for e in ev if e["type"] == "TOOL_CALL_START"]
     assert len(starts) == 1 and starts[0]["toolCallName"] == "render_answer"
     customs = {e["name"] for e in ev if e["type"] == "CUSTOM"}
-    assert {"aughor.route", "aughor.insight", "aughor.followups"} <= customs
+    assert {"pramanyx.route", "pramanyx.insight", "pramanyx.followups"} <= customs
     args = [e for e in ev if e["type"] == "TOOL_CALL_ARGS"]
     figure = json.loads(args[0]["delta"])
     assert figure["sql"] == "SELECT 1" and figure["columns"] == ["a"] and figure["chart_type"] == "bar"
@@ -122,7 +122,7 @@ def test_clarify_pending_becomes_interrupt_plus_custom():
     ev = _run(frames)
     t = _types(ev)
     # the gate passes through as a lossless Custom (our adapter → CLARIFY_PENDING pause) ...
-    assert any(e["type"] == "CUSTOM" and e["name"] == "aughor.clarify_pending" for e in ev)
+    assert any(e["type"] == "CUSTOM" and e["name"] == "pramanyx.clarify_pending" for e in ev)
     # ... AND the run finishes with a protocol-native INTERRUPT outcome (for ecosystem clients).
     finished = [e for e in ev if e["type"] == "RUN_FINISHED"]
     assert len(finished) == 1                      # returned at the gate — no second finish
@@ -134,7 +134,7 @@ def test_clarify_pending_becomes_interrupt_plus_custom():
 
 
 def test_unknown_event_is_lossless_custom():
-    # the risk-register guarantee: an unmapped Pramanyx event survives as aughor.<type> Custom.
+    # the risk-register guarantee: an unmapped Pramanyx event survives as pramanyx.<type> Custom.
     ev = _run([{"type": "start"}, {"type": "playbook_refs", "refs": ["p1"]}, {"type": "done"}])
-    custom = [e for e in ev if e["type"] == "CUSTOM" and e["name"] == "aughor.playbook_refs"]
+    custom = [e for e in ev if e["type"] == "CUSTOM" and e["name"] == "pramanyx.playbook_refs"]
     assert len(custom) == 1 and custom[0]["value"]["refs"] == ["p1"]

@@ -27,7 +27,7 @@
  *   3. `data-${string}` DOES NOT SATISFY THE DATA ARM. That arm is
  *      `DataUIMessageChunk<DATA_TYPES>`, a mapped type over a declared
  *      `UIDataTypes` map — so the part NAMES have to be a closed set. They now
- *      are, in `aughorUIDataTypes.ts`, extracted from the reducer's own wire
+ *      are, in `pramanyxUIDataTypes.ts`, extracted from the reducer's own wire
  *      vocabulary rather than hand-listed (the spike's set covered 14 of ~35).
  *
  * ── The trap this module exists to solve: REPLACE vs APPEND ─────────────────
@@ -60,13 +60,13 @@ import {
   DECLARED_DATA_PARTS,
   REPORT_FRAMES,
   UNRENDERED_FRAMES,
-  type AughorUIDataTypes,
-} from "./aughorUIDataTypes";
+  type PramanyxUIDataTypes,
+} from "./pramanyxUIDataTypes";
 
 /** The chunk type this adapter emits, bound to Pramanyx's data-part vocabulary. */
-export type AughorChunk = UIMessageChunk<unknown, AughorUIDataTypes>;
+export type PramanyxChunk = UIMessageChunk<unknown, PramanyxUIDataTypes>;
 
-export type AughorFrame = { event: string; data: Record<string, unknown> };
+export type PramanyxFrame = { event: string; data: Record<string, unknown> };
 
 // ── the replace→append converter ─────────────────────────────────────────────
 
@@ -88,12 +88,12 @@ class Channel {
    *  projection needs to tell a headline block from a narrative block, and part
    *  ORDER cannot carry that: which channel opens first depends on the run. */
   private meta() {
-    return { aughor: { channel: this.key } };
+    return { pramanyx: { channel: this.key } };
   }
 
   /** Convert one REPLACE-style partial into APPEND chunks. */
-  take(full: string): AughorChunk[] {
-    const chunks: AughorChunk[] = [];
+  take(full: string): PramanyxChunk[] {
+    const chunks: PramanyxChunk[] = [];
     // An empty partial opens nothing. Frames legitimately carry "" — a channel
     // that has not produced text yet, or a field this turn never fills — and
     // opening a block for one yields an EMPTY text part, which renders as a
@@ -119,7 +119,7 @@ class Channel {
     return chunks;
   }
 
-  close(): AughorChunk[] {
+  close(): PramanyxChunk[] {
     if (!this.open) return [];
     this.open = false;
     return [{ type: "text-end", id: this.partId }];
@@ -186,7 +186,7 @@ const SETTLED_DATA_PARTS: Record<string, string> = {
 const GATE_FRAMES = new Set(["plan_pending", "clarify_pending"]);
 
 export interface AdapterResult {
-  chunks: AughorChunk[];
+  chunks: PramanyxChunk[];
   /** Set once, from the early `start` frame — the WP-2 drop-recovery handle. */
   investigationId?: string;
   /** True after a terminal frame; the caller must stop feeding frames. */
@@ -223,7 +223,7 @@ export function synthesizeResumedUserMessage(assistant: {
   };
 }
 
-export class AughorToUIMessage {
+export class PramanyxToUIMessage {
   private channels = new Map<string, Channel>();
   private seq = 0;
   private started = false;
@@ -251,21 +251,21 @@ export class AughorToUIMessage {
     return ch;
   }
 
-  private closeAll(): AughorChunk[] {
-    const out: AughorChunk[] = [];
+  private closeAll(): PramanyxChunk[] {
+    const out: PramanyxChunk[] = [];
     for (const ch of this.channels.values()) out.push(...ch.close());
     return out;
   }
 
   /** The protocol's message-open chunk, emitted lazily before the first content. */
-  private open(): AughorChunk[] {
+  private open(): PramanyxChunk[] {
     if (this.started) return [];
     this.started = true;
     return [this.messageId ? { type: "start", messageId: this.messageId } : { type: "start" }];
   }
 
   /** Close every open text block, then the message. Idempotent via `done`. */
-  private finish(): AughorChunk[] {
+  private finish(): PramanyxChunk[] {
     const out = [...this.closeAll()];
     out.push({ type: "finish" });
     this.done = true;
@@ -283,9 +283,9 @@ export class AughorToUIMessage {
    * closed map, and TypeScript rejects it at the CONSUME site even when an
    * `as` silences the emit site.
    */
-  private data(name: string, payload: Record<string, unknown>): AughorChunk {
+  private data(name: string, payload: Record<string, unknown>): PramanyxChunk {
     if (DECLARED_DATA_PARTS.has(name)) {
-      return { type: `data-${name}`, id: this.nextId(), data: payload } as AughorChunk;
+      return { type: `data-${name}`, id: this.nextId(), data: payload } as PramanyxChunk;
     }
     return {
       type: "data-unknown_frame",
@@ -294,13 +294,13 @@ export class AughorToUIMessage {
     };
   }
 
-  feed(frame: AughorFrame): AdapterResult {
+  feed(frame: PramanyxFrame): AdapterResult {
     if (this.done) {
       // error-terminal invariant: nothing renders after a terminal frame.
       return { chunks: [], investigationId: this.invId, terminal: true };
     }
     const { event, data } = frame;
-    const chunks: AughorChunk[] = [];
+    const chunks: PramanyxChunk[] = [];
 
     if (event === "start") {
       const id = data["investigation_id"];
@@ -398,7 +398,7 @@ export class AughorToUIMessage {
    * Close a turn the backend never terminated — a dropped connection. Returns
    * the chunks needed to leave the message well-formed; empty if already done.
    */
-  abort(reason?: string): AughorChunk[] {
+  abort(reason?: string): PramanyxChunk[] {
     if (this.done) return [];
     const out = [...this.open(), ...this.closeAll()];
     out.push({ type: "abort", reason });
@@ -413,9 +413,9 @@ export function isDeclaredDataPart(event: string): boolean {
 }
 
 /** Convenience for tests and the route handler: run a whole frame list. */
-export function adaptFrames(frames: AughorFrame[]): AdapterResult {
-  const adapter = new AughorToUIMessage();
-  const chunks: AughorChunk[] = [];
+export function adaptFrames(frames: PramanyxFrame[]): AdapterResult {
+  const adapter = new PramanyxToUIMessage();
+  const chunks: PramanyxChunk[] = [];
   let invId: string | undefined;
   let terminal = false;
   for (const f of frames) {

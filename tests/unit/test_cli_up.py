@@ -1,4 +1,4 @@
-"""`aughor up` — arg surface, preflight, and the start sequence.
+"""`pramanyx up` — arg surface, preflight, and the start sequence.
 
 No real servers: every test either exercises argument parsing (CliRunner) or replaces the
 port, install, spawn and wait helpers, so nothing binds a port, installs a package or
@@ -17,8 +17,8 @@ from types import SimpleNamespace
 import pytest
 from click.testing import CliRunner
 
-import aughor.cli as cli_mod
-from aughor import installer
+import pramanyx.cli as cli_mod
+from pramanyx import installer
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -30,7 +30,7 @@ def _must_not(what: str):
 
 
 def _checkout(root: Path) -> Path:
-    (root / "pyproject.toml").write_text('[project]\nname = "aughor"\n')
+    (root / "pyproject.toml").write_text('[project]\nname = "pramanyx"\n')
     (root / "web").mkdir()
     return root
 
@@ -41,7 +41,7 @@ def test_up_command_exists_with_expected_flags():
     r = CliRunner().invoke(cli_mod.cli, ["up", "--help"])
     assert r.exit_code == 0, r.output
     for flag in ("--api-port", "--web-port", "--dev", "--api-only", "--web-only", "--no-browser", "--verbose"):
-        assert flag in r.output, f"missing {flag} in `aughor up --help`"
+        assert flag in r.output, f"missing {flag} in `pramanyx up --help`"
 
 
 def test_up_api_only_and_web_only_are_mutually_exclusive():
@@ -61,7 +61,7 @@ def test_up_listed_in_group_help():
 def test_llm_backends_mirror_matches_provider():
     """cli.LLM_BACKENDS is a literal mirror (keeps --help import-light); this
     pins it to the canonical list so the two can never drift."""
-    from aughor.llm.provider import BACKENDS
+    from pramanyx.llm.provider import BACKENDS
     assert tuple(cli_mod.LLM_BACKENDS) == tuple(BACKENDS)
 
 
@@ -79,7 +79,7 @@ def test_up_busy_port_exits_1_without_spawning(monkeypatch, tmp_path):
     monkeypatch.chdir(_checkout(tmp_path))
     monkeypatch.setattr(cli_mod, "_port_in_use", lambda port: True)
     monkeypatch.setattr(cli_mod, "_port_owner", lambda port: "uvicorn (pid 12345)")
-    monkeypatch.setattr(cli_mod, "_aughor_answers", lambda port: False)
+    monkeypatch.setattr(cli_mod, "_pramanyx_answers", lambda port: False)
     monkeypatch.setattr(cli_mod, "_launch", _must_not("spawn anything when the port is busy"))
     monkeypatch.setattr(installer, "prepare_web", _must_not("install anything when the port is busy"))
 
@@ -105,13 +105,13 @@ def test_up_busy_web_port_reports_web_flag(monkeypatch, tmp_path):
     assert "--web-port" in r.output
 
 
-def test_a_second_up_says_aughor_is_already_running(monkeypatch, tmp_path):
+def test_a_second_up_says_pramanyx_is_already_running(monkeypatch, tmp_path):
     """Running the installer again while Pramanyx runs is the common case, and 'port 8000 is in
     use' reads like a clash with something else. Say what it is, and where to find it."""
     monkeypatch.chdir(_checkout(tmp_path))
     monkeypatch.setattr(cli_mod, "_port_in_use", lambda port: port == 8000)
     monkeypatch.setattr(cli_mod, "_port_owner", lambda port: "python3.11 (pid 82038)")
-    monkeypatch.setattr(cli_mod, "_aughor_answers", lambda port: True)
+    monkeypatch.setattr(cli_mod, "_pramanyx_answers", lambda port: True)
     monkeypatch.setattr(cli_mod, "_launch", _must_not("spawn anything"))
     monkeypatch.setattr(installer, "prepare_web", _must_not("install anything"))
 
@@ -144,11 +144,11 @@ class _FakeServer:
 
 @pytest.fixture
 def started(tmp_path, monkeypatch):
-    """`aughor up` with every side effect replaced: ports free, the web app 'prepared', servers
+    """`pramanyx up` with every side effect replaced: ports free, the web app 'prepared', servers
     'launched' as fakes that answer at once, and Ctrl+C the moment it starts supervising."""
     root = _checkout(tmp_path)
     monkeypatch.chdir(root)
-    for var in ("AUGHOR_INSTALLER", "AUGHOR_CORS_ORIGINS", "NEXT_PUBLIC_API_URL", "AUGHOR_API_BASE"):
+    for var in ("PRAMANYX_INSTALLER", "PRAMANYX_CORS_ORIGINS", "NEXT_PUBLIC_API_URL", "PRAMANYX_API_BASE"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setattr(cli_mod, "_port_in_use", lambda port: False)
 
@@ -186,13 +186,13 @@ def test_up_serves_a_production_build_with_logs_in_files(started):
     assert r.exit_code == 0, r.output
     assert started.prepared == {"api_port": 8000, "build": True}
     api, web = started.launched
-    assert api["cmd"][1:4] == ["-m", "uvicorn", "aughor.api:app"]
+    assert api["cmd"][1:4] == ["-m", "uvicorn", "pramanyx.api:app"]
     assert "--reload" not in api["cmd"]
     assert web["cmd"][-3:] == ["start", "-p", "3000"]
     assert web["cmd"][1].endswith(str(Path("next") / "dist" / "bin" / "next")), "next's CLI under node, no npm"
     assert web["cwd"] == started.root / "web"
-    assert api["log"] == started.root / ".aughor" / "logs" / "api.log"
-    assert web["log"] == started.root / ".aughor" / "logs" / "web.log"
+    assert api["log"] == started.root / ".pramanyx" / "logs" / "api.log"
+    assert web["log"] == started.root / ".pramanyx" / "logs" / "web.log"
     assert api["env"]["PYTHONUNBUFFERED"] == "1", "a failure is read back from a current log"
     assert api["cmd"][api["cmd"].index("--timeout-graceful-shutdown") + 1] == "3", (
         "measured live: with a browser tab open, an unbounded shutdown waited on its event "
@@ -219,18 +219,18 @@ def test_moved_ports_are_wired_through_to_both_servers(started):
     assert r.exit_code == 0, r.output
     api, web = started.launched
     assert api["cmd"][api["cmd"].index("--port") + 1] == "8010"
-    assert "http://localhost:3010" in api["env"]["AUGHOR_CORS_ORIGINS"].split(","), \
+    assert "http://localhost:3010" in api["env"]["PRAMANYX_CORS_ORIGINS"].split(","), \
         "without it the browser refuses every request the moved web app makes"
     assert web["cmd"][-2:] == ["-p", "3010"]
     assert web["env"]["NEXT_PUBLIC_API_URL"] == "http://localhost:8010"
-    assert web["env"]["AUGHOR_API_BASE"] == "http://127.0.0.1:8010"
+    assert web["env"]["PRAMANYX_API_BASE"] == "http://127.0.0.1:8010"
     assert started.opened == []
 
 
 def test_a_cors_list_the_user_set_is_left_alone(started, monkeypatch):
-    monkeypatch.setenv("AUGHOR_CORS_ORIGINS", "https://aughor.example.com")
+    monkeypatch.setenv("PRAMANYX_CORS_ORIGINS", "https://pramanyx.example.com")
     CliRunner().invoke(cli_mod.cli, ["up", "--web-port", "3010"])
-    assert started.launched[0]["env"]["AUGHOR_CORS_ORIGINS"] == "https://aughor.example.com"
+    assert started.launched[0]["env"]["PRAMANYX_CORS_ORIGINS"] == "https://pramanyx.example.com"
 
 
 def test_api_only_installs_nothing_for_the_web(started, monkeypatch):
@@ -297,18 +297,18 @@ def test_the_browser_opens_only_where_a_person_can_see_it(monkeypatch):
 def test_the_cors_defaults_mirror_the_api():
     """The mirror exists so a moved web port is ADDED to the API's defaults; a mirror that
     drifted would silently drop an origin the API itself accepts."""
-    assert f'"{cli_mod._DEFAULT_CORS_ORIGINS}"' in (REPO / "aughor" / "api.py").read_text(encoding="utf-8")
+    assert f'"{cli_mod._DEFAULT_CORS_ORIGINS}"' in (REPO / "pramanyx" / "api.py").read_text(encoding="utf-8")
 
 
 def test_a_narrow_output_encoding_cannot_crash_the_summary():
     """Measured on the Windows CI job: output redirected to a file encodes as cp1252, which has
     no "→"; the summary raised UnicodeEncodeError the moment both servers were up, and the
     cleanup stopped them. Runs with and without the guard, so the test can fail."""
-    script = ("import aughor.cli as cli, aughor.installer as installer\n"
+    script = ("import pramanyx.cli as cli, pramanyx.installer as installer\n"
               "{guard}"
               "cli._print_boot_summary({{'status': 'ok', 'llm': {{'ready': False, 'reason': 'no_model'}}}},"
               " 8000, 3000)\n")
-    env = {**os.environ, "PYTHONIOENCODING": "cp1252", "AUGHOR_SKIP_DOTENV": "1"}
+    env = {**os.environ, "PYTHONIOENCODING": "cp1252", "PRAMANYX_SKIP_DOTENV": "1"}
 
     def run(guard: str) -> subprocess.CompletedProcess:
         return subprocess.run([sys.executable, "-c", script.format(guard=guard)], cwd=REPO, env=env,
@@ -345,7 +345,7 @@ def test_repo_root_prefers_cwd_when_it_is_a_checkout(tmp_path, monkeypatch):
 def test_repo_root_falls_back_to_package_parent(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)  # bare dir: no pyproject.toml/web
     root = cli_mod._repo_root()
-    assert (root / "aughor").is_dir()
+    assert (root / "pramanyx").is_dir()
     assert (root / "pyproject.toml").is_file()
 
 
@@ -436,7 +436,7 @@ def test_boot_summary_names_a_missing_model_rather_than_blaming_the_key(capsys):
     out = capsys.readouterr().out
     assert "no model configured" in out
     assert "API key missing" not in out, "ollama needs no key — do not blame one"
-    assert "AUGHOR_CODER_MODEL" in out
+    assert "PRAMANYX_CODER_MODEL" in out
 
 
 def test_boot_summary_treats_absent_demo_data_as_normal(capsys):
@@ -448,7 +448,7 @@ def test_boot_summary_treats_absent_demo_data_as_normal(capsys):
     cli_mod._print_boot_summary(health, 8000, 3000)
     out = capsys.readouterr().out
     assert "no demo data" in out
-    assert "aughor seed" in out
+    assert "pramanyx seed" in out
     assert "not seeded yet" not in out, "absence is the default, not a problem to flag"
 
 
@@ -468,10 +468,10 @@ def test_boot_summary_reports_ready_llm(capsys):
 
 def test_boot_summary_says_where_the_logs_are_and_how_to_start_again(capsys, tmp_path):
     cli_mod._print_boot_summary({"status": "ok"}, 8000, 3000, logs=tmp_path / "logs",
-                                next_time="Next time, start Pramanyx with:  uv run aughor up")
+                                next_time="Next time, start Pramanyx with:  uv run pramanyx up")
     out = capsys.readouterr().out
     assert str(tmp_path / "logs") in out
-    assert "uv run aughor up" in out
+    assert "uv run pramanyx up" in out
     assert "Ctrl+C" in out
 
 

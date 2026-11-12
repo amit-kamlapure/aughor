@@ -16,7 +16,7 @@ import { EditorView } from "@codemirror/view";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 
-export const aughorEditorTheme = EditorView.theme({
+export const pramanyxEditorTheme = EditorView.theme({
   "&": {
     fontFamily: "var(--font-code, var(--font-jetbrains-mono), monospace)",
     // Literal rather than a token: the app defines font sizes as `aug-fs-*` CLASSES,
@@ -160,7 +160,7 @@ export const aughorEditorTheme = EditorView.theme({
 /** Syntax colours, also token-native. Kept deliberately quiet — a SQL editor that
  *  colours nine token classes reads as noise; keywords, literals and comments carry
  *  nearly all the signal. */
-export const aughorHighlightStyle = HighlightStyle.define([
+export const pramanyxHighlightStyle = HighlightStyle.define([
   { tag: [t.keyword, t.operatorKeyword, t.modifier], color: "var(--vio4)", fontWeight: "500" },
   { tag: [t.string, t.special(t.string)],            color: "var(--grn4)" },
   { tag: [t.number, t.bool, t.null],                 color: "var(--amb4)" },
@@ -170,4 +170,4 @@ export const aughorHighlightStyle = HighlightStyle.define([
   { tag: t.invalid,                                  color: "var(--red4)" },
 ]);
 
-export const aughorSyntaxHighlighting = syntaxHighlighting(aughorHighlightStyle);
+export const pramanyxSyntaxHighlighting = syntaxHighlighting(pramanyxHighlightStyle);

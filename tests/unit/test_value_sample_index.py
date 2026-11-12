@@ -16,11 +16,11 @@ from pathlib import Path
 
 import duckdb
 
-from aughor.db.connection import MAX_ROWS, DatabaseConnection, DuckDBConnection
-from aughor.tools.profiler import ColumnProfile, build_column_profiles
-import aughor.tools.profiler as profiler
-import aughor.tools.profile_cache as pc
-from aughor.semantic import answer_resolution as R
+from pramanyx.db.connection import MAX_ROWS, DatabaseConnection, DuckDBConnection
+from pramanyx.tools.profiler import ColumnProfile, build_column_profiles
+import pramanyx.tools.profiler as profiler
+import pramanyx.tools.profile_cache as pc
+from pramanyx.semantic import answer_resolution as R
 
 
 # ─────────────────────────── producer (profiler) ─────────────────────────────

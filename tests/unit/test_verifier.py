@@ -2,7 +2,7 @@
 verdict (fan-out / id-arithmetic detection + R3 typed failure classes). Hermetic."""
 from __future__ import annotations
 
-from aughor.agent.verifier import FANOUT_CAVEAT, Verifier, VerifierVerdict
+from pramanyx.agent.verifier import FANOUT_CAVEAT, Verifier, VerifierVerdict
 
 
 class _Q:

@@ -16,11 +16,11 @@ from pathlib import Path
 
 import pytest
 
-from aughor.dashboards import cards, validate as V, versions
-from aughor.dashboards.home import Home
-from aughor.cards import store as card_store
-from aughor.cards.models import StoredCard
-from aughor.org.context import using_org
+from pramanyx.dashboards import cards, validate as V, versions
+from pramanyx.dashboards.home import Home
+from pramanyx.cards import store as card_store
+from pramanyx.cards.models import StoredCard
+from pramanyx.org.context import using_org
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURE = REPO / "web" / "lib" / "dashboards" / "premise.fixture.json"
@@ -86,7 +86,7 @@ def test_the_first_spec_kept_is_version_one(desk):
 
 @needs_rules
 def test_the_artifact_carries_its_person_its_connection_and_its_lineage(desk):
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
 
     first = desk.keep()
     edited = desk.spec()
@@ -205,7 +205,7 @@ def test_when_the_rules_cannot_run_nothing_is_kept(desk, monkeypatch):
 
 @needs_rules
 def test_a_write_that_fails_is_said_not_swallowed(desk, monkeypatch):
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
 
     def broken(self, *a, **kw):
         raise OSError("disk is full")
@@ -500,7 +500,7 @@ def test_a_cockpit_does_not_offer_back_a_superseded_card_a_deprecated_metrics_or
     card_store.upsert_card(dep.model_copy(update={"provenance": dep.provenance.model_copy(
         update={"metric": "gross_margin_rate", "metric_version": 1})}))
     keep = cards.place(desk.home, StoredCard(id=f"keep{tag}", kind="kpi", title="Units", sql="SELECT 4"))
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda connection_id=None, **k: [
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda connection_id=None, **k: [
         N(name="gross_margin_rate", status="deprecated", connection=desk.connection)])
 
     why = cards.not_offered(desk.home, cards.cards_of(desk.home), [desk.rate, desk.net])

@@ -22,12 +22,12 @@ import pytest
 from instructor.core.exceptions import InstructorRetryException
 from pydantic import BaseModel, ValidationError
 
-from aughor import telemetry
-from aughor.kernel.ledger import Ledger
-from aughor.llm import coordination as C
-from aughor.llm import provider as P
-from aughor.obs import session_log
-from aughor.obs import usage as U
+from pramanyx import telemetry
+from pramanyx.kernel.ledger import Ledger
+from pramanyx.llm import coordination as C
+from pramanyx.llm import provider as P
+from pramanyx.obs import session_log
+from pramanyx.obs import usage as U
 
 try:
     from instructor.core.exceptions import FailedAttempt
@@ -105,8 +105,8 @@ def _rows(trace: str) -> list[dict]:
 
 @pytest.fixture(autouse=True)
 def _own_the_log(monkeypatch):
-    monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "0")
-    monkeypatch.delenv("AUGHOR_FALLBACK_DISABLED", raising=False)
+    monkeypatch.setenv("PRAMANYX_LLM_MAX_RETRIES", "0")
+    monkeypatch.delenv("PRAMANYX_FALLBACK_DISABLED", raising=False)
     monkeypatch.setattr(P.time, "sleep", lambda _s: None)
     monkeypatch.setattr(U, "ensure_catalogue_prices", lambda **_k: 0)
     C.set_default(None)
@@ -117,7 +117,7 @@ def _own_the_log(monkeypatch):
 
 
 def _chain(monkeypatch, primary: P.LLMProvider, link: P.LLMProvider) -> None:
-    monkeypatch.setenv("AUGHOR_FALLBACK_BACKENDS", link.backend)
+    monkeypatch.setenv("PRAMANYX_FALLBACK_BACKENDS", link.backend)
     monkeypatch.setattr(P, "_active_key", lambda b: "k")
     monkeypatch.setattr(P, "usable_key", lambda b: "k")
     monkeypatch.setattr(primary, "_warn_if_over_window", lambda *a, **k: None)
@@ -175,7 +175,7 @@ def test_every_reader_of_spend_counts_the_refusal_apart(monkeypatch):
     assert by["openrouter"].calls == 1 and by["openrouter"].cost_usd == pytest.approx(billed_usd)
     assert report.to_dict()["refused_calls"] == 1 and by["anthropic"].to_dict()["refused"] == 1
 
-    from aughor.routers.obs import usage_summary
+    from pramanyx.routers.obs import usage_summary
     page = usage_summary(range="24h")
     assert (page["calls"], page["refused_calls"], page["untraced_calls"]) == (1, 1, 0)
     assert page["cost_usd"] == pytest.approx(round(billed_usd, 4)) and page["cost_is_complete"] is True
@@ -224,7 +224,7 @@ def test_a_link_that_failed_before_the_one_that_answered_is_in_the_log_in_order(
     links = {"groq": _provider("groq", "llama-x", first_link),
              "openrouter": _provider("openrouter", "deepseek/deepseek-v4.1-flash", second_link)}
     _chain(monkeypatch, primary, links["openrouter"])
-    monkeypatch.setenv("AUGHOR_FALLBACK_BACKENDS", "groq,openrouter")
+    monkeypatch.setenv("PRAMANYX_FALLBACK_BACKENDS", "groq,openrouter")
     monkeypatch.setattr(primary, "_fallback_provider", lambda b: links.get(b))
 
     with telemetry.bind_trace("t-links"):
@@ -266,7 +266,7 @@ def test_a_refused_tool_turn_is_a_row_and_the_link_that_answered_says_whose(monk
 
 def test_a_refused_tool_turn_on_claude_is_a_row(monkeypatch):
     """Claude's tool turns speak `messages` (PENDING item 17) — the same record on that branch."""
-    monkeypatch.setenv("AUGHOR_FALLBACK_BACKENDS", "none")
+    monkeypatch.setenv("PRAMANYX_FALLBACK_BACKENDS", "none")
 
     def create(**_kw):
         raise _spent_anthropic()
@@ -314,7 +314,7 @@ def test_a_failed_repair_is_a_row(monkeypatch):
 
 
 def test_the_request_refused_for_its_reasoning_extras_is_a_row_before_the_resend(monkeypatch):
-    monkeypatch.setenv("AUGHOR_REASONING_EFFORT", "medium")
+    monkeypatch.setenv("PRAMANYX_REASONING_EFFORT", "medium")
     client, sent = _client(_ProviderSaid("Error code: 400 - unrecognized field: reasoning", 400),
                            (_Spec(days=4), _completion('{"days": 4}', 12, 3)))
     with telemetry.bind_trace("t-extras"):
@@ -329,7 +329,7 @@ def test_the_request_refused_for_its_reasoning_extras_is_a_row_before_the_resend
 
 
 def test_a_failed_low_reasoning_retry_is_a_row_with_what_it_was_billed(monkeypatch):
-    monkeypatch.setenv("AUGHOR_REASONING_EFFORT", "medium")
+    monkeypatch.setenv("PRAMANYX_REASONING_EFFORT", "medium")
     truncated = _answered_unusably('{"days": 1', 50, 8192, finish="length")
     client, sent = _client(truncated, truncated)
     with telemetry.bind_trace("t-low"), pytest.raises(Exception):
@@ -343,7 +343,7 @@ def test_a_failed_low_reasoning_retry_is_a_row_with_what_it_was_billed(monkeypat
 
 
 def test_a_low_reasoning_retry_that_answers_is_the_answering_row(monkeypatch):
-    monkeypatch.setenv("AUGHOR_REASONING_EFFORT", "medium")
+    monkeypatch.setenv("PRAMANYX_REASONING_EFFORT", "medium")
     client, _ = _client(_answered_unusably('{"days": 1', 50, 8192, finish="length"),
                         (_Spec(days=1), _completion('{"days": 1}', 50, 900)))
     with telemetry.bind_trace("t-low-ok"):
@@ -367,7 +367,7 @@ def test_a_failed_json_reask_is_a_row(monkeypatch):
 
 
 def test_a_streaming_rung_refused_for_its_extras_is_a_row(monkeypatch):
-    monkeypatch.setenv("AUGHOR_REASONING_EFFORT", "medium")
+    monkeypatch.setenv("PRAMANYX_REASONING_EFFORT", "medium")
     sent: list[dict] = []
 
     def create(**kw):
@@ -412,7 +412,7 @@ def test_a_model_call_made_outside_every_run_is_kept_under_what_made_it():
     rows = _rows(f"untraced:script:{day}")
     assert len(rows) == 1 and (rows[0]["prompt_tokens"], rows[0]["completion_tokens"]) == (4, 2)
 
-    from aughor.routers.obs import usage_summary
+    from pramanyx.routers.obs import usage_summary
     assert usage_summary(range="24h")["untraced_calls"] == 1
     run = [r for r in session_log.recent_sessions() if r["trace_id"] == f"untraced:script:{day}"][0]
     assert run["untraced"] is True and run["llm_calls"] == 1

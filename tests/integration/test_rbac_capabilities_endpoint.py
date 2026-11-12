@@ -7,22 +7,22 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.rbac import store
+from pramanyx.rbac import store
 
 
 @pytest.fixture(autouse=True)
 def _enterprise(monkeypatch):
-    monkeypatch.setenv("AUGHOR_TIER", "enterprise")
-    monkeypatch.setenv("AUGHOR_RBAC_AUTO_BOOTSTRAP", "0")
+    monkeypatch.setenv("PRAMANYX_TIER", "enterprise")
+    monkeypatch.setenv("PRAMANYX_RBAC_AUTO_BOOTSTRAP", "0")
     yield
 
 
 def _h(org, user="u1"):
-    return {"X-Aughor-Org": org, "X-Aughor-User": user}
+    return {"X-Pramanyx-Org": org, "X-Pramanyx-User": user}
 
 
 def test_localhost_capabilities_are_the_full_tier(client, monkeypatch):
-    monkeypatch.delenv("AUGHOR_REQUIRE_IDENTITY", raising=False)
+    monkeypatch.delenv("PRAMANYX_REQUIRE_IDENTITY", raising=False)
     body = client.get("/capabilities").json()
     caps = set(body["capabilities"])
     assert "monitors" in caps and "metrics.define" in caps       # everything on
@@ -30,7 +30,7 @@ def test_localhost_capabilities_are_the_full_tier(client, monkeypatch):
 
 
 def test_viewer_sees_a_reduced_capability_set(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
     store.assign_role("caps-ep-viewer", "vic", "viewer")
     body = client.get("/capabilities", headers=_h("caps-ep-viewer", "vic")).json()
     caps = set(body["capabilities"])
@@ -43,7 +43,7 @@ def test_viewer_sees_a_reduced_capability_set(client, monkeypatch):
 
 
 def test_owner_sees_the_full_capability_set(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
     store.assign_role("caps-ep-owner", "boss", "owner")
     body = client.get("/capabilities", headers=_h("caps-ep-owner", "boss")).json()
     caps = set(body["capabilities"])

@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.ontology.answer_trace import build_answer_trace, trace_from_receipt
-from aughor.ontology.context_graph import project_graph
-from aughor.ontology.models import OntologyEntity, OntologyGraph, OntologyRelationship
+from pramanyx.ontology.answer_trace import build_answer_trace, trace_from_receipt
+from pramanyx.ontology.context_graph import project_graph
+from pramanyx.ontology.models import OntologyEntity, OntologyGraph, OntologyRelationship
 
 
 def _graph():
@@ -33,7 +33,7 @@ def _graph():
 
 @pytest.fixture
 def store(monkeypatch, tmp_path):
-    from aughor.ontology import context_graph_store as s
+    from pramanyx.ontology import context_graph_store as s
     monkeypatch.setattr(s, "_ROOT", tmp_path / "context_graph")
     s.save_graph(_graph())
     return s
@@ -97,13 +97,13 @@ def test_edge_ids_in_the_citation_list_are_not_mistaken_for_nodes(store):
 def test_no_graph_returns_none_not_an_empty_walk(monkeypatch, tmp_path):
     """An empty walk reads as 'nothing grounded this answer', which is a different and
     false claim from 'this connection has no graph'."""
-    from aughor.ontology import context_graph_store as s
+    from pramanyx.ontology import context_graph_store as s
     monkeypatch.setattr(s, "_ROOT", tmp_path / "context_graph")
     assert build_answer_trace("c", tables=["orders"], org_id="default") is None
 
 
 def test_build_never_raises_into_the_answer_path(monkeypatch):
-    import aughor.ontology.answer_trace as mod
+    import pramanyx.ontology.answer_trace as mod
 
     def _boom(*a, **k):
         raise RuntimeError("store is down")
@@ -113,7 +113,7 @@ def test_build_never_raises_into_the_answer_path(monkeypatch):
 
 
 def test_metrics_resolve_to_metric_nodes(store):
-    from aughor.ontology.context_graph import GraphNode, Provenance
+    from pramanyx.ontology.context_graph import GraphNode, Provenance
     g = _graph()
     g.add_node(GraphNode(id="metric:revenue", kind="metric", label="Revenue",
                          provenance=Provenance(source="ontology.metric")))
@@ -128,7 +128,7 @@ def test_trace_from_receipt_handles_the_real_metrics_shape(store):
     """`metrics.used` is a list of NAMES; its sibling `drifted` is a list of dicts.
     Assuming dicts raised on every real receipt while a unit test passing an empty list
     stayed green — the route test is what caught it, so the shape is pinned here."""
-    from aughor.ontology.context_graph import GraphNode, Provenance
+    from pramanyx.ontology.context_graph import GraphNode, Provenance
     g = _graph()
     g.add_node(GraphNode(id="metric:revenue", kind="metric", label="Revenue",
                          provenance=Provenance(source="ontology.metric")))
@@ -170,8 +170,8 @@ def test_the_trace_is_not_folded_into_the_signed_receipt(store, monkeypatch):
     trace to the receipt body would break `verify()` on the next read. The trace is a
     separate call for exactly this reason — this test fails if someone merges it back in.
     """
-    monkeypatch.setenv("AUGHOR_SECRET_KEY", "test-secret")
-    from aughor.trust.receipt import build_public_receipt, verify
+    monkeypatch.setenv("PRAMANYX_SECRET_KEY", "test-secret")
+    from pramanyx.trust.receipt import build_public_receipt, verify
 
     raw = {
         "artifact": {"id": "r1", "kind": "chat_answer", "conn_id": "c",
@@ -200,8 +200,8 @@ def test_citations_cross_the_executor_boundary(monkeypatch, tmp_path):
 
     This proves the explicit hand-back works across the real executor.
     """
-    from aughor.kernel.concurrency import ContextThreadPoolExecutor
-    from aughor.ontology.context_graph_readback import (
+    from pramanyx.kernel.concurrency import ContextThreadPoolExecutor
+    from pramanyx.ontology.context_graph_readback import (
         _last_cited, last_cited_nodes, publish_cited_nodes,
     )
 
@@ -224,7 +224,7 @@ def test_citations_cross_the_executor_boundary(monkeypatch, tmp_path):
 
 def test_publishing_an_empty_list_does_not_erase_real_citations():
     """The chat path sets the var directly; a later empty publish must not wipe it."""
-    from aughor.ontology.context_graph_readback import (
+    from pramanyx.ontology.context_graph_readback import (
         _last_cited, last_cited_nodes, publish_cited_nodes,
     )
     _last_cited.set(["table:Order"])
@@ -236,7 +236,7 @@ def test_two_schemas_with_the_same_bare_table_do_not_cross_resolve(store):
     """`merge_graphs` unions one graph per schema, so `sales.orders` and `staging.orders`
     both reduce to the bare key `orders`. Rendering one schema's node for the other's
     table would show the wrong label, summary, warrant and edges."""
-    from aughor.ontology.context_graph import GraphNode, Provenance
+    from pramanyx.ontology.context_graph import GraphNode, Provenance
     g = _graph()
     g.add_node(GraphNode(id="table:StagingOrder", kind="table", label="Staging Order",
                          provenance=Provenance(source="ontology.entity"),

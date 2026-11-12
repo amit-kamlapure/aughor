@@ -15,10 +15,10 @@ from pathlib import Path
 
 import pytest
 
-from aughor.ontology.framing import frame_question
-from aughor.ontology.framing_misses import KIND, misses, record
-from aughor.ontology.models import OntologyGraph
-from aughor.ontology.near_match import near_candidates
+from pramanyx.ontology.framing import frame_question
+from pramanyx.ontology.framing_misses import KIND, misses, record
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.ontology.near_match import near_candidates
 
 REPO = Path(__file__).resolve().parents[2]
 LUX = OntologyGraph.model_validate(json.loads((REPO / "evals/ablation_luxexperience_business_ontology.json").read_text()))
@@ -30,7 +30,7 @@ def test_a_question_that_reaches_no_declared_term_is_recorded_without_its_text()
     frame = frame_question("How many transactions look fraudulent?", LUX)
     assert not frame.defines
     assert record(frame, LUX, "conn-miss", "lux", trace_id="t-miss-1") is True
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     event = Ledger.default().events(kind=KIND, conn_id="conn-miss", limit=1)[0]
     assert event["trace_id"] == "t-miss-1"
     assert "fraudulent" not in json.dumps(event["payload"])          # the text is not copied
@@ -62,7 +62,7 @@ def test_near_matches_do_not_read_an_instruction_or_a_word_that_merely_begins_al
 
 def test_resolve_frame_records_the_miss_on_the_way(monkeypatch):
     """The hook is where every fresh framing passes (`agent.framing.resolve_frame`)."""
-    import aughor.agent.framing as agent_framing
+    import pramanyx.agent.framing as agent_framing
     monkeypatch.setattr(agent_framing, "served_graph", lambda conn, schema=None: LUX)
     monkeypatch.setattr(agent_framing, "person_synonyms", lambda conn: [])
     before = misses("conn-resolve")["misses"]
@@ -89,7 +89,7 @@ def _grounded(ask: str, previous: str = "Revenue fell.\n\nOrders were completed 
     """A scheduled run's question as the engine composes it, by the composer's own parts."""
     from datetime import datetime, timezone
 
-    from aughor.automations import temporal
+    from pramanyx.automations import temporal
     note = temporal.observation_note(datetime(2026, 10, 3, 9, 0, tzinfo=timezone.utc), "0 9 * * *", 8)
     prev = (f"{temporal.PREVIOUS_REPORT_HEADER}\nThe previous run of this automation reported:\n"
             f"\"{previous}\"\nIf your current measurements DISAGREE, say so instead of "
@@ -100,7 +100,7 @@ def _grounded(ask: str, previous: str = "Revenue fell.\n\nOrders were completed 
 def test_the_ask_is_recovered_from_a_scheduled_runs_question():
     """Round trip through the composer's own blocks — and the previous report is quoted text
     that holds a blank line, which is why that block ends on its last sentence."""
-    from aughor.automations.temporal import ask_of
+    from pramanyx.automations.temporal import ask_of
     ask = "What changed in theLook in the last day?\n\nSay which day."
     assert ask_of(_grounded(ask)) == ask
     assert ask_of(ask) == ask, "a question with no block in front of it is returned as it is"
@@ -111,7 +111,7 @@ def test_the_scheduled_context_is_not_read_as_the_question():
     """Measured on theLook: all twelve recorded scheduled runs drew `completed_orders` from
     "the most recent complete day" and the previous report's "order volume". The ask named
     neither."""
-    from aughor.automations.temporal import ask_of
+    from pramanyx.automations.temporal import ask_of
     grounded = _grounded("What changed in theLook in the last day?")
     assert [c["name"] for c in near_candidates(grounded, THELOOK)] == ["completed_orders"], \
         "the context alone draws the term — the fault this guards"
@@ -121,7 +121,7 @@ def test_the_scheduled_context_is_not_read_as_the_question():
 def test_resolve_frame_frames_the_ask(monkeypatch):
     """The exact matcher reads the same words. A report quoted in the context that names a
     declared term must not frame the run that follows it."""
-    import aughor.agent.framing as agent_framing
+    import pramanyx.agent.framing as agent_framing
     monkeypatch.setattr(agent_framing, "served_graph", lambda conn, schema=None: LUX)
     monkeypatch.setattr(agent_framing, "person_synonyms", lambda conn: [])
     quoted = "High-risk payments rose to 40 on the day."
@@ -135,7 +135,7 @@ def test_a_miss_shows_its_question_however_long_the_run_was():
     """The reader took a run's newest twenty events and looked for the question there; it is on
     the first. Every one of theLook's 45 misses had more than twenty events, so each read "not
     kept" the day after it ran."""
-    from aughor.obs import session_log
+    from pramanyx.obs import session_log
     asked = "How many transactions look fraudulent?"
     session_log.emit(session_log.USER_REQUEST, name="ask", trace_id="t-long-run",
                      payload={"question": asked})
@@ -150,7 +150,7 @@ def test_a_miss_shows_its_question_however_long_the_run_was():
 
 
 def test_a_scheduled_runs_miss_shows_the_ask_and_says_it_was_scheduled():
-    from aughor.obs import session_log
+    from pramanyx.obs import session_log
     session_log.emit(session_log.USER_REQUEST, name="ask", trace_id="t-sched-run",
                      payload={"question": _grounded("What changed in the last day?")})
     frame = frame_question("What changed in the last day?", THELOOK)

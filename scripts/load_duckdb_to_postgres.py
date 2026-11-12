@@ -11,8 +11,8 @@ shelves behind it. This is the one-time copy that puts the tables somewhere that
 
 The two scripts are siblings, not alternatives:
 
-    AUGHOR_DB_URL=…                  scripts/migrate_sqlite_to_postgres.py   # platform state
-    AUGHOR_DEFAULT_POSTGRES_DSN=…    scripts/load_duckdb_to_postgres.py      # data to query
+    PRAMANYX_DB_URL=…                  scripts/migrate_sqlite_to_postgres.py   # platform state
+    PRAMANYX_DEFAULT_POSTGRES_DSN=…    scripts/load_duckdb_to_postgres.py      # data to query
 
 They can name the same database. They are separate because they answer different
 questions — "does the deployment remember anything" and "is there anything in it".
@@ -35,12 +35,12 @@ silently merged into, and a copy that says nothing about whether it worked is no
 you can deploy behind.
 
 Usage:
-    AUGHOR_DEFAULT_POSTGRES_DSN=postgres://… \\
+    PRAMANYX_DEFAULT_POSTGRES_DSN=postgres://… \\
         uv run python scripts/load_duckdb_to_postgres.py data/luxexperience_demo.duckdb [--wipe]
 
     # inspect first, touch nothing
-    AUGHOR_DEFAULT_POSTGRES_DSN=postgres://… \\
-        uv run python scripts/load_duckdb_to_postgres.py data/aughor.duckdb --dry-run
+    PRAMANYX_DEFAULT_POSTGRES_DSN=postgres://… \\
+        uv run python scripts/load_duckdb_to_postgres.py data/pramanyx.duckdb --dry-run
 """
 from __future__ import annotations
 
@@ -97,8 +97,8 @@ def _looks_unfilled(dsn: str) -> bool:
 # The DSN splitting this script needed first now lives in the package, because the
 # application opens Postgres in three other places that had the identical bug. Importing
 # it keeps one implementation rather than two that can drift; the sibling migration
-# script already imports from `aughor` for the same reason.
-from aughor.db.dsn import split_dsn as _split_dsn  # noqa: E402
+# script already imports from `pramanyx` for the same reason.
+from pramanyx.db.dsn import split_dsn as _split_dsn  # noqa: E402
 
 
 def _pg_type(duck_type: str) -> str:
@@ -144,7 +144,7 @@ def load(duckdb_path: Path, dsn: str, *, target_schema: str | None,
                   f"{str(exc).strip().splitlines()[0]}", file=sys.stderr)
             if _looks_unfilled(dsn):
                 print("\nThat DSN still contains a placeholder — substitute the real one:\n"
-                      "    AUGHOR_DEFAULT_POSTGRES_DSN='postgresql://USER:PASSWORD@HOST:5432/DBNAME' \\\n"
+                      "    PRAMANYX_DEFAULT_POSTGRES_DSN='postgresql://USER:PASSWORD@HOST:5432/DBNAME' \\\n"
                       f"        uv run python scripts/{Path(__file__).name} "
                       f"{duckdb_path} --wipe", file=sys.stderr)
             else:
@@ -292,9 +292,9 @@ def main() -> int:
 
     # Env, not argv — see the module docstring. --dry-run needs no credential, so it
     # stays usable for anyone inspecting a file before deciding anything.
-    dsn = os.environ.get("AUGHOR_DEFAULT_POSTGRES_DSN", "")
+    dsn = os.environ.get("PRAMANYX_DEFAULT_POSTGRES_DSN", "")
     if not args.dry_run and not (dsn.startswith("postgres://") or dsn.startswith("postgresql://")):
-        print("AUGHOR_DEFAULT_POSTGRES_DSN must name the target postgres:// database "
+        print("PRAMANYX_DEFAULT_POSTGRES_DSN must name the target postgres:// database "
               "(it is read from the environment, never from an argument)", file=sys.stderr)
         return 2
 

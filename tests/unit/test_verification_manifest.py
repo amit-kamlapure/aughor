@@ -2,10 +2,10 @@
 
 Defeats class-E silent failures: a guard that's off but assumed on. The manifest records
 which guards actually fired; the `stats_attached` canary catches the exact dead-_attach_stats
-bug (numeric results but no stats → a guard silently failed). See aughor/agent/explore.py.
+bug (numeric results but no stats → a guard silently failed). See pramanyx/agent/explore.py.
 """
-from aughor.agent.explore import _build_verification_manifest
-from aughor.agent.state import QueryResult, StatResult
+from pramanyx.agent.explore import _build_verification_manifest
+from pramanyx.agent.state import QueryResult, StatResult
 
 
 def _qr(hid="Q1", rows=None, stats=None, error=None):
@@ -77,18 +77,18 @@ def test_empty_state_is_safe():
 # ── 0-II: earned confidence + data-trust ──────────────────────────────────────
 
 def _sq(i):
-    from aughor.agent.state import SubQuestion
+    from pramanyx.agent.state import SubQuestion
     return SubQuestion(id=f"Q{i}", purpose="relationship", question=f"q{i}", expected_output="agg")
 
 
 def _ans(i):
-    from aughor.agent.state import SubQuestionAnswer
+    from pramanyx.agent.state import SubQuestionAnswer
     return SubQuestionAnswer(subq_id=f"Q{i}", question="q", purpose="relationship", sql="",
                              columns=[], rows=[], row_count=0, answer="a", insight="i")
 
 
 def _pitfall(issue):
-    from aughor.agent.state import Pitfall
+    from pramanyx.agent.state import Pitfall
     return Pitfall(original_sql="", error=issue, fixed_sql="", fix_explanation=issue,
                    data_quality_issue=issue)
 

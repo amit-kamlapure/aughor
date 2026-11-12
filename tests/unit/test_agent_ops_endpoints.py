@@ -6,7 +6,7 @@ and the list it links to is a TEST, not a promise: the same shape as CR4's
 `needs-human.count == Σ sources`, which is the one guarantee on this surface that has
 never regressed.
 
-Hermetic — `tests/conftest.py` points `AUGHOR_SYSTEM_DB` at a tempdir, so nothing here can
+Hermetic — `tests/conftest.py` points `PRAMANYX_SYSTEM_DB` at a tempdir, so nothing here can
 reach `data/system.db`.
 """
 from __future__ import annotations
@@ -163,7 +163,7 @@ def _seed_calls(n: int = 3) -> None:
     caught only by calling the live route. A test whose population is empty proves the
     shape of nothing.
     """
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
 
     led = Ledger.default()
     now = datetime.now(timezone.utc)
@@ -215,7 +215,7 @@ def _seed(n_profile: int, n_automation: int):
     """Write jobs directly, at a known instant inside the window."""
     import sqlite3
 
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
 
     led = Ledger.default()
     now = datetime.now(timezone.utc)
@@ -241,7 +241,7 @@ def test_fleet_rows_carry_success_and_mean_duration(client):
     window reads None for the duration, never 0."""
     import sqlite3
 
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
 
     led = Ledger.default()
     now = datetime.now(timezone.utc)
@@ -284,7 +284,7 @@ def _seed_ticks_newer(n_agent: int, n_tick: int):
     """
     import sqlite3
 
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
 
     led = Ledger.default()
     now = datetime.now(timezone.utc)
@@ -315,7 +315,7 @@ def test_a_page_of_ticks_cannot_starve_the_agent_runs():
     undercount, while the chart beside it — reading with a larger cap — drew all 250. The
     read is split by kind now, so a flood of one kind cannot displace the other.
     """
-    from aughor.obs.timeseries import job_rows, resolve_window
+    from pramanyx.obs.timeseries import job_rows, resolve_window
 
     _seed_ticks_newer(n_agent=30, n_tick=300)
     agents, runners, truncated = job_rows(resolve_window("1h"), limit=100)
@@ -334,7 +334,7 @@ def test_the_tile_and_the_chart_count_the_same_runs(client, monkeypatch):
     fleet route, 20,000 in `/obs/timeseries`) they contradicted each other on one screen.
     Pinned at a small cap so the population does not have to be enormous to exercise it.
     """
-    import aughor.obs.timeseries as ts_mod
+    import pramanyx.obs.timeseries as ts_mod
 
     monkeypatch.setattr(ts_mod, "JOB_READ_LIMIT", 100)
     _seed_ticks_newer(n_agent=30, n_tick=300)
@@ -374,9 +374,9 @@ def test_the_fleet_custom_rows_read_the_windowed_scan_not_the_all_time_report(cl
     """Arc AO-3 (2026-10-03): a custom agent's row said 76.7K tokens (this route, windowed
     spark) beside an all-time call count from `usage_report`. Both halves of the row now come
     from the ONE windowed scan, and the all-time report is never read here."""
-    from aughor.custom_agents import create_agent, delete_agent
-    from aughor.kernel.ledger import Ledger
-    import aughor.routers.control_room as cr
+    from pramanyx.custom_agents import create_agent, delete_agent
+    from pramanyx.kernel.ledger import Ledger
+    import pramanyx.routers.control_room as cr
 
     a = create_agent("Fleet", instructions="x")
     try:

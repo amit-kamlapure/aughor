@@ -17,10 +17,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.dashboards import cards, compose, host, validate as V, versions
-from aughor.dashboards.home import FIRST, Home, approver
-from aughor.cards import store as card_store
-from aughor.cards.models import StoredCard
+from pramanyx.dashboards import cards, compose, host, validate as V, versions
+from pramanyx.dashboards.home import FIRST, Home, approver
+from pramanyx.cards import store as card_store
+from pramanyx.cards.models import StoredCard
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURE = REPO / "web" / "lib" / "dashboards" / "premise.fixture.json"
@@ -34,7 +34,7 @@ ME = "default"          # identity is off: the one operator
 
 @pytest.fixture(scope="module")
 def client():
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -91,7 +91,7 @@ def test_a_cockpit_never_kept_is_404(client, desk):
 
 @needs_rules
 def test_reading_writes_nothing(client, desk):
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     client.put(desk.path, params=desk.q, json={"spec": desk.spec})
     count = lambda: Ledger.default()._conn.execute("SELECT COUNT(*) FROM artifacts").fetchone()[0]  # noqa: E731
     before = count()
@@ -111,7 +111,7 @@ def test_a_card_reads_with_the_record_it_was_made_from_and_its_metrics_unit(clie
     net = card_store.get_card(desk.net)
     card_store.upsert_card(net.model_copy(update={"provenance": net.provenance.model_copy(
         update={"receipt_ref": "trusted_query:tq1"})}))
-    monkeypatch.setattr("aughor.semantic.metrics.get_metric", lambda name, connection_id=None, **kw:
+    monkeypatch.setattr("pramanyx.semantic.metrics.get_metric", lambda name, connection_id=None, **kw:
                         types.SimpleNamespace(unit="ratio 0-1 (typically 0.10-0.40)") if name == "item_return_rate" else None)
     client.put(desk.path, params=desk.q, json={"spec": desk.spec})
     read = client.get(desk.path, params=desk.q).json()
@@ -184,7 +184,7 @@ def test_a_spec_is_kept_and_then_read(client, desk):
     assert (body["connection_id"], body["owner"], body["cockpit_id"]) == (desk.connection, ME, desk.cockpit_id)
     assert body["cockpit"]["version"] == 1 and body["cockpit"]["spec"] == desk.spec
     # identity is off in the suite: the version is kept in the name of the login the request acts for
-    from aughor.security.authz import local_operator
+    from pramanyx.security.authz import local_operator
     assert body["cockpit"]["approved_by"] == f"user:{local_operator()}"
     assert body["cockpit"]["source"] == "a person's own hand"
     assert body["cockpit"]["note"] == "the first cut"
@@ -326,7 +326,7 @@ def test_the_draft_route_hands_the_area_and_the_person_to_the_drafter(client, de
         asked.append((connection_id, owner, area, schema))
         return {"staged": False, "sentences": ["stub"]}
 
-    monkeypatch.setattr("aughor.dashboards.ask.draft_for_area", drafter)
+    monkeypatch.setattr("pramanyx.dashboards.ask.draft_for_area", drafter)
     r = client.post("/dashboards/draft", params=desk.q, json={"area": "Returns and refunds", "schema_name": "thelook"})
     assert r.status_code == 200 and r.json() == {"staged": False, "sentences": ["stub"]}
     assert asked == [(desk.connection, ME, "Returns and refunds", "thelook")]
@@ -339,9 +339,9 @@ class Canvas:
     cards at canvas scope, its spec under the canvas's own key — three versions of it."""
 
     def __init__(self, desk: Desk):
-        from aughor.canvas.models import CanvasScope
-        from aughor.canvas.store import create_canvas
-        from aughor.kernel.ledger import Ledger
+        from pramanyx.canvas.models import CanvasScope
+        from pramanyx.canvas.store import create_canvas
+        from pramanyx.kernel.ledger import Ledger
         self.canvas = create_canvas("E-Commerce", [CanvasScope(connection_id=desk.connection)])
         self.id = self.canvas.id
         tag = uuid.uuid4().hex[:6]
@@ -412,7 +412,7 @@ def test_no_route_but_the_draft_calls_a_model(client, monkeypatch):
     """What was kept is drawn, and a person's own edits are kept, at no model cost. Every model
     call in the product goes through one of LLMProvider's three methods, whoever built the
     provider and however it was imported, so that is where this stands guard."""
-    from aughor.llm.provider import LLMProvider
+    from pramanyx.llm.provider import LLMProvider
 
     def spent(self, *a, **kw):
         raise AssertionError("a dashboard route called a model")

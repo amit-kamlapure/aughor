@@ -13,9 +13,9 @@ JD-1's seam and spends the champion only on rows inside the uncertainty band. Wh
 """
 from __future__ import annotations
 
-from aughor.agent.state import QueryResult
-from aughor.semops import operators as ops
-from aughor.semops.operators import semantic_filter
+from pramanyx.agent.state import QueryResult
+from pramanyx.semops import operators as ops
+from pramanyx.semops.operators import semantic_filter
 
 
 class FakeJudge:

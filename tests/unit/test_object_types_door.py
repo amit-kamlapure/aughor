@@ -13,10 +13,10 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from aughor.db.connection import open_connection
-from aughor.demo.setup import _seed_ecommerce
-from aughor.ontology import overrides as OV
-from aughor.ontology.models import OntologyGraph
+from pramanyx.db.connection import open_connection
+from pramanyx.demo.setup import _seed_ecommerce
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.models import OntologyGraph
 
 REPO = Path(__file__).resolve().parents[2]
 GRAPH = REPO / "evals" / "ablation_samples_ecommerce_ontology_measured.json"
@@ -28,9 +28,9 @@ PARAMS = {"connection_id": CONN, "schema_name": "ecommerce", "ontology_view": "d
 @pytest.fixture
 def warehouse(tmp_path, monkeypatch):
     """A cached graph for CONN/ecommerce, an empty overrides tree, and a warehouse every opener resolves to."""
-    import aughor.db.connection as C
-    from aughor.ontology import store as ST
-    from aughor.util.json_store import KeyedJsonStore
+    import pramanyx.db.connection as C
+    from pramanyx.ontology import store as ST
+    from pramanyx.util.json_store import KeyedJsonStore
 
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
     monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")

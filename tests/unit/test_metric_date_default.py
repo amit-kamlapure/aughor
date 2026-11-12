@@ -7,7 +7,7 @@ lines carry `order_id`, which names orders), and within a table the date that sa
 (`order_purchase_timestamp`) leads the profiler's main one (`order_approved_at`). Table names are matched past
 the prefix and suffix every table shares (`olist_<what>_dataset`).
 """
-from aughor.semantic import metric_statement as MS
+from pramanyx.semantic import metric_statement as MS
 
 COLS = {
     "olist_order_items_dataset": {"order_id": "VARCHAR", "price": "DOUBLE", "shipping_limit_date": "TIMESTAMP"},

@@ -12,7 +12,7 @@ reader rather than the owner.
 """
 from __future__ import annotations
 
-from aughor.knowledge.briefing import _dataset_subject
+from pramanyx.knowledge.briefing import _dataset_subject
 
 
 class _Profile:
@@ -64,7 +64,7 @@ def test_missing_attributes_do_not_raise():
 
 
 def test_org_block_is_labelled_as_the_reader(monkeypatch):
-    from aughor.orgsettings import store
+    from pramanyx.orgsettings import store
 
     monkeypatch.setattr(store, "effective_settings", lambda ws=None: store.OrgSettings(
         company_name="LuxExperience", hq_location="Munich", industry="Ecommerce",
@@ -76,7 +76,7 @@ def test_org_block_is_labelled_as_the_reader(monkeypatch):
 
 
 def test_unconfigured_org_still_contributes_nothing(monkeypatch):
-    from aughor.orgsettings import store
+    from pramanyx.orgsettings import store
 
     monkeypatch.setattr(store, "effective_settings", lambda ws=None: store.OrgSettings())
     assert store.org_context(None) == ""

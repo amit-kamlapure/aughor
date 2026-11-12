@@ -16,8 +16,8 @@ import uuid
 
 import pytest
 
-from aughor.dashboards import pieces, validate as V, versions, wiring
-from aughor.dashboards.home import Home
+from pramanyx.dashboards import pieces, validate as V, versions, wiring
+from pramanyx.dashboards.home import Home
 from tests.unit.test_dashboard_canvas import FIXTURE, ME, volumes  # noqa: F401 — the fixture, by name
 from tests.unit.test_dashboard_pieces import _graph as _pieces_graph
 
@@ -25,7 +25,7 @@ needs_rules = pytest.mark.skipif(shutil.which("node") is None or not V._BUNDLE.e
                                  reason="the dashboard's rules need node + validate.bundle.mjs")
 def _flags(monkeypatch, on: frozenset[str] = frozenset()) -> None:
     """Every flag off but ``on`` — a wired desk needs none since 2026-10-28 (ROADMAP §3.65)."""
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: name in on)
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled", lambda name: name in on)
 
 
 @pytest.fixture
@@ -238,7 +238,7 @@ def test_the_desk_resolves_and_each_fault_the_web_reads_is_refused_here(no_edits
 def test_a_table_reading_a_set_is_probed_over_its_entity_segment_and_conditions(monkeypatch, no_edits):
     _flags(monkeypatch)
     seen = []
-    import aughor.semantic.object_query as oq
+    import pramanyx.semantic.object_query as oq
     real = oq.compile_object_listing
     monkeypatch.setattr(oq, "compile_object_listing", lambda body, graph, **kw: seen.append(body) or real(body, graph, **kw))
     read = _read(active={"entity": "order", "segment": "active_orders",
@@ -335,7 +335,7 @@ def test_the_keep_door_keeps_a_wired_cockpit_and_refuses_an_undeclared_action(vo
 def test_a_models_draft_arranges_a_wired_cockpit_and_never_wires_one(volumes, monkeypatch, no_edits):  # noqa: F811
     """Run through the draft path itself, not read from its source: a model's new dashboard naming sets is refused; an edit
     of a wired dashboard that moves a piece is staged, naming it; one that changes a set is refused."""
-    from aughor.dashboards import propose
+    from pramanyx.dashboards import propose
     tag = uuid.uuid4().hex[:6]
     home = Home(f"wire{tag}", ME, f"desk-{tag}")
     graph = _graph()

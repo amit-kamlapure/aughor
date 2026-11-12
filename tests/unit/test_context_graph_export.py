@@ -15,8 +15,8 @@ import stat
 
 import pytest
 
-from aughor.ontology.context_graph import ContextGraph, GraphEdge, GraphNode, Provenance
-from aughor.ontology.context_graph_export import (
+from pramanyx.ontology.context_graph import ContextGraph, GraphEdge, GraphNode, Provenance
+from pramanyx.ontology.context_graph_export import (
     PACK_FORMAT,
     build_pack_payload,
     export_pack,
@@ -81,7 +81,7 @@ def test_refuses_a_graph_with_no_nodes(tmp_path):
 
 def test_refuses_when_no_graph_is_committed(tmp_path, monkeypatch):
     """No committed graph for the connection ⇒ None (not an empty pack)."""
-    from aughor.ontology import context_graph_store as store
+    from pramanyx.ontology import context_graph_store as store
     monkeypatch.setattr(store, "_ROOT", tmp_path / "empty_store")
     assert export_pack("never-built", tmp_path / "pack") is None
 
@@ -153,7 +153,7 @@ def test_freshness_state_travels_into_the_envelope(tmp_path, state):
 def test_unreadable_freshness_ships_unknown_never_fresh(tmp_path, monkeypatch):
     """A machine whose warehouse is unreachable still exports — but it must not claim
     freshness it never measured."""
-    import aughor.ontology.graph_freshness as fresh_mod
+    import pramanyx.ontology.graph_freshness as fresh_mod
     monkeypatch.setattr(
         fresh_mod, "staleness_of",
         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("warehouse down")),

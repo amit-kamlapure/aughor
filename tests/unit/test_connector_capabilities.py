@@ -19,8 +19,8 @@ import inspect
 
 import pytest
 
-from aughor.connectors.file.local_upload import LocalUploadConnection
-from aughor.db.connection import DatabaseConnection, DuckDBConnection, PostgresConnection
+from pramanyx.connectors.file.local_upload import LocalUploadConnection
+from pramanyx.db.connection import DatabaseConnection, DuckDBConnection, PostgresConnection
 
 #: Every connector class the product can OPEN, resolved from the registry rather than
 #: listed by hand.
@@ -32,7 +32,7 @@ from aughor.db.connection import DatabaseConnection, DuckDBConnection, PostgresC
 #: connector — exactly the failure it was written to catch, one level up. A list derived
 #: from the registry cannot go stale the next time a connector is added.
 def _openable_connectors():
-    from aughor.connectors.registry import REGISTRY
+    from pramanyx.connectors.registry import REGISTRY
 
     out, unloadable = [DuckDBConnection, PostgresConnection], []
     for conn_type in sorted(REGISTRY.supported_types()):
@@ -98,7 +98,7 @@ def test_a_binding_connector_declares_both_halves(cls):
     """`param_style` without `_bind_execute` renders a statement nothing runs;
     `_bind_execute` without `param_style` is dead code the envelope never reaches. Neither
     half fails loudly on its own."""
-    from aughor.connectors.base import Connector
+    from pramanyx.connectors.base import Connector
 
     if cls.__name__ in NO_BINDING or not issubclass(cls, Connector):
         return                               # DuckDB/Postgres bind through their own `_run`
@@ -141,7 +141,7 @@ def test_connector_can_be_interrupted(cls):
     # The MRO, not the class body: the three REST mirrors assign their handle in
     # `RestApiSync.__init__`, so reading only the subclass source says they assign nothing.
     source = "\n".join(inspect.getsource(k) for k in cls.__mro__
-                       if k.__module__.startswith("aughor"))
+                       if k.__module__.startswith("pramanyx"))
     assert "self._conn =" in source or "self._duckdb =" in source, (
         f"{cls.__name__} never assigns a driver handle this class knows how to find")
 

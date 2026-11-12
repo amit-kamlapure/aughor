@@ -18,12 +18,12 @@ export interface Analysis {
   connection_id?: string;
 }
 
-/** `OBSERVATION_HEADER` in `aughor/automations/temporal.py`: a scheduled run's question opens with it. */
+/** `OBSERVATION_HEADER` in `pramanyx/automations/temporal.py`: a scheduled run's question opens with it. */
 export const SCHEDULED_HEADER = "[Scheduled-run context — written by code, not inferred]";
 
 export const isScheduled = (a: Analysis) => (a.question || "").startsWith(SCHEDULED_HEADER);
 
-/** `_normalize_question` in `aughor/db/history.py` — the same question, however it was spaced. */
+/** `_normalize_question` in `pramanyx/db/history.py` — the same question, however it was spaced. */
 export function normalizeQuestion(q: string): string {
   return (q || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/[?.!\s]+$/, "");
 }

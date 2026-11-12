@@ -13,7 +13,7 @@ import io
 
 import pytest
 
-from aughor.intake import engine, mappers
+from pramanyx.intake import engine, mappers
 
 
 def _csv(rows: list[dict]) -> bytes:
@@ -55,14 +55,14 @@ def test_a_row_the_platform_cannot_take_says_why_by_row():
 
 @pytest.fixture
 def lane(monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
-    monkeypatch.setattr("aughor.semantic.metric_checks.runs_on", lambda *a, **k: ("ok", ""))
-    monkeypatch.setattr("aughor.semantic.metric_time.with_dates", lambda c, m: m)
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
+    monkeypatch.setattr("pramanyx.semantic.metric_checks.runs_on", lambda *a, **k: ("ok", ""))
+    monkeypatch.setattr("pramanyx.semantic.metric_time.with_dates", lambda c, m: m)
     return "ws"
 
 
 def test_an_imported_row_lands_proposed_in_its_dataset_with_its_dates_confirmed_by_the_importer(lane):
-    from aughor.semantic.metrics import definition_at
+    from pramanyx.semantic.metrics import definition_at
 
     data = _csv([{"name": "rides", "label": "Completed rides", "dataset": "uber_ncr",
                   "sql": "SELECT COUNT(*) AS rides FROM uber_ncr.ncr_ride_bookings WHERE \"Booking Status\" = 'Completed'",
@@ -82,8 +82,8 @@ def test_an_imported_row_lands_proposed_in_its_dataset_with_its_dates_confirmed_
 
 
 def test_a_formula_its_warehouse_cannot_run_is_said_at_plan_and_refused_at_accept(monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
-    monkeypatch.setattr("aughor.semantic.metric_checks.runs_on",
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.instance.json"))
+    monkeypatch.setattr("pramanyx.semantic.metric_checks.runs_on",
                         lambda *a, **k: ("refused", "ws cannot run that SQL: no column amount"))
     cands, _ = engine.plan("ws", {"version": 1, "sections": {"metrics": [
         {"name": "revenue", "sql": "SELECT SUM(amount) FROM s.o"}]}})

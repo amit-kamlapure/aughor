@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.workspace import store as ws_store
+from pramanyx.workspace import store as ws_store
 
 
 @pytest.fixture
@@ -44,7 +44,7 @@ def test_prune_removes_only_ids_with_no_connection(isolated_store, monkeypatch) 
     a = ws_store.create_workspace("A", connection_ids=["live1", "ghost1", "live2"])
     b = ws_store.create_workspace("B", connection_ids=["ghost2"])
 
-    monkeypatch.setattr("aughor.db.registry.list_connections",
+    monkeypatch.setattr("pramanyx.db.registry.list_connections",
                         lambda org_id=None: [{"id": "live1"}, {"id": "live2"}])
 
     removed = ws_store.prune_dangling_members()
@@ -64,7 +64,7 @@ def test_prune_leaves_everything_alone_when_the_registry_cannot_be_read(
     def _boom(org_id=None):
         raise RuntimeError("registry unavailable")
 
-    monkeypatch.setattr("aughor.db.registry.list_connections", _boom)
+    monkeypatch.setattr("pramanyx.db.registry.list_connections", _boom)
 
     assert ws_store.prune_dangling_members() == {}
     assert ws_store.get_workspace(a.id).connection_ids == ["x", "y"]
@@ -74,7 +74,7 @@ def test_prune_treats_an_empty_registry_as_unreadable(isolated_store, monkeypatc
     """An empty result is indistinguishable from a failed read here, and emptying
     every workspace is not a repair."""
     a = ws_store.create_workspace("A", connection_ids=["x"])
-    monkeypatch.setattr("aughor.db.registry.list_connections", lambda org_id=None: [])
+    monkeypatch.setattr("pramanyx.db.registry.list_connections", lambda org_id=None: [])
 
     assert ws_store.prune_dangling_members() == {}
     assert ws_store.get_workspace(a.id).connection_ids == ["x"]
@@ -96,7 +96,7 @@ def test_prune_never_touches_another_orgs_workspace(isolated_store, monkeypatch)
     c.execute("UPDATE workspaces SET org_id = ? WHERE id = ?", ("other-org", theirs.id))
     c.commit()
 
-    monkeypatch.setattr("aughor.db.registry.list_connections",
+    monkeypatch.setattr("pramanyx.db.registry.list_connections",
                         lambda org_id=None: [{"id": "live1"}])
 
     removed = ws_store.prune_dangling_members()
@@ -109,7 +109,7 @@ def test_prune_never_touches_another_orgs_workspace(isolated_store, monkeypatch)
 
 def test_prune_is_idempotent(isolated_store, monkeypatch) -> None:
     a = ws_store.create_workspace("A", connection_ids=["live", "ghost"])
-    monkeypatch.setattr("aughor.db.registry.list_connections",
+    monkeypatch.setattr("pramanyx.db.registry.list_connections",
                         lambda org_id=None: [{"id": "live"}])
 
     first = ws_store.prune_dangling_members()

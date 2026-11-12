@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.evals import from_receipts as FR
+from pramanyx.evals import from_receipts as FR
 
 
 def _rec(rid, question, sql, headline, tables=()):
@@ -23,7 +23,7 @@ def _receipts(monkeypatch):
         monkeypatch.setattr(FR, "load_investigation_findings", lambda *a, **k: records,
                             raising=False)
         monkeypatch.setattr(
-            "aughor.ontology.context_graph_build.load_investigation_findings",
+            "pramanyx.ontology.context_graph_build.load_investigation_findings",
             lambda *a, **k: records)
     return _install
 
@@ -88,10 +88,10 @@ def test_the_eval_corpus_does_not_inherit_the_graphs_size_budget(monkeypatch):
         return []
     monkeypatch.setattr(FR, "load_investigation_findings", _spy, raising=False)
     monkeypatch.setattr(
-        "aughor.ontology.context_graph_build.load_investigation_findings", _spy)
+        "pramanyx.ontology.context_graph_build.load_investigation_findings", _spy)
 
     FR.candidate_cases("c1", limit=60)
-    from aughor.ontology.context_graph_build import MAX_RECEIPT_FINDINGS
+    from pramanyx.ontology.context_graph_build import MAX_RECEIPT_FINDINGS
     assert asked["limit"] is not None
     assert asked["limit"] > MAX_RECEIPT_FINDINGS, (
         "the eval corpus must ask for more than the graph's artifact budget")
@@ -99,7 +99,7 @@ def test_the_eval_corpus_does_not_inherit_the_graphs_size_budget(monkeypatch):
 
 def test_the_graph_still_honours_its_own_budget_by_default(monkeypatch):
     """The decoupling must not quietly un-bound the committed artifact."""
-    from aughor.ontology import context_graph_build as B
+    from pramanyx.ontology import context_graph_build as B
 
     seen: dict = {}
 
@@ -107,7 +107,7 @@ def test_the_graph_still_honours_its_own_budget_by_default(monkeypatch):
         def artifacts_of_kind(self, kinds, *, conn_id=None, org_id=None, limit=200):
             seen["limit"] = limit
             return []
-    monkeypatch.setattr("aughor.kernel.ledger.Ledger.default",
+    monkeypatch.setattr("pramanyx.kernel.ledger.Ledger.default",
                         staticmethod(lambda: _Fake()))
     B.load_investigation_findings("c1")
     assert seen["limit"] == B.MAX_RECEIPT_FINDINGS + 1   # cap+1 to DETECT truncation
@@ -127,10 +127,10 @@ def test_the_suite_says_it_measures_consistency_not_correctness(_receipts, monke
     _receipts([_rec("r1", "How many returns were there?",
                     "SELECT COUNT(*) FROM returns", "Returns: 30,949")])
     created: dict = {}
-    monkeypatch.setattr("aughor.evals.store.create_suite",
+    monkeypatch.setattr("pramanyx.evals.store.create_suite",
                         lambda name, **kw: created.update({"name": name, **kw})
                         or {"id": "s1"})
-    monkeypatch.setattr("aughor.evals.store.add_cases", lambda sid, cases: len(cases))
+    monkeypatch.setattr("pramanyx.evals.store.add_cases", lambda sid, cases: len(cases))
 
     out = FR.seed_suite("c1")
     assert out["suite_id"] == "s1" and out["added"] == 1

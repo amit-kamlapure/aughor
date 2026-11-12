@@ -10,7 +10,7 @@ does not report it; it just costs a page.
 """
 from __future__ import annotations
 
-from aughor.export.document import _exhibit_key
+from pramanyx.export.document import _exhibit_key
 
 COLS = ["product_category", "items"]
 ROWS = [["Intimates", 36294], ["Jeans", 34602], ["Dresses", 14568]]

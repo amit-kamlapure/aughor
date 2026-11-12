@@ -5,7 +5,7 @@ is a coincidence, not a foreign key, and was being proposed as a join (then wast
 orphan-check and polluting neighbour-grounding). A non-suffixed join root now joins only
 when it NAMES AN ENTITY (a table); key-suffixed FKs (customerID, customer_id) are unaffected.
 """
-from aughor.tools.schema import compute_join_map, _entity_roots
+from pramanyx.tools.schema import compute_join_map, _entity_roots
 
 
 def _pairs(jm):

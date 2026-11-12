@@ -12,7 +12,7 @@ import asyncio
 
 import pytest
 
-from aughor.routers.investigations import _aiter_sync
+from pramanyx.routers.investigations import _aiter_sync
 
 
 def _drain(sync_iter):

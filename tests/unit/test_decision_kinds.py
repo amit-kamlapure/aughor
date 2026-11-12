@@ -1,5 +1,5 @@
 """Decision kinds and the proposal of a declared kind under a mission (the decision-framework study §3.1 and §8 step 4,
-`docs/DECISION_FRAMEWORK_STUDY_2026-10-26.md`; `aughor/record/kinds.py`).
+`docs/DECISION_FRAMEWORK_STUDY_2026-10-26.md`; `pramanyx/record/kinds.py`).
 
 What these hold: people declare kinds and a model never does; a kind is edited as a new version, the old kept; a
 decision of a declared kind keeps its kind's rules at the door — refused without the expectation its kind requires,
@@ -14,16 +14,16 @@ import uuid
 
 import pytest
 
-from aughor.record import byproducts as B
-from aughor.record import decisions as D
-from aughor.record import kinds as K
-from aughor.record import mission as M
-from aughor.record import scenario as S
+from pramanyx.record import byproducts as B
+from pramanyx.record import decisions as D
+from pramanyx.record import kinds as K
+from pramanyx.record import mission as M
+from pramanyx.record import scenario as S
 
 
 @pytest.fixture(autouse=True)
 def _no_lag(monkeypatch):
-    import aughor.settling.store as settling
+    import pramanyx.settling.store as settling
     monkeypatch.setattr(settling, "learned_lag_days", lambda conn_id: 0)
 
 
@@ -148,7 +148,7 @@ def test_under_a_mission_the_platform_proposes_each_declared_kind_that_moves_its
 def test_the_routes_declare_as_the_person_signed_in_and_list_proposals(monkeypatch):
     from fastapi import HTTPException
 
-    from aughor.routers import record as R
+    from pramanyx.routers import record as R
     monkeypatch.setattr(R, "_who", lambda principal: "user:amit")
     out = R.declare_decision_kind(R.DecisionKindRequest(name=_name("a budget move"), metrics=["gmv"]), principal=None)
     assert out["declared_by"] == "user:amit" and out["key"].startswith("decision_kind:")

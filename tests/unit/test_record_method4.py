@@ -18,17 +18,17 @@ from datetime import datetime, timezone
 
 import pytest
 
-from aughor.playbook import outcomes as O
-from aughor.record import claims as C
-from aughor.record import decisions as D
-from aughor.record import scenario as S
+from pramanyx.playbook import outcomes as O
+from pramanyx.record import claims as C
+from pramanyx.record import decisions as D
+from pramanyx.record import scenario as S
 
 
 @pytest.fixture(autouse=True)
 def _hermetic(tmp_path, monkeypatch):
     monkeypatch.setattr(O, "_DEFAULT_PATH", tmp_path / "recommendation_outcomes.json")
-    monkeypatch.setenv("AUGHOR_PLAYBOOK_PATH", str(tmp_path / "playbook.json"))
-    import aughor.settling.store as settling
+    monkeypatch.setenv("PRAMANYX_PLAYBOOK_PATH", str(tmp_path / "playbook.json"))
+    import pramanyx.settling.store as settling
     monkeypatch.setattr(settling, "learned_lag_days", lambda conn_id: None)
 
 
@@ -96,7 +96,7 @@ def test_method_4_reads_outcome_entries_and_nothing_else_and_says_its_count():
 # ── the review says what it wrote back ────────────────────────────────────────────────────
 
 def test_the_review_says_what_it_wrote_back():
-    from aughor.record.byproducts import decision_from_recommendation, outcome_from_review
+    from pramanyx.record.byproducts import decision_from_recommendation, outcome_from_review
     conn, inv = _conn(), "inv-" + uuid.uuid4().hex[:6]
     rec = O.RecOutcome(id=f"{inv}_rec_0", inv_id=inv, rec_index=0, rec_text="Roll back the price rise on basics",
                        status="accepted", metric_name="total sales", connection_id=conn, metric_before=100.0,
@@ -116,10 +116,10 @@ def test_the_review_says_what_it_wrote_back():
 # ── a procedure's success rate learned from outcomes, said with its count ──────────────────
 
 def test_a_plays_rate_is_learned_from_the_records_verdicts_with_its_count_and_said_so():
-    from aughor.playbook.models import PlaybookEntry
-    from aughor.playbook.retriever import build_playbook_prompt_section
-    from aughor.playbook.store import get_entry, save_entry
-    from aughor.record.byproducts import decision_from_recommendation
+    from pramanyx.playbook.models import PlaybookEntry
+    from pramanyx.playbook.retriever import build_playbook_prompt_section
+    from pramanyx.playbook.store import get_entry, save_entry
+    from pramanyx.record.byproducts import decision_from_recommendation
     conn = _conn()
     play = PlaybookEntry(id="p-" + uuid.uuid4().hex[:6], trigger_metric="total_sales", trigger_condition="total sales down",
                          recommendation="Raise the free-shipping threshold", status="active")

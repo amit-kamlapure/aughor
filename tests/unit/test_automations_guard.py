@@ -28,8 +28,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.automations.dataflow import GUARD_SKIP, effect_refs, evaluate_guard
-from aughor.automations.models import Automation, Condition, Effect, EffectOutcome
+from pramanyx.automations.dataflow import GUARD_SKIP, effect_refs, evaluate_guard
+from pramanyx.automations.models import Automation, Condition, Effect, EffectOutcome
 
 
 def _effect(alias="", when=None, logic="all", **config) -> Effect:
@@ -55,7 +55,7 @@ def _automation(*effects, fallback=None) -> Automation:
 
 
 def _run(automation, dispatch):
-    from aughor.automations.engine import run_automation
+    from pramanyx.automations.engine import run_automation
     return run_automation(automation, dispatch=dispatch, persist=False,
                           probe=lambda *a, **k: True,
                           sleeper=lambda _s: None, rng=lambda: 0.0)
@@ -123,7 +123,7 @@ def test_a_step_consumed_ONLY_by_a_downstream_guard_is_still_awaited():
     """The subtlest bug in this wave. `investigate` returns a JOB ID when nobody waits
     for it — a non-empty string — so `is set` would hold every morning and the guard
     would be decorative. The await is derived from the same refs the guard reads."""
-    from aughor.automations.engine import AWAIT_KEY
+    from pramanyx.automations.engine import AWAIT_KEY
     seen: list[dict] = []
 
     def _dispatch(effect, automation):
@@ -280,6 +280,6 @@ def test_an_empty_literal_still_occupies_the_sentence():
     """Found live: a guard against `""` rendered as "condition not met:  is set" — a hole
     where the subject belongs, which reads as a broken renderer rather than as the
     comparison someone wrote."""
-    from aughor.automations.dataflow import render_clause
+    from pramanyx.automations.dataflow import render_clause
     assert render_clause({"left": "", "op": "truthy"}) == '"" is set'
     assert render_clause({"left": None, "op": "eq", "right": 1}) == "nothing is 1"

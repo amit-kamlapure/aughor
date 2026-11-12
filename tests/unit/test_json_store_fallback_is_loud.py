@@ -14,8 +14,8 @@ the stale file; a write that falls back is orphaned there forever, because the
 """
 import pytest
 
-from aughor.kernel.ledger import Ledger
-from aughor.util.json_store import KeyedJsonStore, LedgerListStore
+from pramanyx.kernel.ledger import Ledger
+from pramanyx.util.json_store import KeyedJsonStore, LedgerListStore
 
 
 class _Boom:
@@ -32,7 +32,7 @@ class _Boom:
 @pytest.fixture()
 def counters(monkeypatch):
     seen = []
-    from aughor.kernel import errors as errmod
+    from pramanyx.kernel import errors as errmod
 
     real = errmod.tolerate
 

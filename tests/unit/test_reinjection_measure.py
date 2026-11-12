@@ -14,17 +14,17 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.agent.tool_loop import ToolSpec, run_tool_loop
-from aughor.llm.faux import FauxToolCall, set_responses
-from aughor.llm.provider import LLMProvider
+from pramanyx.agent.tool_loop import ToolSpec, run_tool_loop
+from pramanyx.llm.faux import FauxToolCall, set_responses
+from pramanyx.llm.provider import LLMProvider
 
 _PARAMS = {"type": "object", "properties": {"n": {"type": "string"}}}
 
 
 @pytest.fixture
 def provider(monkeypatch):
-    monkeypatch.delenv("AUGHOR_MAX_OUTPUT_TOKENS", raising=False)
-    monkeypatch.delenv("AUGHOR_TOOL_LOOP_STEPS", raising=False)
+    monkeypatch.delenv("PRAMANYX_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.delenv("PRAMANYX_TOOL_LOOP_STEPS", raising=False)
     return LLMProvider(backend="faux", role="coder")
 
 

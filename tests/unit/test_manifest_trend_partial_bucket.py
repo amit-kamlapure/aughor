@@ -21,8 +21,8 @@ collapse anyway. Prose that knows is not a guard; the query layer is.
 """
 from __future__ import annotations
 
-from aughor.explorer.coverage_manifest import ManifestCell
-from aughor.explorer.manifest_query import cell_to_sql
+from pramanyx.explorer.coverage_manifest import ManifestCell
+from pramanyx.explorer.manifest_query import cell_to_sql
 
 TODAY = "2026-09-03"
 

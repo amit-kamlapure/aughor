@@ -111,7 +111,7 @@ let pendingAsk: PendingAsk = { question: "", focus: null };
 export function askSpotlight(question: string, focus: AskFocus | null = null) {
   pendingAsk = { question: (question || "").trim(), focus };
   if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("aughor:ask-spotlight"));
+    window.dispatchEvent(new CustomEvent("pramanyx:ask-spotlight"));
   }
 }
 

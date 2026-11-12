@@ -12,8 +12,8 @@ from datetime import date
 import duckdb
 import pytest
 
-from aughor.semantic import metric_time as mt
-from aughor.semantic.metric_time import Window
+from pramanyx.semantic import metric_time as mt
+from pramanyx.semantic.metric_time import Window
 
 def _cols(table: str, **dtypes) -> dict:
     """The profiler's real shape: columns keyed FLAT as "table.column" (theLook, 2026-09-26)."""

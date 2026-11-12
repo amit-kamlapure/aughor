@@ -1,7 +1,7 @@
 /**
  * palette.ts — the chart palette's single TypeScript source (CA-4).
  *
- * These literals are the SAME values the CSS tokens in web/aughor-v2/theme/tokens-v2.css
+ * These literals are the SAME values the CSS tokens in web/pramanyx-v2/theme/tokens-v2.css
  * resolve to (--chart-1..6, --chart-7, --chart-deemph, --bg-2); the `lint:palette` CI gate
  * resolves the CSS aliases, compares both files and fails on any drift, then runs the
  * six-check palette validator (lightness band, chroma floor, CVD separation, normal-vision

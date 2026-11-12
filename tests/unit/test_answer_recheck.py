@@ -14,8 +14,8 @@ from datetime import date, datetime, timezone
 import duckdb
 import pytest
 
-from aughor.answer import recheck
-from aughor.db.history import get_chat_answer, save_chat_turn
+from pramanyx.answer import recheck
+from pramanyx.db.history import get_chat_answer, save_chat_turn
 
 ANSWERED = datetime(2026, 9, 21, 10, 0, tzinfo=timezone.utc)
 LATER = datetime(2026, 9, 23, 6, 0, tzinfo=timezone.utc)
@@ -53,7 +53,7 @@ def answer_from(con, *, session_id="web-session-1", sql=DAILY) -> dict:
 
 @pytest.fixture
 def lag(monkeypatch):
-    import aughor.settling.store as settling
+    import pramanyx.settling.store as settling
     state = {"lag": 3}
     monkeypatch.setattr(settling, "learned_lag_days", lambda conn_id: state["lag"])
     return state
@@ -135,8 +135,8 @@ def test_without_a_learned_lag_the_cause_is_not_guessed(con, lag):
 def test_a_slack_answer_is_told_in_its_own_thread_through_the_gate(con, lag, monkeypatch):
     from types import SimpleNamespace
 
-    import aughor.slackbots.post as post
-    import aughor.slackbots.store as bots
+    import pramanyx.slackbots.post as post
+    import pramanyx.slackbots.store as bots
     bot = SimpleNamespace(id="b1", enabled=True, bot_token="xoxb-test", name="Pramanyx")
     monkeypatch.setattr(bots, "bots_for_agent", lambda agent_id: [])
     monkeypatch.setattr(bots, "list_bots", lambda include_disabled=True: [bot])
@@ -153,7 +153,7 @@ def test_a_slack_answer_is_told_in_its_own_thread_through_the_gate(con, lag, mon
     channel, thread_ts, text = sent[0]
     assert (channel, thread_ts) == ("C0TEAM", "1726000000.000100")
     assert text.startswith("On 2026-09-21 you asked:") and "it is now 1,902" in text
-    from aughor.govern.departure_store import get_departure
+    from pramanyx.govern.departure_store import get_departure
     row = get_departure(told["departure_id"])
     assert row["kind"] == "answer_correction" and row["investigation_id"] == answer["id"]
 
@@ -161,7 +161,7 @@ def test_a_slack_answer_is_told_in_its_own_thread_through_the_gate(con, lag, mon
 def test_two_bots_and_no_binding_means_no_reply_and_says_why(con, lag, monkeypatch):
     from types import SimpleNamespace
 
-    import aughor.slackbots.store as bots
+    import pramanyx.slackbots.store as bots
     monkeypatch.setattr(bots, "bots_for_agent", lambda agent_id: [])
     monkeypatch.setattr(bots, "list_bots", lambda include_disabled=True: [
         SimpleNamespace(id="b1", enabled=True), SimpleNamespace(id="b2", enabled=True)])
@@ -184,7 +184,7 @@ def test_a_query_that_fails_now_is_recorded_as_unchecked(con, lag):
 
 def test_the_daily_pass_runs_once_a_day_and_skips_fresh_rechecks(con, lag, monkeypatch):
     monkeypatch.setattr(recheck, "_last_run_day", None)
-    from aughor.db import history
+    from pramanyx.db import history
     answer = answer_from(con)
     real = history.recent_chat_answers
     monkeypatch.setattr(history, "recent_chat_answers",
@@ -205,8 +205,8 @@ def test_a_slack_session_id_names_its_thread():
 
 
 def test_a_restored_turn_carries_the_recheck_only_once_one_found_a_change(con, lag):
-    from aughor.db.history import get_session_turns
-    from aughor.routers.investigations import _turn_to_ui_messages
+    from pramanyx.db.history import get_session_turns
+    from pramanyx.routers.investigations import _turn_to_ui_messages
     answer = answer_from(con, session_id="web-restore-1")
 
     def parts():
@@ -267,7 +267,7 @@ def test_a_move_from_zero_states_no_percentage():
 def test_the_daily_pass_reaches_the_answer_checked_longest_ago_first(con, lag, monkeypatch):
     monkeypatch.setattr(recheck, "_last_run_day", None)
     monkeypatch.setattr(recheck, "PER_RUN", 1)
-    from aughor.db import history
+    from pramanyx.db import history
     old, new = answer_from(con, session_id="s-old"), answer_from(con, session_id="s-new")
     history.append_recheck(new["id"], {"checked_at": "2026-09-20T06:00:00Z", "status": "unchanged"})
     history.append_recheck(old["id"], {"checked_at": "2026-09-10T06:00:00Z", "status": "unchanged"})
@@ -281,7 +281,7 @@ def test_the_daily_pass_reaches_the_answer_checked_longest_ago_first(con, lag, m
 
 
 def test_the_banner_comes_down_when_a_later_recheck_finds_the_answer_as_said(con, lag):
-    from aughor.db.history import get_session_turns
+    from pramanyx.db.history import get_session_turns
     answer = answer_from(con, session_id="web-banner")
     con.execute("INSERT INTO orders SELECT TIMESTAMP '2026-09-20 23:00' FROM range(0, 158)")
     recheck.recheck_and_tell(answer, run_sql=run_on(con), now=LATER)

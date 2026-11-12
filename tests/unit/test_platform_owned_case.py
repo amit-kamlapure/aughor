@@ -8,15 +8,15 @@ the seeded samples.
 """
 from __future__ import annotations
 
-from aughor.actions import overlay as OVL
-from aughor.actions.executor import default_object_resolver, execute_kinetic_action
-from aughor.ontology import overrides as OV
-from aughor.ontology.declared import entity_fields, entity_spec_problem
-from aughor.ontology.models import EditStateMachine
-from aughor.ontology.platform_objects import listing, referring
-from aughor.semantic.object_context import object_context
-from aughor.semantic.object_instances import get_object
-from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query
+from pramanyx.actions import overlay as OVL
+from pramanyx.actions.executor import default_object_resolver, execute_kinetic_action
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.declared import entity_fields, entity_spec_problem
+from pramanyx.ontology.models import EditStateMachine
+from pramanyx.ontology.platform_objects import listing, referring
+from pramanyx.semantic.object_context import object_context
+from pramanyx.semantic.object_instances import get_object
+from pramanyx.semantic.object_query import ObjectQueryRefused, compile_object_query
 from tests.unit.test_object_actions import CONN, ORDER, _action, _declare, db, graph  # noqa: F401 — fixtures by name
 
 import pytest
@@ -46,7 +46,7 @@ def cases(graph):  # noqa: F811
     OV.apply_overrides(graph, CONN, "ecommerce")
     # Every declaration goes through the doors' own checks — the body each door reads and the problem it refuses with.
     # A first draft set these on the graph directly, and the doors refused all four live on theLook (2026-10-10).
-    from aughor.routers.ontology import _checked_action, _DeclaredActionBody, _edit_states_problem, _EditStates
+    from pramanyx.routers.ontology import _checked_action, _DeclaredActionBody, _edit_states_problem, _EditStates
     moves = _EditStates(states=["open", "working", "resolved"],
                         moves=[["", "open"], ["open", "working"], ["working", "resolved"]])
     assert _edit_states_problem(graph.entities["Case"], "status", moves) == ""
@@ -114,7 +114,7 @@ def test_the_moves_door_takes_a_platform_owned_property_and_refuses_its_key(case
     """Found live on theLook (2026-10-10): the door refused moves on the Case's `status` as "read from Case's source" —
     every property a platform-owned type declares is held by the edit layer; only its key, and a name it does not
     declare, are refused."""
-    from aughor.routers.ontology import _edit_states_problem, _EditStates
+    from pramanyx.routers.ontology import _edit_states_problem, _EditStates
     spec = _EditStates(states=["open", "working", "resolved"], moves=[["", "open"], ["open", "working"]])
     case = cases.entities["Case"]
     assert _edit_states_problem(case, "status", spec) == ""
@@ -126,7 +126,7 @@ def test_the_moves_door_takes_a_platform_owned_property_and_refuses_its_key(case
 def test_a_platform_owned_key_is_unique_by_construction_and_its_type_says_where_it_lives(cases):
     """Found live (2026-10-10): the Case's key read "not yet measured" with a Measure button beside its title — there is
     no warehouse to count either over; the platform mints every key."""
-    from aughor.semantic.object_types import describe_object_type
+    from pramanyx.semantic.object_types import describe_object_type
     assert cases.entities["Case"].backing.verified is True
     detail = describe_object_type(cases, "Case")
     assert detail["platform"] is True and detail["key"]["verified"] is True

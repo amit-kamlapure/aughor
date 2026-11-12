@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.notifications import executor
-from aughor.notifications.models import ActionLog, ActionPayload, ActionTrigger
+from pramanyx.notifications import executor
+from pramanyx.notifications.models import ActionLog, ActionPayload, ActionTrigger
 
 
 def _trigger(enabled: bool) -> ActionTrigger:
@@ -58,7 +58,7 @@ def test_mutation_check_an_enabled_trigger_still_reaches_the_sender(monkeypatch)
     monkeypatch.setattr(executor, "log_action", lambda log: None)
     # The SSRF guard resolves the host; a test hostname has no address, so it is
     # answered here rather than by DNS — the sender is what this test is about.
-    monkeypatch.setattr("aughor.util.url_guard.is_safe_webhook_url", lambda url: True)
+    monkeypatch.setattr("pramanyx.util.url_guard.is_safe_webhook_url", lambda url: True)
     reached: list = []
 
     def _fake_send(url, headers, payload, *a, **k):

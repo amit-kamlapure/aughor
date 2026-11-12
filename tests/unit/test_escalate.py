@@ -5,7 +5,7 @@ causal question answered by a single figure — and stays quiet on a healthy dir
 """
 from __future__ import annotations
 
-from aughor.agent.escalate import assess_escalation
+from pramanyx.agent.escalate import assess_escalation
 
 
 def test_errored_quick_answer_offers_escalation():

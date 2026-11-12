@@ -11,8 +11,8 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from aughor.routers import metrics as R
-from aughor.semantic.metrics import MetricDefinition
+from pramanyx.routers import metrics as R
+from pramanyx.semantic.metrics import MetricDefinition
 
 ORDERS = "olist.olist_orders_dataset"
 
@@ -27,10 +27,10 @@ def door(monkeypatch):
     drafts = {"gmv": _draft("gmv", "GMV"), "aov": _draft("aov", "AOV", sql="AVG(price)"),
               "nps": _draft("nps", "NPS", sql=""), "late": _draft("late", "Late rate")}
     seen = SimpleNamespace(guards=[], saved=[], events=[])
-    import aughor.semantic.metric_catalogue as MC
+    import pramanyx.semantic.metric_catalogue as MC
     monkeypatch.setattr(MC, "find_entry", lambda conn, name, ds: SimpleNamespace(label=drafts[name].label))
     monkeypatch.setattr(MC, "materialise", lambda conn, name, ds, actor="": drafts[name])
-    import aughor.govern as G
+    import pramanyx.govern as G
     monkeypatch.setattr(G, "guard", lambda action, scope="", **k: seen.guards.append((action, scope)))
     monkeypatch.setattr(R, "_declared_schema", lambda conn: "olist")
     monkeypatch.setattr(R, "caller", lambda: "amit")
@@ -38,7 +38,7 @@ def door(monkeypatch):
     monkeypatch.setattr(R, "save_metric", lambda m: seen.saved.append(m))
     monkeypatch.setattr(R, "_restate_briefings", lambda conn: None)
     monkeypatch.setattr(R, "_reopen_questions", lambda *a: None)
-    import aughor.kernel.ledger as L
+    import pramanyx.kernel.ledger as L
     monkeypatch.setattr(L.Ledger, "default", classmethod(lambda cls: SimpleNamespace(
         emit=lambda kind, payload: seen.events.append(payload),
         kv_get=lambda store, key, default=None: default)))     # no flag overrides: every flag at its default
@@ -74,7 +74,7 @@ def test_what_cannot_be_adopted_is_skipped_with_its_reason_and_the_rest_go_on(do
 
 
 def test_a_refused_approval_adopts_nothing(door, monkeypatch):
-    import aughor.govern as G
+    import pramanyx.govern as G
 
     def refuse(action, scope="", **k):
         raise HTTPException(status_code=428, detail={"error": "approval_required", "action": action, "scope": scope})

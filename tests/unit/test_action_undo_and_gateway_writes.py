@@ -1,5 +1,5 @@
 """The arc's close-out, C5 — the undo fired as an executable compensating action, and the integration
-and MCP write paths booked as Action entries beside the declared actions' (`aughor/actions/authority.py`).
+and MCP write paths booked as Action entries beside the declared actions' (`pramanyx/actions/authority.py`).
 
 What these hold: the declared undo of an execution runs through the same governed pipeline, with its
 parameters filled from the execution's by the declared templates, books its own entry naming the one it
@@ -16,10 +16,10 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from aughor.actions import authority as A
-from aughor.actions.executor import execute_kinetic_action
-from aughor.kernel.ledger import Ledger
-from aughor.ontology.models import ActionParameter, KineticAction, Undo, Verification
+from pramanyx.actions import authority as A
+from pramanyx.actions.executor import execute_kinetic_action
+from pramanyx.kernel.ledger import Ledger
+from pramanyx.ontology.models import ActionParameter, KineticAction, Undo, Verification
 
 
 def _conn():
@@ -54,7 +54,7 @@ def _recorder():
 
 @pytest.fixture(autouse=True)
 def _approval_off(monkeypatch):
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "0")
 
 
 def _warehouse(rows_for: dict):
@@ -70,7 +70,7 @@ def _warehouse(rows_for: dict):
 
 def test_the_declared_undo_is_fired_through_the_governed_pipeline_and_the_original_is_restated_undone(monkeypatch):
     conn = _conn()
-    monkeypatch.setattr("aughor.db.measure.run_sql_for", _warehouse({"refunds": [[1]], "reversals": [[1]]}))
+    monkeypatch.setattr("pramanyx.db.measure.run_sql_for", _warehouse({"refunds": [[1]], "reversals": [[1]]}))
     rec = _recorder()
     r = execute_kinetic_action(_refund(), {"order_id": "8821"}, actor="user:ana", scope=conn, dispatch=rec, approved=True)
     assert r.ok and r.action_entry
@@ -98,7 +98,7 @@ def test_the_declared_undo_is_fired_through_the_governed_pipeline_and_the_origin
 
 def test_an_undo_is_refused_outside_its_window_on_an_undeclared_action_or_another_scope(monkeypatch):
     conn = _conn()
-    monkeypatch.setattr("aughor.db.measure.run_sql_for", _warehouse({"refunds": [[1]]}))
+    monkeypatch.setattr("pramanyx.db.measure.run_sql_for", _warehouse({"refunds": [[1]]}))
     rec = _recorder()
     r = execute_kinetic_action(_refund(), {"order_id": "1"}, actor="user:ana", scope=conn, dispatch=rec, approved=True)
     actions = {"refund": _refund(), "reverse_refund": _reverse()}
@@ -115,7 +115,7 @@ def test_an_undo_is_refused_outside_its_window_on_an_undeclared_action_or_anothe
     assert len(rec.calls) == 1                                           # none of the refusals dispatched anything
     # the door says 409 with the reason
     from fastapi import HTTPException
-    from aughor.routers import authority as R
+    from pramanyx.routers import authority as R
     monkeypatch.setattr(R, "_actions", lambda c, s: actions)
     with pytest.raises(HTTPException) as e:
         R.authority_undo("refund", r.action_entry, R.UndoBody(connection_id=_conn()), principal=None)
@@ -124,7 +124,7 @@ def test_an_undo_is_refused_outside_its_window_on_an_undeclared_action_or_anothe
 
 def test_an_undo_that_fails_its_verification_or_cannot_run_demotes_the_original_action(monkeypatch):
     conn = _conn()
-    monkeypatch.setattr("aughor.db.measure.run_sql_for", _warehouse({"refunds": [[1]], "reversals": []}))   # the reversal is not visible
+    monkeypatch.setattr("pramanyx.db.measure.run_sql_for", _warehouse({"refunds": [[1]], "reversals": []}))   # the reversal is not visible
     rec = _recorder()
     r = execute_kinetic_action(_refund(), {"order_id": "77"}, actor="user:ana", scope=conn, dispatch=rec, approved=True)
     actions = {"refund": _refund(), "reverse_refund": _reverse()}
@@ -137,7 +137,7 @@ def test_an_undo_that_fails_its_verification_or_cannot_run_demotes_the_original_
     assert original["payload"]["undone"] is False and original["payload"]["undone_status"] == "executed"
     # an undo whose templates name a parameter the execution never had cannot run: demoted too, nothing dispatched
     conn2 = _conn()
-    monkeypatch.setattr("aughor.db.measure.run_sql_for", _warehouse({"refunds": [[1]], "reversals": [[1]]}))
+    monkeypatch.setattr("pramanyx.db.measure.run_sql_for", _warehouse({"refunds": [[1]], "reversals": [[1]]}))
     bad = _refund(undo=Undo(action_id="reverse_refund", window_hours=0, params={"order_id": "{order_id}", "reason": "{ticket}"}))
     r2 = execute_kinetic_action(bad, {"order_id": "5"}, actor="user:ana", scope=conn2, dispatch=rec, approved=True)
     before = len(rec.calls)
@@ -147,9 +147,9 @@ def test_an_undo_that_fails_its_verification_or_cannot_run_demotes_the_original_
 
 
 def test_integration_and_mcp_writes_are_on_the_record_beside_the_declared_actions(monkeypatch):
-    from aughor.integrations import call as callmod
-    from aughor.integrations import store as istore
-    from aughor.integrations.models import Connection
+    from pramanyx.integrations import call as callmod
+    from pramanyx.integrations import store as istore
+    from pramanyx.integrations.models import Connection
     gid = "ic_" + uuid.uuid4().hex[:6]
     istore.save_connection(Connection(id=gid, provider="slack", account="Acme", scopes="chat:write channels:read",
                                       access_token="at-slack", status="active", user_id="u_amit"))
@@ -171,7 +171,7 @@ def test_integration_and_mcp_writes_are_on_the_record_beside_the_declared_action
     assert not [w for w in A.writes() if w["scope"] == f"grant:{gid}g"]
     # the MCP door: a granted write is booked with its status, a read is not
     from types import SimpleNamespace
-    from aughor.mcpservers import call as door
+    from pramanyx.mcpservers import call as door
     server = SimpleNamespace(id="mcps_" + uuid.uuid4().hex[:6], name="Fixture", transport="stdio", url="")
     monkeypatch.setattr(door, "_through_the_seam", lambda s, t, a, ec, ob, *, writes: door.McpCallResult("executed", "", text="done", writes=writes))
     door._send(server, "delete_everything", {"target": "x"}, writes=True)
@@ -182,7 +182,7 @@ def test_integration_and_mcp_writes_are_on_the_record_beside_the_declared_action
     monkeypatch.setattr(door, "_through_the_seam", lambda s, t, a, ec, ob, *, writes: door.McpCallResult("uncertain", "the pipe closed", writes=True))
     door._send(server, "delete_everything", {"target": "y"}, writes=True)
     assert [w["status"] for w in A.writes(door="mcp") if w["scope"] == f"server:{server.id}"][0] == "uncertain"
-    from aughor.routers import authority as R
+    from pramanyx.routers import authority as R
     assert R.authority_writes(door="mcp")["count"] >= 2 and "not graduated" in R.authority_writes()["note"]
-    from aughor.kernel.events import CATALOGUE
+    from pramanyx.kernel.events import CATALOGUE
     assert "action.undone" in CATALOGUE

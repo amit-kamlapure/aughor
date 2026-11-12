@@ -2,7 +2,7 @@
 /**
  * IP-1 — a deep report that states a move lists the known ways that move can be the data rather than
  * the business ("Rule out first"), each with its fix, and says in the same breath that none was checked
- * against the data. The shape is the backend's `aughor/playbook/rule_outs.py` payload.
+ * against the data. The shape is the backend's `pramanyx/playbook/rule_outs.py` payload.
  */
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";

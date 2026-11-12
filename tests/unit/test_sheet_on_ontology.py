@@ -18,25 +18,25 @@ e481f51c,9ef432eb,delivered,29.99
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana")
-    from aughor.actions import overlay
-    from aughor.ontology import overrides
-    from aughor.rbac import store as rbac_store
+    monkeypatch.setenv("PRAMANYX_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "system.db"))
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ana")
+    from pramanyx.actions import overlay
+    from pramanyx.ontology import overrides
+    from pramanyx.rbac import store as rbac_store
     monkeypatch.setattr(overlay, "_DB_PATH", tmp_path / "overlay.db")
     monkeypatch.setattr(rbac_store, "_DB_PATH", tmp_path / "rbac.db")
     monkeypatch.setattr(overrides, "_ROOT", tmp_path / "ontology_overrides")
     monkeypatch.setattr(overrides, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     monkeypatch.setattr(overrides, "_SEED_ROOT", tmp_path / "ontology_overrides_seed")
-    from aughor.sheets import projection
+    from pramanyx.sheets import projection
     projection.reset()
     yield tmp_path
     projection.reset()
 
 
 def _make(env, name="Olist orders", text=ORDERS, file="olist_orders_dataset.csv"):
-    from aughor.sheets import files, service
+    from pramanyx.sheets import files, service
     path = env / file
     path.write_text(text)
     return service.create_from_file(files.stage(path, path.name), name=name, by="user:ana")
@@ -46,8 +46,8 @@ def _client():
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from aughor.routers import ontology as ontology_router
-    from aughor.routers import sheets as sheets_router
+    from pramanyx.routers import ontology as ontology_router
+    from pramanyx.routers import sheets as sheets_router
     app = FastAPI()
     app.include_router(sheets_router.router)
     app.include_router(ontology_router.router)
@@ -59,28 +59,28 @@ def _place(sheet, **body):
 
 
 def _publish():
-    from aughor.ontology import release
-    from aughor.sheets.ontology import SHEETS_ID, scope
+    from pramanyx.ontology import release
+    from pramanyx.sheets.ontology import SHEETS_ID, scope
     return release.publish(SHEETS_ID, scope(), by="user:ana")
 
 
 def _graph(view="published"):
-    from aughor.ontology.overrides import viewing
-    from aughor.ontology.store import load_latest_ontology
+    from pramanyx.ontology.overrides import viewing
+    from pramanyx.ontology.store import load_latest_ontology
     with viewing(view):
         return load_latest_ontology("sheets", "whatever-a-request-names")
 
 
 def _objects(entity="Order", columns=None):
-    from aughor.semantic.object_query import compile_object_listing
-    from aughor.sheets.connection import SheetsConnection
+    from pramanyx.semantic.object_query import compile_object_listing
+    from pramanyx.sheets.connection import SheetsConnection
     compiled = compile_object_listing({"entity": entity, "columns": columns or []}, _graph())
     res = SheetsConnection().execute("objects", compiled.sql)
     return res, compiled
 
 
 def _cell(sheet, row, column):
-    from aughor.sheets import model, projection
+    from pramanyx.sheets import model, projection
     return projection.read_row(model.get(sheet.id), row).get(column)
 
 
@@ -145,8 +145,8 @@ def test_one_sheet_is_one_entity(env):
 # ── 2 · a renamed column is followed, nothing rewritten ──────────────────────────────────────────────────────────────
 
 def test_a_renamed_column_is_followed_and_the_declaration_is_not_rewritten(env):
-    from aughor.ontology import overrides
-    from aughor.sheets import model, service
+    from pramanyx.ontology import overrides
+    from pramanyx.sheets import model, service
     sheet = _make(env)
     _place(sheet)
     _publish()
@@ -166,7 +166,7 @@ def test_a_renamed_column_is_followed_and_the_declaration_is_not_rewritten(env):
 
 
 def test_a_removed_column_leaves_the_entity_without_it_and_says_so(env):
-    from aughor.sheets import model, service
+    from pramanyx.sheets import model, service
     sheet = _make(env)
     _place(sheet)
     _publish()
@@ -184,7 +184,7 @@ def test_a_removed_column_leaves_the_entity_without_it_and_says_so(env):
 
 def _rows(sheet):
     """Each row as the grid reads it: ``{_row: {column name: value}}``."""
-    from aughor.sheets import model, projection
+    from pramanyx.sheets import model, projection
     s = model.get(sheet.id)
     names = [c.name for c in s.columns]
     page = projection.read_rows(s, limit=100)
@@ -192,7 +192,7 @@ def _rows(sheet):
 
 
 def test_typing_a_key_another_row_holds_is_refused_and_nothing_is_set(env):
-    from aughor.sheets import model, service
+    from pramanyx.sheets import model, service
     sheet = _make(env)
     _place(sheet)
     rows = _rows(sheet)
@@ -208,7 +208,7 @@ def test_typing_a_key_another_row_holds_is_refused_and_nothing_is_set(env):
 
 
 def test_a_row_added_with_a_key_already_held_is_refused_and_a_blank_one_is_not(env):
-    from aughor.sheets import model, service
+    from pramanyx.sheets import model, service
     sheet = _make(env)
     _place(sheet)
     held = next(iter(_rows(sheet).values()))["order_id"]
@@ -220,7 +220,7 @@ def test_a_row_added_with_a_key_already_held_is_refused_and_a_blank_one_is_not(e
 
 
 def test_undo_into_a_repeated_key_is_refused(env):
-    from aughor.sheets import model, service
+    from pramanyx.sheets import model, service
     sheet = _make(env)
     _place(sheet)
     rows = _rows(sheet)
@@ -234,7 +234,7 @@ def test_undo_into_a_repeated_key_is_refused(env):
 
 
 def test_a_kind_change_that_makes_two_keys_one_is_refused(env):
-    from aughor.sheets import model, service
+    from pramanyx.sheets import model, service
     sheet = _make(env, name="Codes", text="code,label\n1,one\n01,also one\n2,two\n", file="codes.csv")
     r = _client().post(f"/sheets/{sheet.id}/ontology", json={"display_name": "Code", "key": "code"})
     assert r.status_code == 201, r.text
@@ -248,7 +248,7 @@ def test_every_write_of_a_sheets_values_goes_through_the_one_door_that_checks_th
     `service.save_change`."""
     import pathlib
     import re
-    root = pathlib.Path(__file__).parents[2] / "aughor"
+    root = pathlib.Path(__file__).parents[2] / "pramanyx"
     direct = [f"{p.relative_to(root)}:{i}" for p in root.rglob("*.py") for i, line in enumerate(p.read_text().splitlines(), 1)
               if re.search(r"save_sheet_change\(", line) and "def save_sheet_change" not in line
               and "check=key_check(sheet)" not in line and not line.lstrip().startswith(("#", '"', "`"))
@@ -259,8 +259,8 @@ def test_every_write_of_a_sheets_values_goes_through_the_one_door_that_checks_th
 # ── 4 · a removed sheet leaves its entity ────────────────────────────────────────────────────────────────────────────
 
 def test_a_removed_sheet_leaves_its_entity_declared_and_said(env):
-    from aughor.sheets import model, service
-    from aughor.sheets.dependents import dependents_of
+    from pramanyx.sheets import model, service
+    from pramanyx.sheets.dependents import dependents_of
     sheet = _make(env)
     _place(sheet)
     _publish()
@@ -278,12 +278,12 @@ def test_a_removed_sheet_leaves_its_entity_declared_and_said(env):
 # ── 5 · a shared sheet's entity: named, no objects, told who to ask ──────────────────────────────────────────────────
 
 def test_a_sheet_not_shared_with_someone_leaves_its_entity_named_and_its_objects_refused_saying_who_to_ask(env, monkeypatch):
-    from aughor.sheets import model, sharing
+    from pramanyx.sheets import model, sharing
     sheet = _make(env)
     _place(sheet)
     _publish()
     sharing.set_sharing(model.get(sheet.id), "chosen", [{"kind": "person", "id": "bo", "level": "view"}], by="user:ana")
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "cy")
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "cy")
     assert "Order" in _graph().entities, "the entity is named"
     res, _ = _objects()
     assert res.error and "not shared with you" in res.error and not res.rows
@@ -292,8 +292,8 @@ def test_a_sheet_not_shared_with_someone_leaves_its_entity_named_and_its_objects
 # ── 6 · each organisation's own ──────────────────────────────────────────────────────────────────────────────────────
 
 def test_the_sheets_ontology_is_each_organisations_and_a_named_schema_does_not_reach_another(env):
-    from aughor.org.context import using_org
-    from aughor.routers.ontology import _resolve_schema
+    from pramanyx.org.context import using_org
+    from pramanyx.routers.ontology import _resolve_schema
     sheet = _make(env)
     _place(sheet)
     _publish()
@@ -306,7 +306,7 @@ def test_the_sheets_ontology_is_each_organisations_and_a_named_schema_does_not_r
 # ── and a dashboard breakdown over it ────────────────────────────────────────────────────────────────────────────────
 
 def test_a_dashboard_breakdown_compiles_over_a_sheets_entity(env):
-    from aughor.dashboards import pieces
+    from pramanyx.dashboards import pieces
     sheet = _make(env)
     _place(sheet)
     _publish()
@@ -319,9 +319,9 @@ def test_a_dashboard_breakdown_compiles_over_a_sheets_entity(env):
 def test_a_repeat_made_before_is_no_reason_to_refuse_an_edit_of_another_column(env):
     """Only an edit that sets a key, or adds or brings back a row, is held to it: a repeat already standing (written
     past the door here) never blocks the rest of the row, while setting that key again is refused."""
-    from aughor.actions import overlay
-    from aughor.actions.overlay import SHEET_CELL, SheetEdit
-    from aughor.sheets import model, projection, service
+    from pramanyx.actions import overlay
+    from pramanyx.actions.overlay import SHEET_CELL, SheetEdit
+    from pramanyx.sheets import model, projection, service
     sheet = _make(env)
     _place(sheet)
     rows = _rows(sheet)
@@ -339,8 +339,8 @@ def test_a_repeat_made_before_is_no_reason_to_refuse_an_edit_of_another_column(e
 
 
 def test_the_sheets_connection_lists_only_the_readers_organisations_scope(env):
-    from aughor.ontology.overrides import override_scopes
-    from aughor.org.context import using_org
+    from pramanyx.ontology.overrides import override_scopes
+    from pramanyx.org.context import using_org
     sheet = _make(env)
     _place(sheet)
     _publish()

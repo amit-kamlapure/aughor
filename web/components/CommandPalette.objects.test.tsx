@@ -10,8 +10,8 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/useAughorChat", () => ({
-  useAughorChat: () => ({ messages: [], sendMessage: vi.fn(), status: "ready", error: null }),
+vi.mock("@/lib/usePramanyxChat", () => ({
+  usePramanyxChat: () => ({ messages: [], sendMessage: vi.fn(), status: "ready", error: null }),
 }));
 vi.mock("@/lib/schema-context", () => ({ useRichSchema: () => ({ schema: null }) }));
 

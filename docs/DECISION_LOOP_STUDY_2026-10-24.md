@@ -29,7 +29,7 @@ reaching a verdict within six weeks — is read on 2026-12-05.
 
 ## 1 · What exists
 
-| The article asks for | Pramanyx's record (`aughor/record/decisions.py` unless named) |
+| The article asks for | Pramanyx's record (`pramanyx/record/decisions.py` unless named) |
 |---|---|
 | The decision and its context | `Decision.question`, `owner`, `approvers`, `objective` (a mission or metric), `source` (recommendation · approval · declared · autonomy), `connection_id` |
 | The options weighed | `Decision.options[Option{id, description, predictions, cost, reversibility, actor}]`, `amend_decision` |
@@ -37,10 +37,10 @@ reaching a verdict within six weeks — is read on 2026-12-05.
 | The choice, who approved, who disagreed | `chosen`, `decided_by`, `approvers`, `dissent[Dissent{who, why}]` |
 | What was expected | `Expectation{metric, direction, low, mid, high, coverage, settles_on}`, booked as a prediction claim; `review_on` from `propose_review_on` (30 days plus the learned settling lag) |
 | The outcome, tied to the decision | `Outcome{of, measured_on, actual, baseline, effect, verdict, against_expectation, writes_back}` |
-| Was it a good decision | `Verdict`: as_expected · better · worse · cannot_tell, decided by code (`_verdict_against_history`, `aughor/record/byproducts.py`); a person's answer kept beside it |
-| Better decisions next time | `update_playbook_success_rates` (`aughor/playbook/outcomes.py`); `autonomy.choose` takes the action with the largest measured past effect (`aughor/actions/autonomy.py`); the scenario ladder's `intervention` method (`aughor/record/scenario.py`) |
+| Was it a good decision | `Verdict`: as_expected · better · worse · cannot_tell, decided by code (`_verdict_against_history`, `pramanyx/record/byproducts.py`); a person's answer kept beside it |
+| Better decisions next time | `update_playbook_success_rates` (`pramanyx/playbook/outcomes.py`); `autonomy.choose` takes the action with the largest measured past effect (`pramanyx/actions/autonomy.py`); the scenario ladder's `intervention` method (`pramanyx/record/scenario.py`) |
 
-Decisions are booked as by-products where they happen (`aughor/record/byproducts.py`): accepting or declining a
+Decisions are booked as by-products where they happen (`pramanyx/record/byproducts.py`): accepting or declining a
 recommendation, approving or rejecting a staged proposal, a decision declared in a person's words (Home's
 **Decide**, `POST /record/decisions`), and an autonomous action. The full view is `web/components/decisions/
 DecisionsPanel.tsx`; Home's "Between you and Pramanyx" reads `GET /record/you`.
@@ -72,13 +72,13 @@ expectation records *"none declared — nothing to score"*, and its review can o
 never carry one either (*"a staged proposal carries no expectation line"*).
 
 **3.2 · Deciding not to act is lost, and so is what was recommended.** "Not worth it" flags the finding invalid
-(`dismiss_connection_finding`, `aughor/routers/exploration.py`) and books no decision. A recommendation is booked as
+(`dismiss_connection_finding`, `pramanyx/routers/exploration.py`) and books no decision. A recommendation is booked as
 its own accept-or-decline pair (`_ACCEPT_OPTIONS`), and an approval as approve-or-reject (`_APPROVE_OPTIONS`): the
 same report's other recommended actions are never kept as alternatives, and no option is marked as the one the
 platform recommended — so overrides can be read off a recommendation's decline, but not counted across kinds.
 
 **3.3 · Only recommendations are reviewed.** The hourly tick runs `run_due_reviews` over recommendation outcomes
-(`run_due_reviews_hourly`, `aughor/automations/scheduler.py`). `decisions.due_for_review()` exists but feeds only a
+(`run_due_reviews_hourly`, `pramanyx/automations/scheduler.py`). `decisions.due_for_review()` exists but feeds only a
 list filter (`GET /record/decisions?due=true`). A Home, approval or autonomy decision with an expectation would reach
 its review date and nothing would measure it.
 
@@ -121,16 +121,16 @@ decisions on the same metric in the same window would each take the whole effect
   keeps the same report's other recommended actions as alternatives, the accepted one marked recommended; an
   approval marks *approve* as what the proposer recommended. An override is then a decision whose chosen option is
   not the recommended one — countable across every kind.
-- Files: `web/components/home/HomeDesk.tsx`, `web/lib/record.ts`, `aughor/record/decisions.py`,
-  `aughor/record/byproducts.py` (`declare_decision`, `decision_from_recommendation`, `decision_from_proposal`),
-  `aughor/routers/exploration.py`.
+- Files: `web/components/home/HomeDesk.tsx`, `web/lib/record.ts`, `pramanyx/record/decisions.py`,
+  `pramanyx/record/byproducts.py` (`declare_decision`, `decision_from_recommendation`, `decision_from_proposal`),
+  `pramanyx/routers/exploration.py`.
 
 **D-2 · Review every decision that expected something.** The hourly tick also sweeps `due_for_review()`: the
 expectation's metric is measured for the review window by the metric's own compiler (`metric_time.measure_sql`,
 the same path a monitor now reads its period by), and an `Outcome` is booked through the existing
 `book_outcome`. A decision that expected nothing gets one outcome, *cannot tell — nothing was expected*, said once.
 Data that has ended (Olist stops on 2018-10-17) has no review window after the decision: *cannot tell — the data
-ended before the decision*. Files: `aughor/automations/scheduler.py`, `aughor/record/byproducts.py`.
+ended before the decision*. Files: `pramanyx/automations/scheduler.py`, `pramanyx/record/byproducts.py`.
 
 **D-3 · Score against what would have happened anyway.** Register a `comparison` method on the scenario ladder
 (`scenario.project` already takes registered methods): for a decision that names a segment, the baseline is the rest
@@ -140,7 +140,7 @@ revenue's and conversion's are), the verdict is *cannot tell — the metric's hi
 windows, so its trend cannot be told from the decision* rather than *better*; a metric whose band holds (gross
 margin, average order value) keeps the history verdict. Two
 decisions on one metric with overlapping review windows each say so — *shared with decision X* — and the effect is
-not split by guesswork. Files: `aughor/record/scenario.py`, `aughor/record/byproducts.py`
+not split by guesswork. Files: `pramanyx/record/scenario.py`, `pramanyx/record/byproducts.py`
 (`_verdict_against_history`).
 
 **D-4 · Decision quality, beyond the outcome.** Read off the record, by code: did the decision cite evidence, state
@@ -194,9 +194,9 @@ Written before the readings it judges:
   `GET /record/you`, `GET /investigations` and each `GET /investigations/{id}/outcomes`,
   `GET /kinetic-actions/inbox?connection_id=…`, `GET /exploration/{connection}/findings`, `GET /playbook`,
   `GET /ontology/autonomy`.
-- Code: `aughor/record/decisions.py`, `aughor/record/byproducts.py`, `aughor/record/scenario.py`,
-  `aughor/record/claims.py`, `aughor/record/writers.py`, `aughor/playbook/outcomes.py`,
-  `aughor/automations/scheduler.py`, `aughor/routers/record.py`, `aughor/routers/exploration.py`,
+- Code: `pramanyx/record/decisions.py`, `pramanyx/record/byproducts.py`, `pramanyx/record/scenario.py`,
+  `pramanyx/record/claims.py`, `pramanyx/record/writers.py`, `pramanyx/playbook/outcomes.py`,
+  `pramanyx/automations/scheduler.py`, `pramanyx/routers/record.py`, `pramanyx/routers/exploration.py`,
   `web/components/home/HomeDesk.tsx`.
 - The placebo of 2026-10-10 on theLook (49 series × 12 windows, no model calls), recorded in the session memory
   `record-baseline-credits-growth`; its scripts were scratch and are not in the repo.

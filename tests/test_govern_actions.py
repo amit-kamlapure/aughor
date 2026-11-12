@@ -1,6 +1,6 @@
-"""P4 graduated approval + audit (aughor.govern.actions).
+"""P4 graduated approval + audit (pramanyx.govern.actions).
 
-Uses the hermetic test ledger (conftest sets AUGHOR_SYSTEM_DB). Each test uses a
+Uses the hermetic test ledger (conftest sets PRAMANYX_SYSTEM_DB). Each test uses a
 unique scope so allowlist entries don't leak between tests.
 """
 from __future__ import annotations
@@ -8,8 +8,8 @@ from __future__ import annotations
 import pytest
 from fastapi import HTTPException
 
-from aughor import govern
-from aughor.govern.actions import ActionRisk
+from pramanyx import govern
+from pramanyx.govern.actions import ActionRisk
 
 
 def test_classify_known_and_failsafe():
@@ -22,7 +22,7 @@ def test_classify_known_and_failsafe():
 def test_the_gate_is_on_by_default(monkeypatch):
     """Phase 0 of the 2027 study (ROADMAP §6 item 39(b)): unset means ON. Until 2026-10-04 a
     fresh install held no high-risk action at all unless the operator set the variable."""
-    monkeypatch.delenv("AUGHOR_ACTION_APPROVAL", raising=False)
+    monkeypatch.delenv("PRAMANYX_ACTION_APPROVAL", raising=False)
     with pytest.raises(HTTPException) as ei:
         govern.guard("connection.delete", "scope-default")
     assert ei.value.status_code == 428
@@ -30,21 +30,21 @@ def test_the_gate_is_on_by_default(monkeypatch):
 
 def test_one_still_means_on(monkeypatch):
     """An operator who opted in before the default flipped is unchanged."""
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "1")
     with pytest.raises(HTTPException):
         govern.guard("connection.delete", "scope-one")
 
 
 def test_zero_is_the_kill_switch(monkeypatch):
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "0")
     # Even a high-risk action passes silently when the gate is switched off.
     assert govern.guard("connection.delete", "scope-off") is None
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "off")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "off")
     assert govern.guard("connection.delete", "scope-off-word") is None
 
 
 def test_guard_blocks_unapproved_high_risk(monkeypatch):
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "1")
     with pytest.raises(HTTPException) as ei:
         govern.guard("connection.delete", "scope-block")
     assert ei.value.status_code == 428
@@ -53,12 +53,12 @@ def test_guard_blocks_unapproved_high_risk(monkeypatch):
 
 
 def test_guard_allows_low_risk(monkeypatch):
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "1")
     assert govern.guard("skill.save", "scope-low") is None  # low risk → auto, no raise
 
 
 def test_allow_then_guard_passes(monkeypatch):
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "1")
     scope = "conn-allow-1"
     with pytest.raises(HTTPException):
         govern.guard("connection.delete", scope)          # blocked before approval
@@ -68,7 +68,7 @@ def test_allow_then_guard_passes(monkeypatch):
 
 
 def test_revoke_reinstates_the_gate(monkeypatch):
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "1")
     scope = "conn-revoke-1"
     govern.allow("connection.delete", scope)
     assert govern.guard("connection.delete", scope) is None
@@ -78,7 +78,7 @@ def test_revoke_reinstates_the_gate(monkeypatch):
 
 
 def test_allowlist_is_scoped(monkeypatch):
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "1")
     govern.allow("connection.delete", "conn-A")
     assert govern.is_allowed("connection.delete", "conn-A")
     # a different scope is NOT allowlisted by approving conn-A
@@ -86,7 +86,7 @@ def test_allowlist_is_scoped(monkeypatch):
 
 
 def test_audit_trail_records_every_decision(monkeypatch):
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "1")
     scope = "conn-audit-1"
     with pytest.raises(HTTPException):
         govern.guard("connection.delete", scope)   # -> blocked

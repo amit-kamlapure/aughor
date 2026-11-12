@@ -4,14 +4,14 @@ The profiler verified only SINGLE-column grains, so a fact keyed by a PAIR (orde
 (order_id, order_item_id), where order_item_id is a 1..N line number) got no verified grain
 — the planner couldn't tell its true grain or that the line-number key is not a measure.
 build_table_profile now probes key-like candidate PAIRS and records a proven composite grain
-in `grain_columns`, surfaced in the data portrait. See aughor/tools/profiler.py.
+in `grain_columns`, surfaced in the data portrait. See pramanyx/tools/profiler.py.
 """
 from pathlib import Path
 
 import duckdb
 
-from aughor.db.connection import DuckDBConnection
-from aughor.tools.profiler import build_table_profile, TableProfile
+from pramanyx.db.connection import DuckDBConnection
+from pramanyx.tools.profiler import build_table_profile, TableProfile
 
 
 def _conn():

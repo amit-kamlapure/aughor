@@ -1,0 +1,1317 @@
+"""Human ontology overrides — a fingerprint-independent, version-controlled overlay.
+
+The structural ontology is auto-built and cached per schema *fingerprint*
+(``store.get_or_build_ontology``). That cache is the wrong home for human edits:
+the fingerprint includes ``row_count`` (store.py), so every data refresh on a
+live warehouse mints a new key, rebuilds from scratch, and orphans any edit that
+was written into the old entry. Override-wins didn't actually win.
+
+This module is the fix. It mirrors the one pattern that already survives rebuilds
+— learned actions, overlaid by ``store._overlay_learned_actions`` — and applies
+it to human curations:
+
+  • Stored OUTSIDE the fingerprint cache, keyed by ``{conn}/{schema}`` only, so a
+    rebuild can never wipe them.
+  • Persisted as a readable **YAML file tree** under
+    ``data/ontology_overrides/{conn}/{schema}/{kind}/{id}.yaml`` — the same files
+    are the runtime store *and* the version-controllable artifact (git diff / PR
+    review), so there is no second representation to drift.
+  • Re-applied on EVERY read via ``apply_overrides`` (wired beside
+    ``_overlay_learned_actions``), on both the cache-hit and cache-miss branches.
+
+Authority gate. ``ontology.semantic_block.render_semantic_layer`` injects an
+segment / computed property into the NL2SQL prompt only when ``verified`` is
+True. A human assertion must clear that gate — but not blindly: SQL-bearing
+fields are EXPLAIN-bound against the live DB (``bind_overrides``) before they are
+marked ``verified=True, verification_note="human-asserted"``. A human override
+wins even when the LLM validator rejected the auto-derived value, yet a human
+typo that won't bind is surfaced (``bound=False``) and never injected.
+"""
+from __future__ import annotations
+
+import contextlib
+import contextvars
+import fnmatch
+import os
+import re
+import threading
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable, Literal, Optional
+
+import yaml
+from pydantic import BaseModel, Field
+
+from pramanyx.db.sqlite_util import resolve_db_path
+from pramanyx.ontology.models import (
+    ComputedProperty,
+    KineticAction,
+    Segment,
+    OntologyEntity,
+    OntologyGraph,
+    OntologyMetric,
+)
+
+#: `data/ontology_overrides`, or `PRAMANYX_ONTOLOGY_OVERRIDES_DIR` when set — the test conftest points it at a throwaway
+#: dir. It had no override until ON-1b: every measure door and build that counts what a person declared (a backing, a
+#: display property, a binding) reads this tree for the connection it measures and WRITES the verdict back, so a door
+#: test that cached a graph under LuxExperience's real connection id rewrote that connection's live Order override
+#: with counts from a three-row fixture.
+#:
+#: It is the INSTANCE layer: what this install declared. The tree was also tracked, which put shipped content and
+#: instance data in one path that no update may touch while an install has written to it — so upstream no longer adds
+#: anything under it (`test_seed_overlay_frozen`), and an override the repo ships goes in `_SEED_ROOT` instead.
+#: On a migrated install it lives in the data home once `pramanyx migrate-state` has moved it there, verified
+#: (`db.home.TOPPED_UP_ENTRIES`, `db.migrate.top_up`) — inside the state folder every backup holds. Until then this
+#: resolves to the checkout, and the API refuses to start.
+_ROOT = resolve_db_path("PRAMANYX_ONTOLOGY_OVERRIDES_DIR",
+                        Path(__file__).parent.parent.parent / "data" / "ontology_overrides")
+#: The SEED layer: overrides the repo ships (`data/shipped/ontology_overrides`; an absent tree is an empty layer), filed
+#: under a connection's SCOPE KEY (`key=<scope key>/<dataset>/…`, PENDING item 14) or, for a builtin, its id
+#: (`<conn>/<dataset>/…`). Never written here. A file this install writes at the same relative path SHADOWS it whole,
+#: and a deleted one leaves a `<file>.hidden` marker in the instance tree so it stays gone. A DATASET this install
+#: removed leaves `<conn>/<dataset>.hidden` in the instance tree, written before its files go (`hide_seeds`; AGENTS.md:
+#: the tombstone, not the files' absence, is the authority), so no shipped declaration for it reads again — by the
+#: connection's id or by whatever scope key it carries, then or later — while what this install declares for it
+#: afterwards does. Every reader of the seed honours both markers (`_visible`, `override_scopes`, `_unlink`, the
+#: census through `visible_override_files`); a removal's targets never name the dataset's, so it outlives the files.
+#: ⚠️ A measure door WRITES its verdict back into the file it read, which copies a seed file up into the instance for
+#: good — so ship a seed override only for a kind no door writes back to, or it stops following the seed on first use.
+_SEED_ROOT = resolve_db_path("PRAMANYX_ONTOLOGY_OVERRIDES_SEED_DIR",
+                             Path(__file__).parent.parent.parent / "data" / "shipped" / "ontology_overrides")
+_HIDDEN = ".hidden"
+#: Arc OC-2 — the DRAFT layer (ROADMAP §3.56): changes a person, the explorer or a pack made that are not published yet,
+#: `data/ontology_overrides_draft/{conn}/{schema}/{kind}/{id}.yaml`. Its own root, like the seed's, so nothing that walks
+#: the instance tree reads a draft as served. A staged withdrawal is a `<file>.withdrawn` marker holding what it
+#: withdraws. Publishing (`ontology.release.publish`) moves it into the tree.
+_DRAFT_ROOT = resolve_db_path("PRAMANYX_ONTOLOGY_OVERRIDES_DRAFT_DIR",
+                              Path(__file__).parent.parent.parent / "data" / "ontology_overrides_draft")
+_WITHDRAWN = ".withdrawn"
+#: Which declarations a read sees: `published` (what every consumer reads) or `draft` (the published ones with the draft
+#: laid over them — the ontology's own editing screens and doors).
+_VIEW: "contextvars.ContextVar[str]" = contextvars.ContextVar("pramanyx_ontology_view", default="published")
+
+
+def draft_view() -> bool:
+    """Whether reads in this context see the draft."""
+    return _VIEW.get() == "draft"
+
+
+def set_view(view: str) -> "contextvars.Token[str]":
+    return _VIEW.set("draft" if view == "draft" else "published")
+
+
+def reset_view(token: "contextvars.Token[str]") -> None:
+    _VIEW.reset(token)
+
+
+@contextlib.contextmanager
+def viewing(view: str):
+    """Read (and, for a change, write) as the draft or as the published ontology for the duration."""
+    token = set_view(view)
+    try:
+        yield
+    finally:
+        reset_view(token)
+
+
+def overrides_root() -> Path:
+    """The overrides tree's root (`data/ontology_overrides`) — the public door for a caller
+    that walks it (the declared-action census) rather than importing the private constant.
+    This is the INSTANCE tree; `visible_override_files` is the layered read."""
+    return _ROOT
+
+
+#: PENDING item 14 — the seed segment a connection's SCOPE KEY files shipped declarations under
+#: (`key=luxexperience/<schema>/…`). Like `org=`, it holds "=", which no connection id can.
+_KEY_PREFIX = "key="
+
+
+def _keyed_dir(conn_segment: str) -> Optional[Path]:
+    """The seed directory shipped under this connection's scope key, or None when it has none."""
+    try:
+        from pramanyx.db.registry import scope_key_of
+        key = scope_key_of(conn_segment)
+    except Exception:  # noqa: BLE001 — an unreadable registry reads as no key, never as a broken overlay
+        return None
+    return _SEED_ROOT / f"{_KEY_PREFIX}{key}" if key else None
+
+
+def _layers(rel_dir: Path) -> list[tuple[Path, str]]:
+    """Where a reader looks for ``rel_dir``, in order: the draft (Arc OC-2 — in the draft view only), this install's
+    tree, the seed filed under the connection's id, then the seed filed under its scope key — each mapped back to
+    ``rel_dir`` and named by its layer. What a reader may take from a seed layer is `_visible_map`'s to say."""
+    out = [(_ROOT / rel_dir, "instance"), (_SEED_ROOT / rel_dir, "seed")]
+    parts = rel_dir.parts
+    if parts and parts[0] not in (".",):
+        keyed = _keyed_dir(parts[0])
+        if keyed is not None:
+            out.append((keyed.joinpath(*parts[1:]), "seed"))
+    if draft_view():
+        out.insert(0, (_DRAFT_ROOT / rel_dir, "draft"))
+    return out
+
+
+def _removed_mark(conn: str, schema: str) -> Path:
+    """A removed dataset's tombstone in this install's tree, ``<conn>/<schema>.hidden``: every shipped declaration for
+    it stays hidden (`hide_seeds`)."""
+    return _ROOT / _safe(conn) / f"{_safe(schema)}{_HIDDEN}"
+
+
+def _visible_map(rel_dir: Path, pattern: str, *, recursive: bool) -> dict[Path, Path]:
+    """``{where a reader sees it: the file that holds it}`` under ``rel_dir``: the draft's in the draft view, then this
+    install's, then every seed file neither shadows nor hid — by the connection's id, then by its scope key. A
+    withdrawal staged in the draft hides every layer under it; a dataset this install removed hides every seed file
+    under it."""
+    found: dict[Path, Path] = {}
+    withdrawn: set[Path] = set()
+    removed: dict[tuple[str, ...], bool] = {}
+    for base, layer in _layers(rel_dir):
+        if not base.is_dir():
+            continue
+        if layer == "draft":
+            marks = base.rglob(pattern + _WITHDRAWN) if recursive else base.glob(pattern + _WITHDRAWN)
+            withdrawn |= {rel_dir / m.relative_to(base).with_name(m.name[:-len(_WITHDRAWN)]) for m in marks}
+        for f in (base.rglob(pattern) if recursive else base.glob(pattern)):
+            rel = rel_dir / f.relative_to(base)
+            if rel in found or rel in withdrawn:
+                continue                                  # the upper layer's copy wins, even unparseable
+            if layer == "seed":
+                scope = rel.parts[:2]
+                if len(scope) == 2 and scope not in removed:
+                    removed[scope] = _removed_mark(*scope).exists()
+                if removed.get(scope):
+                    continue                              # the dataset was removed on this install
+                if (_ROOT / rel).with_name(rel.name + _HIDDEN).exists():
+                    continue
+            found[rel] = f
+    return found
+
+
+def _visible(rel_dir: Path, pattern: str, *, recursive: bool) -> list[Path]:
+    """The files a reader sees under ``rel_dir`` (`_visible_map`), sorted by relative path — the order `sorted(rglob)`
+    gave before the seed."""
+    found = _visible_map(rel_dir, pattern, recursive=recursive)
+    return [found[rel] for rel in sorted(found)]
+
+
+def _segments() -> list[str]:
+    """Every first segment a reader can be asked about: each this install's tree holds (a connection's id, an
+    organisation's `org=`), each the seed files declarations under by id, and each connection the registry holds whose
+    scope key the seed files declarations under — never a `key=` folder itself, which is no reader's scope."""
+    names: set[str] = set()
+    for base in (_ROOT, _SEED_ROOT):
+        if base.is_dir():
+            names |= {p.name for p in base.iterdir() if p.is_dir() and not p.name.startswith(_KEY_PREFIX)}
+    try:
+        from pramanyx.db.registry import scope_keys
+        keyed = scope_keys()
+    except Exception:  # noqa: BLE001 — an unreadable registry reads as no keyed connection, as `_keyed_dir` does
+        keyed = {}
+    names |= {_safe(conn) for conn, key in keyed.items() if (_SEED_ROOT / f"{_KEY_PREFIX}{key}").is_dir()}
+    return sorted(names)
+
+
+def visible_override_files(pattern: str) -> list[tuple[Path, Path]]:
+    """Every visible override file matching ``pattern`` — relative to the tree's root, its first segment a connection's
+    or an organisation's — as ``(where a reader sees it, the file that holds it)``, sorted: the census's read. A
+    declaration the seed files under a scope key is seen under each connection that carries the key, less what that
+    connection withdrew or removed — what each one's reader sees, never the seed's folders as they lie."""
+    head, _, rest = pattern.partition("/")
+    if not rest:
+        return []
+    out: dict[Path, Path] = {}
+    for segment in _segments():
+        if fnmatch.fnmatchcase(segment, head):
+            out.update(_visible_map(Path(segment), rest, recursive=False))
+    return sorted(out.items())
+
+# FROZEN VALUES. A target kind is BOTH a field written into every override YAML and the
+# directory it lives in (`{conn}/{schema}/{kind}/{id}.yaml`), so `"object_set"` stays even
+# though the type it targets is now a `Segment`. Renaming it would orphan every override a
+# human has already authored and every one committed to a repo. The display word is mapped
+# at the HTTP boundary (routers/ontology.py), not here. `link` (ON-3b) is a NEW kind — a relationship's
+# business-verb name — so it adds a directory and renames none.
+TargetKind = Literal["entity", "object_set", "computed_property", "metric", "action", "link", "process", "rule", "impact"]
+
+# Whitelist of fields a human may override, per target kind. Anything outside
+# these sets is ignored on write *and* on apply, so an override file can never
+# reshape the graph in ways the consumers don't expect.
+_EDITABLE: dict[str, set[str]] = {
+    "entity": {
+        "description", "display_name", "domain", "active_filter",
+        # The shape a person chose for the entity on the Business Atlas — how it is drawn, nothing an agent reads.
+        "drawn_as",
+        "default_filters", "exclude_when", "lifecycle_states", "terminal_states",
+        # Wave 2 (Layer 1.1) — routing guidance: "for this kind of question, query
+        # {table} instead of this entity's own table". A new FIELD, deliberately not
+        # a new TargetKind, so the frozen directory layout above is untouched.
+        # Value: {"table": str, "scope": str, "reason": str}. Enforcement is
+        # additive-only (the preferred table is ADDED to the schema handed to the
+        # model, the deprecated one is never dropped) and existence-bound below.
+        "use_instead",
+        # Arc OC-6 — the declared moves of the properties the edit layer holds (`EditStateMachine`), by property.
+        "edit_states",
+        # Arc OC-7 — who sees which objects (`RowPolicy`) and which properties are masked for whom (`Sensitivity`).
+        "row_policies",
+        "sensitive",
+        # …and its PENDING twin. A proposal captured from a conversation lives in its
+        # own field rather than in `use_instead`, so it can never be mistaken for an
+        # accepted rule: enforcement reads `use_instead` and nothing else, which makes
+        # "a proposal changes no behaviour" true by construction rather than by a
+        # status check somebody has to remember. Accepting MOVES it across; that is
+        # the only way a rule becomes live (C4: never auto-apply).
+        "use_instead_proposed",
+        # ON-1: the backing a human sets — {"kind": "query", "sql": ..., "primary_key": ...}.
+        # Bound by dry-running the SELECT; VERIFIED only when a measure pass proves the key
+        # unique over its rows (`measure_override_backings`), recorded on the binding.
+        "backing",
+        # ON-3b: the property whose value names one object of this type. Bound against the graph (the
+        # type must HAVE it); whether it names objects is measured on the measure door, on the binding.
+        "display_property",
+        # ON-1b: the further bindings a person set — {name: {table | sql, key, kind, time_column?, properties?}}.
+        # Bound by reading each source's columns (`bindings.bind_binding`, at the bindings door); counted against
+        # the objects on the measure door; both verdicts ride the binding entry, so the overlay rebuilds them
+        # without a database.
+        "bindings",
+        # ON-7 — a DECLARED entity (POST /ontology/entities): `declared` marks the override as the type's whole
+        # existence rather than an edit of a built one; `origin` says who declared it (human | model); the role
+        # is editable so a declared type can be reference data or an event. `absorbed_into` marks the type a PART
+        # of another — held only while the parent binds its table (`pramanyx.ontology.parts.part_of`).
+        "declared", "origin", "entity_type", "absorbed_into",
+        # ON-7b — who said a declared type exists when a model did (`model:<id>@<version>`), kept when a person confirms
+        # the proposal and `origin` becomes human.
+        "provenance",
+        # 2026-09-22 — typed properties mapped to EXPRESSIONS over the type's own row: {name: {expression,
+        # semantic_type, unit, description}}, verified at the door (`ontology.expressions.probe_expression`), the
+        # verdict recorded on the binding so the overlay rebuilds them without a database.
+        "expressions",
+        # 2026-09-22 — the names of BUILDER-found bindings a person withdrew (DELETE …/bindings/{name} on a binding no
+        # override declared). A withdrawal has to be representable: deleting a key only worked for what a person had
+        # written, so a found binding could never be unbound from the UI. Restored by POST …/bindings/{name}/restore.
+        "withdrawn_bindings",
+        # PENDING item 27 — the properties that must not be summed across time: {property: {over, note}}, checked against
+        # the graph at the door (`ontology.semiadditive.semiadditive_problem`), the verdict recorded on the binding.
+        "semiadditive",
+    },
+    # keyed by the frozen TargetKind value; the type it edits is a Segment
+    "object_set": {"display_name", "description", "filter_sql", "is_default"},
+    "computed_property": {"label", "formula_sql", "unit"},
+    "metric": {"display_name", "description", "formula_sql", "grain", "unit"},
+    # Wave K: a declared action AUTHORS a whole new object (like a brand-new metric), so its
+    # "editable" set is the action's own spec fields (id comes from target_id).
+    "action": {
+        "display_name", "description", "entity", "kind", "params", "rule",
+        "submission_criteria", "side_effects", "risk", "origin",
+        # ON-4 — the object type the action is about, and the overlay properties it sets.
+        "object_type", "edits",
+        # Arc OC-6 — the platform-owned type a press MAKES one object of (its edits on `created` set it up).
+        "creates",
+        # Phase 4 of the 2027 study (§M) — the declare door requires these of a side-effect action and
+        # persists them; left off this set, every read dropped them, so a stored action read back as
+        # undeclarable, never graduated and could not be undone.
+        "reversibility", "verification", "undo",
+    },
+    # ON-3b: a relationship's business-verb name (`shipment_ships_order`), beside its stable mechanical names.
+    # ON-7: a DECLARED link (POST /ontology/links) carries its whole spec — the two types, the columns each side
+    # joins on, the expected cardinality, a reverse name, and who declared it.
+    "link": {"name", "declared", "from_entity", "to_entity", "from_column", "to_column", "cardinality",
+             "reverse_name", "origin", "provenance", "name_origin", "name_provenance",
+             # 2026-09-22 — a FOUND link a person withdrew: the relationship leaves the served graph (the compiler stops
+             # following it, the map stops drawing it) and the builder's next find is withdrawn again. `from_entity` /
+             # `to_entity` ride along so the type panel can list and restore it.
+             "withdrawn"},
+    # ON-9: a DECLARED process (POST /ontology/processes) — the type that goes through it and its stages in order, each
+    # anchored to a moment or a state, with the promise about reaching it — and a DECLARED rule (POST /ontology/rules):
+    # a value set or named conditions over one type. Both are the target's whole existence; what their measurement
+    # counted rides the binding (`process` / `rule`), so the overlay rebuilds them with no database.
+    "process": {"declared", "display_name", "description", "entity", "stages", "owner", "origin", "provenance",
+                "transitions"},
+    "rule": {"declared", "display_name", "description", "entity", "kind", "property", "values", "conditions",
+             "owner", "origin", "provenance"},
+    # Arc OC-5: a DECLARED impact (POST /ontology/impacts) — one promise's bearing on another, with its mechanism; the
+    # resolved path from the downstream promise's lead object rides the fields, the measurement the binding (`impact`).
+    "impact": {"declared", "display_name", "description", "owner", "upstream", "downstream", "mechanism", "formula",
+               "evidence", "window_days", "lead", "path", "to_many", "origin", "provenance"},
+}
+
+# Fields whose value is SQL and must EXPLAIN-bind before they earn `verified`.
+_SQL_FIELDS = {"active_filter", "filter_sql", "formula_sql"}
+
+# Fields naming a TABLE that must exist before the override is enforced. Same gate as
+# _SQL_FIELDS, different probe: the value is an identifier, not a fragment, so the probe
+# is "can this table be read at all".
+#
+# Why these need their own set rather than joining _SQL_FIELDS: `verified` is computed as
+# `all(b["bound"] for b in binding.values()) if binding else True` — an EMPTY binding dict
+# reads as verified. A field validated by nobody is therefore reported as verified, which
+# for a routing target means the prompt is told to prefer a table that may not exist. So
+# an existence field ALWAYS writes a binding entry, even when the probe cannot run.
+#: Public because the HTTP boundary needs it too: when the connection cannot be
+#: reached at all, the caller has to know WHICH fields still owe a verdict (an
+#: existence field with an empty binding reads as verified — see _bind_existence).
+EXISTENCE_FIELDS = frozenset({"use_instead", "use_instead_proposed"})
+_EXISTENCE_FIELDS = EXISTENCE_FIELDS   # the in-module name this file already uses
+
+#: The pending field and the live one. A proposal is bound when it is CAPTURED, not
+#: when it is accepted, so a typo is caught while the person who made it is still here.
+PROPOSED_FIELD = "use_instead_proposed"
+ROUTING_FIELD = "use_instead"
+
+
+def preferred_table(value: Any) -> str:
+    """The table name inside a ``use_instead`` value, or ``""``.
+
+    Accepts the full ``{"table": …, "scope": …, "reason": …}`` form and a bare string,
+    because a human editing YAML by hand will write the bare form and losing their edit
+    silently is worse than accepting it.
+    """
+    if isinstance(value, dict):
+        return str(value.get("table") or "").strip()
+    return str(value or "").strip()
+
+
+class OntologyOverride(BaseModel):
+    """One human edit to one ontology target, with provenance and bind status.
+
+    ``target_id`` is the entity/metric id for those kinds, and ``"{entity_id}::{local_id}"``
+    for segments and computed properties (which are nested under an entity).
+    """
+    target_kind: TargetKind
+    target_id: str
+    fields: dict[str, Any] = Field(default_factory=dict)
+    source: str = "human"
+    edited_by: str = ""
+    edited_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    note: str = ""
+    # Per-SQL-field bind result: {field_name: {"bound": bool, "note": str}}.
+    # None for a field means "not yet validated" → treated as unbound (not injected).
+    binding: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+    @property
+    def entity_id(self) -> Optional[str]:
+        """Owning entity for nested kinds; None for entity/metric targets."""
+        if self.target_kind in ("object_set", "computed_property") and "::" in self.target_id:
+            return self.target_id.split("::", 1)[0]
+        return None
+
+    @property
+    def local_id(self) -> str:
+        """The segment / computed-property id within its entity (or the target id)."""
+        return self.target_id.split("::", 1)[1] if "::" in self.target_id else self.target_id
+
+    def sql_field_ok(self, field: str) -> bool:
+        """True when an SQL field is present and has bound cleanly (so it may earn verified)."""
+        b = self.binding.get(field)
+        return bool(b and b.get("bound") is True)
+
+
+# ── filesystem plumbing ─────────────────────────────────────────────────────
+
+def _safe(s: str) -> str:
+    """Filesystem-safe slug for a connection id / schema / target id."""
+    return re.sub(r"[^A-Za-z0-9_.=-]", "_", s or "default")
+
+
+def _dir(conn: str, schema: str, root: Optional[Path] = None) -> Path:
+    return (root or _ROOT) / _safe(conn) / _safe(schema)
+
+
+def _path(conn: str, schema: str, kind: TargetKind, target_id: str, root: Optional[Path] = None) -> Path:
+    return _dir(conn, schema, root) / kind / f"{_safe(target_id)}.yaml"
+
+
+def _refuse_seed_root() -> None:
+    """The seed is never a write target. Raised OUTSIDE the writers' try blocks, which swallow everything."""
+    instance, seed = _ROOT.resolve(), _SEED_ROOT.resolve()
+    if instance == seed or seed in instance.parents:
+        raise RuntimeError(f"the overrides instance tree ({_ROOT}) resolves inside the shipped seed ({_SEED_ROOT}); "
+                           "an install's declarations are never written into shipped content")
+
+
+def _seed_twin(p: Path) -> Path:
+    return _SEED_ROOT / p.relative_to(_ROOT)
+
+
+class OverrideWriteFailed(RuntimeError):
+    """A declaration could not be written — or withdrawn — on disk. Raised, never swallowed (PENDING item 21): every
+    declare and confirm door used to report a failed write as saved, and the explorer recorded such a proposal as
+    written, so a person was told a declaration held that did not exist. The message names what was not saved and the
+    operating system's reason, and no path."""
+
+    def __init__(self, action: str, kind: str, target_id: str, cause: BaseException):
+        self.action, self.kind, self.target_id = action, kind, target_id
+        reason = getattr(cause, "strerror", None) or type(cause).__name__
+        super().__init__(f"{kind} '{target_id}' was not {action} — the ontology store could not write it ({reason})")
+
+
+def _prior(conn: str, schema: str, kind: TargetKind, target_id: str) -> Optional[OntologyOverride]:
+    """Arc OC-1 — the PUBLISHED declaration as it stands before a write, for its history."""
+    with viewing("published"):
+        return find_override(conn, schema, kind, target_id)
+
+
+def declaration_content(ov: OntologyOverride) -> dict:
+    """What a declaration SAYS — never its verdicts (`binding`) or its stamp."""
+    return {"fields": ov.fields or {}, "source": ov.source or "human", "note": ov.note or ""}
+
+
+def _read_file(path: Path) -> Optional[OntologyOverride]:
+    try:
+        return OntologyOverride.model_validate(yaml.safe_load(path.read_text()) or {}) if path.is_file() else None
+    except Exception:  # noqa: BLE001 — an unreadable draft file reads as absent; its write is what replaces it
+        return None
+
+
+def _drafted(conn: str, schema: str, kind: TargetKind, target_id: str) -> tuple[Optional[OntologyOverride], bool]:
+    """The draft's version of one declaration, and whether the draft withdraws it."""
+    p = _path(conn, schema, kind, target_id, _DRAFT_ROOT)
+    return _read_file(p), p.with_name(p.name + _WITHDRAWN).exists()
+
+
+def _route(conn: str, schema: str, ov: OntologyOverride) -> tuple[bool, bool]:
+    """Arc OC-2 — ``(to_draft, clears_draft)`` for one write. Content decides, never the caller: a write that says what
+    the draft says is a verdict on the draft; one that says what is published is a verdict on the published — or, made
+    from the editing screens (the draft view) while the draft holds a change to it, that change put back as it was
+    published, which clears it from the draft; anything else is a change, and a change waits for a person to publish
+    it — the explorer's proposals included (§6 item 50(f)). An organisation's ontology is outside releases for now."""
+    if organisation_scope(conn):
+        return False, False
+    content = declaration_content(ov)
+    drafted, withdrawn = _drafted(conn, schema, ov.target_kind, ov.target_id)
+    if drafted is not None and declaration_content(drafted) == content:
+        return True, False                              # a verdict on what the draft says
+    with viewing("published"):
+        published = find_override(conn, schema, ov.target_kind, ov.target_id)
+    if published is not None and declaration_content(published) == content:
+        return False, (drafted is not None or withdrawn) and _VIEW.get() == "draft"
+    return True, False
+
+
+def _keep(record: Callable[[], None], kind: str, target_id: str) -> None:
+    """Record a version AFTER the file landed. A history that could not be written is said — journaled with the
+    reason by `tolerate` — and never undoes a declaration that did land."""
+    try:
+        record()
+    except Exception as exc:  # noqa: BLE001
+        from pramanyx.kernel.errors import tolerate
+        tolerate(exc, f"the history of {kind} '{target_id}' could not be kept; the declaration itself was written",
+                 counter="ontology.history")
+
+
+def _write(conn: str, schema: str, ov: OntologyOverride, *, publish: bool = False) -> None:
+    """Write one declaration: into the draft when it is a change (`_route`), else into the tree.
+    ``publish`` is the release's own door: straight into the tree."""
+    _refuse_seed_root()
+    drafted, put_back = (False, False) if publish else _route(conn, schema, ov)
+    if put_back:
+        clear_draft_entry(conn, schema, ov.target_kind, ov.target_id)
+    if drafted:
+        from pramanyx.ontology.release import ensure_first_release
+        ensure_first_release(conn, schema)              # what was in force before the first change waited
+    prior = _prior(conn, schema, ov.target_kind, ov.target_id)
+    p = _path(conn, schema, ov.target_kind, ov.target_id, _DRAFT_ROOT if drafted else None)
+    tmp = p.with_name(f".{p.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        text = yaml.safe_dump(ov.model_dump(), sort_keys=False, allow_unicode=True)
+        tmp.write_text(text)
+        try:
+            tmp.replace(p)                                      # a reader sees the old file or the new one
+        except PermissionError:
+            # Windows refuses to replace a file another request holds open, where an in-place write
+            # succeeds — the pre-overlay behaviour, kept rather than dropping the declaration.
+            p.write_text(text)
+        p.with_name(p.name + _HIDDEN).unlink(missing_ok=True)   # re-declared: no longer hidden
+        p.with_name(p.name + _WITHDRAWN).unlink(missing_ok=True)   # …nor withdrawn in the draft
+    except Exception as exc:
+        raise OverrideWriteFailed("saved", ov.target_kind, ov.target_id, exc) from exc
+    finally:
+        # cleanup never masks the failure it follows: `missing_ok` covers only a missing file, and where the parent
+        # is not a directory unlinking the temp raises too
+        with contextlib.suppress(OSError):
+            tmp.unlink(missing_ok=True)
+    from pramanyx.ontology import history
+    _keep(lambda: history.on_save(conn, schema, prior, ov, drafted=drafted), ov.target_kind, ov.target_id)
+
+
+def _stage_withdrawal(conn: str, schema: str, kind: TargetKind, target_id: str) -> bool:
+    """Arc OC-2 — a withdrawal waits in the draft: a marker that hides the published declaration until a person
+    publishes, holding what it withdraws. A declaration only the draft held is simply dropped from it. True if one was
+    visible in the draft view."""
+    with viewing("published"):
+        published = find_override(conn, schema, kind, target_id)
+    p = _path(conn, schema, kind, target_id, _DRAFT_ROOT)
+    mark = p.with_name(p.name + _WITHDRAWN)
+    try:
+        visible = p.exists() or (published is not None and not mark.exists())
+        p.unlink(missing_ok=True)
+        if published is not None:
+            from pramanyx.ontology.release import ensure_first_release
+            ensure_first_release(conn, schema)
+            mark.parent.mkdir(parents=True, exist_ok=True)
+            mark.write_text(yaml.safe_dump(published.model_dump(), sort_keys=False, allow_unicode=True))
+    except Exception as exc:
+        raise OverrideWriteFailed("withdrawn", kind, target_id, exc) from exc
+    return visible
+
+
+def _unlink(conn: str, schema: str, kind: TargetKind, target_id: str, *, publish: bool = False) -> bool:
+    """Withdraw one declaration. True if one was visible. A shipped one is hidden, never deleted. The withdrawal waits in
+    the draft; ``publish`` is the release's own door, and an organisation's ontology is outside releases for now."""
+    _refuse_seed_root()
+    if not publish and not organisation_scope(conn):
+        return _stage_withdrawal(conn, schema, kind, target_id)
+    prior = _prior(conn, schema, kind, target_id)
+    try:
+        p = _path(conn, schema, kind, target_id)
+        hidden = p.with_name(p.name + _HIDDEN)
+        seeds = [_seed_twin(p)]
+        keyed = _keyed_dir(_safe(conn))
+        if keyed is not None:
+            seeds.append(keyed / p.relative_to(_ROOT / _safe(conn)))
+        # a shipped declaration of a dataset this install removed is hidden already, so there is nothing to withdraw
+        shipped = not _removed_mark(conn, schema).exists() and any(t.exists() for t in seeds)
+        visible = p.exists() or (shipped and not hidden.exists())
+        p.unlink(missing_ok=True)
+        if shipped:
+            hidden.parent.mkdir(parents=True, exist_ok=True)
+            hidden.write_text("withdrawn on this install; the shipped declaration stays hidden\n")
+    except Exception as exc:
+        raise OverrideWriteFailed("withdrawn", kind, target_id, exc) from exc
+    if visible:
+        from pramanyx.ontology import history
+        _keep(lambda: history.on_withdraw(conn, schema, prior), kind, target_id)
+    return visible
+
+
+# ── the release's doors into the store (Arc OC-2) ───────────────────────────
+
+def publish_override(conn: str, schema: str, ov: OntologyOverride) -> None:
+    """Write a drafted declaration into the published tree — the release's door, never a declaring door's."""
+    _write(conn, schema, ov, publish=True)
+
+
+def publish_withdrawal(conn: str, schema: str, kind: TargetKind, target_id: str) -> bool:
+    """Withdraw a declaration from the published tree — the release's door."""
+    return _unlink(conn, schema, kind, target_id, publish=True)
+
+
+def draft_entries(conn: str, schema: str) -> list[tuple[str, str, Optional[OntologyOverride], Optional[OntologyOverride]]]:
+    """Every change waiting in one scope's draft: ``(kind, target_id, drafted, withdrawn)`` — the drafted declaration, or
+    for a staged withdrawal the published one it withdraws."""
+    base = _dir(conn, schema, _DRAFT_ROOT)
+    out: list[tuple[str, str, Optional[OntologyOverride], Optional[OntologyOverride]]] = []
+    if not base.is_dir():
+        return out
+    for f in sorted(base.rglob("*.yaml")):
+        ov = _read_file(f)
+        if ov is not None:
+            out.append((ov.target_kind, ov.target_id, ov, None))
+    for m in sorted(base.rglob("*.yaml" + _WITHDRAWN)):
+        ov = _read_file(m)
+        if ov is not None:
+            out.append((ov.target_kind, ov.target_id, None, ov))
+    return out
+
+
+def clear_draft_entry(conn: str, schema: str, kind: TargetKind, target_id: str) -> None:
+    """Drop one entry from the draft — after it was published, or when a person discards it."""
+    p = _path(conn, schema, kind, target_id, _DRAFT_ROOT)
+    p.unlink(missing_ok=True)
+    p.with_name(p.name + _WITHDRAWN).unlink(missing_ok=True)
+
+
+# ── an organisation's ontology: edited by people only ───────────────────────
+
+#: ON-8 — the first segment an organisation's ontology is kept under in this tree (`org=<org>/<domain>`). A connection
+#: id never holds `=`, so no connection's scope can name it.
+ORGANISATION_SEGMENT = "org="
+#: The scope the web carries an organisation's ontology in where a connection id goes (`domain:<name>`) — never a
+#: directory of this tree.
+DOMAIN_CARRIER = "domain:"
+
+
+def organisation_scope(conn: str) -> bool:
+    """Whether ``conn`` names an organisation's ontology — its tree segment, or the scope the web carries it in —
+    rather than one connection's."""
+    return str(conn or "").startswith((ORGANISATION_SEGMENT, DOMAIN_CARRIER))
+
+
+def not_a_persons(ov: OntologyOverride) -> str:
+    """Why ``ov`` is not a person's own declaration — a model's proposal, or what another source wrote — or "" when it
+    is one. The user's rule (2026-09-14): an organisation's ontology is edited by people only."""
+    if (ov.source or "human") != "human":
+        return f"it was written by '{ov.source}', not a person"
+    if str(ov.fields.get("origin") or "human") != "human" or str(ov.fields.get("provenance") or "").strip():
+        return "it records a model's proposal"
+    entries = (ov.binding.get("bindings") or {}).get("entries") or {}
+    for name, entry in entries.items():
+        if isinstance(entry, dict) and (str(entry.get("origin") or "human") != "human"
+                                        or str(entry.get("provenance") or "").strip()):
+            return f"its binding '{name}' records a model's proposal"
+    return ""
+
+
+# ── public store API ────────────────────────────────────────────────────────
+
+def save_override(conn: str, schema: str, ov: OntologyOverride) -> None:
+    """Write (replace) one override's YAML file. Raises :class:`OverrideWriteFailed` when the file could not be written
+    — a declaration that did not land must never read as saved (PENDING item 21) — and ``ValueError`` when ``conn`` is
+    not a connection: an organisation's ontology is written by `save_organisation_override` alone."""
+    if organisation_scope(conn):
+        raise ValueError(f"'{conn}' is an organisation's ontology, not a connection's — it is written by "
+                         "save_organisation_override, which takes a person's declaration only")
+    _write(conn, schema, ov)
+
+
+def delete_override(conn: str, schema: str, kind: TargetKind, target_id: str) -> bool:
+    """Remove one override file. Returns True if a file was deleted. Raises :class:`OverrideWriteFailed` when the
+    withdrawal could not be written, and ``ValueError`` when ``conn`` is not a connection: a declaration is withdrawn
+    from an organisation's ontology by `delete_organisation_override` alone."""
+    if organisation_scope(conn):
+        raise ValueError(f"'{conn}' is an organisation's ontology, not a connection's — a declaration is withdrawn "
+                         "from it by delete_organisation_override")
+    return _unlink(conn, schema, kind, target_id)
+
+
+def save_organisation_override(conn: str, schema: str, ov: OntologyOverride) -> None:
+    """ON-8 — write one declaration of an organisation's ontology (``conn`` is its tree segment, ``org=<org>``). Only a
+    person's declaration is written; a model's proposal, or anything another source wrote, raises with the reason. The
+    user's rule (2026-09-14): an organisation's ontology is edited by people only — a model drafts, and a person
+    confirms, inside one connection's ontology."""
+    if not str(conn or "").startswith(ORGANISATION_SEGMENT):
+        raise ValueError(f"'{conn}' is not an organisation's ontology")
+    why = not_a_persons(ov)
+    if why:
+        raise ValueError(f"an organisation's ontology is edited by people only — {ov.target_kind} "
+                         f"'{ov.target_id}' was not written: {why}")
+    _write(conn, schema, ov)
+
+
+def delete_organisation_override(conn: str, schema: str, kind: TargetKind, target_id: str) -> bool:
+    """ON-8 — withdraw one declaration from an organisation's ontology (``conn`` is its tree segment). Returns True if a
+    file was deleted."""
+    if not str(conn or "").startswith(ORGANISATION_SEGMENT):
+        raise ValueError(f"'{conn}' is not an organisation's ontology")
+    return _unlink(conn, schema, kind, target_id)
+
+
+def find_override(conn: str, schema: str, kind: TargetKind,
+                  target_id: str) -> Optional[OntologyOverride]:
+    """One override by identity, or None. Public because a caller that needs to MERGE
+    a field into an existing override (rather than replace the file, which is what
+    ``save_override`` does) has to read it back first."""
+    for ov in load_overrides(conn, schema):
+        if ov.target_kind == kind and ov.target_id == target_id:
+            return ov
+    return None
+
+
+def override_scopes(conn: str) -> list[str]:
+    """Schema scopes that have an override directory under ``conn``, sorted.
+
+    Public because a consumer that holds only a connection id — the schema linker is
+    one — otherwise has to guess the schema scope or reach into this module's path
+    helpers. (The private-cross-import ratchet flagged exactly that: an internal two
+    planes need is an interface that has not been declared yet.)
+
+    A dataset this install removed is listed only once this install declares something
+    for it again: the seed's folder for it is hidden by its tombstone (`hide_seeds`).
+
+    The Sheets connection's one scope is the reader's organisation (SH-6, `sheets.ontology.scope`):
+    every organisation's sheet entities sit under it, and another's are no scope to list.
+    """
+    from pramanyx.sheets.ontology import is_sheets, scope
+    if is_sheets(conn):
+        return [scope()] if (_ROOT / _safe(conn) / _safe(scope())).is_dir() else []
+    try:
+        own = _ROOT / _safe(conn)
+        scopes: set[str] = {p.name for p in own.iterdir() if p.is_dir()} if own.is_dir() else set()
+        for base in (_SEED_ROOT / _safe(conn), _keyed_dir(_safe(conn))):
+            if base is not None and base.is_dir():
+                scopes |= {p.name for p in base.iterdir() if p.is_dir() and not _removed_mark(conn, p.name).exists()}
+        return sorted(scopes)
+    except Exception:
+        return []
+
+
+def hide_seeds(conn: str, schema: str) -> bool:
+    """Keep a removed dataset's SHIPPED declarations from coming back: write ``<conn>/<schema>.hidden`` into this
+    install's tree when the seed holds declarations for that dataset — under the connection's id or under its scope key.
+    Called by a dataset removal BEFORE its files go (AGENTS.md: the tombstone, not the files' absence, is the
+    authority), so a removal stopped half-way never leaves the seed answering for a dataset that is gone. Keyed by the
+    connection, never by the seed's folder: a scope key set or changed later reaches no shipped declaration for the
+    dataset either, and another connection carrying the same key keeps its own. What this install declares for it later
+    still reads; the shipped ones stay hidden until a person removes the marker. A scope key that cannot be read is
+    taken to hold the dataset — the marker is written rather than guessed away. True when the marker was written.
+    Raises when it cannot be — the removal must not go on as if it had been."""
+    _refuse_seed_root()
+    try:
+        from pramanyx.db.registry import scope_key_of
+        key: Optional[str] = scope_key_of(_safe(conn))
+    except Exception:  # noqa: BLE001 — unknown, so a keyed seed may hold the dataset
+        key = None
+    shipped = [_SEED_ROOT / _safe(conn) / _safe(schema)]
+    if key:
+        shipped.append(_SEED_ROOT / f"{_KEY_PREFIX}{key}" / _safe(schema))
+    if key is not None and not any(d.is_dir() and any(d.rglob("*.yaml")) for d in shipped):
+        return False
+    mark = _removed_mark(conn, schema)
+    mark.parent.mkdir(parents=True, exist_ok=True)
+    mark.write_text("removed on this install; the declarations the repository ships for this dataset stay hidden\n")
+    return True
+
+
+def load_overrides(conn: str, schema: str) -> list[OntologyOverride]:
+    """Read every override under {conn}/{schema} — this install's over the shipped seed — sorted for
+    deterministic apply."""
+    out: list[OntologyOverride] = []
+    for f in _visible(Path(_safe(conn)) / _safe(schema), "*.yaml", recursive=True):
+        try:
+            data = yaml.safe_load(f.read_text()) or {}
+            out.append(OntologyOverride.model_validate(data))
+        except Exception:
+            # A single corrupt/edited-by-hand file must not blind the others.
+            continue
+    return out
+
+
+# ── overlay: apply overrides onto a graph ───────────────────────────────────
+
+class OverlayReport(BaseModel):
+    """What ``apply_overrides`` actually did — so callers can log/assert it FIRED.
+
+    A silently-swallowed override looks identical to one that helped; this report
+    exists so wiring can emit a fired/skipped counter instead of trusting a `pass`.
+    """
+    applied: list[str] = Field(default_factory=list)   # "kind:target_id (fields)"
+    skipped: list[str] = Field(default_factory=list)   # "kind:target_id — reason"
+
+    @property
+    def count(self) -> int:
+        return len(self.applied)
+
+
+def _declared_display(ov: OntologyOverride, value: Any):
+    """ON-3b — a person's display property, carrying the measurement kept on its binding when that measurement is
+    of this very property. None when it never bound (the type has no such property): an unbound name would title
+    every object with nothing."""
+    from pramanyx.ontology.models import DisplayProperty
+    name = str(value or "").strip()
+    b = ov.binding.get("display_property") or {}
+    if not name or b.get("bound") is False:
+        return None
+    same = b.get("property") == name
+    return DisplayProperty(
+        name=name, source="human",
+        rows=b.get("rows") if same else None, non_null=b.get("non_null") if same else None,
+        distinct=b.get("distinct") if same else None, verified=b.get("verified") if same else None,
+        note=(b.get("measured_note") if same and b.get("measured_note")
+              else "declared by a person; not yet measured"),
+    )
+
+
+def _apply_entity(ent: OntologyEntity, ov: OntologyOverride, graph: Optional[OntologyGraph] = None) -> list[str]:
+    touched: list[str] = []
+    for field, value in ov.fields.items():
+        if field not in _EDITABLE["entity"]:
+            continue
+        if field == "declared":
+            continue                    # ON-7 — the type itself was built from this override (`apply_overrides`)
+        if field == "bindings":
+            from pramanyx.ontology.bindings import declared_bindings
+            # ON-1b — rebuilt from what the bind and the count recorded; a binding that never bound reaches no reader.
+            ent.bindings, _skipped = declared_bindings(ent, value, ov.binding.get("bindings"), graph)
+            if ent.bindings:
+                touched.append(field)
+            continue
+        if field == "backing":
+            from pramanyx.ontology.models import Backing
+            spec = dict(value) if isinstance(value, dict) else {}
+            b = ov.binding.get("backing") or {}
+            unique = b.get("unique")
+            spec["verified"] = (True if (b.get("bound") and unique is True)
+                                else (False if (b.get("bound") is False or unique is False) else None))
+            spec["verification_note"] = (b.get("note") or b.get("unique_note")
+                                         or ("bound; key uniqueness not yet measured" if spec["verified"] is None else ""))
+            spec["rows"] = b.get("rows")
+            if spec.get("kind") == "platform":
+                # Arc OC-6 — the platform mints every key it holds: unique by construction, nothing to count
+                from pramanyx.ontology.platform_objects import NOTE
+                spec["verified"], spec["verification_note"] = True, NOTE
+            ent.backing = Backing(**{k: v for k, v in spec.items() if k in Backing.model_fields})
+            touched.append(field)
+            continue
+        if field == "display_property":
+            shown = _declared_display(ov, value)
+            if shown is not None:
+                ent.display_property = shown
+                touched.append(field)
+            continue
+        if field == "withdrawn_bindings":
+            touched.append(field)            # applied after the loop, over whatever the other fields built
+            continue
+        if field == "semiadditive":
+            from pramanyx.ontology.semiadditive import declared_semiadditive
+            ent.semiadditive = declared_semiadditive(value, ov.binding.get("semiadditive"))
+            if ent.semiadditive:
+                touched.append(field)
+            continue
+        if field == "edit_states":
+            from pramanyx.ontology.models import EditStateMachine
+            ent.edit_states = {str(k): EditStateMachine.model_validate(v) for k, v in dict(value or {}).items()}
+            if ent.edit_states:
+                touched.append(field)
+            continue
+        if field == "row_policies":
+            from pramanyx.ontology.models import RowPolicy
+            ent.row_policies = [RowPolicy.model_validate(v) for v in list(value or [])]
+            if ent.row_policies:
+                touched.append(field)
+            continue
+        if field == "sensitive":
+            from pramanyx.ontology.models import Sensitivity
+            ent.sensitive = {str(k): Sensitivity.model_validate(v) for k, v in dict(value or {}).items()}
+            if ent.sensitive:
+                touched.append(field)
+            continue
+        if field == "expressions":
+            from pramanyx.ontology.expressions import declared_expressions
+            ent.expressions = declared_expressions(ent, value, ov.binding.get("expressions"))
+            for name, e in ent.expressions.items():
+                # a verified expression is a property every reader finds by name; a refuted one is only listed
+                if e.verified is True and name not in (ent.properties or {}):
+                    ent.properties[name] = e.as_property(name)
+            if ent.expressions:
+                touched.append(field)
+            continue
+        setattr(ent, field, value)
+        touched.append(field)
+        # active_filter is the fast-path WHERE used directly by the investigation
+        # pipeline (no verified gate). Mirror it into the default segment so the
+        # *prompt* path (render_semantic_layer) gets it too — but only verified
+        # when the SQL bound.
+        if field == "active_filter" and value:
+            default_id = "active"
+            seg = ent.segments.get(default_id) or Segment(
+                id=default_id, display_name=f"Active {ent.display_name or ent.id}",
+                is_default=True, source="manual",
+            )
+            seg.filter_sql = value
+            seg.verified = ov.sql_field_ok("active_filter")
+            seg.verification_note = "human-asserted" if seg.verified else (
+                ov.binding.get("active_filter", {}).get("note", "") or "unbound"
+            )
+            ent.segments[default_id] = seg
+    gone = {str(n).lower() for n in (ov.fields.get("withdrawn_bindings") or [])}
+    if gone:
+        ent.bindings = [b for b in ent.bindings or [] if b.name.lower() not in gone]
+        ent.proposed_bindings = [b for b in ent.proposed_bindings or [] if b.name.lower() not in gone]
+    return touched
+
+
+def _marks_only(ov: OntologyOverride) -> bool:
+    """Arc FA, FA-3 — a declaration that holds a retiring mark and nothing else: a built element marked retiring. The
+    mark is read by `ontology/retiring.py`, never applied, so the element is served exactly as it was built."""
+    return set(ov.fields) == {"retiring"}
+
+
+def _apply_segment(ent: OntologyEntity, ov: OntologyOverride) -> list[str]:
+    if _marks_only(ov):
+        return ["retiring"]
+    local = ov.local_id
+    seg = ent.segments.get(local) or Segment(id=local, display_name=local, source="manual")
+    touched: list[str] = []
+    for field, value in ov.fields.items():
+        if field not in _EDITABLE["object_set"]:
+            continue
+        setattr(seg, field, value)
+        touched.append(field)
+    # Earn verified only when its filter SQL bound (empty filter = all rows = trivially fine).
+    if (seg.filter_sql or "").strip():
+        seg.verified = ov.sql_field_ok("filter_sql")
+        seg.verification_note = "human-asserted" if seg.verified else (
+            ov.binding.get("filter_sql", {}).get("note", "") or "unbound"
+        )
+    else:
+        seg.verified = True
+        seg.verification_note = "human-asserted (all rows)"
+    ent.segments[local] = seg
+    return touched
+
+
+def _apply_computed_property(ent: OntologyEntity, ov: OntologyOverride) -> list[str]:
+    if _marks_only(ov):
+        return ["retiring"]
+    local = ov.local_id
+    existing = next((c for c in ent.computed_properties if c.id == local), None)
+    cp = existing or ComputedProperty(id=local, label=local, formula_sql="")
+    touched: list[str] = []
+    for field, value in ov.fields.items():
+        if field not in _EDITABLE["computed_property"]:
+            continue
+        setattr(cp, field, value)
+        touched.append(field)
+    cp.verified = ov.sql_field_ok("formula_sql")
+    cp.verification_note = "human-asserted" if cp.verified else (
+        ov.binding.get("formula_sql", {}).get("note", "") or "unbound"
+    )
+    if existing is None:
+        ent.computed_properties.append(cp)
+    return touched
+
+
+def _apply_metric(graph: OntologyGraph, ov: OntologyOverride) -> list[str]:
+    m = graph.metrics.get(ov.target_id)
+    if m is None:
+        # Allow authoring a brand-new metric only if we know its entity (via fields).
+        ent_id = ov.fields.get("entity")
+        if not ent_id:
+            return []
+        m = OntologyMetric(
+            id=ov.target_id, display_name=ov.target_id, entity=ent_id, formula_sql="",
+        )
+        graph.metrics[ov.target_id] = m
+    touched: list[str] = []
+    for field, value in ov.fields.items():
+        if field not in _EDITABLE["metric"]:
+            continue
+        setattr(m, field, value)
+        touched.append(field)
+    if "formula_sql" in touched:
+        m.verified = ov.sql_field_ok("formula_sql")
+        m.verification_note = "human-asserted" if m.verified else (
+            ov.binding.get("formula_sql", {}).get("note", "") or "unbound"
+        )
+    return touched
+
+
+def _apply_action(graph: OntologyGraph, ov: OntologyOverride) -> list[str]:
+    """Author a declared KineticAction from the override's fields into ``graph.kinetic_actions``.
+
+    Unlike the other ``_apply_*`` handlers this creates a whole NEW object (a declared action has
+    no auto-derived counterpart to patch — like a brand-new metric in ``_apply_metric``). The
+    ``id`` comes from ``target_id``; the rest of the spec comes from ``fields`` (whitelisted to
+    ``_EDITABLE["action"]``). ``model_validate`` raises on a malformed spec — e.g. a submission
+    criterion missing its authored ``message`` — which the caller's per-override ``try`` turns into
+    a SKIPPED entry, so a bad action is rejected at overlay and never enters the graph (the K1
+    "rejected at parse, not at execute" contract). Nothing here executes or binds SQL — that is K2."""
+    spec = {k: v for k, v in ov.fields.items() if k in _EDITABLE["action"]}
+    spec["id"] = ov.target_id
+    action = KineticAction.model_validate(spec)
+    graph.kinetic_actions[action.id] = action
+    return ["<declared>"]   # non-empty so the OverlayReport records it as applied
+
+
+def _apply_link(graph: OntologyGraph, ov: OntologyOverride) -> list[str]:
+    """ON-3b — a person's business-verb name for one relationship, beside its mechanical names. A name that is not
+    snake_case never applies (the authoring route refuses it first), and a relationship the graph no longer has
+    is reported as skipped."""
+    from pramanyx.ontology.models import LINK_NAME_PATTERN
+    rel = graph.relationships.get(ov.target_id)
+    touched: list[str] = []
+    if ov.fields.get("withdrawn"):
+        # 2026-09-22 — a person withdrew this found link: it leaves the served graph.
+        graph.relationships.pop(ov.target_id, None)
+        return ["withdrawn"]
+    if rel is None and ov.fields.get("declared"):
+        # ON-7 — a declared link is the relationship's whole existence, rebuilt from its measurement.
+        from pramanyx.ontology.declared import declared_relationship, register_relationship
+        rel = declared_relationship(ov, graph)
+        if rel is None:
+            return []
+        register_relationship(graph, rel)
+        touched.append("<declared>")
+    name = str(ov.fields.get("name") or "").strip()
+    if rel is None or not LINK_NAME_PATTERN.match(name):
+        return touched
+    rel.name = name
+    # 2026-09-22 — who named it: the recorded origin, else the declaration's own (a model-declared link's
+    # verb is the model's until confirmed), else a person's (only the person's door wrote names before).
+    origin = ov.fields.get("name_origin") or ov.fields.get("origin") or "human"
+    rel.name_origin = "model" if origin == "model" else "human"
+    rel.name_provenance = str(ov.fields.get("name_provenance") or "")
+    return [*touched, "name"]
+
+
+def _apply_process(graph: OntologyGraph, ov: OntologyOverride) -> list[str]:
+    """ON-9 — a declared process, rebuilt from its fields and what its measurement recorded; nothing when its type is
+    not in the graph (reported skipped)."""
+    from pramanyx.ontology.processes import declared_process
+    process = declared_process(ov, graph)
+    if process is None:
+        return []
+    graph.processes[process.id] = process
+    return ["<declared>"]
+
+
+def _apply_rule(graph: OntologyGraph, ov: OntologyOverride) -> list[str]:
+    """ON-9 — a declared rule, rebuilt the same way."""
+    from pramanyx.ontology.business_rules import declared_rule
+    rule = declared_rule(ov, graph)
+    if rule is None:
+        return []
+    graph.rules[rule.id] = rule
+    return ["<declared>"]
+
+
+def _apply_impact(graph: OntologyGraph, ov: OntologyOverride) -> list[str]:
+    """Arc OC-5 — a declared impact, rebuilt the same way; nothing when a promise it names is not on the graph."""
+    from pramanyx.ontology.impacts import declared_impact
+    impact = declared_impact(ov, graph)
+    if impact is None:
+        return []
+    graph.impacts[impact.id] = impact
+    return ["<declared>"]
+
+
+def apply_overrides(graph: Optional[OntologyGraph], conn: str, schema: str) -> tuple[Optional[OntologyGraph], OverlayReport]:
+    """Overlay all human overrides for {conn}/{schema} onto ``graph`` in place.
+
+    Pure w.r.t. the DB: it trusts the bind status persisted on each override
+    (see ``bind_overrides`` for where SQL is validated). Returns the graph and an
+    ``OverlayReport`` so the caller can prove the overlay fired.
+    """
+    report = OverlayReport()
+    if graph is None:
+        return graph, report
+    loaded = load_overrides(conn, schema)
+    # Arc OC-5 — an impact names two promises, so it is read after every process it could name.
+    for ov in [o for o in loaded if o.target_kind != "impact"] + [o for o in loaded if o.target_kind == "impact"]:
+        try:
+            if ov.target_kind == "entity":
+                ent = graph.entities.get(ov.target_id)
+                born = False
+                if ent is None and ov.fields.get("declared"):
+                    # ON-7 — a declared entity is the type's whole existence, rebuilt from what its bind recorded.
+                    from pramanyx.ontology.declared import declared_entity, register_entity
+                    ent = declared_entity(ov, graph)
+                    if ent is not None:
+                        register_entity(graph, ent)
+                        born = True
+                touched = _apply_entity(ent, ov, graph) if ent else []
+                if born:
+                    touched = ["<declared>", *touched]
+            elif ov.target_kind in ("object_set", "computed_property"):
+                ent = graph.entities.get(ov.entity_id or "")
+                if not ent:
+                    report.skipped.append(f"{ov.target_kind}:{ov.target_id} — entity not in graph")
+                    continue
+                touched = (_apply_segment if ov.target_kind == "object_set"
+                           else _apply_computed_property)(ent, ov)
+            elif ov.target_kind == "metric":
+                touched = _apply_metric(graph, ov)
+            elif ov.target_kind == "link":
+                touched = _apply_link(graph, ov)
+            elif ov.target_kind == "process":
+                touched = _apply_process(graph, ov)
+            elif ov.target_kind == "rule":
+                touched = _apply_rule(graph, ov)
+            elif ov.target_kind == "impact":
+                touched = _apply_impact(graph, ov)
+            elif ov.target_kind == "action":
+                # Wave K substrate — only human-DECLARED actions exist to overlay.
+                touched = _apply_action(graph, ov)
+            else:
+                touched = []
+
+            if touched:
+                report.applied.append(f"{ov.target_kind}:{ov.target_id} ({','.join(touched)})")
+            else:
+                report.skipped.append(f"{ov.target_kind}:{ov.target_id} — target/fields not applicable")
+        except Exception as exc:  # one bad override must not break the overlay
+            report.skipped.append(f"{ov.target_kind}:{ov.target_id} — {type(exc).__name__}: {exc}")
+    return graph, report
+
+
+# ── binding: EXPLAIN-validate SQL-bearing overrides against the live DB ──────
+
+def bind_overrides(
+    ov: OntologyOverride,
+    graph: Optional[OntologyGraph],
+    explain: Callable[[str], Optional[str]],
+) -> OntologyOverride:
+    """Validate each SQL field on ``ov`` by EXPLAIN-ing a probe query.
+
+    ``explain(sql)`` runs a non-executing EXPLAIN/dry-run and returns an error
+    string on failure or None on success (the universal binder, per the phase-8
+    grounding architecture). The result is written back onto ``ov.binding`` so a
+    later ``apply_overrides`` can gate ``verified`` without a DB handle.
+
+    The probe wraps the fragment in the smallest query that exercises it against
+    the target entity's table, so a fragment that references a dropped/renamed
+    column fails to bind instead of silently poisoning the prompt.
+    """
+    table = _probe_table(ov, graph)
+    for field, value in ov.fields.items():
+        if field in _EXISTENCE_FIELDS:
+            _bind_existence(ov, field, value, explain)
+            continue
+        if field == "backing":
+            _bind_backing(ov, value, explain)
+            continue
+        if field == "display_property":
+            _bind_display_property(ov, value, graph)
+            continue
+        if field == "absorbed_into":
+            _bind_absorbed(ov, value, graph)
+            continue
+        if field not in _SQL_FIELDS or not str(value or "").strip():
+            continue
+        probe = _probe_sql(field, str(value), table)
+        err = None
+        try:
+            err = explain(probe)
+        except Exception as exc:
+            err = f"{type(exc).__name__}: {exc}"
+        ov.binding[field] = {"bound": err is None, "note": "" if err is None else err}
+    return ov
+
+
+def _bind_display_property(ov: OntologyOverride, value: Any, graph: Optional[OntologyGraph]) -> None:
+    """ON-3b — a display property binds when the type HAS that property: a check against the graph, no database.
+    Whether it names objects is a measurement (`display.measure_override_display_properties`) kept on the same
+    entry and carried across a re-bind of the same name. ALWAYS writes an entry, like an existence field: a
+    declaration nobody checked must not read as bound."""
+    prev = ov.binding.get("display_property") or {}
+    name = str(value or "").strip()
+    entity = graph.entities.get(ov.target_id) if graph is not None else None
+    if not name:
+        entry: dict[str, Any] = {"bound": False, "note": "no property named"}
+    elif entity is None:
+        entry = {"bound": False, "note": f"no object type {ov.target_id!r} in the graph to check {name!r} against"}
+    elif not any(k.lower() == name.lower() for k in (entity.properties or {})):
+        entry = {"bound": False, "note": f"{entity.id} has no property {name!r}"}
+    else:
+        entry = {"bound": True, "note": ""}
+    if prev.get("property") == name:
+        entry.update({k: prev[k] for k in ("rows", "non_null", "distinct", "verified", "measured_note") if k in prev})
+    entry["property"] = name
+    ov.binding["display_property"] = entry
+
+
+def bind_graph_only(ov: OntologyOverride, graph: Optional[OntologyGraph]) -> OntologyOverride:
+    """The binds that need no database — a display property (ON-3b) and a part mark (ON-7) are checked against
+    the GRAPH — so a connection that cannot be reached for the SQL binds still leaves them with a verdict rather
+    than an empty entry that reads as verified."""
+    for field, value in ov.fields.items():
+        if field == "display_property":
+            _bind_display_property(ov, value, graph)
+        elif field == "absorbed_into":
+            _bind_absorbed(ov, value, graph)
+    return ov
+
+
+def _bind_absorbed(ov: OntologyOverride, value: Any, graph: Optional[OntologyGraph]) -> None:
+    """ON-7 — a part mark binds when it HOLDS on the graph: the parent exists and carries a binding over this
+    type's own table (`parts.absorb_problem`, the one law). An empty value releases the part and binds
+    trivially. ALWAYS writes an entry; and whether the mark still holds is re-read on every read, so a parent
+    that drops the binding releases the part without a second edit."""
+    parent = str(value or "").strip()
+    if not parent:
+        ov.binding["absorbed_into"] = {"bound": True, "note": "released"}
+        return
+    entity = graph.entities.get(ov.target_id) if graph is not None else None
+    if entity is None:
+        ov.binding["absorbed_into"] = {"bound": False, "note": f"no object type {ov.target_id!r} in the graph"}
+        return
+    from pramanyx.ontology.parts import absorb_problem
+    problem = absorb_problem(graph, parent, entity)
+    ov.binding["absorbed_into"] = {"bound": not problem, "note": problem}
+
+
+def _bind_backing(ov: OntologyOverride, value: Any, explain: Callable[[str], Optional[str]]) -> None:
+    """Bind a query backing by dry-running its SELECT (a table backing binds trivially).
+    ALWAYS writes a binding entry, like an existence field: a backing nobody validated
+    must not read as verified. Uniqueness of the key is a measurement, not a bind —
+    `measure_override_backings` adds `unique` to this entry later."""
+    prev = ov.binding.get("backing") or {}
+    spec = value if isinstance(value, dict) else {}
+    kind = spec.get("kind") or "table"
+    sql, pk = str(spec.get("sql") or "").strip(), str(spec.get("primary_key") or "").strip()
+    table = str(spec.get("table") or "").strip()
+    if kind == "query":
+        if not sql or not pk:
+            ov.binding["backing"] = {"bound": False, "note": "a query backing needs `sql` and `primary_key`"}
+            return
+        err = None
+        try:
+            err = explain(f"SELECT 1 FROM ({sql.rstrip(';')}) AS b LIMIT 0")
+        except Exception as exc:
+            err = f"{type(exc).__name__}: {exc}"
+        entry = {"bound": err is None, "note": "" if err is None else err}
+    else:
+        entry = {"bound": True, "note": ""}
+    # a measurement taken for the SAME backing survives a re-bind — and so do the columns a declared entity's
+    # bind recorded (ON-7), which the overlay rebuilds the type's properties from
+    same = prev.get("sql") == sql and prev.get("primary_key") == pk and str(prev.get("table") or "") == table
+    if prev.get("unique") is not None and same:
+        entry["unique"] = prev["unique"]
+        entry["unique_note"] = prev.get("unique_note", "")
+    if same:
+        for kept in ("columns", "rows"):
+            if kept in prev:
+                entry[kept] = prev[kept]
+    entry["sql"], entry["primary_key"], entry["table"] = sql, pk, table
+    ov.binding["backing"] = entry
+
+
+def _bind_existence(ov: OntologyOverride, field: str, value: Any,
+                    explain: Callable[[str], Optional[str]]) -> None:
+    """Bind a table-naming field by probing that the table can be read.
+
+    Unlike the SQL fields this ALWAYS writes a binding entry — including for an empty
+    or malformed value. `verified` is `all(...) if binding else True`, so a field that
+    nobody validated is reported as verified; for a routing target that would mean
+    telling the model to prefer a table that need not exist. An unbound entry is the
+    honest answer and the enforcement paths skip it.
+
+    The probe is the smallest possible read (`SELECT 1 FROM t WHERE 1=0`) through the
+    same non-executing seam the SQL fields use, so a name that is not a table — or is
+    a VIEW on a connection whose schema rendering excludes views — fails here rather
+    than silently annotating a prompt with something the model cannot see.
+    """
+    table = preferred_table(value)
+    if not table:
+        ov.binding[field] = {"bound": False, "note": "no table named"}
+        return
+    if not _IDENT_RE.match(table):
+        ov.binding[field] = {"bound": False, "note": f"{table!r} is not a table identifier"}
+        return
+    err = None
+    try:
+        err = explain(f"SELECT 1 FROM {table} WHERE 1=0")
+    except Exception as exc:
+        err = f"{type(exc).__name__}: {exc}"
+    ov.binding[field] = {"bound": err is None, "note": "" if err is None else err}
+
+
+#: A table identifier, optionally schema-qualified. The probe interpolates the value
+#: into SQL, so anything outside this shape is refused before it reaches the DB rather
+#: than being escaped — this store is human-authored and an identifier has no reason to
+#: contain a quote, a space or a semicolon.
+_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$")
+
+
+def _probe_table(ov: OntologyOverride, graph: Optional[OntologyGraph]) -> str:
+    """Best-effort source table for the override's entity (for the bind probe)."""
+    if graph is None:
+        return ""
+    eid = ov.entity_id or (ov.target_id if ov.target_kind == "entity" else None)
+    if not eid and ov.target_kind == "metric":
+        m = graph.metrics.get(ov.target_id)
+        # For a brand-new metric (not yet in the graph) fall back to the entity
+        # named in the override's fields, so its formula can still EXPLAIN-bind.
+        eid = (m.entity if m else None) or ov.fields.get("entity")
+    ent = graph.entities.get(eid) if eid else None
+    return (ent.source_tables[0] if ent and ent.source_tables else "")
+
+
+def _probe_sql(field: str, value: str, table: str) -> str:
+    """Smallest query that makes the DB validate the fragment without returning rows."""
+    frm = f" FROM {table}" if table else ""
+    if field in ("active_filter", "filter_sql"):
+        return f"SELECT 1{frm} WHERE {value} LIMIT 0"
+    # formula_sql is a SELECT-clause expression.
+    return f"SELECT {value} AS _probe{frm} LIMIT 0"

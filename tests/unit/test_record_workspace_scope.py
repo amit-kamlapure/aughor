@@ -2,7 +2,7 @@
 
 Its ledgers span every connection, and its doors filtered only by org: a reader in theLook's workspace was listed
 LuxExperience's claims and corrections, and could open them. The gate is the one every other door applies —
-`accessible_catalog_ids`, read ambiently from the ``X-Aughor-Workspace`` header — so a claim about a connection
+`accessible_catalog_ids`, read ambiently from the ``X-Pramanyx-Workspace`` header — so a claim about a connection
 outside the workspace is neither listed, counted nor opened there; an entry about no connection is an
 organisation-wide fact and stays in every workspace; with no workspace the Record is unscoped, as before.
 """
@@ -13,16 +13,16 @@ import uuid
 import pytest
 from fastapi import HTTPException
 
-from aughor.record import claims as C
-from aughor.routers import record as R
-from aughor.workspace import store as WS
-from aughor.workspace.context import workspace_scope
+from pramanyx.record import claims as C
+from pramanyx.routers import record as R
+from pramanyx.workspace import store as WS
+from pramanyx.workspace.context import workspace_scope
 
 
 @pytest.fixture(autouse=True)
 def _own_stores(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_DEPARTURES_DB", str(tmp_path / "departures.db"))
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana")
+    monkeypatch.setenv("PRAMANYX_DEPARTURES_DB", str(tmp_path / "departures.db"))
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ana")
 
 
 def _claim(conn: str, text: str) -> str:

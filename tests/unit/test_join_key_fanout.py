@@ -22,8 +22,8 @@ from __future__ import annotations
 
 import sqlite3
 
-from aughor.explorer.verify import verify_insight
-from aughor.sql.fanout import join_key_fanout
+from pramanyx.explorer.verify import verify_insight
+from pramanyx.sql.fanout import join_key_fanout
 
 # The exact shape from the brief.
 FANNED_SQL = (
@@ -66,7 +66,7 @@ class TestFiresOnTheRealDefect:
     def test_the_fk_shaped_detectors_really_are_blind_to_it(self):
         """Pins WHY this guard has to exist — if a sibling detector ever grows to cover the
         non-FK case, this test fails and the redundancy can be removed deliberately."""
-        from aughor.sql.fanout import (
+        from pramanyx.sql.fanout import (
             avg_over_chasm_fanout, count_star_chasm_fanout, count_star_entity_fanout,
             cte_grain_mismatch_fanout, detect_fanout, dimension_ratio_chasm,
             sum_over_chasm_fanout,
@@ -158,7 +158,7 @@ class TestEndToEndThroughTheEmissionGate:
     )
 
     def _conn(self, tmp_path):
-        from aughor.connectors.file.sqlite import SQLiteConnection
+        from pramanyx.connectors.file.sqlite import SQLiteConnection
 
         db_file = tmp_path / "fanout.sqlite"
         seed = sqlite3.connect(str(db_file))

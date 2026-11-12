@@ -34,7 +34,7 @@ import urllib.error
 # Reuse the explorer's generation-time guards as live-sweep detectors so the
 # harness self-grades for the same classes (#4 — eval fixtures from real repros).
 try:
-    from aughor.explorer.verify import has_fabricated_dimension, mislabeled_per_grain
+    from pramanyx.explorer.verify import has_fabricated_dimension, mislabeled_per_grain
 except Exception:  # pragma: no cover — harness still runs without the guards
     has_fabricated_dimension = lambda sql: False          # noqa: E731
     mislabeled_per_grain = lambda sql, txt="": False       # noqa: E731

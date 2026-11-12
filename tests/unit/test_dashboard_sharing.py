@@ -15,13 +15,13 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.dashboards import cards, propose, sharing, validate as V, versions
-from aughor.dashboards.home import Home
-from aughor.cards.models import StoredCard
-from aughor.metastore.models import user_principal
-from aughor.org.context import using_org
-from aughor.rbac.groups import add_member, upsert_group
-from aughor.rbac.store import assign_role
+from pramanyx.dashboards import cards, propose, sharing, validate as V, versions
+from pramanyx.dashboards.home import Home
+from pramanyx.cards.models import StoredCard
+from pramanyx.metastore.models import user_principal
+from pramanyx.org.context import using_org
+from pramanyx.rbac.groups import add_member, upsert_group
+from pramanyx.rbac.store import assign_role
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURE = REPO / "web" / "lib" / "dashboards" / "premise.fixture.json"
@@ -40,7 +40,7 @@ class Office:
         tag = uuid.uuid4().hex[:6]
         self.org = f"org{tag}"
         # A REGISTERED connection: since Track A4 an id nothing holds is NOT_FOUND at every door, not "unknown → allow".
-        from aughor.db.registry import add_connection
+        from pramanyx.db.registry import add_connection
         with using_org(self.org):
             self.connection = add_connection(name=f"conn{tag}", conn_type="duckdb", dsn=f"/tmp/{tag}.duckdb", meta={})
         with using_org(self.org):
@@ -190,7 +190,7 @@ def test_options_tell_the_writer_who_the_cockpit_may_be_published_to():
 
 
 def test_a_change_in_words_needs_a_cockpit_that_stands(monkeypatch):
-    from aughor.dashboards import ask
+    from pramanyx.dashboards import ask
     out = ask.edit_in_words("conn-x", AMIT, "nothing-here", "make the net sales card bigger")
     assert not out["staged"] and out["sentences"] == ["There is no dashboard here to change."]
     out = ask.edit_in_words("conn-x", AMIT, "nothing-here", "   ")
@@ -201,18 +201,18 @@ def test_a_change_in_words_needs_a_cockpit_that_stands(monkeypatch):
 
 @pytest.fixture(scope="module")
 def client():
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
 def _as(org: str, user: str) -> dict:
-    return {"X-Aughor-Org": org, "X-Aughor-User": user}
+    return {"X-Pramanyx-Org": org, "X-Pramanyx-User": user}
 
 
 @needs_rules
 def test_publish_read_as_a_reader_and_copy_over_http(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    monkeypatch.setenv("AUGHOR_TIER", "enterprise")
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    monkeypatch.setenv("PRAMANYX_TIER", "enterprise")
     o = Office()
     assert o.keep().kept
     # Priya reads as a viewer; to start a dashboard of her own she needs to write, as an editor does.

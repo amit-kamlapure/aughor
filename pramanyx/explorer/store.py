@@ -1,0 +1,665 @@
+"""
+Persistence for exploration state and findings.
+
+Keys in the ``exploration`` family store (KeyedJsonStore/Ledger facade — per-key
+transactional, Postgres-capable behind PRAMANYX_DB_URL):
+    {connection_id}               # the bare connection run
+    {connection_id}__{schema}     # a per-schema run
+    canvas_{canvas_id}            # a canvas-scoped run
+
+Legacy layout was one file per key (``data/exploration_{key}.json``); each key
+imports on first touch and the file stays as the on-disk record until purge. This
+state is what the durable execution's sliced runs resumes from, so it must be readable
+across processes — a local file was the last single-process assumption here.
+"""
+from __future__ import annotations
+
+import json
+from typing import Optional
+
+from pramanyx.db.paths import state_dir
+from pramanyx.explorer.models import ExplorationPhase
+from pramanyx.util.json_store import FileFamilyStore
+
+# Honours PRAMANYX_STATE_DIR — this store had NO override and the suite destroyed a real
+# exploration_workspace.json (2026-07-21). See pramanyx/db/paths.py.
+_DATA_DIR = state_dir()
+
+
+def _family() -> FileFamilyStore:
+    # Per call, not a module global: _DATA_DIR is the seam tests monkeypatch, and a
+    # store captured at import would keep writing to the real one (db/paths.py trap).
+    return FileFamilyStore(_DATA_DIR, "exploration_")
+
+
+def _canvas_key(canvas_id: str) -> str:
+    return f"canvas_{canvas_id}"
+
+
+def _empty() -> dict:
+    return {
+        "schema_fingerprint": None,
+        "phase": ExplorationPhase.PENDING.value,
+        "null_meanings": {},        # {"table:column": {meaning, business_rule, ...}}
+        "join_verifications": [],   # [{"key", "orphan_count", "verified", "cardinality", ...}]
+        "lifecycle_maps": {},       # {"table": {status_column, states, terminal_states, ...}}
+        "distributions": {},        # {"table:column": {shape, p25, p50, p75, ...}}
+        "insights": [],             # [{id, domain, angle, finding, sql, novelty, ...}]
+        "domain_budgets": {},       # {domain: queries_used}
+        "domain_coverage": {},      # {domain: [angles_covered]}
+    }
+
+
+# ── One id, one finding ──────────────────────────────────────────────────────
+# A finding's id is how a card, a claim and the ledger name it, and the
+# dashboard's ledger picker keys its rows by it. Until 2026-10-09 the ids were numbered by position
+# within one run and appended to the list the state already held across runs: on theLook's live
+# state 35 ids named 62 findings — each pinned key question four times over (the read-back of an
+# unchanged finding appended a copy of what the list held), and `synth__share__1` three DIFFERENT
+# findings, of which a card could only ever be made from the first. Read: `load` reads a list with
+# one id per finding (`one_id_each`). Written: a pinned question keeps its slot (`keep_slot`) and
+# every other finding is minted an id the list does not hold (`fresh_finding_id`).
+
+#: The key a run's state holds its findings under — the store's own, written before the glossary said 'finding'.
+FINDINGS = "insights"
+
+
+def _same_finding(a: dict, b: dict) -> bool:
+    return all(a.get(k) == b.get(k) for k in ("finding", "sql", "generated_at"))
+
+
+def one_id_each(findings: list) -> list:
+    """The findings with one id each, in their order: a copy of a finding already read (the same id, words, query
+    and time) is dropped; a DIFFERENT finding on an id an earlier one holds is read as ``{id}~2``, ``~3``… — the
+    earliest keeps the id every card and claim made so far resolved to. The list itself is not changed; a
+    renamed finding is a copy. Idempotent."""
+    raw = {str(f.get("id")) for f in findings or [] if isinstance(f, dict) and f.get("id")}
+    out: list = []
+    seen: dict[str, list[dict]] = {}
+    taken: set[str] = set()
+    for f in findings or []:
+        fid = str(f.get("id") or "") if isinstance(f, dict) else ""
+        if not fid:
+            out.append(f)
+            continue
+        held = seen.setdefault(fid, [])
+        if any(_same_finding(h, f) for h in held):
+            continue
+        if held:
+            n = 2
+            while f"{fid}~{n}" in raw or f"{fid}~{n}" in taken:
+                n += 1
+            f = {**f, "id": f"{fid}~{n}"}
+        held.append(f)
+        taken.add(f["id"])
+        out.append(f)
+    return out
+
+
+def fresh_finding_id(state: dict, base: str) -> str:
+    """``base``, or ``base~n`` — the first the run's findings do not already hold."""
+    ids = {str(f.get("id")) for f in state.get(FINDINGS) or [] if isinstance(f, dict)}
+    if base not in ids:
+        return base
+    n = 2
+    while f"{base}~{n}" in ids:
+        n += 1
+    return f"{base}~{n}"
+
+
+def scoped_finding_id(schema: str | None, base: str) -> str:
+    """A finding's id, unique across its connection. The ledger keeps a finding's receipt under the connection and
+    the id, so a run over one schema of a multi-schema connection puts the schema in front (``gold_finance:pinned__0``):
+    two schemas' ``pinned__0`` had been one receipt, and one schema's Key Question answers were read back into
+    another's (LuxExperience, 2026-10-11). A connection explored whole keeps its ids as they were."""
+    if not schema or base.startswith(f"{schema}:"):
+        return base
+    return f"{schema}:{base}"
+
+
+def keep_slot(state: dict, finding: dict) -> None:
+    """Put ``finding`` in the slot its id names — the finding a pinned key question answers — replacing the one
+    the run's findings hold there, else at the end. The ledger keeps every receipt under that id; the state, the latest."""
+    findings = state.setdefault(FINDINGS, [])
+    for i, f in enumerate(findings):
+        if isinstance(f, dict) and f.get("id") == finding.get("id"):
+            findings[i] = finding
+            return
+    findings.append(finding)
+
+
+def _read_once(entry: dict) -> dict:
+    found = entry.get(FINDINGS) or []
+    unique = one_id_each(found)
+    if not (len(unique) == len(found) and all(a is b for a, b in zip(unique, found))):
+        entry = {**entry, FINDINGS: unique}
+    # A lifecycle map stored under an older rule — a city, a JSON payload, a warehouse's name taken for a status — is
+    # not served, here at the one read, so the Profile, the prompts and the ontology merge all see the same maps.
+    from pramanyx.ontology.lifecycle_states import held_lifecycle_maps
+    maps = entry.get("lifecycle_maps")
+    held = held_lifecycle_maps(maps) if isinstance(maps, dict) else maps
+    return entry if held is maps or len(held) == len(maps) else {**entry, "lifecycle_maps": held}
+
+
+def load(connection_id: str) -> dict:
+    try:
+        entry = _family().get_entry(connection_id)
+        if entry is not None:
+            return _read_once(entry)
+    except Exception as exc:
+        from pramanyx.kernel.errors import tolerate
+        tolerate(exc, "exploration state read is best-effort; empty state used on error", counter="explorer.store.read")
+    return _empty()
+
+
+def save(connection_id: str, state: dict) -> None:
+    try:
+        _family().put(connection_id, json.loads(json.dumps(state, default=str)))
+    except Exception as exc:
+        from pramanyx.kernel.errors import tolerate
+        tolerate(exc, "exploration state write is best-effort; next save retries", counter="explorer.store.write")
+
+
+def has_state(store_key: str) -> bool:
+    """Whether a run state exists under this key — the store-aware replacement for
+    the ``exploration_{key}.json``.exists() checks routers used to make."""
+    try:
+        return _family().has_entry(store_key)
+    except Exception:
+        return False
+
+
+def is_complete(connection_id: str, schema_fingerprint: str | None = None) -> bool:
+    """True if exploration is marked complete (and optionally fingerprint matches)."""
+    state = load(connection_id)
+    if state.get("phase") != ExplorationPhase.COMPLETE.value:
+        return False
+    if schema_fingerprint is not None:
+        return state.get("schema_fingerprint") == schema_fingerprint
+    return True
+
+
+def get_findings(connection_id: str, include_invalid: bool = False) -> list[dict]:
+    ins = load(connection_id).get("insights", [])
+    return ins if include_invalid else [i for i in ins if not i.get("invalid")]
+
+
+#: The finder's name before the glossary settled on 'finding'; existing callers still read it.
+get_insights = get_findings
+
+
+def get_domain_findings(connection_id: str, include_invalid: bool = False) -> dict[str, list[dict]]:
+    """Findings grouped by domain. Quarantined (invalid-flagged) ones
+    are excluded by default — kept in the store for inspection, hidden from intel."""
+    grouped: dict[str, list[dict]] = {}
+    for ins in get_findings(connection_id, include_invalid=include_invalid):
+        d = ins.get("domain", "General")
+        grouped.setdefault(d, []).append(ins)
+    return grouped
+
+
+#: The name before the glossary settled on 'finding'; existing callers still read it.
+get_domain_insights = get_domain_findings
+
+
+# ── 'All schemas' aggregate ───────────────────────────────────────────────────
+# A multi-schema connection runs PER schema (state keyed {conn}__{schema}). These helpers
+# merge those per-schema states into one connection-level view for the 'All schemas'
+# selection — so the Briefing shows EVERY schema's findings together, while a specific
+# schema selection still reads just that schema's (natively isolated) state.
+
+def schema_run_keys(connection_id: str) -> list[str]:
+    """Store keys ({conn}__{schema}) of this connection's per-schema runs, or [] if none."""
+    return _family().keys_with_prefix(f"{connection_id}__")
+
+
+def _agg_phase(phases: list[str]) -> str:
+    """The connection's phase, from its per-schema phases.
+
+    FAILED is terminal, but terminal is not success. Collapsing every terminal
+    phase to COMPLETE answered "has it stopped running?" when the caller asked
+    "did it work?" — so a connection whose schemas had ALL failed reported a
+    healthy completion, and the only trace was `per_schema`, which nothing
+    surfaced. Reported as: status healthy, `error: null`, most schemas failed.
+
+    A mixed run still reports COMPLETE, which is honest — those schemas really
+    did finish and their findings are real. The failures in that case are named
+    by the `error` field instead (see `routers/exploration.py`), because a phase
+    is one word and cannot say which schemas fell over.
+    """
+    terminal = {ExplorationPhase.COMPLETE.value, ExplorationPhase.FAILED.value}
+    if phases and all(p in terminal for p in phases):
+        if all(p == ExplorationPhase.FAILED.value for p in phases):
+            return ExplorationPhase.FAILED.value      # nothing succeeded
+        return ExplorationPhase.COMPLETE.value
+    for p in phases:                      # any schema still running → report its live phase
+        if p not in terminal:
+            return p
+    return ExplorationPhase.PENDING.value
+
+
+def load_aggregate(connection_id: str) -> dict:
+    """Merge every per-schema run into one connection-level state. Falls back to the bare
+    connection state when there are no per-schema runs.
+
+    The bare state's CONTENT is merged in too (fix-saved findings and pre-schema-era
+    data land there), but its phase is ignored — an empty bare file must not report
+    a completed multi-schema exploration as 'pending'."""
+    keys = schema_run_keys(connection_id)
+    if not keys:
+        return load(connection_id)
+    agg = _empty()
+    phases: list[str] = []
+    per_schema: dict[str, str] = {}
+    q = tt = 0
+    for k in [connection_id, *keys]:
+        st = load(k)
+        agg["insights"].extend(st.get("insights", []) or [])
+        agg["join_verifications"].extend(st.get("join_verifications", []) or [])
+        for sect in ("null_meanings", "distributions", "lifecycle_maps",
+                     "domain_budgets", "domain_coverage"):
+            agg[sect].update(st.get(sect, {}) or {})
+        if k == connection_id:
+            continue  # content only — the bare state carries no run phase/counters
+        schema = k.split("__", 1)[1] if "__" in k else k
+        per_schema[schema] = st.get("phase", "pending")
+        phases.append(st.get("phase", "pending"))
+        q += int(st.get("queries_executed", 0) or 0)
+        tt += int(st.get("tables_total", 0) or 0)
+    agg[FINDINGS] = one_id_each(agg[FINDINGS])          # two schemas' runs number their ids alike
+    agg["phase"] = _agg_phase(phases)
+    agg["queries_executed"] = q
+    agg["tables_total"] = tt
+    agg["per_schema"] = per_schema          # {schema: phase} — lets the UI show per-schema progress
+    return agg
+
+
+def get_aggregate_domain_findings(connection_id: str, include_invalid: bool = False) -> dict[str, list[dict]]:
+    """by_domain findings merged across all per-schema runs of a connection. Each one is
+    tagged with its `source_schema` so the briefing can keep UNRELATED businesses apart
+    (a beauty-ecommerce finding and a bakery finding must not be synthesized as one story).
+    A schema a person turned off is left out: off means off, its findings included."""
+    from pramanyx.ontology.visibility import schema_off
+    found: list[dict] = []
+    for k in schema_run_keys(connection_id):
+        sch = k.split("__", 1)[1] if "__" in k else ""
+        if sch and schema_off(connection_id, sch) is not None:
+            continue
+        for d, ins in get_domain_findings(k, include_invalid=include_invalid).items():
+            for i in ins:
+                if sch:
+                    i.setdefault("source_schema", sch)
+            found.extend(ins)
+    grouped: dict[str, list[dict]] = {}
+    for i in one_id_each(found):                     # two schemas' runs number their ids alike
+        grouped.setdefault(i.get("domain", "General"), []).append(i)
+    return grouped
+
+
+#: The name before the glossary settled on 'finding'; existing callers still read it.
+get_aggregate_domain_insights = get_aggregate_domain_findings
+
+
+def extend_domain_budget(connection_id: str, domain: str, extra: int = 5) -> int:
+    """Add `extra` queries to a domain's budget cap. Returns the new cap value."""
+    state = load(connection_id)
+    key = f"{domain}__cap"
+    current = state.get("domain_budgets", {}).get(key, 15)
+    new_cap = current + extra
+    state.setdefault("domain_budgets", {})[key] = new_cap
+    save(connection_id, state)
+    return new_cap
+
+
+def get_lifecycle_maps(connection_id: str) -> dict:
+    return load(connection_id).get("lifecycle_maps", {})
+
+
+def get_null_meanings(connection_id: str) -> dict:
+    return load(connection_id).get("null_meanings", {})
+
+
+_NULL_MEANING_LABELS: dict[str, str] = {
+    "pending":                  "event not yet occurred",
+    "not_applicable_terminal":  "entity in terminal state — will never occur",
+    "missing":                  "data quality issue — value should exist",
+    "mixed":                    "pattern varies by status (check lifecycle)",
+    "not_applicable":           "always populated (null rate ≈ 0)",
+    "unknown":                  "meaning unclear",
+}
+
+
+def render_exploration_annotations(connection_id: str) -> str:
+    """
+    Return a formatted intelligence block for injection into the schema context.
+
+    Only includes sections that have data.  Returns "" when exploration has produced
+    nothing — which is a question about the FINDINGS, not about the phase.
+
+    **A FAILED run's verified facts still count** (decided by the user 2026-09-03). This
+    gated on `phase in ("pending", "failed")` and returned "" for the whole block, so a
+    connection that had verified 58 facts across null semantics, joins and lifecycles —
+    and was displaying every one of them in its briefing — contributed NOTHING to the
+    deep-analysis planner or the ontology overlay, because a later run had set the phase to `failed` on
+    top of an earlier successful one.
+
+    The facts are the same facts either way. Each was verified by a query that ran and
+    returned rows; a subsequent phase transition does not retract them, and withholding
+    them silently is the more dangerous failure: the planner cannot tell "this connection
+    has no verified intelligence" from "it has plenty and something upstream said failed".
+
+    `pending` still returns "" and that is not symmetry lost: a pending run has not
+    verified anything yet, so the sections below would be empty regardless — the guard
+    just says so cheaply.
+    """
+    # Aggregate across per-schema runs — reading only the bare state silently
+    # returned "" for every multi-schema connection, starving the ADA planner
+    # and the ontology overlay of the explorer's verified intelligence.
+    state = load_aggregate(connection_id)
+    phase = state.get("phase", "pending")
+    if phase == "pending":
+        return ""
+
+    sections: list[str] = []
+
+    # ── Null semantics ────────────────────────────────────────────────────────
+    null_meanings: dict = state.get("null_meanings", {})
+    meaningful = {k: v for k, v in null_meanings.items()
+                  if v.get("meaning") not in ("not_applicable", "unknown")}
+    if meaningful:
+        lines = [
+            "NULL SEMANTICS (verified — NULL in these columns carries business meaning):"
+        ]
+        for key, nm in meaningful.items():
+            col_label = key.replace(":", ".")
+            label = _NULL_MEANING_LABELS.get(nm.get("meaning", ""), nm.get("meaning", ""))
+            rate = nm.get("null_rate", 0)
+            line = f"  {col_label}: NULL = {label}  ({rate:.0%} null rate)"
+            if nm.get("business_rule"):
+                line += f"\n    rule: {nm['business_rule']}"
+            lines.append(line)
+        sections.append("\n".join(lines))
+
+    # ── Entity lifecycle ───────────────────────────────────────────────────────
+    # Held to the one state rule (ontology/lifecycle_states.py): a map stored before the explorer
+    # kept to it can carry a whole document as a "state", and this block is appended to every
+    # schema prompt — one such value made LuxExperience's 3.2M chars (2026-10-12).
+    from pramanyx.ontology.lifecycle_states import is_lifecycle_state, plausible_lifecycle_states
+    lifecycle_maps: dict = {t: lm for t, lm in state.get("lifecycle_maps", {}).items()
+                            if plausible_lifecycle_states(lm.get("states")
+                                                          or lm.get("active_states", []) + lm.get("terminal_states", []))}
+    if lifecycle_maps:
+        lines = ["ENTITY LIFECYCLE (verified state machines):"]
+        for table, lm in lifecycle_maps.items():
+            col = lm.get("status_column", "?")
+            active   = [s for s in lm.get("active_states", []) if is_lifecycle_state(s)]
+            terminal = [s for s in lm.get("terminal_states", []) if is_lifecycle_state(s)]
+            active_str   = ", ".join(active)   if active   else "—"
+            terminal_str = ", ".join(terminal) if terminal else "—"
+            lines.append(f"  {table}.{col}")
+            lines.append(f"    active:   {active_str}")
+            lines.append(f"    terminal: {terminal_str}")
+            if terminal:
+                tl = ", ".join(f"'{s}'" for s in terminal)
+                lines.append(f"    active filter: {col} NOT IN ({tl})")
+        sections.append("\n".join(lines))
+
+    # ── Join verification ──────────────────────────────────────────────────────
+    join_verifications: list = state.get("join_verifications", [])
+    broken = [j for j in join_verifications if not j.get("verified") and j.get("orphan_count", 0) > 0]
+    if broken:
+        lines = ["JOIN INTEGRITY (caution — orphaned FK rows detected):"]
+        for j in broken:
+            lines.append(
+                f"  {j['from_table']}.{j['from_col']} → {j['to_table']}.{j['to_col']}"
+                f"  ({j['orphan_count']:,} orphan rows)"
+            )
+        sections.append("\n".join(lines))
+
+    # ── Domain intelligence findings ──────────────────────────────────────────
+    insights: list = state.get("insights", [])
+    if insights:
+        # Group by domain for the schema context block
+        by_domain: dict[str, list] = {}
+        for ins in insights:
+            d = ins.get("domain", "General")
+            by_domain.setdefault(d, []).append(ins)
+        lines = ["BUSINESS INTELLIGENCE (domain-level findings, autonomously discovered):"]
+        for domain, dins in by_domain.items():
+            lines.append(f"  [{domain}]")
+            for ins in dins[:4]:
+                lines.append(f"    • {ins.get('finding', '')}")
+        sections.append("\n".join(lines))
+
+    if not sections:
+        return ""
+
+    header = (
+        "EXPLORATION INTELLIGENCE"
+        f" [{ExplorationPhase(phase).name if phase in ExplorationPhase._value2member_map_ else phase}]"  # type: ignore[attr-defined]
+        " — background cartography, treat as authoritative:"
+    )
+    return header + "\n\n" + "\n\n".join(sections)
+
+
+# ── Canvas-scoped variants ────────────────────────────────────────────────────
+
+def load_canvas(canvas_id: str) -> dict:
+    return load(_canvas_key(canvas_id))
+
+
+def save_canvas(canvas_id: str, state: dict) -> None:
+    save(_canvas_key(canvas_id), state)
+
+
+def canvas_findings(canvas_id: str, include_invalid: bool = False) -> list[dict]:
+    """The findings of this canvas's own exploration — quarantined ones left out by default."""
+    return get_findings(_canvas_key(canvas_id), include_invalid=include_invalid)
+
+
+def canvas_ids_with_state() -> list[str]:
+    """Every canvas id that has exploration state — store keys and legacy files."""
+    return [k[len("canvas_"):] for k in _family().keys_with_prefix("canvas_")]
+
+
+def purge_connection_state(connection_id: str) -> int:
+    """Drop the bare + every per-schema run for a connection (store rows AND legacy
+    files), counted once per key. The seam db/purge.py calls — deletion semantics
+    live here, next to the naming they must match, not as globs in the cascade."""
+    return _family().purge_entries(exact=[connection_id], key_prefix=f"{connection_id}__")
+
+
+def purge_schema_state(connection_id: str, schema: str) -> int:
+    """Drop ONE schema's exploration run; every sibling stays, and so does the connection's
+    own bare run.
+
+    That bare run is not an aggregate of the others — it is what a run writes when it was
+    never schema-scoped, so on a multi-schema connection it holds work belonging to the
+    siblings. It is also a RECORD of an exploration that happened, which no later change
+    makes untrue and which cannot be rebuilt without spending the model calls again. It
+    goes when the CONNECTION goes (`purge_connection_state`), not when one of its schemas
+    does."""
+    return _family().purge_entries(exact=[f"{connection_id}__{schema}"])
+
+
+def get_insights_canvas(canvas_id: str, include_invalid: bool = False) -> list[dict]:
+    ins = load_canvas(canvas_id).get("insights", [])
+    return ins if include_invalid else [i for i in ins if not i.get("invalid")]
+
+
+def get_domain_insights_canvas(canvas_id: str, include_invalid: bool = False) -> dict[str, list[dict]]:
+    grouped: dict[str, list[dict]] = {}
+    for ins in get_insights_canvas(canvas_id, include_invalid=include_invalid):
+        d = ins.get("domain", "General")
+        grouped.setdefault(d, []).append(ins)
+    return grouped
+
+
+def extend_domain_budget_canvas(canvas_id: str, domain: str, extra: int = 5) -> int:
+    state = load_canvas(canvas_id)
+    key = f"{domain}__cap"
+    current = state.get("domain_budgets", {}).get(key, 15)
+    new_cap = current + extra
+    state.setdefault("domain_budgets", {})[key] = new_cap
+    save_canvas(canvas_id, state)
+    return new_cap
+
+
+def promote_insight(canvas_id: str, insight_id: str) -> bool:
+    """Mark a canvas finding as promoted to Org intelligence. Returns True on success."""
+    state = load_canvas(canvas_id)
+    for ins in state.get("insights", []):
+        if ins.get("id") == insight_id:
+            ins["promoted_to_org"] = True
+            ins["promotion_confidence"] = ins.get("confidence", 0.0)
+            save_canvas(canvas_id, state)
+            return True
+    return False
+
+
+def _find_insight_state(connection_id: str, insight_id: str):
+    """Locate the store key + state + finding for an id, searching the bare
+    connection state AND every per-schema run ({conn}__{schema}).
+
+    Multi-schema connections store findings per schema, but the promote/dismiss
+    endpoints receive only the connection id — looking in the bare file alone
+    made those buttons 404 on every per-schema finding (a dead button)."""
+    for key in [connection_id, *schema_run_keys(connection_id)]:
+        state = load(key)
+        for ins in state.get("insights", []):
+            if ins.get("id") == insight_id:
+                if "__" in key:
+                    ins.setdefault("source_schema", key.split("__", 1)[1])
+                return key, state, ins
+    return None, None, None
+
+
+def find_connection_finding(connection_id: str, finding_id: str) -> Optional[dict]:
+    """A connection-scoped finding by id (bare or per-schema state), read only — or None. The promote route reads it
+    before writing anything: Org is written first and the finding flagged after, so a failed write flags nothing."""
+    return _find_insight_state(connection_id, finding_id)[2]
+
+
+def promote_insight_conn(connection_id: str, insight_id: str) -> Optional[dict]:
+    """Mark a connection-scoped insight as promoted to Org intelligence.
+
+    Returns the promoted insight dict on success, None if the insight is not found.
+    Mirrors promote_insight() but operates on connection-scoped exploration state
+    (bare or per-schema) so Briefing/Hub findings that live at the connection
+    level — not just canvas insights — can be promoted org-wide.
+    """
+    key, state, ins = _find_insight_state(connection_id, insight_id)
+    if ins is None:
+        return None
+    ins["promoted_to_org"] = True
+    ins["promotion_confidence"] = ins.get("confidence", 0.0)
+    save(key, state)
+    return ins
+
+
+def _log_dismissal(scope: str, insight: dict, reason: str) -> None:
+    """Append a dismissal to data/finding_dismissals.jsonl. User reasons are signal
+    for new guards / eval fixtures — the dismiss-with-reason feedback loop."""
+    try:
+        rec = {
+            "scope": scope, "id": insight.get("id"), "reason": reason,
+            "finding": insight.get("finding"), "sql": insight.get("sql"),
+            "domain": insight.get("domain"), "angle": insight.get("angle"),
+        }
+        with (_DATA_DIR / "finding_dismissals.jsonl").open("a") as fh:
+            fh.write(json.dumps(rec, default=str) + "\n")
+    except Exception as exc:
+        from pramanyx.kernel.errors import tolerate
+        tolerate(exc, "dismissal-log append is best-effort feedback signal; dismissal itself still applied", counter="explorer.store.dismissal_log")
+
+
+def _dismiss(state: dict, insight_id: str, reason: str, scope: str) -> Optional[dict]:
+    for ins in state.get("insights", []):
+        if ins.get("id") == insight_id:
+            # Reuse the quarantine flag: hidden from intel (the read path filters
+            # `invalid`), KEPT in the store, reversible. Never deletes.
+            ins["invalid"] = True
+            ins["invalid_reason"] = f"dismissed by user: {reason}" if reason else "dismissed by user"
+            _log_dismissal(scope, ins, reason)
+            _withdraw_in_record(scope, str(ins.get("id") or ""), ins["invalid_reason"])
+            return ins
+    return None
+
+
+def _withdraw_in_record(scope: str, finding_id: str, reason: str) -> None:
+    """A dismissed finding is withdrawn in the Record too (the 2027 study §E): the store key names
+    the connection and, for a per-schema run, the schema; a canvas run's finding is not booked."""
+    if not scope or scope.startswith("canvas"):
+        return
+    conn_id, _, schema = scope.partition("__")
+    try:
+        from pramanyx.record.writers import withdraw_explorer_finding
+        withdraw_explorer_finding(connection_id=conn_id, finding_id=finding_id, schema_name=schema, reason=reason, by="person")
+    except Exception as exc:
+        from pramanyx.kernel.errors import tolerate
+        tolerate(exc, "the dismissed finding could not be withdrawn in the Record; the store's flag stands",
+                 counter="record.explorer_withdraw", conn_id=conn_id)
+
+
+def dismiss_insight_conn(connection_id: str, insight_id: str, reason: str = "") -> Optional[dict]:
+    """User-dismiss a connection insight with a reason. Returns the insight or None.
+    Searches per-schema runs too — same lookup as promote (the dismiss button was
+    equally dead on multi-schema findings)."""
+    key, state, found = _find_insight_state(connection_id, insight_id)
+    if found is None:
+        return None
+    ins = _dismiss(state, insight_id, reason, key)
+    if ins is not None:
+        save(key, state)
+    return ins
+
+
+def dismiss_insight_canvas(canvas_id: str, insight_id: str, reason: str = "") -> Optional[dict]:
+    state = load_canvas(canvas_id)
+    ins = _dismiss(state, insight_id, reason, f"canvas:{canvas_id}")
+    if ins is not None:
+        save_canvas(canvas_id, state)
+    return ins
+
+
+def canvas_has_state(canvas_id: str) -> bool:
+    return has_state(_canvas_key(canvas_id))
+
+
+#: The phases an exploration does not come back from. Derived from the enum, never
+#: spelled: a renamed member would otherwise stop matching silently, and a boot check
+#: that quietly stops matching re-runs every exploration on every restart.
+TERMINAL_PHASES: tuple[str, ...] = (ExplorationPhase.COMPLETE.value,
+                                    ExplorationPhase.FAILED.value)
+
+
+def is_unfinished(state: dict) -> bool:
+    """Does this saved exploration state have work left?
+
+    A MISSING phase counts as unfinished, which is the safe direction: an unrecognised
+    state might be mid-run, and resuming one that was done costs a re-run while skipping
+    one that was not loses the work outright.
+    """
+    return str((state or {}).get("phase", "")) not in TERMINAL_PHASES
+
+
+def canvas_needs_resume(canvas_id: str) -> bool:
+    """Should a boot resume this canvas's explorer?
+
+    Boot recovery exists for the exploration a previous process INTERRUPTED — one whose
+    saved phase is still mid-run. A `complete` or `failed` canvas has already reached its
+    end; re-spawning it is not recovery, it is a fresh exploration nobody asked for, and
+    (measured 2026-08-30) `spawn_explorer` waves it through because its own guard only
+    refuses an exploration that is *currently running*. Two canvases in that state meant
+    two full re-explorations on every single restart, each one spending model tokens.
+
+    The connection path already worked this way — `_kernel_boot_recovery` skips a
+    terminal aggregate phase, with a comment saying recovery "kept re-spawning explorers
+    for explorations that had already completed". The canvas path never got the same
+    check. This is that check, in one place both paths read.
+
+    A `failed` exploration is restartable on demand (`POST /exploration/{id}/start`);
+    what it must not be is retried forever, with no backoff and no cap, by the act of
+    restarting the server.
+    """
+    return canvas_has_state(canvas_id) and is_unfinished(load_canvas(canvas_id))

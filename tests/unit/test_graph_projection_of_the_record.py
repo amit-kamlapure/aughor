@@ -14,12 +14,12 @@ import subprocess
 import uuid
 from pathlib import Path
 
-from aughor.ontology import context_graph_build as B
-from aughor.ontology import context_graph_store as S
-from aughor.ontology.context_graph import ProvenanceSource, project_graph
-from aughor.ontology.graph_warrant import warrant_for, warrant_of_node
-from aughor.ontology.models import OntologyEntity, OntologyGraph
-from aughor.record import claims as C
+from pramanyx.ontology import context_graph_build as B
+from pramanyx.ontology import context_graph_store as S
+from pramanyx.ontology.context_graph import ProvenanceSource, project_graph
+from pramanyx.ontology.graph_warrant import warrant_for, warrant_of_node
+from pramanyx.ontology.models import OntologyEntity, OntologyGraph
+from pramanyx.record import claims as C
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -84,7 +84,7 @@ def test_a_legacy_finding_a_claim_covers_is_dropped_and_one_that_predates_the_re
 
 
 def test_a_missing_graph_is_rebuilt_on_demand_and_a_present_one_is_read_not_rebuilt(tmp_path, monkeypatch):
-    from aughor.ontology.context_graph import ContextGraph
+    from pramanyx.ontology.context_graph import ContextGraph
     monkeypatch.setattr(S, "_ROOT", tmp_path / "context_graph")
     built: list = []
 
@@ -104,9 +104,9 @@ def test_a_missing_graph_is_rebuilt_on_demand_and_a_present_one_is_read_not_rebu
     assert S.graphs_for_connection("default", "no-ontology") == []                 # no ontology yet → no graph, said by the empty list
     # the readers that answer questions go through the on-demand door
     import inspect
-    from aughor.govern import lineage
-    from aughor.mcp import knowledge_tools
-    from aughor.ontology import answer_trace, context_graph_readback
+    from pramanyx.govern import lineage
+    from pramanyx.mcp import knowledge_tools
+    from pramanyx.ontology import answer_trace, context_graph_readback
     for mod in (lineage, knowledge_tools, answer_trace, context_graph_readback):
         assert "graphs_for_connection" in inspect.getsource(mod), mod.__name__
 
@@ -117,7 +117,7 @@ def test_nothing_under_the_graph_directory_is_tracked_any_more():
     except (OSError, subprocess.CalledProcessError):
         return                                                         # not a git checkout: nothing to measure
     assert out.strip() == "", out
-    from aughor.db import home
+    from pramanyx.db import home
     assert "context_graph" not in home.AUTHORED_ENTRIES
     ignore = (REPO / ".gitignore").read_text()
     assert "\ndata/context_graph/\n" in ignore

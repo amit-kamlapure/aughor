@@ -1,13 +1,13 @@
 """API tests for the dashboard-card CRUD router (Briefing dashboard, Slice 0).
 
-Hermetic: conftest isolates AUGHOR_DASHBOARD_DB. Each test uses a distinct scope_ref so
+Hermetic: conftest isolates PRAMANYX_DASHBOARD_DB. Each test uses a distinct scope_ref so
 list assertions never see another test's cards.
 """
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from aughor.api import app
+from pramanyx.api import app
 
 client = TestClient(app)
 

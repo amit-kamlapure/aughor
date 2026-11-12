@@ -13,13 +13,13 @@ import json
 
 import pytest
 
-from aughor.db.connection import open_connection
-from aughor.ontology import overrides as OV
-from aughor.ontology.derived import cutoff_days
-from aughor.ontology.models import OntologyGraph
-from aughor.ontology.overrides import find_override
-from aughor.ontology.process_design import STALE_DAYS, candidates, creates, design_checks
-from aughor.ontology.processes import (
+from pramanyx.db.connection import open_connection
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.derived import cutoff_days
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.ontology.overrides import find_override
+from pramanyx.ontology.process_design import STALE_DAYS, candidates, creates, design_checks
+from pramanyx.ontology.processes import (
     ObjectCounter,
     measure_process,
     process_fields,
@@ -179,13 +179,13 @@ class _Kept:
 
 @pytest.fixture
 def served(db, graph, monkeypatch):
-    from aughor.routers import ontology as ONT
+    from pramanyx.routers import ontology as ONT
     monkeypatch.setattr(ONT, "_get_ontology_graph", lambda conn, schema=None: graph)
     monkeypatch.setattr(ONT, "_resolve_schema", lambda conn, schema=None: SCHEMA)
-    monkeypatch.setattr("aughor.db.connection.open_connection_for_with_schema", lambda conn, schema=None: _Kept(db))
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for_with_schema", lambda conn, schema=None: _Kept(db))
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 

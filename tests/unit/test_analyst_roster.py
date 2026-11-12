@@ -15,7 +15,7 @@ platform tool.
 """
 from types import SimpleNamespace
 
-from aughor.agent.analyst import _ANALYST_PLATFORM_TOOLS, analyst_tools
+from pramanyx.agent.analyst import _ANALYST_PLATFORM_TOOLS, analyst_tools
 
 #: What the analyst is offered, in full. A pin, not a filter: a tool added to this path
 #: has to be added here too, which is the point — the roster is the prompt's largest fixed
@@ -45,7 +45,7 @@ def _roster() -> list:
 
 
 def _platform_names() -> set:
-    from aughor.agent.platform_tools import platform_tools
+    from pramanyx.agent.platform_tools import platform_tools
     return {t.name for t in platform_tools("test-conn", session_id="s")}
 
 
@@ -87,7 +87,7 @@ def test_the_chat_roster_reads_do_not_reach_the_analyst():
 def test_converse_still_gets_the_whole_platform_roster():
     """The trim is analyst-only. Chat is where an open question belongs, and the reads
     earn their place there; cutting them here must not cut them there."""
-    from aughor.agent.converse_tools import converse_tools
+    from pramanyx.agent.converse_tools import converse_tools
     names = {t.name for t in converse_tools("test-conn")}
     missing = _platform_names() - names
     assert not missing, f"converse lost platform tools: {sorted(missing)}"
@@ -99,7 +99,7 @@ def test_the_analyst_prompt_names_no_dropped_tool():
     the twelve when they were trimmed — this keeps it that way."""
     import inspect
 
-    from aughor.agent.analyst import analyst_system_prompt
+    from pramanyx.agent.analyst import analyst_system_prompt
     src = inspect.getsource(analyst_system_prompt)
     for gone in sorted(_platform_names() - _ANALYST_PLATFORM_TOOLS):
         assert gone not in src, (

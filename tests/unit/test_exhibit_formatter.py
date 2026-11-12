@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from aughor.answer.exhibit import clean_label, format_cell, reader_table, to_csv
+from pramanyx.answer.exhibit import clean_label, format_cell, reader_table, to_csv
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -73,7 +73,7 @@ def test_the_table_door_formats_for_a_caller_that_cannot():
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from aughor.routers import charts
+    from pramanyx.routers import charts
 
     app = FastAPI()
     app.include_router(charts.router)
@@ -93,7 +93,7 @@ def test_the_table_door_formats_for_a_caller_that_cannot():
 
 def _door_sources():
     """Every Python module and every TypeScript source of the Slack bot (tests aside)."""
-    yield from (ROOT / "aughor").rglob("*.py")
+    yield from (ROOT / "pramanyx").rglob("*.py")
     yield from (p for p in (ROOT / "bots/slack/src").glob("*.ts") if not p.name.endswith(".test.ts"))
 
 
@@ -102,7 +102,7 @@ _RULE = re.compile(r"""["']---["']|["']---\|["']""")
 _PIPE_JOIN = re.compile(r"""["'] \| ["']|["'] \|["']|["']\| ["']""")
 #: Places that build a pipe table NOT for a reader — each with its reason.
 _NOT_FOR_A_READER = {
-    "aughor/tools/data_catalog.py": "sample rows for the MODEL's prompt (CP-0's own note)",
+    "pramanyx/tools/data_catalog.py": "sample rows for the MODEL's prompt (CP-0's own note)",
 }
 #: An SVG made into a PNG: the Python and TypeScript resvg bindings, and the backends it replaced.
 _RASTER = re.compile(r"""^\s*(?:import|from)\s+(?:resvg_py|cairosvg)\b|renderPM\.draw|from ["']@resvg/"""
@@ -112,10 +112,10 @@ _RASTER = re.compile(r"""^\s*(?:import|from)\s+(?:resvg_py|cairosvg)\b|renderPM\
 def test_a_table_for_a_reader_is_built_in_one_place():
     builders = {str(p.relative_to(ROOT)) for p in _door_sources()
                 if _RULE.search(t := p.read_text(encoding="utf-8")) and _PIPE_JOIN.search(t)}
-    assert builders - set(_NOT_FOR_A_READER) == {"aughor/answer/exhibit.py"}
+    assert builders - set(_NOT_FOR_A_READER) == {"pramanyx/answer/exhibit.py"}
 
 
 def test_an_svg_becomes_a_png_in_one_place():
     rasterizers = {str(p.relative_to(ROOT)) for p in _door_sources()
                    if _RASTER.search(p.read_text(encoding="utf-8"))}
-    assert rasterizers == {"aughor/export/echarts.py"}
+    assert rasterizers == {"pramanyx/export/echarts.py"}

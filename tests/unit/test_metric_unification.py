@@ -21,7 +21,7 @@ REPO = Path(__file__).parent.parent.parent
 @pytest.fixture(scope="module")
 def samples_db():
     try:
-        from aughor.db.connection import open_connection_for
+        from pramanyx.db.connection import open_connection_for
         db = open_connection_for("samples")
         db._conn.execute("SELECT 1 FROM ecommerce.orders LIMIT 1")
     except Exception:
@@ -57,7 +57,7 @@ CANONICAL_REVENUE = {
 def canonical_catalogue(tmp_path, monkeypatch):
     """Give this module its own metrics registry holding exactly the metric it is about.
 
-    `tests/conftest.py` points `AUGHOR_METRICS_PATH` at a session-scoped temp COPY of the live
+    `tests/conftest.py` points `PRAMANYX_METRICS_PATH` at a session-scoped temp COPY of the live
     `data/metrics.json` — which keeps writes off live data but leaves every test in the run
     reading whatever the operator's catalogue happens to contain. An invariant about the
     canonical definition must not be able to fail because somebody curated their own metrics.
@@ -66,7 +66,7 @@ def canonical_catalogue(tmp_path, monkeypatch):
 
     path = tmp_path / "metrics.json"
     path.write_text(_json.dumps([CANONICAL_REVENUE]))
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(path))
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(path))
     return path
 
 
@@ -77,7 +77,7 @@ def _scalar(db, sql):
 
 class TestRegisteredMetric:
     def test_revenue_metric_is_registered_and_order_grain(self):
-        from aughor.semantic.metrics import get_metric
+        from pramanyx.semantic.metrics import get_metric
         # BY CONNECTION. `get_metric("revenue")` resolves by name alone and returns the first
         # row matching it whatever connection owns it — the pattern removed from five call
         # sites as a defect, and the reason this test was green by luck rather than by law.
@@ -91,7 +91,7 @@ class TestRegisteredMetric:
         """The #2 leak class: a global curated metric must inject ONLY where its
         table+column exist. A synthetic schema lacking ecommerce.orders /
         total_amount must resolve zero curated metrics."""
-        from aughor.semantic.metrics import list_metrics, filter_metrics_to_schema
+        from pramanyx.semantic.metrics import list_metrics, filter_metrics_to_schema
         # Real schema format (TABLE: header + "  col  TYPE" lines). TPC-H has an
         # orders table but none of revenue's columns/dimensions.
         foreign = (
@@ -109,8 +109,8 @@ class TestRegisteredMetric:
     def test_metric_reaches_the_injected_block(self, samples_db):
         """built != wired: the registered metric must REACH the prompt the
         pipeline injects, not merely sit in the file."""
-        from aughor.semantic.metrics import list_metrics
-        from aughor.semantic.canonical import resolve_contracts, render_contracts_block
+        from pramanyx.semantic.metrics import list_metrics
+        from pramanyx.semantic.canonical import resolve_contracts, render_contracts_block
         metrics = resolve_contracts(
             samples_db, "ecommerce", catalog=list_metrics(connection_id="samples"),
             ontology=None
@@ -127,7 +127,7 @@ class TestReconciliation:
         (net-of-cancelled) must differ ONLY by the cancelled filter — i.e. they
         are the same metric under one explicit convention choice, not two
         unrelated numbers."""
-        from aughor.semantic.metrics import get_metric
+        from pramanyx.semantic.metrics import get_metric
         m = get_metric("revenue", connection_id="samples")
         gross = _scalar(samples_db, "SELECT ROUND(SUM(total_amount),2) FROM ecommerce.orders")
         net = _scalar(samples_db, f"SELECT ROUND({m.sql},2) FROM ecommerce.orders WHERE {m.filters[0]}")

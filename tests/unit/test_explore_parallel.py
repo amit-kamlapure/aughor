@@ -12,14 +12,14 @@ import time
 
 import pytest
 
-import aughor.agent.explore as ex
-from aughor.agent.state import (
+import pramanyx.agent.explore as ex
+from pramanyx.agent.state import (
     QueryResult,
     ReasoningOutput,
     SubQuestion,
     SubQuestionAnswer,
 )
-from aughor.kernel.metering import BudgetExceeded
+from pramanyx.kernel.metering import BudgetExceeded
 
 
 # ── Fakes ─────────────────────────────────────────────────────────────────────
@@ -267,12 +267,12 @@ def test_route_after_wave_iteration_cap():
 
 def _explore_nodes(flag: str | None):
     import duckdb
-    from aughor.db.connection import DuckDBConnection
-    from aughor.agent.graph import build_graph_generic
+    from pramanyx.db.connection import DuckDBConnection
+    from pramanyx.agent.graph import build_graph_generic
     if flag:
-        os.environ["AUGHOR_LLM_RPM"] = "120"       # declared headroom → parallel waves
+        os.environ["PRAMANYX_LLM_RPM"] = "120"       # declared headroom → parallel waves
     else:
-        os.environ.pop("AUGHOR_LLM_RPM", None)     # undeclared → serial
+        os.environ.pop("PRAMANYX_LLM_RPM", None)     # undeclared → serial
     try:
         db = DuckDBConnection.__new__(DuckDBConnection)
         db._conn = duckdb.connect(":memory:")
@@ -281,7 +281,7 @@ def _explore_nodes(flag: str | None):
         g = build_graph_generic(db)
         return set(g.get_graph().nodes.keys())
     finally:
-        os.environ.pop("AUGHOR_LLM_RPM", None)
+        os.environ.pop("PRAMANYX_LLM_RPM", None)
 
 
 def test_flag_off_uses_sequential_nodes():
@@ -303,7 +303,7 @@ def test_flag_on_uses_wave_node():
 def test_decompose_prompt_byte_identical_when_guidance_empty():
     """Flag off → the {parallelism_guidance} slot collapses with no doubled blank line, so the
     serial decompose prompt is unchanged."""
-    from aughor.agent.prompts_explore import DECOMPOSE_EXPLORATION_PROMPT
+    from pramanyx.agent.prompts_explore import DECOMPOSE_EXPLORATION_PROMPT
     rendered = DECOMPOSE_EXPLORATION_PROMPT.format(
         question="q", schema="s", scan_section="", constraint_section="c", parallelism_guidance="")
     assert "PARALLELISM" not in rendered

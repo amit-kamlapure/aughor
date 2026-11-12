@@ -11,15 +11,15 @@ authorization model (the same argument ``get_session_turns`` carries).
 """
 from __future__ import annotations
 
-from aughor.db.history import (
+from pramanyx.db.history import (
     chat_session_turn_ids,
     get_session_turns,
     list_chat_sessions,
     rename_chat_session,
     save_chat_turn,
 )
-from aughor.db.purge import purge_chat_session_artifacts
-from aughor.org.context import using_org
+from pramanyx.db.purge import purge_chat_session_artifacts
+from pramanyx.org.context import using_org
 
 
 def _turn(question, session_id, conn="c1"):
@@ -64,7 +64,7 @@ def test_renaming_a_thread_that_does_not_exist_is_a_refusal():
 
 
 def test_rename_is_tenant_scoped(monkeypatch):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
     with using_org("org-a"):
         _turn("org A's question", "sess-x-org")
 
@@ -112,7 +112,7 @@ def test_deleting_an_unknown_thread_reports_nothing_deleted():
 def test_delete_is_tenant_scoped(monkeypatch):
     """The turn-id read is the authorization: another tenant collects an empty list,
     so the purge has nothing to run over and the route answers 404."""
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
     with using_org("org-a"):
         _turn("org A's private thread", "sess-del-org")
 

@@ -1,4 +1,4 @@
-"""`aughor up` must refuse a BUSY port, and only a busy one.
+"""`pramanyx up` must refuse a BUSY port, and only a busy one.
 
 The refusal is deliberate and good: `_check_port_free` never kills the owner, because the
 owner may be someone else's live server. What it must not do is refuse a port that is
@@ -20,7 +20,7 @@ import socket
 
 import pytest
 
-from aughor.cli import _port_in_use, _port_owner
+from pramanyx.cli import _port_in_use, _port_owner
 
 
 @pytest.fixture
@@ -101,7 +101,7 @@ def test_the_probe_binds_the_way_the_server_does():
             seen.append((level, optname, value))
             return super().setsockopt(level, optname, value, *a)
 
-    import aughor.cli as cli
+    import pramanyx.cli as cli
     orig = cli.socket.socket
     cli.socket.socket = _Watched
     try:

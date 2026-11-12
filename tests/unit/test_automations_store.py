@@ -5,15 +5,15 @@ lifecycle field intact, and EVERY tick leaves a row — including the ticks that
 nothing, which is precisely what ``monitor_alerts`` cannot record (it stores only alerts that
 fired, so "did it run at 03:00, and why did nothing happen?" is unanswerable there).
 
-Hermetic: ``AUGHOR_AUTOMATIONS_DB`` is the conftest temp store.
+Hermetic: ``PRAMANYX_AUTOMATIONS_DB`` is the conftest temp store.
 """
 from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
 
-from aughor.automations.models import Automation, AutomationRun, Condition, Effect, EffectOutcome
-from aughor.automations.store import (
+from pramanyx.automations.models import Automation, AutomationRun, Condition, Effect, EffectOutcome
+from pramanyx.automations.store import (
     append_run,
     count_runs_since,
     delete_automation,
@@ -256,8 +256,8 @@ def test_get_runs_filters_outcomes_in_sql_not_in_a_row_window():
     filters afterwards. Two callers did exactly that (the scheduled-run previous-report
     note; the premortem error-streak scan) and both were blind in production.
     """
-    from aughor.automations.store import append_run, get_runs
-    from aughor.automations.models import AutomationRun
+    from pramanyx.automations.store import append_run, get_runs
+    from pramanyx.automations.models import AutomationRun
 
     append_run(AutomationRun(automation_id="a-out", outcome="fired"))
     append_run(AutomationRun(automation_id="a-out", outcome="error"))

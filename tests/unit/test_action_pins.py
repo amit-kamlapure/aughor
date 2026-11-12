@@ -6,21 +6,21 @@ changed one with what changed, and runs nothing.
 """
 from __future__ import annotations
 
-from aughor.actions import inbox
-from aughor.actions.pins import action_pin, changed_since
-from aughor.ontology.models import SubmissionCriterion
+from pramanyx.actions import inbox
+from pramanyx.actions.pins import action_pin, changed_since
+from pramanyx.ontology.models import SubmissionCriterion
 from tests.unit.test_kinetic_inbox import _action, _proposal, flag_on, graph_of  # noqa: F401 — fixtures by name
 
 
 def _dispatching(monkeypatch) -> list:
     calls: list = []
-    monkeypatch.setattr("aughor.actions.executor.default_dispatch",
+    monkeypatch.setattr("pramanyx.actions.executor.default_dispatch",
                         lambda action, params, scope="", **_k: calls.append((action.id, dict(params))) or {"ok": True})
     return calls
 
 
 def test_an_accept_runs_what_was_proposed_and_the_ledger_names_the_declaration_that_ran(flag_on, graph_of, monkeypatch):  # noqa: F811
-    from aughor.actions.authority import executions
+    from pramanyx.actions.authority import executions
     action = _action()
     graph_of(action)
     calls = _dispatching(monkeypatch)

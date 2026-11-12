@@ -1,6 +1,6 @@
-# Aughor — Senior Engineering Handoff & Audit
+# Pramanyx — Senior Engineering Handoff & Audit
 **Reviewer:** senior half of a two-model pipeline · **Date:** 2026-07-03 · **Commit:** `9c06aa3` (main, clean)
-**Repo:** `/Users/amitkamlapure/dev/aughor` — FastAPI (Python 3.11+) backend + Next.js 16 frontend; ~78k LOC Python across 623 files, ~55k LOC TS/TSX.
+**Repo:** `/Users/amitkamlapure/dev/pramanyx` — FastAPI (Python 3.11+) backend + Next.js 16 frontend; ~78k LOC Python across 623 files, ~55k LOC TS/TSX.
 
 > Method: I read the load-bearing files first-hand (api, connection, registry, security/*, kernel/*, licensing, telemetry, conftest) and ran six parallel read-only deep-dives (security, agent-pipeline, data-layer, API-contracts, frontend, tests/CI). Every finding below that a subagent surfaced, I re-verified against the code myself. I flag two subagent false-positives explicitly so they don't propagate.
 
@@ -8,7 +8,7 @@
 
 ## 0. Executive Summary
 
-Aughor is an unusually **substance-rich** codebase: a genuine autonomous data-analyst agent (LangGraph, 3 pipelines), a real job kernel with orphan recovery, deterministic SQL trust-guards (grain/fan-out/join-domain/CIDR-E1), an event-sourced ledger, capability licensing, and an action-governance layer. The engineering IQ is high. The gap is not intelligence — it's **operational hardening and the security perimeter**, which are calibrated for a single-user localhost tool, not the SOTA multi-tenant platform the docs and roadmap describe.
+Pramanyx is an unusually **substance-rich** codebase: a genuine autonomous data-analyst agent (LangGraph, 3 pipelines), a real job kernel with orphan recovery, deterministic SQL trust-guards (grain/fan-out/join-domain/CIDR-E1), an event-sourced ledger, capability licensing, and an action-governance layer. The engineering IQ is high. The gap is not intelligence — it's **operational hardening and the security perimeter**, which are calibrated for a single-user localhost tool, not the SOTA multi-tenant platform the docs and roadmap describe.
 
 **Top 5 risks (most severe first)**
 1. **SEC-01 — No authorization layer exists.** Auth is an optional shared API key (off by default); there is no per-user identity, and "workspace scoping" is a client-supplied query param the server never binds to a principal. Any caller reaches any connection, investigation, canvas, or DSN. `resolve_tier` defaults to `enterprise` (every capability granted).
@@ -33,7 +33,7 @@ Aughor is an unusually **substance-rich** codebase: a genuine autonomous data-an
 ## 1. System Model
 
 ### What it does
-Connect a warehouse (DuckDB/Postgres/MotherDuck/Snowflake/BigQuery via optional extras) → Aughor autonomously explores it, builds an ontology + business profile, and answers analytical questions in NL with evidence, citations, and deterministic trust-guards. Three answer pipelines: **Insight** (quick plan→SQL), **Deep-ADA** (8-phase investigation), **Explorer** (background sub-question decomposition). Surfaced via FastAPI (288 endpoints, 29 routers), a Next.js SPA, and an MCP server.
+Connect a warehouse (DuckDB/Postgres/MotherDuck/Snowflake/BigQuery via optional extras) → Pramanyx autonomously explores it, builds an ontology + business profile, and answers analytical questions in NL with evidence, citations, and deterministic trust-guards. Three answer pipelines: **Insight** (quick plan→SQL), **Deep-ADA** (8-phase investigation), **Explorer** (background sub-question decomposition). Surfaced via FastAPI (288 endpoints, 29 routers), a Next.js SPA, and an MCP server.
 
 **Implicit success criteria:** answers are *trustworthy* (numbers not fabricated), the agent runs durably (survives restart mid-investigation), and it adapts per-industry without manual modeling.
 
@@ -66,7 +66,7 @@ MCP client ──X-Api-Key──▶ MCP server ──▶  Routers (29)
 
 ### Essential vs accidental complexity
 - **Essential:** the 8-phase ADA investigation, the trust-guards, the ontology builder, the kernel state machine. These encode the actual hard problem (trustworthy autonomous analysis).
-- **Accidental:** `investigate.py` at 4,613 lines and `explorer/agent.py` at 3,986; 67 feature flags; dual frontend type sources (`api.gen.ts` 377KB vs hand-written `types.ts`); a legacy `web/aughor-v2/` tree; `data/_backup_*` and `_rerun_backup_*` dirs sitting in the working tree.
+- **Accidental:** `investigate.py` at 4,613 lines and `explorer/agent.py` at 3,986; 67 feature flags; dual frontend type sources (`api.gen.ts` 377KB vs hand-written `types.ts`); a legacy `web/pramanyx-v2/` tree; `data/_backup_*` and `_rerun_backup_*` dirs sitting in the working tree.
 
 ### Coverage statement
 **Read fully (first-hand):** api.py, db/connection.py (gates + DuckDB/Postgres), db/registry.py, secretvault.py, security/{safety,pii,sandbox,audit}.py, sql/{safety,readonly}.py, kernel/{jobs(partial),errors}.py, licensing/{deps,resolver}, org/context.py, telemetry.py, tests/conftest.py, metastore/sync.accessible_catalog_ids, README/docs index. **Deep-dived via 6 subagents (verified against source):** full router surface, agent pipeline, data stores, frontend, tests/CI/observability. **Skimmed:** ontology/builder.py, explorer/agent.py, llm/provider.py, connectors/*. **Not opened:** most of `web/components/*` internals, `packs/` content, `evals/*` harness bodies, connector-specific warehouse code (Snowflake/BQ), `canvas/store.py` internals.
@@ -74,7 +74,7 @@ MCP client ──X-Api-Key──▶ MCP server ──▶  Routers (29)
 ### Assumptions (explicit)
 - A1: The app is deployed single-process today (start.sh runs one uvicorn). *Verified via start.sh.*
 - A2: `data/` on disk is a developer working tree, not the production data path. *Inferred — no prod deploy config exists.*
-- A3: The repo is private (README badge says MIT/alpha; git remote is `sidhasadhak/aughor`). If it were public, the working-tree `.env` on the dev machine would still not be in git (verified untracked) — but treat key hygiene as unproven. *Partially verified.*
+- A3: The repo is private (README badge says MIT/alpha; git remote is `sidhasadhak/pramanyx`). If it were public, the working-tree `.env` on the dev machine would still not be in git (verified untracked) — but treat key hygiene as unproven. *Partially verified.*
 - A4: Postgres connections are expected to be read-only by intent (docs say "read-only"), so autocommit-RW is a defect not a feature. *Inferred from README + sql/readonly.py intent.*
 
 ---
@@ -115,7 +115,7 @@ By-ID detail/export/delete endpoints do no ownership check, while the *list* end
 **Impact:** Fragile; a future caller that executes build-sql output server-side turns this live. **Confidence: verified-from-code.** *(Corrects a subagent that rated it HIGH live-injection.)*
 
 **SEC-08 · Secrets at rest · LOW (well-handled) · `secretvault.py`, `db/registry.py:38-57`**
-DSNs + secret meta fields are Fernet-encrypted; key in `AUGHOR_SECRET_KEY` env or `data/.aughor_key` (chmod 600). `.aughor_key`, `connections.db`, `.env` are all git-ignored and **untracked (verified)**. `decrypt_secret` fail-safes to returning the ciphertext on `InvalidToken` (one bad record can't down a read path). Reasonable.
+DSNs + secret meta fields are Fernet-encrypted; key in `PRAMANYX_SECRET_KEY` env or `data/.pramanyx_key` (chmod 600). `.pramanyx_key`, `connections.db`, `.env` are all git-ignored and **untracked (verified)**. `decrypt_secret` fail-safes to returning the ciphertext on `InvalidToken` (one bad record can't down a read path). Reasonable.
 **Note (not a leak):** a live `.env` with real GROQ/Together/Postgres creds sits in the working tree on the dev machine; it is **not** in git (`git check-ignore .env` → ignored; no history). A subagent flagged this as a CRITICAL committed-secret — **false positive, corrected here.** Residual: standard key-hygiene (rotate if ever shared) still applies. **Confidence: verified-from-code.**
 
 **SEC-09 · Audit integrity · MEDIUM · `security/audit.py`**
@@ -167,13 +167,13 @@ Connection-delete cascade covers matcache/type_overrides/canvas/history but not 
 **DESIGN-01 · God files · MEDIUM · `agent/investigate.py:4613`, `explorer/agent.py:3986`, `routers/investigations.py:2930`**
 Dense but *cohesive* (phase-per-node). Not god-objects in the coupling sense, but past the point where a weaker model (or new hire) can safely edit them. **Confidence: verified.**
 
-**DESIGN-02 · Flag sprawl · LOW · 67 `AUGHOR_*` env vars, `kernel/flags.py`**
+**DESIGN-02 · Flag sprawl · LOW · 67 `PRAMANYX_*` env vars, `kernel/flags.py`**
 67 config/flag vars; `.env.example` documents ~5. No central schema/validation; misconfig degrades silently. **Confidence: verified** (grep 67).
 
 **DESIGN-03 · Frontend type drift · MEDIUM · `web/lib/api.gen.ts` (377KB) vs `web/lib/types.ts`**
 Two type sources; SSE→reducer boundaries use `as unknown as` casts. Backend schema change won't fail the frontend build. **Confidence: verified** (subagent).
 
-**DESIGN-04 · Dead/legacy · LOW · `web/aughor-v2/`, `data/_backup_*`, `agent/handoff.py` (no graph wiring)**
+**DESIGN-04 · Dead/legacy · LOW · `web/pramanyx-v2/`, `data/_backup_*`, `agent/handoff.py` (no graph wiring)**
 Legacy v2 tree, backup dirs in working tree, and a likely-unwired `handoff.py`. **Confidence: inferred.**
 
 ### Dependencies
@@ -224,14 +224,14 @@ Optional Langfuse/OTel (no-op when unset) + always-on ledger event journal + `to
 No `.github/`, no pre-commit, no Makefile, no Dockerfile, no deploy manifest. 2,206 test functions exist but nothing gates a change. `evals/ratchet.py` is manual/opt-in; `@pytest.mark.e2e` is skipped by default. **Confidence: verified.**
 
 **OPS-02 · Non-hermetic tests · HIGH · `tests/conftest.py:13-21`**
-Only `AUGHOR_SYSTEM_DB`, `AUGHOR_REGISTRY_DB`, `AUGHOR_CONNECTION_SETTINGS` are isolated. `history.db`/`metastore.db`/`workspaces.db`/`audit.db`/`canvases.db` have **no env override anywhere** (grep-confirmed empty) → the suite writes to live `data/`. Same class of bug that once emptied the live registry. **Confidence: verified-from-code.**
+Only `PRAMANYX_SYSTEM_DB`, `PRAMANYX_REGISTRY_DB`, `PRAMANYX_CONNECTION_SETTINGS` are isolated. `history.db`/`metastore.db`/`workspaces.db`/`audit.db`/`canvases.db` have **no env override anywhere** (grep-confirmed empty) → the suite writes to live `data/`. Same class of bug that once emptied the live registry. **Confidence: verified-from-code.**
 
 **OPS-03 · No frontend tests · MEDIUM · `web/`**
 No jest/vitest/spec files; only `tsc --noEmit`. **Confidence: verified.**
 
 ### Platform posture (COMP-*) — the pillars an operational data platform needs
 
-**COMP-01 · Ontology / semantic layer · LAG-but-credible.** Aughor has a real `OntologyGraph` (entities/relationships/actions/properties) with human-editable overrides and value-verified joins — materially more than "tables + endpoints," and more than most NL2SQL tools. **Gaps:** no first-class *metrics/measures* object (inferred from columns), no formal *lineage DAG* (SQL refs are textual), ontology cache fingerprint omits column types (stale-on-type-change). Verdict: the substrate exists; it needs a metrics object and lineage to be the semantic spine. **Evidence:** ontology/store.py, models.py (subagent, corroborated).
+**COMP-01 · Ontology / semantic layer · LAG-but-credible.** Pramanyx has a real `OntologyGraph` (entities/relationships/actions/properties) with human-editable overrides and value-verified joins — materially more than "tables + endpoints," and more than most NL2SQL tools. **Gaps:** no first-class *metrics/measures* object (inferred from columns), no formal *lineage DAG* (SQL refs are textual), ontology cache fingerprint omits column types (stale-on-type-change). Verdict: the substrate exists; it needs a metrics object and lineage to be the semantic spine. **Evidence:** ontology/store.py, models.py (subagent, corroborated).
 
 **COMP-02 · Heterogeneous data integration · LAG.** Connectors exist (Postgres/DuckDB/MotherDuck/Snowflake/BQ/CRM/knowledge-sync) but read-only-centric, no federation-with-governance, no high-sensitivity source classification; integration breadth and lineage are thin. **Evidence:** connectors/, actions.py federate.
 
@@ -239,7 +239,7 @@ No jest/vitest/spec files; only `tsc --noEmit`. **Confidence: verified.**
 
 **COMP-04 · Governance/security as primitive · LAG (biggest gap).** Capability licensing + action governance + audit exist, but there is **no identity/RBAC/ABAC, no data classification, no full audit lineage, no deployment-flexibility story**. This is the pillar most below SOTA and the hard gate on regulated/defense buyers. **Evidence:** SEC-01, SEC-09.
 
-**COMP-05 · Time-to-model a new customer · LEAPFROG-potential.** This is the intended differentiator and the architecture supports it: autonomous exploration + ontology inference + industry adaptation means a new warehouse is *self-modeled* in a background run rather than by a services team. This is where Aughor can be an order of magnitude faster — *if* the trust/governance gate (COMP-04) is met so buyers accept autonomous modeling. **Evidence:** explorer pipeline, README thesis.
+**COMP-05 · Time-to-model a new customer · LEAPFROG-potential.** This is the intended differentiator and the architecture supports it: autonomous exploration + ontology inference + industry adaptation means a new warehouse is *self-modeled* in a background run rather than by a services team. This is where Pramanyx can be an order of magnitude faster — *if* the trust/governance gate (COMP-04) is met so buyers accept autonomous modeling. **Evidence:** explorer pipeline, README thesis.
 
 **COMP-06 · Trust & assurance for autonomous AI operators · LAG, but nearest-to-solvable.** Deterministic guards + approval gates + ledger audit are the right primitives and are unusually mature. Missing: reversibility guarantees, human-approval-by-default, per-action allowlist under an *identity*, and prompt-injection defense (SEC-03). This is the make-or-break for the autonomous-modeling thesis. **Evidence:** sql/*guard, govern/, SEC-03.
 
@@ -251,16 +251,16 @@ No jest/vitest/spec files; only `tsc --noEmit`. **Confidence: verified.**
 
 ### REC-01 — Make the SQL safety gate fail-CLOSED (Addresses SEC-02, PIPE-01)
 **What to do:**
-1. In `aughor/db/connection.py`, in `_security_pre` (starts line 46), change the final `except Exception: pass` (line ~78) to: log via `tolerate` AND return a BLOCKED `QueryResult` (fail closed) instead of `None`. Concretely: replace `except Exception: pass` / `return None` tail with:
+1. In `pramanyx/db/connection.py`, in `_security_pre` (starts line 46), change the final `except Exception: pass` (line ~78) to: log via `tolerate` AND return a BLOCKED `QueryResult` (fail closed) instead of `None`. Concretely: replace `except Exception: pass` / `return None` tail with:
    ```python
    except Exception as exc:
-       from aughor.kernel.errors import tolerate
+       from pramanyx.kernel.errors import tolerate
        tolerate(exc, "safety gate errored; failing closed", counter="security.gate_error")
        return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0,
                           error="[BLOCKED] safety check unavailable")
    ```
 2. Do NOT change `_security_post`'s swallow to blocking (post-exec PII/audit failing shouldn't drop already-safe rows) — but replace its bare `except Exception: pass` (line ~156) with a `tolerate(exc, "post-exec security best-effort", counter="security.post_error")`.
-**Where:** `aughor/db/connection.py` `_security_pre`, `_security_post` only.
+**Where:** `pramanyx/db/connection.py` `_security_pre`, `_security_post` only.
 **How to verify:** Add a test that monkeypatches `SafetyChecker.check` to raise, then asserts `DuckDBConnection.execute("h", "SELECT 1")` returns a result whose `.error` starts with `[BLOCKED]`. Command: `uv run pytest tests/unit/test_security_gate_failclosed.py -q` exits 0.
 **Prereq/order:** none. **Risk:** a genuinely-broken SafetyChecker now blocks all queries (that's the point) — mitigated because the import is local and stable. **Rollback:** revert the two blocks. **Confidence:** verified. **Do NOT:** don't also flip `_security_post` to blocking; don't touch the `_is_internal_query` dunder bypass in this rec.
 
@@ -271,26 +271,26 @@ No jest/vitest/spec files; only `tsc --noEmit`. **Confidence: verified.**
 **Where:** `connection.py` PostgresConnection init only. **How to verify:** integration test (needs a Postgres; gate behind a marker) that a `CREATE TABLE t_x(...)` via `.execute` returns an error containing "read-only". If no CI Postgres, verify manually and add a unit test asserting the DSN/options string contains `default_transaction_read_only`. **Risk:** breaks any legitimately-needed write connector — search confirms none intended (README: read-only). **Rollback:** remove the option. **Confidence:** verified. **Do NOT:** don't apply this to the DuckDB path (already handled).
 
 ### REC-03 — Add `busy_timeout` + WAL to every SQLite store (Addresses DATA-02)
-**What to do:** Create one helper `aughor/db/sqlite_util.py` with `def tune(conn): conn.execute("PRAGMA journal_mode=WAL"); conn.execute("PRAGMA busy_timeout=5000"); conn.execute("PRAGMA synchronous=NORMAL")`. Call it immediately after each `sqlite3.connect(...)` in: `db/registry.py:_db`, `db/history.py`, `metastore/store.py`, `workspace/store.py`, `security/audit.py:_connect`, `canvas/store.py`, and `kernel/ledger.py` (add busy_timeout there; it already sets WAL).
-**Where:** each `sqlite3.connect` site (grep `sqlite3.connect` in `aughor/`). **How to verify:** `grep -rL "busy_timeout" $(grep -rl "sqlite3.connect" aughor --include=*.py)` returns empty (every file that connects also tunes). Add a test opening two connections to a temp db and doing overlapping writes without `SQLITE_BUSY`. **Risk:** WAL on a store that was rollback-journal creates `-wal`/`-shm` files — already gitignored for known dbs; add globs for any new ones. **Rollback:** remove calls. **Confidence:** verified. **Do NOT:** don't set `busy_timeout` to a huge value (5s is the ceiling); don't WAL an in-memory db.
+**What to do:** Create one helper `pramanyx/db/sqlite_util.py` with `def tune(conn): conn.execute("PRAGMA journal_mode=WAL"); conn.execute("PRAGMA busy_timeout=5000"); conn.execute("PRAGMA synchronous=NORMAL")`. Call it immediately after each `sqlite3.connect(...)` in: `db/registry.py:_db`, `db/history.py`, `metastore/store.py`, `workspace/store.py`, `security/audit.py:_connect`, `canvas/store.py`, and `kernel/ledger.py` (add busy_timeout there; it already sets WAL).
+**Where:** each `sqlite3.connect` site (grep `sqlite3.connect` in `pramanyx/`). **How to verify:** `grep -rL "busy_timeout" $(grep -rl "sqlite3.connect" pramanyx --include=*.py)` returns empty (every file that connects also tunes). Add a test opening two connections to a temp db and doing overlapping writes without `SQLITE_BUSY`. **Risk:** WAL on a store that was rollback-journal creates `-wal`/`-shm` files — already gitignored for known dbs; add globs for any new ones. **Rollback:** remove calls. **Confidence:** verified. **Do NOT:** don't set `busy_timeout` to a huge value (5s is the ceiling); don't WAL an in-memory db.
 
 ### REC-04 — Isolate the remaining stores in tests (Addresses OPS-02, DATA-01)
 **What to do:**
-1. Add env overrides mirroring the registry pattern to `db/history.py`, `metastore/store.py`, `workspace/store.py`, `security/audit.py`, `canvas/store.py`: `_DB_PATH = Path(os.environ.get("AUGHOR_<NAME>_DB") or <existing default>)`.
-2. In `tests/conftest.py`, after the existing `setdefault` block, add `os.environ.setdefault("AUGHOR_HISTORY_DB", ...)` etc. pointing into a `tempfile.mkdtemp`.
+1. Add env overrides mirroring the registry pattern to `db/history.py`, `metastore/store.py`, `workspace/store.py`, `security/audit.py`, `canvas/store.py`: `_DB_PATH = Path(os.environ.get("PRAMANYX_<NAME>_DB") or <existing default>)`.
+2. In `tests/conftest.py`, after the existing `setdefault` block, add `os.environ.setdefault("PRAMANYX_HISTORY_DB", ...)` etc. pointing into a `tempfile.mkdtemp`.
 **Where:** those 5 store modules + conftest.py. **How to verify:** `cp data/history.db /tmp/pre && uv run pytest -q && diff <(sha256sum data/history.db) <(sha256sum /tmp/pre)` — the live db hash is unchanged after a full run. Repeat per store. **Risk:** a store read at import time before the env is set → set env in conftest *before* importing app modules (it already does for registry). **Rollback:** revert. **Confidence:** verified. **Do NOT:** don't hardcode `/tmp` paths in the store modules — read env with the data/ default as fallback.
 
 ### REC-05 — Add request identity + owner-checks (Addresses SEC-01, SEC-05, DATA-06)
 > Larger; split into verifiable sub-steps. This is the foundational bet — do it incrementally, behind a flag, pinning current behavior with tests first.
 **What to do:**
 1. **Pin current behavior:** add tests asserting today's endpoints return 200 with no auth (so you can prove you didn't break the localhost mode).
-2. Add an `AUGHOR_REQUIRE_IDENTITY` flag (default off). When on, `_require_auth` must resolve a principal → `set_org_id(principal.org)` for the request scope (contextvar, like jobs do).
+2. Add an `PRAMANYX_REQUIRE_IDENTITY` flag (default off). When on, `_require_auth` must resolve a principal → `set_org_id(principal.org)` for the request scope (contextvar, like jobs do).
 3. Add a single `authorize_resource(kind, id, principal)` helper that checks ownership via the connection's org/workspace, and call it in the by-id investigation/canvas endpoints (SEC-05 sites) — returning 403 when the flag is on and ownership fails; no-op when off.
-**Where:** `api.py` `_require_auth`, a new `aughor/security/authz.py`, and the SEC-05 endpoints. **How to verify:** with flag on, a request for another org's `inv_id` returns 403; with flag off, all current tests still pass. Command: `AUGHOR_REQUIRE_IDENTITY=1 uv run pytest tests/integration/test_authz.py -q` exits 0 AND the default suite is green. **Risk:** high blast radius — that's why it's flag-gated and behavior-pinned first. **Rollback:** flag off. **Confidence:** inferred (design). **Do NOT:** do NOT make it default-on in this rec; do NOT try to build full RBAC here — just identity→org binding + owner-checks.
+**Where:** `api.py` `_require_auth`, a new `pramanyx/security/authz.py`, and the SEC-05 endpoints. **How to verify:** with flag on, a request for another org's `inv_id` returns 403; with flag off, all current tests still pass. Command: `PRAMANYX_REQUIRE_IDENTITY=1 uv run pytest tests/integration/test_authz.py -q` exits 0 AND the default suite is green. **Risk:** high blast radius — that's why it's flag-gated and behavior-pinned first. **Rollback:** flag off. **Confidence:** inferred (design). **Do NOT:** do NOT make it default-on in this rec; do NOT try to build full RBAC here — just identity→org binding + owner-checks.
 
 ### REC-06 — SSRF allowlist on webhook URLs (Addresses SEC-04)
-**What to do:** Add `aughor/util/url_guard.py:is_safe_webhook_url(url)` (scheme in {http,https}; resolve host; reject if any resolved IP is private/loopback/link-local/reserved). Call it in `routers/actions.py` create/update trigger before `save_trigger`, returning 400 on reject; also re-check in `actions/executor.py:_post` before the request (defense in depth, since triggers persist).
-**Where:** actions.py, executor.py, new url_guard.py. **How to verify:** unit test that `http://169.254.169.254/`, `http://localhost/`, `http://10.0.0.1/`, `file:///etc/passwd` all return False and `https://hooks.slack.com/...` returns True. `uv run pytest tests/unit/test_url_guard.py -q` exits 0. **Risk:** blocks a legitimately-internal webhook target — make the private-IP block overridable by an explicit `AUGHOR_ALLOW_PRIVATE_WEBHOOKS` env for on-prem. **Rollback:** remove the call. **Confidence:** verified. **Do NOT:** don't only validate at create time (DNS can rebind) — check at send time too.
+**What to do:** Add `pramanyx/util/url_guard.py:is_safe_webhook_url(url)` (scheme in {http,https}; resolve host; reject if any resolved IP is private/loopback/link-local/reserved). Call it in `routers/actions.py` create/update trigger before `save_trigger`, returning 400 on reject; also re-check in `actions/executor.py:_post` before the request (defense in depth, since triggers persist).
+**Where:** actions.py, executor.py, new url_guard.py. **How to verify:** unit test that `http://169.254.169.254/`, `http://localhost/`, `http://10.0.0.1/`, `file:///etc/passwd` all return False and `https://hooks.slack.com/...` returns True. `uv run pytest tests/unit/test_url_guard.py -q` exits 0. **Risk:** blocks a legitimately-internal webhook target — make the private-IP block overridable by an explicit `PRAMANYX_ALLOW_PRIVATE_WEBHOOKS` env for on-prem. **Rollback:** remove the call. **Confidence:** verified. **Do NOT:** don't only validate at create time (DNS can rebind) — check at send time too.
 
 ### REC-07 — Minimal CI gate (Addresses OPS-01)
 **What to do:** Add `.github/workflows/ci.yml`: on PR, run (a) `uv sync` + `uv run pytest -q -m "not e2e"`, (b) `cd web && npm ci && npx tsc --noEmit`. Fail the job on nonzero exit. Add a second job running `ruff check` if ruff is adoptable.
@@ -314,14 +314,14 @@ No jest/vitest/spec files; only `tsc --noEmit`. **Confidence: verified.**
 
 ### RP-1 — REC-01 fail-closed gate (the shape of a correct security fix)
 ```python
-# aughor/db/connection.py — _security_pre tail
+# pramanyx/db/connection.py — _security_pre tail
 # BEFORE
     except Exception:
         pass  # security failures must never break query execution
     return None
 # AFTER
     except Exception as exc:
-        from aughor.kernel.errors import tolerate
+        from pramanyx.kernel.errors import tolerate
         tolerate(exc, "safety gate errored; failing closed", counter="security.gate_error")
         return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[],
                            row_count=0, error="[BLOCKED] safety check unavailable")
@@ -329,10 +329,10 @@ No jest/vitest/spec files; only `tsc --noEmit`. **Confidence: verified.**
 ```python
 # tests/unit/test_security_gate_failclosed.py
 def test_gate_fails_closed(monkeypatch):
-    from aughor.security import safety
+    from pramanyx.security import safety
     monkeypatch.setattr(safety.SafetyChecker, "check",
                         staticmethod(lambda sql: (_ for _ in ()).throw(RuntimeError("boom"))))
-    from aughor.db.connection import DuckDBConnection
+    from pramanyx.db.connection import DuckDBConnection
     c = DuckDBConnection(":memory:")
     r = c.execute("h1", "SELECT 1")
     assert r.error and r.error.startswith("[BLOCKED]")
@@ -341,7 +341,7 @@ def test_gate_fails_closed(monkeypatch):
 
 ### RP-2 — REC-03 SQLite tuning helper (kills a whole bug class in one place)
 ```python
-# aughor/db/sqlite_util.py  (NEW)
+# pramanyx/db/sqlite_util.py  (NEW)
 import sqlite3
 def tune(conn: sqlite3.Connection) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
@@ -350,15 +350,15 @@ def tune(conn: sqlite3.Connection) -> sqlite3.Connection:
     return conn
 ```
 ```python
-# aughor/db/registry.py — _db()
+# pramanyx/db/registry.py — _db()
 conn = sqlite3.connect(str(REGISTRY_DB))
-from aughor.db.sqlite_util import tune; tune(conn)   # ← add
+from pramanyx.db.sqlite_util import tune; tune(conn)   # ← add
 conn.row_factory = sqlite3.Row
 ```
 ```python
 # tests/unit/test_sqlite_contention.py
 def test_no_busy_under_overlap(tmp_path):
-    import sqlite3; from aughor.db.sqlite_util import tune
+    import sqlite3; from pramanyx.db.sqlite_util import tune
     p = tmp_path/"t.db"
     a = tune(sqlite3.connect(p)); b = tune(sqlite3.connect(p))
     a.execute("CREATE TABLE t(x)"); a.commit()
@@ -370,7 +370,7 @@ def test_no_busy_under_overlap(tmp_path):
 
 ### RP-3 — REC-06 SSRF guard (verifiable allow/deny table)
 ```python
-# aughor/util/url_guard.py (NEW)
+# pramanyx/util/url_guard.py (NEW)
 import ipaddress, socket
 from urllib.parse import urlparse
 def is_safe_webhook_url(url: str) -> bool:
@@ -390,17 +390,17 @@ def is_safe_webhook_url(url: str) -> bool:
 
 ### RP-4 — REC-04 test isolation (mirror the proven registry pattern)
 ```python
-# aughor/db/history.py — top
+# pramanyx/db/history.py — top
 import os
-_DB_PATH = Path(os.environ.get("AUGHOR_HISTORY_DB")
+_DB_PATH = Path(os.environ.get("PRAMANYX_HISTORY_DB")
                 or (Path(__file__).parent.parent.parent / "data" / "history.db"))
 ```
 ```python
 # tests/conftest.py — after existing setdefault block
-for _name, _fn in (("AUGHOR_HISTORY_DB","history.db"), ("AUGHOR_METASTORE_DB","metastore.db"),
-                   ("AUGHOR_WORKSPACES_DB","workspaces.db"), ("AUGHOR_AUDIT_DB","audit.db"),
-                   ("AUGHOR_CANVAS_DB","canvases.db")):
-    os.environ.setdefault(_name, os.path.join(tempfile.mkdtemp(prefix="aughor-test-"), _fn))
+for _name, _fn in (("PRAMANYX_HISTORY_DB","history.db"), ("PRAMANYX_METASTORE_DB","metastore.db"),
+                   ("PRAMANYX_WORKSPACES_DB","workspaces.db"), ("PRAMANYX_AUDIT_DB","audit.db"),
+                   ("PRAMANYX_CANVAS_DB","canvases.db")):
+    os.environ.setdefault(_name, os.path.join(tempfile.mkdtemp(prefix="pramanyx-test-"), _fn))
 ```
 **Why:** identical to the registry fix that already exists — pattern-match, don't invent. Env-with-data/-fallback preserves prod behavior; conftest sets it before app import.
 
@@ -452,7 +452,7 @@ Ordering rule honored: REC-07 (CI) after REC-04 (isolation) so CI doesn't legiti
 
 ## 7. Introspection
 
-**(a) The codebase's philosophy.** Aughor encodes a worldview: *the model is not to be trusted, so wrap it in deterministic, execution-grounded guards and an auditable event log.* That's a genuinely good bet, and it's pervasive — trust-guards, the ratchet, the `tolerate()` doctrine, positive-detection-only validators. It optimizes for **single-operator correctness and observability** at the expense of **the multi-user security perimeter and operational scale**. The `org_id`-everywhere / capability-gate / governance scaffolding shows the team *knows* where it's going (multi-tenant, regulated buyers), but the enforcement is deferred — the platform is "tenant-shaped" and "security-shaped" without being tenant-safe or secured. The fail-open reflex ("security failures must never break execution") is the one place the philosophy contradicts itself: the same team that built K4-"failure is data" chose silence-and-proceed on the safety path. That's the tell of a tool that grew up as a trusted-localhost analyst and hasn't yet crossed into hostile-input territory.
+**(a) The codebase's philosophy.** Pramanyx encodes a worldview: *the model is not to be trusted, so wrap it in deterministic, execution-grounded guards and an auditable event log.* That's a genuinely good bet, and it's pervasive — trust-guards, the ratchet, the `tolerate()` doctrine, positive-detection-only validators. It optimizes for **single-operator correctness and observability** at the expense of **the multi-user security perimeter and operational scale**. The `org_id`-everywhere / capability-gate / governance scaffolding shows the team *knows* where it's going (multi-tenant, regulated buyers), but the enforcement is deferred — the platform is "tenant-shaped" and "security-shaped" without being tenant-safe or secured. The fail-open reflex ("security failures must never break execution") is the one place the philosophy contradicts itself: the same team that built K4-"failure is data" chose silence-and-proceed on the safety path. That's the tell of a tool that grew up as a trusted-localhost analyst and hasn't yet crossed into hostile-input territory.
 
 **(b) Limits of this review.** I read the perimeter, the gates, the kernel, and the data layer first-hand, and verified every load-bearing subagent claim against source — but I did **not** execute the app, run the suite to green (collection was slow/didn't return in 60s — itself a mild smell), or dynamically test any endpoint. I did not deeply read: `explorer/agent.py`, `ontology/builder.py`, `llm/provider.py` bodies, the Snowflake/BQ connectors, most `web/components/*`, or `packs/`/`evals/` internals. So: the ontology's true expressiveness (COMP-01) is assessed from store/models, not the builder; the PII-to-LLM claim is **inferred** (I confirmed data flows into prompts; I did not trace every LLM call to prove raw PII rows are included vs. aggregates). The multi-process and TZ findings are logic-level, not reproduced. To raise confidence I'd next open `llm/provider.py` (retry/fallback + what exactly is sent), `ontology/builder.py` (is there a metrics object?), and run `uv run pytest -m "not e2e"` to a real pass/fail with a timing profile.
 
@@ -473,9 +473,9 @@ Ordering rule honored: REC-07 (CI) after REC-04 (isolation) so CI doesn't legiti
 
 **Make cheap-to-change now:** (a) put a typed contract layer at the API boundary (even a thin `response_model` sweep) so clients stop coupling to dict shapes; (b) introduce the identity/org contextvar binding *now* (flagged, no-op) so later enforcement is a switch, not a migration — the contextvar already exists (`org/context.py`), it's just never set per-request; (c) a metrics/lineage object in the ontology behind the existing override mechanism.
 
-**Ontology-first test (#1 foundational bet).** *Is the data model expressive enough to be the semantic substrate for the next decade, or will real object/relationship complexity force a rewrite?* Verdict: **closer than most, but not yet.** Aughor has entities/relationships/actions/properties with human overrides and value-verified joins — a real graph, not just schema. What's missing to survive 20 years: (1) **first-class metrics/measures** as ontology objects (today inferred from columns, where they should be modeled explicitly), (2) a **formal lineage DAG** (today SQL refs are textual), (3) **type-aware cache fingerprinting** (stale-on-type-change bug). None require a rewrite — they're additive on the existing `OntologyGraph`. Rank #1 because if the metrics/lineage model isn't first-class, every downstream promise (governed answers, write-back, autonomous modeling) inherits an ambiguous substrate. **De-risk by building the metrics object next (DO LATER, top).**
+**Ontology-first test (#1 foundational bet).** *Is the data model expressive enough to be the semantic substrate for the next decade, or will real object/relationship complexity force a rewrite?* Verdict: **closer than most, but not yet.** Pramanyx has entities/relationships/actions/properties with human overrides and value-verified joins — a real graph, not just schema. What's missing to survive 20 years: (1) **first-class metrics/measures** as ontology objects (today inferred from columns, where they should be modeled explicitly), (2) a **formal lineage DAG** (today SQL refs are textual), (3) **type-aware cache fingerprinting** (stale-on-type-change bug). None require a rewrite — they're additive on the existing `OntologyGraph`. Rank #1 because if the metrics/lineage model isn't first-class, every downstream promise (governed answers, write-back, autonomous modeling) inherits an ambiguous substrate. **De-risk by building the metrics object next (DO LATER, top).**
 
-**Where AI-native lets you LEAPFROG (not chase).** The usual way to model each customer's domain is a **human services workforce**. Aughor's autonomous exploration + ontology inference means the *modeling itself is software* — a new warehouse is self-mapped in a background run. A model that is human-in-the-loop by design cannot collapse this; Aughor's isn't. **This is the leapfrog.** But it only converts to revenue if COMP-04/COMP-06 (governance + autonomous-operator trust) clear the buyer's bar — otherwise "the AI modeled it" is a liability, not a feature.
+**Where AI-native lets you LEAPFROG (not chase).** The usual way to model each customer's domain is a **human services workforce**. Pramanyx's autonomous exploration + ontology inference means the *modeling itself is software* — a new warehouse is self-mapped in a background run. A model that is human-in-the-loop by design cannot collapse this; Pramanyx's isn't. **This is the leapfrog.** But it only converts to revenue if COMP-04/COMP-06 (governance + autonomous-operator trust) clear the buyer's bar — otherwise "the AI modeled it" is a liability, not a feature.
 
 **Hard gate: what must be true for autonomous AI operators (incl. autonomous modeling) to be trusted by a regulated/defense buyer.** Treat these as non-negotiable *before* the differentiation strategy ships, not as later features:
 1. **Identity + attribute-based authorization** on every action (SEC-01 — absent today).

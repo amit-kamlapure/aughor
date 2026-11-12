@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.actions import authority
-from aughor.actions.executor import KineticDispatchError, default_dispatch, dispatch_effect
-from aughor.notifications.models import ActionLog, ActionTrigger
-from aughor.ontology.models import KineticAction
+from pramanyx.actions import authority
+from pramanyx.actions.executor import KineticDispatchError, default_dispatch, dispatch_effect
+from pramanyx.notifications.models import ActionLog, ActionTrigger
+from pramanyx.ontology.models import KineticAction
 
 DESK = ActionTrigger(id="t-desk", name="Carrier desk", type="slack", url="https://hooks.slack.example/x")
 
@@ -43,8 +43,8 @@ def sent(monkeypatch):
         return ActionLog(id="log-1", trigger_id=trigger.id, trigger_name=trigger.name, investigation_id="",
                          rec_index=0, recommendation=payload.recommendation, status=record["status"],
                          http_status=200 if record["status"] == "ok" else 500, error=None, fired_at="now")
-    monkeypatch.setattr("aughor.notifications.store.get_trigger", lambda tid: DESK if tid == "t-desk" else None)
-    monkeypatch.setattr("aughor.notifications.executor.fire_action", fire)
+    monkeypatch.setattr("pramanyx.notifications.store.get_trigger", lambda tid: DESK if tid == "t-desk" else None)
+    monkeypatch.setattr("pramanyx.notifications.executor.fire_action", fire)
     return record
 
 

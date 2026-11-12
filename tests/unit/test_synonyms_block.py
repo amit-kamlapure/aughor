@@ -17,13 +17,13 @@ import inspect
 
 import pytest
 
-from aughor.agent import grounding as G
-from aughor.ontology import vocabulary as V
+from pramanyx.agent import grounding as G
+from pramanyx.ontology import vocabulary as V
 
 
 @pytest.fixture
 def vocab(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_VOCABULARY_ROOT", str(tmp_path / "vocab"))
+    monkeypatch.setenv("PRAMANYX_VOCABULARY_ROOT", str(tmp_path / "vocab"))
     return tmp_path
 
 
@@ -88,7 +88,7 @@ def test_block_absent_from_the_context_when_nothing_curated(vocab):
 def test_quick_answer_path_prepends_the_synonyms_block():
     """Wiring guard (the instructions-block idiom): the gap this closes was a store
     nothing prompt-side consumed, so pin the consumption site itself."""
-    from aughor.routers.investigations import _answer_core
+    from pramanyx.routers.investigations import _answer_core
     src = inspect.getsource(_answer_core)
     assert "vocabulary_synonyms" in src
     assert 'prompt = _syn_sec + "\\n" + prompt' in src

@@ -23,7 +23,7 @@ def _duck_file(path, *stmts):
 
 
 def test_cross_source_join_end_to_end(client: TestClient, monkeypatch, tmp_path):
-    from aughor.db import registry
+    from pramanyx.db import registry
 
     lp = _duck_file(
         tmp_path / "left.duckdb",
@@ -57,7 +57,7 @@ def test_cross_source_join_end_to_end(client: TestClient, monkeypatch, tmp_path)
 
 def test_cross_source_join_driver_exceeds_500_row_cap(client: TestClient, monkeypatch, tmp_path):
     """The LEFT driver is read via execute_bounded, so a >500-row join isn't silently truncated."""
-    from aughor.db import registry
+    from pramanyx.db import registry
 
     lpath = tmp_path / "big_left.duckdb"
     lcon = duckdb.connect(str(lpath))
@@ -96,9 +96,9 @@ def test_the_joined_answer_passes_redaction_the_budget_and_the_audit_on_both_con
     """Both reads run under plumbing labels, which skip the post-execution gate, so the joined answer is posted once
     for the two connections it read: a PII column from the RIGHT side is redacted, the right connection's stricter
     row budget applies, and each connection's audit trail records the join (Arc ON leftovers, F7)."""
-    from aughor.db import registry
-    from aughor.security import sandbox
-    from aughor.security.audit import AuditLogger
+    from pramanyx.db import registry
+    from pramanyx.security import sandbox
+    from pramanyx.security.audit import AuditLogger
 
     lp = _duck_file(
         tmp_path / "pii_left.duckdb",
@@ -132,9 +132,9 @@ def test_the_joined_answer_passes_redaction_the_budget_and_the_audit_on_both_con
 def test_the_right_connection_passes_the_pre_execution_gate(client: TestClient, monkeypatch, tmp_path):
     """The right side is read under a plumbing label too, so its connection is gated before the read: a connection the
     gate refuses refuses the join, with the gate's reason (Arc ON leftovers, F7)."""
-    import aughor.db.connection as C
-    from aughor.control_plane.contracts.execution import QueryResult
-    from aughor.db import registry
+    import pramanyx.db.connection as C
+    from pramanyx.control_plane.contracts.execution import QueryResult
+    from pramanyx.db import registry
 
     lp = _duck_file(tmp_path / "gate_left.duckdb", "CREATE TABLE orders (cust VARCHAR)", "INSERT INTO orders VALUES ('C1')")
     rp = _duck_file(tmp_path / "gate_right.duckdb", "CREATE TABLE customers (cust VARCHAR, name VARCHAR)",
@@ -160,7 +160,7 @@ def test_the_right_connection_passes_the_pre_execution_gate(client: TestClient, 
 def test_a_join_on_a_key_that_looks_like_pii_matches_before_the_answer_is_redacted(client: TestClient, tmp_path):
     """The reads are plumbing and only the ANSWER is redacted: a key that looks like PII (an email) still meets its
     rows, where a right read redacted before the join met none of them (Arc ON leftovers, F7)."""
-    from aughor.db import registry
+    from pramanyx.db import registry
 
     lp = _duck_file(
         tmp_path / "email_left.duckdb",

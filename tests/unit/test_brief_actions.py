@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from aughor.knowledge.briefing import best_action_for
+from pramanyx.knowledge.briefing import best_action_for
 
 
 def _play(pid="p1", rec="Pause the two lowest-margin carriers", rate=0.8):
@@ -26,7 +26,7 @@ class TestTheBestAction:
         def retrieve(labels, limit=6, *, learned_rates=True, industry=None, fit=False, **k):
             calls.update(labels=labels, learned_rates=learned_rates, industry=industry, limit=limit, fit=fit)
             return [_play()]
-        monkeypatch.setattr("aughor.playbook.retriever.retrieve_for_metric_and_phases", retrieve)
+        monkeypatch.setattr("pramanyx.playbook.retriever.retrieve_for_metric_and_phases", retrieve)
         a = best_action_for({"angle": "returns", "domain": "ops", "_priority": "return rate", "measures": ["return_rate"]}, industry="retail")
         assert a == {"kind": "play", "id": "p1", "text": "Pause the two lowest-margin carriers", "when": "return_rate above target",
                      "success_rate": 0.8, "executable": False, "why": "the playbook's best play for this finding, by learned success rate"}
@@ -37,34 +37,34 @@ class TestTheBestAction:
                          "limit": 1, "fit": True}
 
     def test_the_investigations_own_first_recommendation_wins_and_is_executable(self, monkeypatch):
-        monkeypatch.setattr("aughor.db.history.get_investigation",
+        monkeypatch.setattr("pramanyx.db.history.get_investigation",
                             lambda inv_id: {"id": inv_id, "report": {"recommendations": [{"text": "Move the cut-off to 14:00"}]}})
         a = best_action_for({"investigation_id": "inv9", "angle": "dispatch"})
         assert a["kind"] == "recommendation" and a["inv_id"] == "inv9" and a["rec_index"] == 0
         assert a["text"] == "Move the cut-off to 14:00" and a["executable"] is True
 
     def test_no_play_and_no_investigation_means_no_action(self, monkeypatch):
-        monkeypatch.setattr("aughor.playbook.retriever.retrieve_for_metric_and_phases", lambda *a, **k: [])
+        monkeypatch.setattr("pramanyx.playbook.retriever.retrieve_for_metric_and_phases", lambda *a, **k: [])
         assert best_action_for({"angle": "x", "domain": "y"}) is None
         assert best_action_for({}) is None
 
     def test_a_playbook_that_fails_hides_the_item_not_the_brief(self, monkeypatch):
         def boom(*a, **k):
             raise RuntimeError("store down")
-        monkeypatch.setattr("aughor.playbook.retriever.retrieve_for_metric_and_phases", boom)
+        monkeypatch.setattr("pramanyx.playbook.retriever.retrieve_for_metric_and_phases", boom)
         assert best_action_for({"angle": "x"}) is None
 
 
 class TestTheBriefCarriesIt:
     def test_each_citation_carries_its_action(self, monkeypatch):
-        from aughor.knowledge import briefing as B
-        monkeypatch.setattr("aughor.playbook.retriever.retrieve_for_metric_and_phases", lambda *a, **k: [_play()])
+        from pramanyx.knowledge import briefing as B
+        monkeypatch.setattr("pramanyx.playbook.retriever.retrieve_for_metric_and_phases", lambda *a, **k: [_play()])
 
         class _Prov:
             def complete(self, system, user, response_model, **kw):
                 return SimpleNamespace(narrative="Returns rose [1].", headline_theme="Returns",
                                        citations=[SimpleNamespace(ref="1", insight_id="i1", domain="ops", angle="returns", finding="")])
-        monkeypatch.setattr("aughor.llm.provider.get_provider", lambda role: _Prov())
+        monkeypatch.setattr("pramanyx.llm.provider.get_provider", lambda role: _Prov())
         monkeypatch.setattr(B, "update_dossier", lambda *a, **k: None, raising=False)
         out = B.generate_narrative({"ops": [{"id": "i1", "finding": "Return rate rose from 6.1% to 9.4%", "novelty": 3,
                                              "confidence": 0.8, "angle": "returns", "sql": "SELECT 1"}]}, [], "c1")

@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.govern.outbound import OutboundBlocked, external_call
+from pramanyx.govern.outbound import OutboundBlocked, external_call
 
 
 class _Decision:
@@ -50,7 +50,7 @@ def emitted(monkeypatch):
     would count every external call twice, once as its span and once as itself.
     """
     seen: list[dict] = []
-    import aughor.obs.session_log as slog
+    import pramanyx.obs.session_log as slog
     real_emit = slog.emit
 
     def _capture(kind, **kw):
@@ -63,7 +63,7 @@ def emitted(monkeypatch):
 
 
 def _allow(monkeypatch, allowed=True, reason=""):
-    monkeypatch.setattr("aughor.govern.usage_caps.check",
+    monkeypatch.setattr("pramanyx.govern.usage_caps.check",
                         lambda **kw: _Decision(allowed, reason))
 
 
@@ -119,7 +119,7 @@ def test_an_unreadable_cap_store_fails_OPEN(monkeypatch, emitted):
     """A cap is a budget. Losing sight of a budget is not a reason to refuse work a human
     asked for — the opposite posture to the approval gate, which governs permission and
     fails closed."""
-    monkeypatch.setattr("aughor.govern.usage_caps.check",
+    monkeypatch.setattr("pramanyx.govern.usage_caps.check",
                         lambda **kw: (_ for _ in ()).throw(RuntimeError("no store")))
     ran = []
     with external_call("slack", "auth.test"):
@@ -128,7 +128,7 @@ def test_an_unreadable_cap_store_fails_OPEN(monkeypatch, emitted):
 
 
 def test_a_broken_session_log_never_fails_the_send(monkeypatch):
-    import aughor.obs.session_log as slog
+    import pramanyx.obs.session_log as slog
     _allow(monkeypatch)
     real_emit = slog.emit
 
@@ -147,7 +147,7 @@ def test_a_broken_session_log_never_fails_the_send(monkeypatch):
 def test_external_calls_count_toward_calls_and_nothing_else(monkeypatch):
     from datetime import datetime, timezone
 
-    from aughor.govern import usage_caps as UC
+    from pramanyx.govern import usage_caps as UC
 
     now = datetime.now(timezone.utc).isoformat()
 
@@ -166,7 +166,7 @@ def test_external_calls_count_toward_calls_and_nothing_else(monkeypatch):
             kind = kw.get("kind")
             return [r for r in rows if not kind or r["kind"] == kind]
 
-    import aughor.kernel.ledger as ledger_mod
+    import pramanyx.kernel.ledger as ledger_mod
     monkeypatch.setattr(ledger_mod.Ledger, "default", classmethod(lambda cls: _FakeLedger()))
 
     totals = UC.observed_usage(window_hours=24)
@@ -178,7 +178,7 @@ def test_external_calls_count_toward_calls_and_nothing_else(monkeypatch):
 def test_an_external_call_outside_the_window_is_not_counted(monkeypatch):
     from datetime import datetime, timedelta, timezone
 
-    from aughor.govern import usage_caps as UC
+    from pramanyx.govern import usage_caps as UC
 
     old = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
 
@@ -189,7 +189,7 @@ def test_an_external_call_outside_the_window_is_not_counted(monkeypatch):
             kind = kw.get("kind")
             return [r for r in rows if not kind or r["kind"] == kind]
 
-    import aughor.kernel.ledger as ledger_mod
+    import pramanyx.kernel.ledger as ledger_mod
     monkeypatch.setattr(ledger_mod.Ledger, "default", classmethod(lambda cls: _FakeLedger()))
     assert UC.observed_usage(window_hours=24)["calls"] == 0.0
 
@@ -199,7 +199,7 @@ def test_an_external_call_outside_the_window_is_not_counted(monkeypatch):
 def test_a_blocked_slack_post_reports_nothing_was_sent(monkeypatch):
     """Not 'uncertain': nothing left the machine, so a retry once the window rolls over
     is legitimate. Marking it uncertain would suppress a send that never happened."""
-    from aughor.slackbots.post import post_as_bot
+    from pramanyx.slackbots.post import post_as_bot
     _allow(monkeypatch, allowed=False, reason="Usage cap reached: 10 calls / 24h")
     ok, info = post_as_bot("xoxb-t", "C1", "hello")
     assert ok is False
@@ -210,7 +210,7 @@ def test_a_blocked_slack_post_reports_nothing_was_sent(monkeypatch):
 def test_a_blocked_auth_test_reports_NOT_VERIFIED_not_a_bad_token(monkeypatch):
     """Telling a user their token is wrong when it was never checked sends them to
     rotate a credential that was fine."""
-    from aughor.slackbots.verify import auth_test
+    from pramanyx.slackbots.verify import auth_test
     _allow(monkeypatch, allowed=False, reason="Usage cap reached")
     ok, info = auth_test("xoxb-t")
     assert ok is False and "not verified" in info["error"]

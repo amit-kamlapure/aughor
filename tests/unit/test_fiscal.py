@@ -2,10 +2,10 @@
 
 fiscal_period_expr shifts QUARTER/YEAR boundaries for an org whose fiscal year starts in
 month M≠1; it is a strict no-op at the January default and for non-shiftable grains, so
-calendar-year orgs are byte-for-byte unchanged. See aughor/sql/fiscal.py.
+calendar-year orgs are byte-for-byte unchanged. See pramanyx/sql/fiscal.py.
 """
 import duckdb
-from aughor.sql.fiscal import fiscal_period_expr
+from pramanyx.sql.fiscal import fiscal_period_expr
 
 
 def test_january_is_a_noop():

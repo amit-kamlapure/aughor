@@ -7,13 +7,13 @@ refuses to capture.
 """
 from __future__ import annotations
 
-from aughor.evals import promote_trusted as PT
+from pramanyx.evals import promote_trusted as PT
 
 
 def _wire(monkeypatch, *, cases, runs, results):
-    monkeypatch.setattr("aughor.evals.store.list_cases", lambda sid, limit=1000: cases)
-    monkeypatch.setattr("aughor.evals.store.list_runs", lambda sid, limit=50: runs)
-    monkeypatch.setattr("aughor.evals.store.run_results",
+    monkeypatch.setattr("pramanyx.evals.store.list_cases", lambda sid, limit=1000: cases)
+    monkeypatch.setattr("pramanyx.evals.store.list_runs", lambda sid, limit=50: runs)
+    monkeypatch.setattr("pramanyx.evals.store.run_results",
                         lambda rid, limit=5000: results[rid])
 
 
@@ -77,9 +77,9 @@ def test_the_minted_note_refuses_to_claim_correctness(monkeypatch):
           runs=[{"id": "r1", "status": "succeeded"}, {"id": "r2", "status": "succeeded"}],
           results={"r1": [{"case_id": "c1", "passed": True}],
                    "r2": [{"case_id": "c1", "passed": True}]})
-    monkeypatch.setattr("aughor.semantic.trusted_queries.list_trusted",
+    monkeypatch.setattr("pramanyx.semantic.trusted_queries.list_trusted",
                         lambda c, include_unapproved=False: [])
-    monkeypatch.setattr("aughor.semantic.trusted_queries.save_trusted", saved.append)
+    monkeypatch.setattr("pramanyx.semantic.trusted_queries.save_trusted", saved.append)
 
     out = PT.promote("s1", "conn")
     assert out["promoted"] == 1
@@ -92,7 +92,7 @@ def test_the_prompt_header_states_the_weakest_warrant_present():
     """Claiming KNOWN-CORRECT over a set containing an eval-verified entry would
     launder the weaker warrant into the stronger one, in a prompt whose whole job is
     to be believed."""
-    from aughor.semantic.trusted_queries import TrustedQuery, build_trusted_block
+    from pramanyx.semantic.trusted_queries import TrustedQuery, build_trusted_block
 
     def _tq(tags):
         return (TrustedQuery(id="i", connection_id="c", question="q", sql="SELECT 1",

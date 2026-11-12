@@ -16,7 +16,7 @@ import type { Author, EmojiValue } from "chat";
 
 import type {
   AnswerEnvelope, ApprovalBody, AskOptions, DecisionBody, DecisionResult, TurnArtifacts, VerdictBody,
-} from "./aughor.js";
+} from "./pramanyx.js";
 import type { Grid, TableRendering } from "./artifacts.js";
 import { buildBot, CORRECTION, parseDecision, stripMention, withoutTables } from "./bot.js";
 
@@ -35,7 +35,7 @@ const THREAD = "slack:C1:1712.001";
 // Mention detection matches the ADAPTER's userName (the real Slack adapter
 // resolves the installed bot's name); the mock defaults to "slack-bot", so
 // align it with the bot we build.
-const mockAughorAdapter = () => createMockAdapter("slack", { userName: "aughor" });
+const mockPramanyxAdapter = () => createMockAdapter("slack", { userName: "pramanyx" });
 
 function fakeAsk(chunks: string[]) {
   const calls: { question: string; opts: AskOptions }[] = [];
@@ -48,14 +48,14 @@ function fakeAsk(chunks: string[]) {
 
 describe("buildBot", () => {
   it("a mention streams the governed answer into the thread", async () => {
-    const adapter = mockAughorAdapter();
+    const adapter = mockPramanyxAdapter();
     const { ask, calls } = fakeAsk(["East is flat.", " South is down 4%."]);
     const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState() });
 
     await bot.handleIncomingMessage(
       adapter,
       THREAD,
-      createTestMessage("m1", "@aughor why did revenue dip?"),
+      createTestMessage("m1", "@pramanyx why did revenue dip?"),
     );
 
     // Streaming is post-then-edit: the placeholder posts, the accumulated
@@ -69,18 +69,18 @@ describe("buildBot", () => {
   });
 
   it("a bare mention gets usage, and spends nothing", async () => {
-    const adapter = mockAughorAdapter();
+    const adapter = mockPramanyxAdapter();
     const { ask, calls } = fakeAsk(["never"]);
     const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState() });
 
-    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m2", "@aughor"));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m2", "@pramanyx"));
 
     expect(adapter).toHavePosted(THREAD, /Ask me a data question/);
     expect(calls).toHaveLength(0);
   });
 
   it("an unmentioned message is not answered — reply on address, never on overhear", async () => {
-    const adapter = mockAughorAdapter();
+    const adapter = mockPramanyxAdapter();
     const { ask, calls } = fakeAsk(["never"]);
     const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState() });
 
@@ -96,9 +96,9 @@ describe("buildBot", () => {
 
 describe("stripMention", () => {
   it("removes plain and raw mention tokens, keeping the question", () => {
-    expect(stripMention("@aughor why did revenue dip?")).toBe("why did revenue dip?");
-    expect(stripMention("<@U0AUGHOR> why did revenue dip?")).toBe("why did revenue dip?");
-    expect(stripMention("hey @Aughor — why?")).toBe("hey — why?");
+    expect(stripMention("@pramanyx why did revenue dip?")).toBe("why did revenue dip?");
+    expect(stripMention("<@U0PRAMANYX> why did revenue dip?")).toBe("why did revenue dip?");
+    expect(stripMention("hey @Pramanyx — why?")).toBe("hey — why?");
     // The SDK normalizes a Slack mention to "@" + user id WITHOUT brackets —
     // seen live: the raw token leaked into the question and the session title.
     expect(stripMention("@U0BT4QWH0KH why did revenue dip most recently")).toBe(
@@ -135,17 +135,17 @@ describe("buildBot — RC-2", () => {
     // messages a day earlier — the message is for the people in the channel, and a trail
     // back into the platform is not what they are there for. The record still exists in
     // Pramanyx; the Slack message just stops advertising it.
-    const adapter = mockAughorAdapter();
+    const adapter = mockPramanyxAdapter();
     const { ask } = askYielding(["East leads."]);
     const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState() });
 
-    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@pramanyx why?"));
 
     expect(adapter).toHaveEdited(THREAD, "msg-1", /^East leads\.$/);
   });
 
   it("the turn's exhibits follow the answer as their own message — table and chart", async () => {
-    const adapter = mockAughorAdapter();
+    const adapter = mockPramanyxAdapter();
     const { ask } = askYielding(["East leads."], {
       columns: ["region", "revenue"],
       rows: [["East", 12], ["West", 9]],
@@ -159,7 +159,7 @@ describe("buildBot — RC-2", () => {
       adapters: { slack: adapter }, state: createMockState(),
     });
 
-    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@pramanyx why?"));
 
     const post = lastPost(adapter) as { markdown: string; files: { filename: string }[] };
     expect(door.asked).toEqual([{ columns: ["region", "revenue"], rows: [["East", 12], ["West", 9]] }]);
@@ -168,7 +168,7 @@ describe("buildBot — RC-2", () => {
   });
 
   it("a wide result is attached as CSV, never tabled into a wall", async () => {
-    const adapter = mockAughorAdapter();
+    const adapter = mockPramanyxAdapter();
     const { ask } = askYielding(["Here."], {
       columns: ["a", "b", "c", "d", "e", "f", "g"],
       rows: [[1, 2, 3, 4, 5, 6, 7], [8, 9, 10, 11, 12, 13, 14]],
@@ -180,7 +180,7 @@ describe("buildBot — RC-2", () => {
       adapters: { slack: adapter }, state: createMockState(),
     });
 
-    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@pramanyx why?"));
 
     const post = lastPost(adapter) as { markdown: string; files: { filename: string }[] };
     expect(post.markdown).toBe("_2 rows × 7 columns — the full result is attached as CSV._");
@@ -188,7 +188,7 @@ describe("buildBot — RC-2", () => {
   });
 
   it("a one-number result gets no exhibit — the prose already said it", async () => {
-    const adapter = mockAughorAdapter();
+    const adapter = mockPramanyxAdapter();
     const { ask } = askYielding(["Revenue was €1.2M."], {
       columns: ["revenue"], rows: [[1200000]],
     });
@@ -198,14 +198,14 @@ describe("buildBot — RC-2", () => {
       adapters: { slack: adapter }, state: createMockState(),
     });
 
-    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor how much?"));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@pramanyx how much?"));
 
     // Only the streamed answer's own placeholder post — nothing followed it.
     expect((adapter.postMessage as unknown as Mock).mock.calls).toHaveLength(1);
   });
 
   it("a failed chart render costs the picture, not the answer", async () => {
-    const adapter = mockAughorAdapter();
+    const adapter = mockPramanyxAdapter();
     const { ask } = askYielding(["East leads."], {
       columns: ["region", "revenue"], rows: [["East", 12], ["West", 9]],
     });
@@ -215,7 +215,7 @@ describe("buildBot — RC-2", () => {
       adapters: { slack: adapter }, state: createMockState(),
     });
 
-    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@pramanyx why?"));
 
     const post = lastPost(adapter) as { markdown: string; files?: unknown[] };
     expect(post.markdown).toContain("| East | 12 |");
@@ -225,11 +225,11 @@ describe("buildBot — RC-2", () => {
   it("the platform's stop signal reaches the transport", async () => {
     // Without this the stop button stops the VIEW and leaves the run burning:
     // FL-1 detached the producer, so only a server-side cancel ends the spend.
-    const adapter = mockAughorAdapter();
+    const adapter = mockPramanyxAdapter();
     const { ask, seen } = askYielding(["partial"]);
     const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState() });
 
-    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@pramanyx why?"));
 
     expect(seen).toHaveLength(1);
     expect(seen[0].signal).toBeInstanceOf(AbortSignal);
@@ -240,7 +240,7 @@ describe("buildBot — RC-2", () => {
 // ── HB-5 · the note verb: arrivals, never asks ──────────────────────────────────
 
 import { parseSlackThreadRef } from "./bot.js";
-import type { ArrivalBody, ArrivalResult } from "./aughor.js";
+import type { ArrivalBody, ArrivalResult } from "./pramanyx.js";
 
 function fakeArrivals(result: Partial<ArrivalResult> = {}) {
   const posted: ArrivalBody[] = [];
@@ -269,7 +269,7 @@ describe("AO-6 — rehearse: a mention is answered privately first, the channel 
   /** The mock adapter, taught the two optional doors the Slack adapter has: a DM per user
    *  and an ephemeral per thread. The DM detection mirrors Slack's (a `D…` channel). */
   function rehearsingAdapter() {
-    const adapter = mockAughorAdapter();
+    const adapter = mockPramanyxAdapter();
     const ephemerals: { threadId: string; userId: string }[] = [];
     Object.assign(adapter, {
       openDM: async (_userId: string) => DM,
@@ -294,7 +294,7 @@ describe("AO-6 — rehearse: a mention is answered privately first, the channel 
     const { ask, seen } = askYielding(["East is flat.", " South is down 4%."], { investigationId: "inv-42" });
     const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState(), rehearse: true });
 
-    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why did revenue dip?"));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@pramanyx why did revenue dip?"));
 
     expect(postsTo(adapter, THREAD)).toHaveLength(0);
     expect(adapter).toHavePosted(DM, /You asked in <#C1>: “why did revenue dip\?”/);
@@ -314,7 +314,7 @@ describe("AO-6 — rehearse: a mention is answered privately first, the channel 
     const postVerdict = async (body: VerdictBody) => { verdicts.push(body); return { ok: true, status: 200, detail: "recorded" }; };
     const { ask } = askYielding(["Nine orders."], { investigationId: "inv-42" });
     const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState(), rehearse: true, postVerdict });
-    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor how many orders?"));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@pramanyx how many orders?"));
     expect(postsTo(adapter, THREAD)).toHaveLength(0);
 
     bot.processReaction(reaction(adapter, "white_check_mark", "msg-1", DM));   // msg-1 is the DM's prelude
@@ -332,7 +332,7 @@ describe("AO-6 — rehearse: a mention is answered privately first, the channel 
     const { adapter } = rehearsingAdapter();
     const { ask } = askYielding(["Nine orders."], { investigationId: "inv-42" });
     const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState(), rehearse: true });
-    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor how many orders?"));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@pramanyx how many orders?"));
 
     bot.processReaction(reaction(adapter, "x", "msg-1", DM));
     await settle();
@@ -344,7 +344,7 @@ describe("AO-6 — rehearse: a mention is answered privately first, the channel 
     const { adapter } = rehearsingAdapter();
     const { ask } = askYielding(["Nine orders."], { investigationId: "inv-42" });
     const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState(), rehearse: true });
-    await bot.handleIncomingMessage(adapter, DM, createTestMessage("m1", "@aughor how many orders?"));
+    await bot.handleIncomingMessage(adapter, DM, createTestMessage("m1", "@pramanyx how many orders?"));
 
     expect(adapter).toHaveEdited(DM, "msg-1", /Nine orders\./);
     expect((adapter.postMessage as unknown as Mock).mock.calls.some(
@@ -355,7 +355,7 @@ describe("AO-6 — rehearse: a mention is answered privately first, the channel 
     const { adapter, ephemerals } = rehearsingAdapter();
     const { ask } = askYielding(["Nine orders."], { investigationId: "inv-42" });
     const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState() });
-    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor how many orders?"));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@pramanyx how many orders?"));
 
     expect(adapter).toHaveEdited(THREAD, "msg-1", /Nine orders\./);
     expect(postsTo(adapter, DM)).toHaveLength(0);
@@ -365,7 +365,7 @@ describe("AO-6 — rehearse: a mention is answered privately first, the channel 
 
 describe("the note verb", () => {
   it("files the sentence through the arrivals door and never calls ask", async () => {
-    const adapter = mockAughorAdapter();
+    const adapter = mockPramanyxAdapter();
     const { ask, calls } = fakeAsk(["never"]);
     const { postArrival, posted } = fakeArrivals();
     const bot = buildBot({ ask, postArrival, adapters: { slack: adapter }, state: createMockState() });
@@ -373,7 +373,7 @@ describe("the note verb", () => {
     await bot.handleIncomingMessage(
       adapter,
       THREAD,
-      createTestMessage("m9", "@aughor note: carrier X was on strike last week"),
+      createTestMessage("m9", "@pramanyx note: carrier X was on strike last week"),
     );
 
     expect(calls).toHaveLength(0);                      // an arrival is not an ask
@@ -385,27 +385,27 @@ describe("the note verb", () => {
   });
 
   it("repeats the door's refusal honestly on an unfiled thread", async () => {
-    const adapter = mockAughorAdapter();
+    const adapter = mockPramanyxAdapter();
     const { ask, calls } = fakeAsk(["never"]);
     const { postArrival } = fakeArrivals({ ok: false, status: 404,
       detail: "thread C1:1712.001 is not filed on any object — nothing to note" });
     const bot = buildBot({ ask, postArrival, adapters: { slack: adapter }, state: createMockState() });
 
     await bot.handleIncomingMessage(
-      adapter, THREAD, createTestMessage("m10", "@aughor note: this thread is unfiled"));
+      adapter, THREAD, createTestMessage("m10", "@pramanyx note: this thread is unfiled"));
 
     expect(calls).toHaveLength(0);
     expect(adapter).toHavePosted(THREAD);
   });
 
   it("without the verb, a question still asks — the arrival path never hijacks", async () => {
-    const adapter = mockAughorAdapter();
+    const adapter = mockPramanyxAdapter();
     const { ask, calls } = fakeAsk(["East is flat."]);
     const { posted, postArrival } = fakeArrivals();
     const bot = buildBot({ ask, postArrival, adapters: { slack: adapter }, state: createMockState() });
 
     await bot.handleIncomingMessage(
-      adapter, THREAD, createTestMessage("m11", "@aughor note that revenue dipped?"));
+      adapter, THREAD, createTestMessage("m11", "@pramanyx note that revenue dipped?"));
 
     // The COLON is the verb: "note that…" is prose and asks; only "note: …" files.
     expect(posted).toHaveLength(0);
@@ -461,7 +461,7 @@ describe("buildBot — the grid posts once, from the envelope (CP-4)", () => {
     // Measured 2026-09-23: a real answer carried the same five rows twice — the model's
     // table in the prose, then the transport's grid. The prose table is held back as it
     // streams; the grid is the one field that renders it.
-    const adapter = mockAughorAdapter();
+    const adapter = mockPramanyxAdapter();
     const { ask } = askYielding([TABULATED], GRID);
     const bot = buildBot({
       ask, renderChart: async () => Buffer.from("PNGBYTES"),
@@ -469,7 +469,7 @@ describe("buildBot — the grid posts once, from the envelope (CP-4)", () => {
       adapters: { slack: adapter }, state: createMockState(),
     });
 
-    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@pramanyx why?"));
 
     expect(adapter).toHaveEdited(THREAD, "msg-1", /Top regions:/);
     expect(editedText(adapter)).not.toContain("| 1 | East |");
@@ -480,7 +480,7 @@ describe("buildBot — the grid posts once, from the envelope (CP-4)", () => {
   });
 
   it("selects the envelope's grid, chart decision and top two caveats — never its provenance", async () => {
-    const adapter = mockAughorAdapter();
+    const adapter = mockPramanyxAdapter();
     const rendered: Record<string, unknown>[] = [];
     const envelope: AnswerEnvelope = {
       version: 1, question: "why?", headline: "East leads.", body: "",
@@ -500,7 +500,7 @@ describe("buildBot — the grid posts once, from the envelope (CP-4)", () => {
       adapters: { slack: adapter }, state: createMockState(),
     });
 
-    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@pramanyx why?"));
 
     const post = lastPost(adapter) as { markdown: string; files: { filename: string }[] };
     expect(door.asked).toEqual([envelope.grid]);     // the envelope's grid, not the frames'
@@ -518,7 +518,7 @@ describe("buildBot — the grid posts once, from the envelope (CP-4)", () => {
   });
 
   it("keeps the exhibit table when the answer is prose", async () => {
-    const adapter = mockAughorAdapter();
+    const adapter = mockPramanyxAdapter();
     const { ask } = askYielding(["East leads, and it is not close."], GRID);
     const bot = buildBot({
       ask, renderChart: async () => null,
@@ -526,13 +526,13 @@ describe("buildBot — the grid posts once, from the envelope (CP-4)", () => {
       adapters: { slack: adapter }, state: createMockState(),
     });
 
-    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@pramanyx why?"));
 
     expect((lastPost(adapter) as { markdown: string }).markdown).toContain("| East | 12 |");
   });
 
   it("a one-number envelope with a caveat posts the caveat and no table", async () => {
-    const adapter = mockAughorAdapter();
+    const adapter = mockPramanyxAdapter();
     const envelope: AnswerEnvelope = {
       version: 1, question: "q", headline: "Revenue was $1.2M.", body: "",
       grid: { columns: ["revenue"], rows: [[1.2e6]] }, chart: { chart_type: "auto", chart_config: {} },
@@ -545,7 +545,7 @@ describe("buildBot — the grid posts once, from the envelope (CP-4)", () => {
       adapters: { slack: adapter }, state: createMockState(),
     });
 
-    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor q"));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@pramanyx q"));
 
     const post = lastPost(adapter) as { markdown: string; files?: unknown[] };
     expect(post.markdown).toBe("⚠️ excludes refunds");
@@ -556,7 +556,7 @@ describe("buildBot — the grid posts once, from the envelope (CP-4)", () => {
     // A long grid renders as first-rows + CSV, and "Showing N of M rows" is what tells the
     // reader more exists. The model's own table is an excerpt too, so dropping the caption
     // would hide the remainder rather than de-duplicate it.
-    const adapter = mockAughorAdapter();
+    const adapter = mockPramanyxAdapter();
     const rows = Array.from({ length: 60 }, (_, i) => [`r${i}`, i]) as unknown[][];
     const { ask } = askYielding([TABULATED], { columns: ["region", "revenue"], rows });
     const bot = buildBot({
@@ -567,7 +567,7 @@ describe("buildBot — the grid posts once, from the envelope (CP-4)", () => {
       adapters: { slack: adapter }, state: createMockState(),
     });
 
-    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor why?"));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@pramanyx why?"));
 
     const post = lastPost(adapter) as { markdown: string; files: { filename: string }[] };
     expect(post.markdown).toContain("of 60 rows");
@@ -587,7 +587,7 @@ describe("buildBot — the check verb (idea 7)", () => {
   };
 
   it("checks the memo through the door and posts the verdict as prose, then the grid", async () => {
-    const adapter = mockAughorAdapter();
+    const adapter = mockPramanyxAdapter();
     const { ask, calls } = fakeAsk(["never"]);
     const checked: string[] = [];
     const door = tableDoor({ markdown: "| Claim | Said | Measured | Verdict | Why |\n| --- | --- | --- | --- | --- |\n"
@@ -597,7 +597,7 @@ describe("buildBot — the check verb (idea 7)", () => {
       factCheck: async (text) => { checked.push(text); return { ok: true, status: 200, detail: "", envelope: ENVELOPE }; },
     });
 
-    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor check: Revenue in August was $4.2M."));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@pramanyx check: Revenue in August was $4.2M."));
 
     expect(door.asked).toEqual([ENVELOPE.grid]);
 
@@ -610,15 +610,15 @@ describe("buildBot — the check verb (idea 7)", () => {
   });
 
   it("an empty check explains itself, and a refused check says why", async () => {
-    const adapter = mockAughorAdapter();
+    const adapter = mockPramanyxAdapter();
     const { ask } = fakeAsk(["never"]);
     const bot = buildBot({
       ask, adapters: { slack: adapter }, state: createMockState(),
       factCheck: async () => ({ ok: false, status: 400, detail: "nothing to check: the text is empty", envelope: null }),
     });
-    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor check:"));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@pramanyx check:"));
     expect(adapter).toHavePosted(THREAD, /Paste the memo after `check:`/);
-    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m2", "@aughor check: 3 regions"));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m2", "@pramanyx check: 3 regions"));
     expect(adapter).toHavePosted(THREAD, /Not checked: nothing to check/);
   });
 });
@@ -634,7 +634,7 @@ describe("TJ-4 — a reaction is a verdict", () => {
   async function settle() { await new Promise(r => setTimeout(r, 10)); }
 
   it("✅ records an accept on the turn the answer came from, ❌ a reject, a removed emoji nothing", async () => {
-    const adapter = mockAughorAdapter();
+    const adapter = mockPramanyxAdapter();
     const verdicts: VerdictBody[] = [];
     const postVerdict = async (body: VerdictBody) => { verdicts.push(body); return { ok: true, status: 200, detail: "recorded" }; };
     async function* ask(question: string, opts: AskOptions) {
@@ -642,7 +642,7 @@ describe("TJ-4 — a reaction is a verdict", () => {
       yield "Nine orders.";
     }
     const bot = buildBot({ ask, adapters: { slack: adapter }, state: createMockState(), postVerdict });
-    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor how many orders?"));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@pramanyx how many orders?"));
 
     bot.processReaction(reaction(adapter, "white_check_mark"));
     await settle();
@@ -662,7 +662,7 @@ describe("TJ-4 — a reaction is a verdict", () => {
   });
 
   it("a reaction on a thread the bot never answered records nothing", async () => {
-    const adapter = mockAughorAdapter();
+    const adapter = mockPramanyxAdapter();
     const verdicts: VerdictBody[] = [];
     const postVerdict = async (body: VerdictBody) => { verdicts.push(body); return { ok: true, status: 200, detail: "recorded" }; };
     const { ask } = fakeAsk(["Answer."]);
@@ -686,10 +686,10 @@ describe("buildBot — a correction said in the thread", () => {
   }
 
   async function answered(postVerdict?: (b: VerdictBody) => Promise<{ ok: boolean; status: number; detail: string }>) {
-    const adapter = mockAughorAdapter();
+    const adapter = mockPramanyxAdapter();
     const { ask, seen } = askYielding(["Revenue was 365,320."], { investigationId: "inv-42", question: "revenue in 2023?" });
     const bot = buildBot({ ask, postVerdict, adapters: { slack: adapter }, state: createMockState() });
-    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor revenue in 2023?"));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@pramanyx revenue in 2023?"));
     return { adapter, bot, seen };
   }
 
@@ -734,7 +734,7 @@ describe("buildBot — a correction said in the thread", () => {
     // message, mentions included, goes to the followed-thread handler. Without the hand-over
     // a follow-up question in the bot's own thread would be met with silence.
     const { adapter, bot, seen } = await answered();
-    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m2", "@aughor and for 2024?"));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m2", "@pramanyx and for 2024?"));
     expect(seen).toHaveLength(2);
   });
 
@@ -762,7 +762,7 @@ describe("the decide verb", () => {
   async function settle() { await new Promise(r => setTimeout(r, 10)); }
 
   async function decided(extra: { approvalOk?: boolean } = {}) {
-    const adapter = mockAughorAdapter();
+    const adapter = mockPramanyxAdapter();
     const decisions: DecisionBody[] = [];
     const approvals: ApprovalBody[] = [];
     const verdicts: VerdictBody[] = [];
@@ -777,19 +777,19 @@ describe("the decide verb", () => {
     const postVerdict = async (b: VerdictBody) => { verdicts.push(b); return { ok: true, status: 200, detail: "recorded" }; };
     const { ask } = askYielding(["Paid social brought 132 of 923 orders."], { investigationId: "inv-3", question: "what did paid social bring?" });
     const bot = buildBot({ ask, postDecision, postApproval, postVerdict, adapters: { slack: adapter }, state: createMockState() });
-    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@aughor what did paid social bring?", author("U9", "Amit")));
+    await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m1", "@pramanyx what did paid social bring?", author("U9", "Amit")));
     (adapter.postMessage as unknown as Mock).mockResolvedValueOnce({ id: "card-1", threadId: THREAD, raw: {} });
     await bot.handleIncomingMessage(adapter, THREAD, createTestMessage("m2",
-      "@aughor decide: pause paid social on Mytheresa for September — approvers <@U2> <@U3>", author("U9", "Amit")));
+      "@pramanyx decide: pause paid social on Mytheresa for September — approvers <@U2> <@U3>", author("U9", "Amit")));
     return { adapter, bot, decisions, approvals, verdicts };
   }
 
   it("reads what was decided and the approvers named after the verb", () => {
     expect(parseDecision("<@UBOT> decide: pause paid social — approvers <@U2> <@U3|ben>")).toEqual(
       { decided: "pause paid social", approverIds: ["U2", "U3"] });
-    expect(parseDecision("@aughor decide: raise the threshold to 49 EUR")).toEqual(
+    expect(parseDecision("@pramanyx decide: raise the threshold to 49 EUR")).toEqual(
       { decided: "raise the threshold to 49 EUR", approverIds: [] });
-    expect(parseDecision("@aughor decide:")).toEqual({ decided: "", approverIds: [] });
+    expect(parseDecision("@pramanyx decide:")).toEqual({ decided: "", approverIds: [] });
   });
 
   it("books the decision citing the thread's answer, and posts the card its approvers react on", async () => {
@@ -829,10 +829,10 @@ describe("the decide verb", () => {
     await settle();
     expect(adapter).toHavePosted(THREAD, /Not booked: no decision dec-7/);
 
-    const plain = mockAughorAdapter();
+    const plain = mockPramanyxAdapter();
     const { ask, calls } = fakeAsk(["Answer."]);
     const bot2 = buildBot({ ask, adapters: { slack: plain }, state: createMockState() });
-    await bot2.handleIncomingMessage(plain, THREAD, createTestMessage("m3", "@aughor decide: something"));
+    await bot2.handleIncomingMessage(plain, THREAD, createTestMessage("m3", "@pramanyx decide: something"));
     expect(calls).toHaveLength(1);
   });
 });

@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-import aughor.explorer.store as store
+import pramanyx.explorer.store as store
 
 
 @pytest.fixture(autouse=True)
@@ -60,12 +60,12 @@ def test_annotations_come_from_per_schema_runs(tmp_path):
 # ── the episodes endpoint merges bare + per-schema files ──────────────────────
 
 def test_episodes_endpoint_merges_per_schema_files(tmp_path, monkeypatch):
-    import aughor.routers.exploration as expl_router
+    import pramanyx.routers.exploration as expl_router
 
     (tmp_path / "data").mkdir()
-    # WP-4 — the endpoint now reads episodes_dir() (honours AUGHOR_EPISODES_DIR), not a
+    # WP-4 — the endpoint now reads episodes_dir() (honours PRAMANYX_EPISODES_DIR), not a
     # CWD-relative Path("data"). Point the resolved dir at this test's fixture files.
-    monkeypatch.setattr("aughor.explorer.episodes._DATA_DIR", tmp_path / "data")
+    monkeypatch.setattr("pramanyx.explorer.episodes._DATA_DIR", tmp_path / "data")
     (tmp_path / "data" / "episodes_c1.jsonl").write_text(
         json.dumps({"connection_id": "c1", "phase": "exploration", "ts": 1, "sql": "q1"}) + "\n")
     (tmp_path / "data" / "episodes_c1__sales.jsonl").write_text(
@@ -84,7 +84,7 @@ def test_digest_exploration_section_reads_real_insights(tmp_path):
         {"id": "s1", "finding": "APAC SMB revenue dropped 38.8% on the outage day. More prose."},
         {"id": "s2", "finding": "quarantined", "invalid": True},
     ])
-    from aughor.monitors.alert_summary import build_alert_summary
+    from pramanyx.monitors.alert_summary import build_alert_summary
 
     sections = build_alert_summary("c1").sections
     expl = next((s for s in sections if s.title == "Exploration Insights"), None)
@@ -131,7 +131,7 @@ def test_a_still_running_schema_keeps_reporting_its_live_phase(tmp_path):
 def test_the_status_route_names_the_schemas_that_failed(tmp_path):
     """A phase is one word and cannot say WHICH schemas fell over, so a partly
     failed run needs the error field to say it — the field that was hardcoded None."""
-    from aughor.routers.exploration import get_exploration_status
+    from pramanyx.routers.exploration import get_exploration_status
 
     _seed(tmp_path, "c1__sales", phase="complete")
     _seed(tmp_path, "c1__ops", phase="failed")
@@ -147,7 +147,7 @@ def test_the_status_route_names_the_schemas_that_failed(tmp_path):
 
 def test_a_clean_run_still_reports_no_error(tmp_path):
     """The guard must not invent failures — a healthy run stays healthy."""
-    from aughor.routers.exploration import get_exploration_status
+    from pramanyx.routers.exploration import get_exploration_status
 
     _seed(tmp_path, "c1__sales", phase="complete")
     _seed(tmp_path, "c1__ops", phase="complete")

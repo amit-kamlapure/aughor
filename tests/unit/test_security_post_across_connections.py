@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import uuid
 
-from aughor.control_plane.contracts.execution import QueryResult
-from aughor.db.connection import security_post
-from aughor.security import sandbox
-from aughor.security.audit import AuditLogger
+from pramanyx.control_plane.contracts.execution import QueryResult
+from pramanyx.db.connection import security_post
+from pramanyx.security import sandbox
+from pramanyx.security.audit import AuditLogger
 
 
 def _ids(n: int) -> list[str]:

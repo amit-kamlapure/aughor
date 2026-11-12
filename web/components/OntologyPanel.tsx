@@ -612,7 +612,7 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
 
   // ── Header bar ──────────────────────────────────────────────────────────────
   // Laid out as the approved mockup lays it out (design-mockups/ontology-tab.html, 2026-10-10; the law is
-  // aughor-v2/CLARITY.md): the scope, the figures the map holds, the release everyone reads, what waits on a person,
+  // pramanyx-v2/CLARITY.md): the scope, the figures the map holds, the release everyone reads, what waits on a person,
   // and every tool in one menu. Inside the app the shell's title row names the screen.
   const tool = (which: Drawer) => setDrawer(open => (open === which ? null : which));
   const facts = !orgMode ? summary : null;

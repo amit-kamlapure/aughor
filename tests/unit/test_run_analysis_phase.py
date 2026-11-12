@@ -6,7 +6,7 @@ every phase's `return _PhaseRun(ok=True, ...)` raised "missing 'state'" at runti
 something imports and unit tests passed right over."""
 import inspect
 
-from aughor.agent import investigate as I
+from pramanyx.agent import investigate as I
 
 
 def test_phaserun_is_a_class_not_a_wrapped_node():

@@ -1,13 +1,13 @@
 """/health LLM readiness field — shape, semantics, and resilience.
 
-`aughor up` reads this field to print the boot summary, so its shape is a
+`pramanyx up` reads this field to print the boot summary, so its shape is a
 contract: {backend, model, key_present, ready, reason}, derived from config only
 (no network), and /health must keep answering 200 even when the LLM config is
 broken.
 
 `ready` is NOT `key_present`. Nothing ships a default model, so the default Ollama
 binding — which needs no key — resolved to an empty model and still reported ready;
-`aughor up` printed "ollama · ? · ready" on an install where the first question was
+`pramanyx up` printed "ollama · ? · ready" on an install where the first question was
 guaranteed to fail with NoModelConfigured.
 """
 from __future__ import annotations
@@ -40,8 +40,8 @@ def test_health_llm_ready_requires_a_model_not_just_a_key(client: TestClient) ->
 
 def test_llm_readiness_keyless_backend_is_ready(monkeypatch) -> None:
     """Local backends (ollama/lmstudio) need no key → ready by construction."""
-    import aughor.llm.provider as provider
-    from aughor.routers import system
+    import pramanyx.llm.provider as provider
+    from pramanyx.routers import system
 
     monkeypatch.setattr(
         provider, "resolve_binding",
@@ -60,8 +60,8 @@ def test_llm_readiness_keyless_backend_is_ready(monkeypatch) -> None:
 def test_llm_readiness_keyless_backend_without_a_model_is_not_ready(monkeypatch) -> None:
     """The shipped default: Ollama needs no key, and no model ships. `ready` used to
     mirror `key_present`, so this exact state reported ready."""
-    import aughor.llm.provider as provider
-    from aughor.routers import system
+    import pramanyx.llm.provider as provider
+    from pramanyx.routers import system
 
     monkeypatch.setattr(
         provider, "resolve_binding",
@@ -74,8 +74,8 @@ def test_llm_readiness_keyless_backend_without_a_model_is_not_ready(monkeypatch)
 
 
 def test_llm_readiness_keyed_backend_without_key_is_not_ready(monkeypatch) -> None:
-    import aughor.llm.provider as provider
-    from aughor.routers import system
+    import pramanyx.llm.provider as provider
+    from pramanyx.routers import system
 
     monkeypatch.setattr(
         provider, "resolve_binding",
@@ -90,8 +90,8 @@ def test_llm_readiness_keyed_backend_without_key_is_not_ready(monkeypatch) -> No
 
 
 def test_llm_readiness_keyed_backend_with_key_is_ready(monkeypatch) -> None:
-    import aughor.llm.provider as provider
-    from aughor.routers import system
+    import pramanyx.llm.provider as provider
+    from pramanyx.routers import system
 
     monkeypatch.setattr(
         provider, "resolve_binding",
@@ -106,7 +106,7 @@ def test_llm_readiness_keyed_backend_with_key_is_ready(monkeypatch) -> None:
 
 def test_health_still_200_when_llm_config_is_broken(client: TestClient, monkeypatch) -> None:
     """A broken provider config must degrade the llm field, never 500 /health."""
-    import aughor.llm.provider as provider
+    import pramanyx.llm.provider as provider
 
     def _boom(*a, **kw):
         raise RuntimeError("llm config exploded")

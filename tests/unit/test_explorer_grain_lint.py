@@ -5,7 +5,7 @@ products" = 25 products × 80 order_items). detect_fanout deliberately skips bot
 ignores COUNT(*) and needs ≥2 satellites). These pin the two new high-precision linters —
 they must FIRE on the bug and stay SILENT on legitimate SQL (the false-positive guard is
 the whole point: a clumsy version would suppress valid insights)."""
-from aughor.sql.fanout import (
+from pramanyx.sql.fanout import (
     integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
     avg_over_chasm_fanout, sum_over_chasm_fanout, cte_grain_mismatch_fanout,
 )

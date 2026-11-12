@@ -1,7 +1,7 @@
 """The store-connection seam: sqlite unchanged by default, Postgres proven live.
 
 Translation tests run everywhere. The live half runs against a real Postgres
-(``AUGHOR_PG_TEST_URL``, defaulting to the local docker container) and SKIPS when
+(``PRAMANYX_PG_TEST_URL``, defaulting to the local docker container) and SKIPS when
 none is reachable — the point of the backend is behaviour identical enough that the
 store suite passes on both, and that can only be shown on a real server, not a mock.
 """
@@ -12,9 +12,9 @@ import sqlite3
 
 import pytest
 
-from aughor.db import backend as B
+from pramanyx.db import backend as B
 
-PG_URL = os.environ.get("AUGHOR_PG_TEST_URL", "postgres://postgres:aughor@localhost:5544/aughor")
+PG_URL = os.environ.get("PRAMANYX_PG_TEST_URL", "postgres://postgres:pramanyx@localhost:5544/pramanyx")
 
 
 def _pg_available() -> bool:
@@ -88,7 +88,7 @@ def test_translate_is_cached():
 
 
 def test_sqlite_is_the_default_backend(tmp_path, monkeypatch):
-    """No AUGHOR_DB_URL → a real, tuned sqlite3 connection: today's behaviour."""
+    """No PRAMANYX_DB_URL → a real, tuned sqlite3 connection: today's behaviour."""
     monkeypatch.delenv(B.DB_URL_ENV, raising=False)
     conn = B.connect_store(tmp_path / "probe.db", "data/probe.db", row_factory=True)
     try:
@@ -259,7 +259,7 @@ def test_table_info_answers_in_sqlites_row_shape(pg_store):
 @needs_pg
 def test_add_column_if_missing_is_idempotent_on_pg(pg_store):
     """The real migration helper, driven twice — second run must be a no-op."""
-    from aughor.db.migrations import add_column_if_missing
+    from pramanyx.db.migrations import add_column_if_missing
     conn = pg_store()
     conn.execute("CREATE TABLE IF NOT EXISTS mig (id TEXT PRIMARY KEY)")
     conn.commit()
@@ -272,7 +272,7 @@ def test_add_column_if_missing_is_idempotent_on_pg(pg_store):
 
 @needs_pg
 def test_run_migrations_applies_once_across_reconnects(pg_store):
-    from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
+    from pramanyx.db.migrations import Migration, add_column_if_missing, run_migrations
     applied = []
     migs = [Migration(2, "add col", lambda c: (applied.append(1), add_column_if_missing(
         c, "rm", "extra", "TEXT NOT NULL DEFAULT ''"))[1])]

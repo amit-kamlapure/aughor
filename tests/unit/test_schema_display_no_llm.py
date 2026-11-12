@@ -31,8 +31,8 @@ from __future__ import annotations
 
 import inspect
 
-from aughor.agent import schema_annotators
-from aughor.tools import schema as schema_tools
+from pramanyx.agent import schema_annotators
+from pramanyx.tools import schema as schema_tools
 
 
 def test_the_display_path_does_not_seed_the_glossary():

@@ -2,7 +2,7 @@
 
 /**
  * The Org board draws its own links — an SVG path per relationship, not a React Flow edge — so what it hands the
- * renderer is each path's `d`. The rule (aughor-v2/CLARITY.md §3, the user 2026-10-10): a graph connector is straight
+ * renderer is each path's `d`. The rule (pramanyx-v2/CLARITY.md §3, the user 2026-10-10): a graph connector is straight
  * and bends only at 90° or 45°, never along a curve. Both of the board's layouts are drawn — a small schema as a ring
  * round its busiest entity, a larger one in columns — so a link at every angle a cluster can hold is checked.
  */

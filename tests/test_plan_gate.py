@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.routers.investigations import _filter_kept_subquestions
+from pramanyx.routers.investigations import _filter_kept_subquestions
 
 
 def test_filter_keeps_selected_indices_in_order():
@@ -22,8 +22,8 @@ def test_filter_empty_selection_yields_empty():
 
 
 def _graph(**kw):
-    from aughor.db.connection import open_connection_for
-    from aughor.agent.graph import build_graph_generic
+    from pramanyx.db.connection import open_connection_for
+    from pramanyx.agent.graph import build_graph_generic
     try:
         db = open_connection_for("samples")
     except Exception as e:  # pragma: no cover

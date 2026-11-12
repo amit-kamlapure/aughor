@@ -50,10 +50,10 @@ def _counting_send(self, request, **kw):
 
 httpx.Client.send = _counting_send
 
-from aughor.evals import store  # noqa: E402
-from aughor.evals.experiments import Cell  # noqa: E402
-from aughor.evals.runner import run_experiment  # noqa: E402
-from aughor.evals.targets import ask_target  # noqa: E402
+from pramanyx.evals import store  # noqa: E402
+from pramanyx.evals.experiments import Cell  # noqa: E402
+from pramanyx.evals.runner import run_experiment  # noqa: E402
+from pramanyx.evals.targets import ask_target  # noqa: E402
 
 
 def pilot_suite() -> str:

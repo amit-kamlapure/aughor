@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.routers import catalog as catalog_router
+from pramanyx.routers import catalog as catalog_router
 
 
 class _Recorder:
@@ -34,13 +34,13 @@ class _Recorder:
 @pytest.fixture
 def wiring(monkeypatch):
     """One connection, introspection stubbed per test."""
-    import aughor.metastore as ms
+    import pramanyx.metastore as ms
 
     rec = _Recorder()
     monkeypatch.setattr(ms, "set_catalog_schemas", rec)
     monkeypatch.setattr(catalog_router, "get_meta", lambda cid: {})
     monkeypatch.setattr(
-        "aughor.db.registry.list_connections",
+        "pramanyx.db.registry.list_connections",
         lambda *a, **k: [{"id": "c1", "name": "C1", "conn_type": "duckdb", "builtin": False}],
     )
     monkeypatch.setattr(ms, "accessible_catalog_ids", lambda ws: None)
@@ -118,13 +118,13 @@ def test_the_tree_reads_its_catalogs_side_by_side_in_their_order(monkeypatch):
     import threading
     import time
 
-    import aughor.metastore as ms
+    import pramanyx.metastore as ms
 
     rec = _Recorder()
     monkeypatch.setattr(ms, "set_catalog_schemas", rec)
     monkeypatch.setattr(ms, "accessible_catalog_ids", lambda ws: None)
     ids = ["w", "bq1", "bq2", "sheets"]
-    monkeypatch.setattr("aughor.db.registry.list_connections",
+    monkeypatch.setattr("pramanyx.db.registry.list_connections",
                         lambda *a, **k: [{"id": i, "name": i.upper(), "conn_type": "duckdb"} for i in ids])
     threads: set[str] = set()
 
@@ -219,12 +219,12 @@ def test_a_postgres_connection_lists_every_schema_the_explorer_explores_its_own_
     """2026-10-11: a Postgres connection set to `luxexperience` explored gold_finance and gold_governance too, while the
     Catalog listed only luxexperience — two schemas explored that no one could see or turn off, and the one listed was
     keyed as the connection's only schema while its run was filed under its own name."""
-    from aughor.routers import _shared
+    from pramanyx.routers import _shared
 
     db = _Warehouse("postgres", _LUX)
     monkeypatch.setattr(catalog_router, "get_meta", lambda cid: {"schema_name": "luxexperience"})
     monkeypatch.setattr(catalog_router, "open_connection_for", lambda cid: db)
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: db)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda cid: db)
     listed = [s["name"] for s in catalog_router.quick_schemas("pg", "postgres")]
     assert listed == ["gold_finance", "gold_governance", "luxexperience"]
     assert listed == _shared.schemas_of_connection("pg")                      # what is explored is listed

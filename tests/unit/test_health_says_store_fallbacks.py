@@ -5,7 +5,7 @@ A read there is stale (the file is a one-time import) and a write is orphaned (n
 """
 from __future__ import annotations
 
-from aughor.stats import stats
+from pramanyx.stats import stats
 
 
 def test_health_is_clean_when_every_store_reached_the_ledger(client, monkeypatch):
@@ -17,7 +17,7 @@ def test_health_is_clean_when_every_store_reached_the_ledger(client, monkeypatch
 
 def test_a_fallback_degrades_health_and_names_the_operation(client, monkeypatch):
     stats.reset()
-    from aughor.util.json_store import _fell_back
+    from pramanyx.util.json_store import _fell_back
     _fell_back("/x/agent_runs.json", RuntimeError("database is locked"), "list_upsert")
     _fell_back("/x/agent_runs.json", RuntimeError("database is locked"), "list_upsert")
     _fell_back("/x/profiles.json", RuntimeError("database is locked"), "load")

@@ -1,4 +1,4 @@
-"""Phase 7 of the 2027 study, P7-4 — the method interface (`aughor/record/methods.py`): a forecaster,
+"""Phase 7 of the 2027 study, P7-4 — the method interface (`pramanyx/record/methods.py`): a forecaster,
 estimator or simulator registered with its backtest and run as a foreign MCP tool through the one door.
 
 What these hold: a method without a backtest, with a built-in name, of an unknown kind or with an
@@ -15,10 +15,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.record import claims as C
-from aughor.record import methods as M
-from aughor.record import scenario as S
-from aughor.routers import ledger as R
+from pramanyx.record import claims as C
+from pramanyx.record import methods as M
+from pramanyx.record import scenario as S
+from pramanyx.routers import ledger as R
 
 
 def _method(name: str, **kw) -> M.Method:
@@ -57,7 +57,7 @@ def test_a_registered_method_projects_through_the_one_door_in_the_ladders_shape(
         calls.append((server_id, tool, arguments))
         return SimpleNamespace(status="executed", message="", text=json.dumps({"value": 1200, "low": 1100, "high": 1300, "coverage": 0.8,
                                                                                "unit": "", "must_say": ["seasonal model, 2 years of history"]}))
-    monkeypatch.setattr("aughor.mcpservers.call.call", fake_call)
+    monkeypatch.setattr("pramanyx.mcpservers.call.call", fake_call)
     p = S.project(name, metric="orders", horizon_days=30, connection_id="c1", run_sql=lambda s: None)
     assert p.method == name and p.value == 1200 and (p.low, p.high) == (1100, 1300) and p.coverage == 0.8 and p.tier == "mined"
     assert calls == [("acme-mcp", "forecast", {"metric": "orders", "horizon_days": 30, "connection_id": "c1"})]
@@ -67,12 +67,12 @@ def test_a_registered_method_projects_through_the_one_door_in_the_ladders_shape(
     pred = C.get(pid)
     assert pred.extra["method"] == name and pred.tier == "mined" and pred.extra["backtest"]["measured_on"] == ["acme-backtest-2026-09"]
     # the door's word, never a zero
-    monkeypatch.setattr("aughor.mcpservers.call.call", lambda s, t, a: SimpleNamespace(status="refused", message="not on the allowlist", text=""))
+    monkeypatch.setattr("pramanyx.mcpservers.call.call", lambda s, t, a: SimpleNamespace(status="refused", message="not on the allowlist", text=""))
     refused = S.project(name, metric="orders")
     assert refused.value is None and "was refused: not on the allowlist" in refused.note
-    monkeypatch.setattr("aughor.mcpservers.call.call", lambda s, t, a: SimpleNamespace(status="executed", message="", text="not json"))
+    monkeypatch.setattr("pramanyx.mcpservers.call.call", lambda s, t, a: SimpleNamespace(status="executed", message="", text="not json"))
     assert "did not answer in the ladder's shape" in S.project(name, metric="orders").note
-    monkeypatch.setattr("aughor.mcpservers.call.call", lambda s, t, a: SimpleNamespace(status="executed", message="", text=json.dumps({"low": 1})))
+    monkeypatch.setattr("pramanyx.mcpservers.call.call", lambda s, t, a: SimpleNamespace(status="executed", message="", text=json.dumps({"low": 1})))
     assert "answered without a value" in S.project(name, metric="orders").note
     with pytest.raises(C.ClaimRefused, match="projected nothing"):
         S.predict(metric="orders", projection=refused, settles_on="2026-12-01", author="x")
@@ -83,7 +83,7 @@ def test_a_registered_method_projects_through_the_one_door_in_the_ladders_shape(
 
 
 def test_the_door_registers_and_withdraws(monkeypatch):
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ops-lead")   # who the request acts for — never "unidentified"
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ops-lead")   # who the request acts for — never "unidentified"
     from fastapi import HTTPException
     name = "door-" + uuid.uuid4().hex[:4]
     out = R.register_method(R.MethodIn(name=name, kind="estimator", backtest=R.BacktestIn(n=12, mae=3.5, measured_on=["thelook"]),

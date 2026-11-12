@@ -8,7 +8,7 @@ because none of them said WHICH size they meant. They are not the same measureme
                    contributor sees, and what a size-limited deployment pays for. A few
                    percent under `du -sh`, which counts allocated blocks rather than
                    file sizes.
-  import closure   the third-party packages `import aughor.api` actually loads. Far
+  import closure   the third-party packages `import pramanyx.api` actually loads. Far
                    smaller, and the number the extras split was designed around; the
                    ratchet in tests/unit/test_serving_footprint.py guards it.
 
@@ -65,7 +65,7 @@ def _mb(n: int) -> str:
 
 
 def _import_closure_bytes(python: str) -> tuple[int, int]:
-    """(bytes, package count) of third-party top-level packages `aughor.api` imports.
+    """(bytes, package count) of third-party top-level packages `pramanyx.api` imports.
 
     Measured in a SUBPROCESS: this process has already imported much of the codebase,
     so an in-process diff would measure the measurer. Mirrors the method in
@@ -74,7 +74,7 @@ def _import_closure_bytes(python: str) -> tuple[int, int]:
     code = textwrap.dedent("""
         import json, pathlib, sys, sysconfig
         before = set(sys.modules)
-        import aughor.api  # noqa: F401
+        import pramanyx.api  # noqa: F401
         site = pathlib.Path(sysconfig.get_paths()["purelib"])
         tops = set()
         for name in set(sys.modules) - before:
@@ -86,7 +86,7 @@ def _import_closure_bytes(python: str) -> tuple[int, int]:
     """)
     proc = subprocess.run([python, "-c", code], capture_output=True, text=True, timeout=600)
     if proc.returncode != 0:
-        raise SystemExit(f"could not import aughor.api:\n{proc.stderr[-800:]}")
+        raise SystemExit(f"could not import pramanyx.api:\n{proc.stderr[-800:]}")
     tops = json.loads(proc.stdout.strip().splitlines()[-1])
     site = pathlib.Path(sysconfig.get_paths()["purelib"])
     total = sum(_dir_bytes(site / t) for t in tops if (site / t).is_dir())
@@ -122,7 +122,7 @@ def main() -> None:
 
     closure_bytes, n = _import_closure_bytes(sys.executable)
     print(f"  import closure  {_mb(closure_bytes)}   ({n} third-party packages "
-          f"loaded by `import aughor.api`)")
+          f"loaded by `import pramanyx.api`)")
 
     if args.compare:
         print("\nbuilding a serving-core venv (uv sync, no extras)…")

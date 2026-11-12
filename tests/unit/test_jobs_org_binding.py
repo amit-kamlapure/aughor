@@ -10,9 +10,9 @@ import asyncio
 
 import pytest
 
-from aughor.kernel.jobs import JobKernel, JobState
-from aughor.kernel.ledger import Ledger
-from aughor.org.context import DEFAULT_ORG_ID, current_org_id, using_org
+from pramanyx.kernel.jobs import JobKernel, JobState
+from pramanyx.kernel.ledger import Ledger
+from pramanyx.org.context import DEFAULT_ORG_ID, current_org_id, using_org
 
 
 @pytest.fixture()

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.ontology.window_measures import (
+from pramanyx.ontology.window_measures import (
     RANGES,
     SEMIADDITIVE,
     MeasureDeclarationError,

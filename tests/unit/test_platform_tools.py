@@ -12,8 +12,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 
-from aughor.agent import converse_tools as ct
-from aughor.agent import platform_tools as pt
+from pramanyx.agent import converse_tools as ct
+from pramanyx.agent import platform_tools as pt
 
 
 # ── roster composition ───────────────────────────────────────────────────────────────
@@ -53,7 +53,7 @@ def test_search_graph_calls_the_shared_body_and_compacts_for_the_window(monkeypa
              "data": {"source_tables": ["orders"], "columns": ["a"] * 200}},
         ]}
 
-    monkeypatch.setattr("aughor.mcp.knowledge_tools.search_graph", _search)
+    monkeypatch.setattr("pramanyx.mcp.knowledge_tools.search_graph", _search)
     monkeypatch.setattr(pt, "_graph_staleness", lambda cid: "fresh")
 
     out = pt.search_graph("c1", {"query": "orders"})
@@ -67,9 +67,9 @@ def test_search_graph_calls_the_shared_body_and_compacts_for_the_window(monkeypa
 def test_search_staleness_rides_the_result(monkeypatch):
     """A hit from a stale graph is a different claim than one from a fresh graph, and
     the model has no other way to know which it is making."""
-    monkeypatch.setattr("aughor.mcp.knowledge_tools.search_graph",
+    monkeypatch.setattr("pramanyx.mcp.knowledge_tools.search_graph",
                         lambda cid, q, limit: {"available": True, "nodes": []})
-    monkeypatch.setattr("aughor.ontology.graph_freshness.staleness_of",
+    monkeypatch.setattr("pramanyx.ontology.graph_freshness.staleness_of",
                         lambda cid: "stale")
 
     assert pt.search_graph("c1", {"query": "x"})["staleness"] == "stale"
@@ -84,7 +84,7 @@ def test_describe_entity_returns_the_shared_body_untouched(monkeypatch):
     the body's own and the MCP server's `describe_entity` returns the very same dict."""
     body = {"available": True, "kind": "table", "entity": {"label": "orders"},
             "related": [{"edge": "join", "node_id": f"n{i}"} for i in range(50)]}
-    monkeypatch.setattr("aughor.mcp.knowledge_tools.describe_entity", lambda cid, e: body)
+    monkeypatch.setattr("pramanyx.mcp.knowledge_tools.describe_entity", lambda cid, e: body)
 
     assert pt.describe_entity("c1", {"entity": "orders"}) is body
     assert "error" in pt.describe_entity("c1", {})
@@ -100,9 +100,9 @@ def test_findings_filter_the_quarantined_and_declare_the_cut(monkeypatch):
                 "confidence": 0.9, "novelty": 0.5, "sql": "SELECT 1" * 200}
                for n in range(20)]
               + [{"id": "bad", "finding": "dismissed", "invalid": True}])
-    monkeypatch.setattr("aughor.explorer.store.schema_run_keys", lambda cid: [])
+    monkeypatch.setattr("pramanyx.explorer.store.schema_run_keys", lambda cid: [])
     # The fake state must carry the store's legacy key, exactly as the real one does.
-    monkeypatch.setattr("aughor.explorer.store.load",
+    monkeypatch.setattr("pramanyx.explorer.store.load",
                         lambda cid: {"phase": "complete", "insights": stored})
 
     out = pt.list_findings("c1", {})
@@ -117,9 +117,9 @@ def test_findings_filter_the_quarantined_and_declare_the_cut(monkeypatch):
 def test_findings_resolve_the_aggregate_for_per_schema_runs(monkeypatch):
     """The same resolution the findings endpoint does: a connection explored per-schema
     answers from the aggregate, not the empty connection-level state."""
-    monkeypatch.setattr("aughor.explorer.store.schema_run_keys",
+    monkeypatch.setattr("pramanyx.explorer.store.schema_run_keys",
                         lambda cid: [f"{cid}__main"])
-    monkeypatch.setattr("aughor.explorer.store.load_aggregate",
+    monkeypatch.setattr("pramanyx.explorer.store.load_aggregate",
                         lambda cid: {"phase": "complete",
                                      "insights": [{"id": "i1", "finding": "f"}]})
 
@@ -135,9 +135,9 @@ def test_get_briefing_never_synthesizes(monkeypatch):
     def _forbidden(*a, **k):
         raise AssertionError("the read tool reached the synthesizing path")
 
-    monkeypatch.setattr("aughor.knowledge.briefing.get_briefing", _forbidden)
-    monkeypatch.setattr("aughor.knowledge.briefing.peek_briefing", lambda key: None)
-    monkeypatch.setattr("aughor.explorer.store.schema_run_keys", lambda cid: [])
+    monkeypatch.setattr("pramanyx.knowledge.briefing.get_briefing", _forbidden)
+    monkeypatch.setattr("pramanyx.knowledge.briefing.peek_briefing", lambda key: None)
+    monkeypatch.setattr("pramanyx.explorer.store.schema_run_keys", lambda cid: [])
 
     out = pt.get_briefing("c1", {})
 
@@ -150,8 +150,8 @@ def test_per_schema_briefs_are_named_not_denied(monkeypatch):
     peek missing them must not become 'no briefing exists' while the Briefing page is
     showing one — the reason may never claim more absence than is true."""
     briefs = {"c1:main": {"narrative": "n1"}, "c1:scm": {"narrative": "n2"}}
-    monkeypatch.setattr("aughor.knowledge.briefing.peek_briefing", briefs.get)
-    monkeypatch.setattr("aughor.explorer.store.schema_run_keys",
+    monkeypatch.setattr("pramanyx.knowledge.briefing.peek_briefing", briefs.get)
+    monkeypatch.setattr("pramanyx.explorer.store.schema_run_keys",
                         lambda cid: ["c1__main", "c1__scm", "c1__empty"])
 
     out = pt.get_briefing("c1", {})
@@ -166,8 +166,8 @@ def test_per_schema_briefs_are_named_not_denied(monkeypatch):
 
 def test_a_single_schema_brief_is_served_without_a_second_call(monkeypatch):
     briefs = {"c1:main": {"narrative": "only one"}}
-    monkeypatch.setattr("aughor.knowledge.briefing.peek_briefing", briefs.get)
-    monkeypatch.setattr("aughor.explorer.store.schema_run_keys",
+    monkeypatch.setattr("pramanyx.knowledge.briefing.peek_briefing", briefs.get)
+    monkeypatch.setattr("pramanyx.explorer.store.schema_run_keys",
                         lambda cid: ["c1__main"])
 
     out = pt.get_briefing("c1", {})
@@ -179,7 +179,7 @@ def test_a_single_schema_brief_is_served_without_a_second_call(monkeypatch):
 
 def test_a_cached_briefing_is_served_with_capped_citations(monkeypatch):
     monkeypatch.setattr(
-        "aughor.knowledge.briefing.peek_briefing",
+        "pramanyx.knowledge.briefing.peek_briefing",
         lambda key: {"narrative": "Revenue is up.", "headline_theme": "growth",
                      "citations": [{"id": f"c{i}"} for i in range(30)],
                      "generated_at": "2026-08-12T00:00:00Z"})
@@ -200,8 +200,8 @@ def test_monitors_report_watch_state_and_unacknowledged_alerts(monkeypatch):
                           check_cron="0 * * * *")
     alert = SimpleNamespace(monitor_name="Revenue drop", severity="critical",
                             triggered_at="2026-08-12T09:00:00Z", message="x" * 500)
-    monkeypatch.setattr("aughor.monitors.store.list_monitors", lambda cid: [mon])
-    monkeypatch.setattr("aughor.monitors.store.get_alerts",
+    monkeypatch.setattr("pramanyx.monitors.store.list_monitors", lambda cid: [mon])
+    monkeypatch.setattr("pramanyx.monitors.store.get_alerts",
                         lambda **kw: [alert] * 7)
 
     out = pt.list_monitors("c1", {})
@@ -220,7 +220,7 @@ def test_packs_name_the_bound_one_and_carry_its_playbooks(monkeypatch, tmp_path)
     one is loaded past its manifest."""
     playbook = SimpleNamespace(trigger_metric="gmv", trigger_operator="<",
                                trigger_condition="baseline", recommendation="r" * 500)
-    from aughor.packs.loader import PROSE_FIELD
+    from pramanyx.packs.loader import PROSE_FIELD
     pack = SimpleNamespace(
         manifest=SimpleNamespace(name="Finance", status="active", domains=["finance"],
                                  partial=False, source="", source_url="", licence="",
@@ -234,14 +234,14 @@ def test_packs_name_the_bound_one_and_carry_its_playbooks(monkeypatch, tmp_path)
     # The AUTHORED root, through its env override: reads now resolve via
     # `packs.roots`, which spans two directories, so patching one module constant
     # no longer redirects them.
-    monkeypatch.setenv("AUGHOR_PACKS_DIR", str(tmp_path))
-    monkeypatch.setenv("AUGHOR_IMPORTED_PACKS_DIR", str(tmp_path / "_none"))
+    monkeypatch.setenv("PRAMANYX_PACKS_DIR", str(tmp_path))
+    monkeypatch.setenv("PRAMANYX_IMPORTED_PACKS_DIR", str(tmp_path / "_none"))
     # The tool resolves ids through `packs.roots` now, and the fake pack is not on disk,
     # so the resolution is stubbed alongside the loader it feeds.
-    monkeypatch.setattr("aughor.packs.roots.all_pack_ids", lambda: ["finance"])
-    monkeypatch.setattr("aughor.packs.roots.pack_dir", lambda pid: tmp_path / pid)
-    monkeypatch.setattr("aughor.packs.load_pack", lambda root: pack)
-    monkeypatch.setattr("aughor.packs.load_binding",
+    monkeypatch.setattr("pramanyx.packs.roots.all_pack_ids", lambda: ["finance"])
+    monkeypatch.setattr("pramanyx.packs.roots.pack_dir", lambda pid: tmp_path / pid)
+    monkeypatch.setattr("pramanyx.packs.load_pack", lambda root: pack)
+    monkeypatch.setattr("pramanyx.packs.load_binding",
                         lambda pid, cid, schema="": {"pack": pid})
 
     out = pt.list_packs("c1", {})
@@ -261,11 +261,11 @@ def test_an_unloadable_pack_is_listed_not_hidden(monkeypatch, tmp_path):
     # The AUTHORED root, through its env override: reads now resolve via
     # `packs.roots`, which spans two directories, so patching one module constant
     # no longer redirects them.
-    monkeypatch.setenv("AUGHOR_PACKS_DIR", str(tmp_path))
-    monkeypatch.setenv("AUGHOR_IMPORTED_PACKS_DIR", str(tmp_path / "_none"))
-    monkeypatch.setattr("aughor.packs.roots.all_pack_ids", lambda: ["broken"])
-    monkeypatch.setattr("aughor.packs.roots.pack_dir", lambda pid: tmp_path / pid)
-    monkeypatch.setattr("aughor.packs.load_pack", _boom)
+    monkeypatch.setenv("PRAMANYX_PACKS_DIR", str(tmp_path))
+    monkeypatch.setenv("PRAMANYX_IMPORTED_PACKS_DIR", str(tmp_path / "_none"))
+    monkeypatch.setattr("pramanyx.packs.roots.all_pack_ids", lambda: ["broken"])
+    monkeypatch.setattr("pramanyx.packs.roots.pack_dir", lambda pid: tmp_path / pid)
+    monkeypatch.setattr("pramanyx.packs.load_pack", _boom)
 
     out = pt.list_packs("c1", {})
 
@@ -300,10 +300,10 @@ def test_an_unknown_topic_answers_with_the_overview_and_the_topic_list():
 def test_the_loop_can_choose_a_platform_tool(monkeypatch):
     """Loop-level proof for the roster: the model names `platform_help`, the loop finds
     it in the converse set, and the curated answer survives the JSON hop back."""
-    from aughor.llm.faux import FauxToolCall, set_responses
-    from aughor.llm.provider import LLMProvider
+    from pramanyx.llm.faux import FauxToolCall, set_responses
+    from pramanyx.llm.provider import LLMProvider
 
-    monkeypatch.delenv("AUGHOR_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.delenv("PRAMANYX_MAX_OUTPUT_TOKENS", raising=False)
     set_responses([
         FauxToolCall(payload={"topic": "connect"}, name="platform_help"),
         "add it from the Connections page",
@@ -323,7 +323,7 @@ def test_org_context_reaches_the_converse_prompt(monkeypatch):
     """CI-2: the declared org identity `/ask` already injects reaches the conversation
     too — the most conversational surface must not be the one that cannot see facts
     the operator explicitly stated."""
-    import aughor.orgsettings as og
+    import pramanyx.orgsettings as og
 
     monkeypatch.setattr(
         og, "org_context",
@@ -336,7 +336,7 @@ def test_org_context_reaches_the_converse_prompt(monkeypatch):
 
 
 def test_an_unconfigured_org_leaves_the_prompt_unpolluted(monkeypatch):
-    import aughor.orgsettings as og
+    import pramanyx.orgsettings as og
 
     monkeypatch.setattr(og, "org_context", lambda **kw: "")
 
@@ -345,7 +345,7 @@ def test_an_unconfigured_org_leaves_the_prompt_unpolluted(monkeypatch):
 
 def test_a_broken_org_store_does_not_break_the_conversation(monkeypatch):
     """Additive means additive: the conversation stands without it."""
-    import aughor.orgsettings as og
+    import pramanyx.orgsettings as og
 
     def _boom(**kw):
         raise RuntimeError("store down")

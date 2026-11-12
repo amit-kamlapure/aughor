@@ -11,8 +11,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.monitors import sentinel
-from aughor.monitors.sentinel import (
+from pramanyx.monitors import sentinel
+from pramanyx.monitors.sentinel import (
     candidates, choose_sigma, daily_series_sql, learn_distribution,
     propose_for_connection, read_series,
 )
@@ -82,11 +82,11 @@ def test_the_daily_series_sql_wraps_the_approved_expression_like_value_query():
 
 
 def test_a_series_that_ends_long_ago_is_stale_or_truncated_and_stages_nothing(monkeypatch):
-    monkeypatch.setattr("aughor.business_profile.store.load",
+    monkeypatch.setattr("pramanyx.business_profile.store.load",
                         lambda cid, schema=None: _profile_with("Revenue"))
-    monkeypatch.setattr("aughor.settling.sampler.time_tables", lambda cid: [])
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda connection_id=None: [])
-    monkeypatch.setattr("aughor.settling.learned_lag_days", lambda cid: None)
+    monkeypatch.setattr("pramanyx.settling.sampler.time_tables", lambda cid: [])
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda connection_id=None: [])
+    monkeypatch.setattr("pramanyx.settling.learned_lag_days", lambda cid: None)
     old = [((date(2024, 6, 1) + timedelta(days=i)).isoformat(), 100.0 + (i % 7) * 2.0)
            for i in range(100)]                                   # June–Sept 2024
     result = propose_for_connection("c-stale", run_sql=lambda sql: (["d", "v"], old, None),
@@ -105,9 +105,9 @@ def _profile_with(*names):
 
 
 def test_candidates_come_from_the_north_star_trends_and_approved_metrics_on_time_tables(monkeypatch):
-    monkeypatch.setattr("aughor.business_profile.store.load",
+    monkeypatch.setattr("pramanyx.business_profile.store.load",
                         lambda cid, schema=None: _profile_with("Revenue", "AOV"))
-    monkeypatch.setattr("aughor.settling.sampler.time_tables",
+    monkeypatch.setattr("pramanyx.settling.sampler.time_tables",
                         lambda cid: [("thelook.orders", "created_at", 100)])
     metrics = [
         SimpleNamespace(name="revenue", label="Revenue", status="approved", sql="SUM(sale_price)",
@@ -121,7 +121,7 @@ def test_candidates_come_from_the_north_star_trends_and_approved_metrics_on_time
         SimpleNamespace(name="whole_select", label="Whole", status="approved",
                         sql="SELECT 1", tables=["orders"], filters=[], unit=""),  # states its own shape
     ]
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda connection_id=None: metrics)
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda connection_id=None: metrics)
     got = candidates("c1", since=date(2026, 5, 8))
     assert [(c.name, c.source) for c in got] == [("Revenue", "explorer"), ("AOV", "explorer"),
                                                  ("units_sold", "defined")]
@@ -133,11 +133,11 @@ def test_candidates_come_from_the_north_star_trends_and_approved_metrics_on_time
 
 @pytest.fixture
 def two_metrics(monkeypatch):
-    monkeypatch.setattr("aughor.business_profile.store.load",
+    monkeypatch.setattr("pramanyx.business_profile.store.load",
                         lambda cid, schema=None: _profile_with("Revenue", "Orders", "Breakdown"))
-    monkeypatch.setattr("aughor.settling.sampler.time_tables", lambda cid: [])
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda connection_id=None: [])
-    monkeypatch.setattr("aughor.settling.learned_lag_days", lambda cid: 8 if cid == "c-lag" else None)
+    monkeypatch.setattr("pramanyx.settling.sampler.time_tables", lambda cid: [])
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda connection_id=None: [])
+    monkeypatch.setattr("pramanyx.settling.learned_lag_days", lambda cid: 8 if cid == "c-lag" else None)
 
     def run_sql(sql):
         if "Breakdown" in sql:
@@ -150,7 +150,7 @@ def two_metrics(monkeypatch):
 
 
 def test_the_watcher_stages_a_monitor_bundle_with_its_evidence_and_an_open_destination(two_metrics):
-    from aughor.actions.inbox import get_proposal
+    from pramanyx.actions.inbox import get_proposal
 
     today = D0 + timedelta(days=100)
     result = propose_for_connection("c-lag", run_sql=two_metrics, today=today)
@@ -178,7 +178,7 @@ def test_the_watcher_stages_a_monitor_bundle_with_its_evidence_and_an_open_desti
 
 
 def test_a_rerun_stages_nothing_twice_and_never_resurrects_a_resolved_proposal(two_metrics):
-    from aughor.actions.inbox import reject_proposal
+    from pramanyx.actions.inbox import reject_proposal
 
     today = D0 + timedelta(days=100)
     first = propose_for_connection("c-plain", run_sql=two_metrics, today=today)
@@ -192,7 +192,7 @@ def test_a_rerun_stages_nothing_twice_and_never_resurrects_a_resolved_proposal(t
 
 
 def test_a_new_evidence_method_supersedes_what_the_old_one_left_pending(two_metrics, monkeypatch):
-    from aughor.actions.inbox import get_proposal
+    from pramanyx.actions.inbox import get_proposal
 
     today = D0 + timedelta(days=100)
     monkeypatch.setattr(sentinel, "EVIDENCE_METHOD", "v2")
@@ -214,11 +214,11 @@ def test_a_new_evidence_method_supersedes_what_the_old_one_left_pending(two_metr
 def test_a_watch_the_ladder_cannot_quieten_is_not_proposed(monkeypatch):
     # theLook, 2026-09-23, before any settling lag was learned: the youngest days read ~8×
     # high, and even 4σ would have fired five times. That is noise, and it is not staged.
-    monkeypatch.setattr("aughor.business_profile.store.load",
+    monkeypatch.setattr("pramanyx.business_profile.store.load",
                         lambda cid, schema=None: _profile_with("Revenue"))
-    monkeypatch.setattr("aughor.settling.sampler.time_tables", lambda cid: [])
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda connection_id=None: [])
-    monkeypatch.setattr("aughor.settling.learned_lag_days", lambda cid: None)
+    monkeypatch.setattr("pramanyx.settling.sampler.time_tables", lambda cid: [])
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda connection_id=None: [])
+    monkeypatch.setattr("pramanyx.settling.learned_lag_days", lambda cid: None)
     # Six spikes, each ten times the last: every one lands far outside the σ of the window
     # before it, so no threshold on the ladder brings the replay under three firings.
     spikes = {60 + 8 * k: 10.0 ** (k + 3) for k in range(6)}
@@ -232,7 +232,7 @@ def test_a_watch_the_ladder_cannot_quieten_is_not_proposed(monkeypatch):
 
 
 def test_the_watcher_owns_the_job_kind():
-    from aughor.kernel.agents import charter_for_kind, get_charter
+    from pramanyx.kernel.agents import charter_for_kind, get_charter
 
     assert charter_for_kind(sentinel.JOB_KIND).id == "watcher"
     assert "alert_proposals" in get_charter("watcher").job_kinds
@@ -241,12 +241,12 @@ def test_the_watcher_owns_the_job_kind():
 def test_the_door_runs_the_same_work(monkeypatch):
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
 
-    monkeypatch.setattr("aughor.business_profile.store.load", lambda cid, schema=None: None)
-    monkeypatch.setattr("aughor.settling.sampler.time_tables", lambda cid: [])
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda connection_id=None: [])
-    monkeypatch.setattr("aughor.db.measure.run_sql_for", lambda cid, **kw: (lambda sql: ([], [], None)))
+    monkeypatch.setattr("pramanyx.business_profile.store.load", lambda cid, schema=None: None)
+    monkeypatch.setattr("pramanyx.settling.sampler.time_tables", lambda cid: [])
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda connection_id=None: [])
+    monkeypatch.setattr("pramanyx.db.measure.run_sql_for", lambda cid, **kw: (lambda sql: ([], [], None)))
     r = TestClient(app).post("/alerts/propose/c-empty")
     assert r.status_code == 200
     body = r.json()

@@ -11,7 +11,7 @@ import json
 import httpx
 import pytest
 
-from aughor.control_plane import object_store as O
+from pramanyx.control_plane import object_store as O
 
 
 def test_absent_store_is_a_noop(tmp_path, monkeypatch):
@@ -113,7 +113,7 @@ def test_mirror_down_materializes_a_cold_root(tmp_path, fake_blob):
 def test_connection_persists_after_ingest_and_delete(tmp_path, monkeypatch):
     """The wiring: ingest mirrors up; delete funnels through the tombstone hook."""
     calls: list[str] = []
-    from aughor.control_plane import object_store as store_mod
+    from pramanyx.control_plane import object_store as store_mod
     monkeypatch.setattr(store_mod, "mirror_up", lambda root, prefix: calls.append(prefix) or 1)
     monkeypatch.setattr(store_mod, "mirror_down", lambda root, prefix: 0)
     # Patch the root the vending seam reads at CALL time rather than reloading both
@@ -123,8 +123,8 @@ def test_connection_persists_after_ingest_and_delete(tmp_path, monkeypatch):
     # root, and `test_store_hermeticity.py` caught it. The reloads bought nothing:
     # `local_upload` imports `mirror_up`/`mirror_down` inside the functions that call
     # them, and `vend_storage` reads `STORAGE_ROOT` through a property at call time.
-    from aughor.control_plane import vending
-    from aughor.connectors.file import local_upload
+    from pramanyx.control_plane import vending
+    from pramanyx.connectors.file import local_upload
     monkeypatch.setattr(vending, "STORAGE_ROOT", tmp_path / "uploads")
 
     csv = tmp_path / "probe.csv"

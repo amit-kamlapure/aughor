@@ -8,9 +8,9 @@ import datetime as _dt
 
 import pytest
 
-from aughor.briefing import desk as D
-from aughor.record.claims import About, Claim, Statement
-from aughor.record.inquiry import Inquiry, OpenItem, RunNote
+from pramanyx.briefing import desk as D
+from pramanyx.record.claims import About, Claim, Statement
+from pramanyx.record.inquiry import Inquiry, OpenItem, RunNote
 
 NOW = _dt.datetime(2026, 10, 12, 12, 0, tzinfo=_dt.timezone.utc)
 
@@ -137,9 +137,9 @@ def test_a_column_holds_four_and_counts_the_rest():
 
 
 def test_a_store_that_cannot_be_read_is_said_and_the_other_columns_still_print(monkeypatch):
-    from aughor.record import claims as C
-    from aughor.record import inquiry as I
-    from aughor.semantic import metrics as SM
+    from pramanyx.record import claims as C
+    from pramanyx.record import inquiry as I
+    from pramanyx.semantic import metrics as SM
 
     def boom(**_):
         raise RuntimeError("ledger locked")
@@ -153,9 +153,9 @@ def test_a_store_that_cannot_be_read_is_said_and_the_other_columns_still_print(m
 
 
 def test_another_connections_metric_never_reaches_this_desk(monkeypatch):
-    from aughor.record import claims as C
-    from aughor.record import inquiry as I
-    from aughor.semantic import metrics as SM
+    from pramanyx.record import claims as C
+    from pramanyx.record import inquiry as I
+    from pramanyx.semantic import metrics as SM
     monkeypatch.setattr(C, "list_claims", lambda **_: [])
     monkeypatch.setattr(I, "list_inquiries", lambda **_: [])
     monkeypatch.setattr(SM, "list_metrics", lambda **_: [M("global_x", "approved", sql="", connection="")])

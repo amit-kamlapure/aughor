@@ -22,12 +22,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from aughor.agent.investigate import (
+from pramanyx.agent.investigate import (
     _association_finding,
     _dimensions_named_in_question,
     _question_asks_association,
 )
-from aughor.tools.stats import analyze_query_result, assess_association
+from pramanyx.tools.stats import analyze_query_result, assess_association
 
 _MODES = ["First Class", "Same Day", "Second Class", "Standard Class"]
 
@@ -256,7 +256,7 @@ def test_the_multilens_path_runs_the_scan_too(monkeypatch):
     the local binding is serial, so no suite here would have exercised it."""
     import inspect
 
-    from aughor.agent import investigate as inv
+    from pramanyx.agent import investigate as inv
 
     # Looked up dynamically rather than spelled out: the multilens entry point carries a
     # retired prefix in its name, and the vocabulary ratchet counts every occurrence —
@@ -285,14 +285,14 @@ def test_a_synonym_is_bridged_by_intakes_own_ranking():
     different words, and no string matching bridges that — the scan matched only
     `aircraft_type` and never ran. Intake had already understood, listing
     `booking_class` FIRST, so its ranking supplies the partner."""
-    from aughor.agent.investigate import _association_dimension_pair
+    from pramanyx.agent.investigate import _association_dimension_pair
 
     pair = _association_dimension_pair("How do fare class and aircraft type relate?", _AIR)
     assert set(pair) == {"flights.aircraft_type", "tickets.booking_class"}
 
 
 def test_an_exact_double_match_still_wins_over_the_ranking():
-    from aughor.agent.investigate import _association_dimension_pair
+    from pramanyx.agent.investigate import _association_dimension_pair
 
     pair = _association_dimension_pair("How do Ship Mode and Sub-categories relate?", _DIMS)
     assert pair == ["orders.ship_mode", "orders.sub_category"]
@@ -304,7 +304,7 @@ def test_naming_nothing_invents_no_pair(q):
     """The fallback is ANCHORED. With no dimension named there is nothing to anchor to,
     and crossing two dimensions nobody mentioned would answer a question nobody asked —
     the failure mode this whole feature exists to remove."""
-    from aughor.agent.investigate import _association_dimension_pair
+    from pramanyx.agent.investigate import _association_dimension_pair
 
     assert _association_dimension_pair(q, _AIR) == []
 
@@ -326,7 +326,7 @@ class _ColsConn:
 
 
 def test_same_table_dimensions_need_no_join():
-    from aughor.agent.investigate import _association_from_clause
+    from pramanyx.agent.investigate import _association_from_clause
 
     conn = _ColsConn({"orders": ["ship_mode", "sub_category", "sales"]})
     got = _association_from_clause(conn, ["orders.ship_mode", "orders.sub_category"], "orders")
@@ -336,7 +336,7 @@ def test_same_table_dimensions_need_no_join():
 def test_a_cross_table_pair_joins_on_the_shared_key():
     """A relationship question does not respect table boundaries; a single-table FROM
     simply fails to bind (`Binder Error: Referenced column "aircraft_type" not found`)."""
-    from aughor.agent.investigate import _association_from_clause
+    from pramanyx.agent.investigate import _association_from_clause
 
     conn = _ColsConn({"tickets": ["ticket_id", "flight_id", "booking_class"],
                       "flights": ["flight_id", "aircraft_type", "haul"]})
@@ -347,7 +347,7 @@ def test_a_cross_table_pair_joins_on_the_shared_key():
 def test_an_ambiguous_join_is_refused_not_guessed():
     """Two id-shaped shared columns: a wrong join yields a confident, wrong contingency
     table. A silent no-answer is much the better failure — the weakness scan still runs."""
-    from aughor.agent.investigate import _association_from_clause
+    from pramanyx.agent.investigate import _association_from_clause
 
     conn = _ColsConn({"tickets": ["ticket_id", "flight_id", "customer_id", "booking_class"],
                       "flights": ["flight_id", "customer_id", "aircraft_type"]})
@@ -357,7 +357,7 @@ def test_an_ambiguous_join_is_refused_not_guessed():
 
 def test_a_shared_plain_name_is_not_treated_as_a_key():
     """`status` on both sides is a coincidence, not a foreign key."""
-    from aughor.agent.investigate import _association_from_clause
+    from pramanyx.agent.investigate import _association_from_clause
 
     conn = _ColsConn({"tickets": ["ticket_id", "status", "booking_class"],
                       "flights": ["status", "aircraft_type"]})
@@ -371,8 +371,8 @@ def test_attach_stats_annotates_a_result_and_never_raises():
     """`_execute_safe` returned results with `stats` empty, so on the deep path the
     analysers ran nowhere and `format_result_for_llm` had nothing to render — a cross-tab
     could sit in the evidence with p=0.41 computable and the narrator never told."""
-    from aughor.control_plane.contracts.execution import QueryResult
-    from aughor.tools.executor import attach_stats
+    from pramanyx.control_plane.contracts.execution import QueryResult
+    from pramanyx.tools.executor import attach_stats
 
     cols, rows = _long_form(_independent_table(), [f"r{i}" for i in range(6)], _MODES)
     r = QueryResult(hypothesis_id="t", sql="SELECT 1", columns=cols, rows=rows,
@@ -400,7 +400,7 @@ def test_a_contingency_grid_renders_as_a_heatmap():
     web's own heatmap."""
     import pytest as _pytest
 
-    from aughor.export.echarts import render_chart_svg
+    from pramanyx.export.echarts import render_chart_svg
     svg = render_chart_svg(["dim_a", "dim_b", "n_records"], _grid_rows(), "heatmap", "t")
     if svg is None:
         _pytest.skip("chart SSR unavailable (node/bundle)")
@@ -408,7 +408,7 @@ def test_a_contingency_grid_renders_as_a_heatmap():
 
 
 def test_a_one_dimensional_result_does_not_pretend_to_be_a_grid():
-    from aughor.export.echarts import render_chart_svg
+    from pramanyx.export.echarts import render_chart_svg
 
     rows = [["a", 1.0], ["b", 2.0], ["c", 3.0]]
     svg = render_chart_svg(["dim", "n"], rows, "heatmap", "t")
@@ -418,7 +418,7 @@ def test_a_one_dimensional_result_does_not_pretend_to_be_a_grid():
 def test_the_finding_carries_the_whole_grid_not_a_50_row_preview():
     """A contingency grid is not a top-N list. The usual 50-row display cut kept FOUR of
     eight aircraft types, so the heatmap drew half the answer and looked complete."""
-    from aughor.agent.investigate import _ASSOCIATION_GRID_MAX, _association_finding
+    from pramanyx.agent.investigate import _ASSOCIATION_GRID_MAX, _association_finding
 
     cols = ["dim_a", "dim_b", "n_records"]
     rows = _grid_rows(8, 21)                       # 168 cells, as in the live run
@@ -431,7 +431,7 @@ def test_the_finding_carries_the_whole_grid_not_a_50_row_preview():
 def test_the_phase_summary_instructs_and_does_not_duplicate_the_verdict():
     """The RELATED branch prepended the verdict verbatim while the finding already
     carried it, so the report printed the same paragraph twice under one heading."""
-    from aughor.agent.investigate import _association_directive
+    from pramanyx.agent.investigate import _association_directive
 
     cols, rows = _long_form(_independent_table(), [f"r{i}" for i in range(6)], _MODES)
     null_f = _association_finding(_FakeResult(cols, rows), "a", "b")
@@ -484,7 +484,7 @@ def test_the_evidence_keeps_its_precision():
 
 
 def test_the_finding_shows_plain_prose_and_notes_the_statistics():
-    from aughor.agent.investigate import _association_finding as AF
+    from pramanyx.agent.investigate import _association_finding as AF
 
     cols, rows = _long_form(_independent_table(), [f"r{i}" for i in range(6)], _MODES)
     f = AF(_FakeResult(cols, rows), "aircraft_type", "booking_class")
@@ -500,7 +500,7 @@ def test_no_markdown_emphasis_survives_to_the_reader():
     """Emphasis is no longer requested anywhere in the prompts. This stripper stays as the
     belt to that braces: prompt instructions are advice, and a model that bolds out of
     habit must still not reach the reader with markup."""
-    from aughor.agent.investigate import _strip_emphasis_deep, strip_emphasis
+    from pramanyx.agent.investigate import _strip_emphasis_deep, strip_emphasis
 
     assert strip_emphasis("cost is **529.25** vs **505.87**") == "cost is 529.25 vs 505.87"
     assert strip_emphasis("__also bold__") == "also bold"
@@ -520,7 +520,7 @@ def test_the_grounding_check_no_longer_depends_on_bold():
     """Emphasis is gone from the prompts entirely (operator decision), so the guard was
     rekeyed from `**bold**` spans to sentences rather than left matching nothing — a
     check whose key stops matching is worse than no check, because it still looks alive."""
-    from aughor.agent.report_checks import check_grounding
+    from pramanyx.agent.report_checks import check_grounding
 
     violations = check_grounding("Economy was 86.5% of volume.", "economy 87.0 of volume")
     assert violations and "86.5" in violations[0]

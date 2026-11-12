@@ -2,7 +2,7 @@
 
 /**
  * Where a pack is installed, the version installed there, and what upgrading to the pack's version brings (Arc FA,
- * FA-6; `aughor/packs/upgrade.py`). Drawn under a pack in System → Packs; when where it is installed cannot be read it
+ * FA-6; `pramanyx/packs/upgrade.py`). Drawn under a pack in System → Packs; when where it is installed cannot be read it
  * draws nothing at all.
  *
  * The diff is the server's: items added, changed and removed since the installed version, each one a person declined

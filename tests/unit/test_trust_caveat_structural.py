@@ -9,9 +9,9 @@ T3-1 scopes it: floor the WHOLE report only when a flagged finding's numbers are
 (the conclusion is built on a wrong number). When the flagged finding is peripheral — its numbers do
 not appear in the conclusion (the inv3 case: clean channel drivers carried the answer, one internal
 decomposition finding tripped) — surface the caveat in data_gaps and keep the existing cap instead of
-nuking a grounded answer. See aughor/agent/investigate.py.
+nuking a grounded answer. See pramanyx/agent/investigate.py.
 """
-from aughor.agent.investigate import (
+from pramanyx.agent.investigate import (
     _reframe_on_trust_caveat,
     _cap_confidence_on_trust_advisory,
 )

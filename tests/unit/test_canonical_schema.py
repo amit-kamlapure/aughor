@@ -6,7 +6,7 @@ the inconsistency behind the wedge / coverage / stop symptoms. Best-effort on lo
 """
 from __future__ import annotations
 
-import aughor.routers._shared as sh
+import pramanyx.routers._shared as sh
 
 
 def test_none_schema_is_bare():

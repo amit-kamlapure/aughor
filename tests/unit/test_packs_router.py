@@ -2,7 +2,7 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from aughor.routers.packs import router
+from pramanyx.routers.packs import router
 
 app = FastAPI()
 app.include_router(router)

@@ -17,7 +17,7 @@ The demo is a showroom of completed reasoning, not a live agent.
 |---|---|---|
 | `ontology/interchange.py` (Wave O7) | curation only — synonyms, formats, value dictionaries, exclusions | **reuse as-is** |
 | `ontology/context_graph_export.py` (Wave C6) | the context graph as a self-contained offline pack | **reuse as-is** |
-| `data/context_graph/**` | already **git-tracked** (packs exist for aughor_ops, samples, workspace) | precedent for shipping artifacts in-repo |
+| `data/context_graph/**` | already **git-tracked** (packs exist for pramanyx_ops, samples, workspace) | precedent for shipping artifacts in-repo |
 | `data/history.db` → `investigations` | investigations, `report_json` **already a JSON column** | **gap — needs the new piece** |
 | briefing | rendered from a `conn:schema` cache entry | **gap** |
 
@@ -119,7 +119,7 @@ completed analyses. To ask new questions, connect your own backend."*
 
 ## Build order
 
-1. `aughor/demo/pack.py` — `export_pack(connection_id, investigation_ids, out_dir)` with the
+1. `pramanyx/demo/pack.py` — `export_pack(connection_id, investigation_ids, out_dir)` with the
    default-deny filter; `read_pack(dir)`; `pack_round_trips(dir)`.
 2. Tests: round-trip; **cross-connection refusal**; version refusal.
 3. Wire curation + graph via the two existing exporters.

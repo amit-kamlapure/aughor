@@ -105,10 +105,10 @@ function usage(over: Record<string, unknown> = {}) {
     models: [model("anthropic", "claude-haiku-5-5", 6, 14_543, 4), model("anthropic", "claude-sonnet-5-5", 37, 281_018, 2),
       model("openrouter", "deepseek/deepseek-v4.1-flash", 5, 49_289), model("openai", "gpt-small", 1, 900)],
     sites: [
-      { caller: "aughor.sql.writer:write", calls: 3, prompt_tokens: 110_881, total_tokens: 114_729, calls_without_usage: 0 },
-      { caller: "aughor.explorer.agent:<lambda>", calls: 20, prompt_tokens: 80_885, total_tokens: 89_228, calls_without_usage: 0 },
-      { caller: "aughor.agent.tool_loop:run_tool_loop", calls: 5, prompt_tokens: 34_776, total_tokens: 36_393, calls_without_usage: 0 },
-      { caller: "aughor.judgment.seam:judge", calls: 2, prompt_tokens: 8_020, total_tokens: 9_342, calls_without_usage: 0 },
+      { caller: "pramanyx.sql.writer:write", calls: 3, prompt_tokens: 110_881, total_tokens: 114_729, calls_without_usage: 0 },
+      { caller: "pramanyx.explorer.agent:<lambda>", calls: 20, prompt_tokens: 80_885, total_tokens: 89_228, calls_without_usage: 0 },
+      { caller: "pramanyx.agent.tool_loop:run_tool_loop", calls: 5, prompt_tokens: 34_776, total_tokens: 36_393, calls_without_usage: 0 },
+      { caller: "pramanyx.judgment.seam:judge", calls: 2, prompt_tokens: 8_020, total_tokens: 9_342, calls_without_usage: 0 },
     ],
     roles: [{ role: "coder", calls: 39, total_tokens: 300_695 }, { role: "narrator", calls: 6, total_tokens: 25_377 },
       { role: "fast", calls: 3, total_tokens: 18_778 }],
@@ -369,7 +369,7 @@ describe("what the Activity tab folded in", () => {
 
     const sites = screen.getByTestId("ao-usage-sites");
     // As the data spells them; a call site opens no events (the tail cannot be filtered by one).
-    expect(within(sites).getAllByTestId("ao-usage-sites-row")[0]).toHaveTextContent("aughor.sql.writer:write");
+    expect(within(sites).getAllByTestId("ao-usage-sites-row")[0]).toHaveTextContent("pramanyx.sql.writer:write");
     expect(sites).toHaveTextContent("prompt tokens");
     expect(within(sites).queryByRole("button", { name: /Explore/ })).toBeNull();
   });

@@ -1,8 +1,8 @@
 """Phase-8 temporal-feasibility gate (#1) + repair intent-preservation trigger (#2).
 Both platform-generic. See explorer/feasibility.py (is_temporal_angle, has_temporal_sql,
 has_vacuous_temporal) + explorer/agent.py (_query_columns)."""
-from aughor.explorer.agent import _query_columns
-from aughor.explorer.feasibility import (
+from pramanyx.explorer.agent import _query_columns
+from pramanyx.explorer.feasibility import (
     is_temporal_angle as _is_temporal_angle,
     has_temporal_sql as _has_temporal_sql,
     has_vacuous_temporal as _has_vacuous_temporal,

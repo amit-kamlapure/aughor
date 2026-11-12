@@ -9,8 +9,8 @@ motivated it. Slots into `PLATFORM_ROADMAP_2026-08-12.md` as **Program AT**, on 
 plane, and it is the accuracy half of what Arc CI's prompt-economy section (§2.6) began:
 trust the model, verify in code.
 
-**Baseline:** branch `claude/answer-truthfulness-at1`. `aughor/agent/relationship.py`,
-`aughor/agent/claim_type.py`, `_ranking_noise_caveat`, `check_noise_findings_not_cited`,
+**Baseline:** branch `claude/answer-truthfulness-at1`. `pramanyx/agent/relationship.py`,
+`pramanyx/agent/claim_type.py`, `_ranking_noise_caveat`, `check_noise_findings_not_cited`,
 `check_significance_claims`, `check_claim_type`, `assess_correlation` / `assess_group_means`,
 and 108 tests across `tests/unit/test_relationship_scan.py` and `tests/unit/test_claim_type.py`.
 Eight live runs of *"Is there a correlation between shipping delay and customer location?"* on
@@ -114,7 +114,7 @@ causal verb; ≥ 5 of the 38 pitfalls provably unwritable.
 
 **AT-2 · The numbered-pitfalls contract.** ✅ **DONE 2026-08-17** — `docs/PITFALLS.md`.
 `docs/PITFALLS.md` — the 38 from `statistical_pitfalls.md`, renumbered and reworded for
-aughor's vocabulary, each tagged *enforced-by:* a check name or *advisory*. The narrator
+pramanyx's vocabulary, each tagged *enforced-by:* a check name or *advisory*. The narrator
 prompts cite by number (`avoid #3, #11, #32`); each existing check names the pitfall it
 enforces in its violation string; the report's `confidence_justification` cites the number.
 Writer, checker, and reader share one vocabulary. Zero model cost.
@@ -138,7 +138,7 @@ and drives nothing. A human override in `ColumnFlags` is a witness with confiden
 *Ratchet from day one:* `concept` may only be set by `_resolve_concept`; any consumer must
 read `concept_confidence`. Same shape as `test_no_model_id_ships_in_the_product`.
 
-**AT-5 · Value-shape witnesses.** ~2 days. `aughor/tools/shape.py` — pure functions
+**AT-5 · Value-shape witnesses.** ~2 days. `pramanyx/tools/shape.py` — pure functions
 `(sample) → (concept, confidence, evidence)`, run at profile time on the samples the
 profiler already holds plus one `TRY_CAST` probe for text:
 bounded numeric (lat ±90 with ≥4 dp and high cardinality; lon ±180; percent 0–1 / 0–100;
@@ -148,7 +148,7 @@ fingerprint (values ⊂ weekday/month/country names in ~6 languages — `EE. UU.
 The name is never consulted here; that is the point. Immediate consequence: a coordinate
 column carries range + cardinality evidence that outvotes `_GEO_CODE_PATTERN`'s "key".
 
-**AT-6 · Pair coherence.** ~2 days. `aughor/tools/pairs.py` — the concepts that only exist
+**AT-6 · Pair coherence.** ~2 days. `pramanyx/tools/pairs.py` — the concepts that only exist
 as pairs, each with a *computed* test:
 - **coordinates**: one column in ±90, one in ±180, and the sampled (lat, lon) points cluster
   on populated land against a bundled ~1,000-city centroid table (small, offline). Only
@@ -331,7 +331,7 @@ No receipts. Three numbers per wave, all already emitted:
   are **not** in this program — hygiene, not accuracy. (Drift ratchets are worth a separate
   half-day; they protect the guards this program adds from going silently blind.)
 - From the skills repo, take **scripts and rule tables**, never the SKILL.md prose — PE-2
-  moved that style *out* of aughor's prompts and this program does not put it back.
+  moved that style *out* of pramanyx's prompts and this program does not put it back.
 - `what-if-oracle` (CC BY-NC-SA) and `consciousness-council` are never a source.
 
 **Open — user input wanted:**
@@ -346,7 +346,7 @@ No receipts. Three numbers per wave, all already emitted:
 
 ## 7 · Track 1 delivered — what run 8 shows, including what it disproves
 
-Built on branch `claude/answer-truthfulness-at1`, 2026-08-17. `aughor/agent/claim_type.py`
+Built on branch `claude/answer-truthfulness-at1`, 2026-08-17. `pramanyx/agent/claim_type.py`
 owns the ladder; `_stamp_claim_type` resolves it at intake from the DESIGN;
 `_claim_licence_section` carries it into synthesis; `check_claim_type` verifies it.
 31 tests in `tests/unit/test_claim_type.py`, 6,335 in the suite.
@@ -394,9 +394,9 @@ misfire structurally impossible rather than patched.
 
 ## 8 · Track 2 delivered (2026-08-17) — what a column IS, and what reads it
 
-`aughor/tools/pairs.py` (AT-6), `aughor/tools/usage.py` (AT-8),
-`aughor/ontology/operations.{py,yaml}` (AT-7), the witness/stamping seams in
-`aughor/tools/profiler.py`, `ColumnFlags.concept`, `profile_cache.load_concepts`, and
+`pramanyx/tools/pairs.py` (AT-6), `pramanyx/tools/usage.py` (AT-8),
+`pramanyx/ontology/operations.{py,yaml}` (AT-7), the witness/stamping seams in
+`pramanyx/tools/profiler.py`, `ColumnFlags.concept`, `profile_cache.load_concepts`, and
 `plan_relationship(col_concepts=…)`. 82 tests across five files; 6,431 in the suite.
 
 ### 8.1 · What data_co resolves to now, and on what evidence
@@ -501,7 +501,7 @@ columns. That is the honest floor of a four-layer system, not a defect in the re
 
 ## 9 · AT-5, bounded-numeric half (2026-08-17) — the fifth layer
 
-`aughor/tools/shape.py`, 51 tests. Reads the row-aligned sample AT-6 already pulls, so it
+`pramanyx/tools/shape.py`, 51 tests. Reads the row-aligned sample AT-6 already pulls, so it
 costs **zero extra queries**. Neither the column's NAME nor its declared DTYPE is consulted:
 the name is a different layer, and the dtype is the LOADER's opinion — the witness that was
 wrong about `Latitude` in the first place, and wrong in a way that depends on which
@@ -550,7 +550,7 @@ UNRESOLVED**; what this measures is that the value layer is not where it can be 
    storing only a latitude gets one — while a column with identical values and a name that
    says nothing (`score`, `Defect rates`) still types nothing. Both halves are pinned.
 
-`aughor/tools/pairs.py` no longer carries its own value parser or coordinate-precision
+`pramanyx/tools/pairs.py` no longer carries its own value parser or coordinate-precision
 band; both are imported from `shape`, which owns them. Two parsers over one sample is two
 chances to disagree about the same column.
 
@@ -566,7 +566,7 @@ weekday/month names (**zero** columns measured across 105 tables). Checksums sta
 
 ## 10 · AT-5 complete (2026-08-17) — the bundled vocabulary
 
-`aughor/tools/vocab.py` (the lists), the grammar and set tables in `shape.py`, seven name
+`pramanyx/tools/vocab.py` (the lists), the grammar and set tables in `shape.py`, seven name
 rules so each new witness has something it can agree WITH, seven new operations rows.
 105 tests across `test_vocab.py` and `test_shape.py`.
 

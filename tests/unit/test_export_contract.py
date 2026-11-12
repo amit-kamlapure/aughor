@@ -1,4 +1,4 @@
-"""Output-contract parity: aughor.sql.closed_loop.rows_to_csv must match the Spider2 evaluator's
+"""Output-contract parity: pramanyx.sql.closed_loop.rows_to_csv must match the Spider2 evaluator's
 serialization (``pd.DataFrame(rows, columns=cols).to_csv(index=False)``) byte-for-byte.
 
 This is the gap that silently zeroes a *correct* cloud query (a value-correct result that serializes
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from aughor.sql.closed_loop import rows_to_csv
+from pramanyx.sql.closed_loop import rows_to_csv
 
 pd = pytest.importorskip("pandas")   # the evaluator uses pandas; parity is defined against it
 

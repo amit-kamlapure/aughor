@@ -27,13 +27,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from aughor.db.connection import open_connection_for_with_schema  # noqa: E402
-from aughor.ontology.operations import caveat_for  # noqa: E402
-from aughor.tools.concept import CONFIDENT, concept_of  # noqa: E402
-from aughor.tools.profile_cache import get_or_build_profiles, invalidate  # noqa: E402
-from aughor.tools.profiler import render_profile_annotations  # noqa: E402
-from aughor.tools.schema import compute_join_map, parse_schema_tables  # noqa: E402
-from aughor.tools.table_names import bare  # noqa: E402
+from pramanyx.db.connection import open_connection_for_with_schema  # noqa: E402
+from pramanyx.ontology.operations import caveat_for  # noqa: E402
+from pramanyx.tools.concept import CONFIDENT, concept_of  # noqa: E402
+from pramanyx.tools.profile_cache import get_or_build_profiles, invalidate  # noqa: E402
+from pramanyx.tools.profiler import render_profile_annotations  # noqa: E402
+from pramanyx.tools.schema import compute_join_map, parse_schema_tables  # noqa: E402
+from pramanyx.tools.table_names import bare  # noqa: E402
 
 
 def main() -> int:

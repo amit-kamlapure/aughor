@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.llm.faux import FauxToolCall, set_responses
-from aughor.llm.provider import LLMProvider, ToolTurn, _parse_tool_turn
+from pramanyx.llm.faux import FauxToolCall, set_responses
+from pramanyx.llm.provider import LLMProvider, ToolTurn, _parse_tool_turn
 
 _TOOLS = [{
     "type": "function",
@@ -30,7 +30,7 @@ _TOOLS = [{
 
 @pytest.fixture
 def provider(monkeypatch):
-    monkeypatch.delenv("AUGHOR_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.delenv("PRAMANYX_MAX_OUTPUT_TOKENS", raising=False)
     return LLMProvider(backend="faux", role="coder")
 
 
@@ -64,7 +64,7 @@ def test_the_tools_array_actually_reaches_the_provider(provider):
     proves nothing about routing. This asserts the kwargs the transport received —
     the adapter-fidelity trap named in the deepagents risk list.
     """
-    from aughor.llm import faux
+    from pramanyx.llm import faux
 
     set_responses([FauxToolCall(payload={"sql": "SELECT 1"}, name="run_sql")])
     provider.complete_with_tools("sys", "q", _TOOLS)
@@ -126,7 +126,7 @@ def test_a_tool_call_is_read_before_empty_content():
 def test_the_turn_is_metered(provider, monkeypatch):
     """A loop that runs untracked is how a free-tier allowance disappears with no line
     item. A tool-choosing turn costs the same tokens as an answering one."""
-    from aughor.kernel import metering
+    from pramanyx.kernel import metering
 
     recorded: list[tuple] = []
     monkeypatch.setattr(metering, "record_llm",
@@ -208,7 +208,7 @@ def test_a_loop_runs_to_an_answer_on_the_anthropic_binding(provider):
     `tool_result` inside a USER turn — Anthropic refuses a `role="tool"` message."""
     from types import SimpleNamespace
 
-    from aughor.agent.tool_loop import ToolSpec, run_tool_loop
+    from pramanyx.agent.tool_loop import ToolSpec, run_tool_loop
     sent = _anthropic(provider, [
         _anthropic_reply(SimpleNamespace(type="tool_use", id="toolu_7", name="run_sql",
                                          input={"sql": "SELECT COUNT(*) FROM orders"}),
@@ -233,7 +233,7 @@ def test_a_loop_runs_to_an_answer_on_the_anthropic_binding(provider):
 
 def test_adjacent_user_turns_merge_for_anthropic():
     """A nudge after a tool result is a second user message in a row; Anthropic refuses that."""
-    from aughor.llm.provider import _anthropic_messages
+    from pramanyx.llm.provider import _anthropic_messages
     history = [
         {"role": "assistant", "content": None,
          "tool_calls": [{"id": "c1", "type": "function",
@@ -257,7 +257,7 @@ def test_history_reaches_the_model_so_a_loop_can_progress(provider):
     """A loop is a conversation that grows. Without the tool results going back, the
     model re-decides from the same two messages every step and picks the same tool
     forever — a loop that spends its whole budget re-running one query."""
-    from aughor.llm import faux
+    from pramanyx.llm import faux
 
     history = [
         {"role": "assistant", "content": None,
@@ -276,7 +276,7 @@ def test_history_reaches_the_model_so_a_loop_can_progress(provider):
 
 def test_first_turn_sends_no_history(provider):
     """Omitted rather than empty: the opening turn is just system + question."""
-    from aughor.llm import faux
+    from pramanyx.llm import faux
 
     set_responses(["hi"])
     provider.complete_with_tools("sys", "q", _TOOLS)
@@ -288,7 +288,7 @@ def test_a_dead_primary_falls_over_and_still_returns_the_choice(provider, monkey
     """An agent loop makes several calls per user turn, so a link that dies mid-loop must
     not take the turn with it. The chain has to carry a TOOL turn, not just a structured
     one — that is the part `complete()`'s existing failover does not cover."""
-    from aughor.llm.provider import ToolCall, ToolTurn
+    from pramanyx.llm.provider import ToolCall, ToolTurn
 
     served: list[str] = []
     primary = provider.backend
@@ -313,7 +313,7 @@ def test_a_dead_primary_falls_over_and_still_returns_the_choice(provider, monkey
 def test_quota_cooldown_skips_the_primary_without_probing_it(provider, monkeypatch):
     """The wasted round trip is paid once per LOOP STEP, not once per question — which is
     why re-probing a spent primary is worse here than on the structured path."""
-    import aughor.llm.provider as prov
+    import pramanyx.llm.provider as prov
 
     probed: list[str] = []
     monkeypatch.setattr(prov, "_in_quota_cooldown", lambda b: b == provider.backend)
@@ -322,7 +322,7 @@ def test_quota_cooldown_skips_the_primary_without_probing_it(provider, monkeypat
 
     def _served(self, client, backend, model, *a, **k):
         probed.append(backend)
-        from aughor.llm.provider import ToolTurn
+        from pramanyx.llm.provider import ToolTurn
         return ToolTurn(text="ok")
 
     monkeypatch.setattr(type(provider), "_tools_on", _served)
@@ -434,7 +434,7 @@ def test_the_passthrough_turn_is_still_metered(monkeypatch, provider):
     appears to cost nothing is how an allowance disappears with no line item."""
     from types import SimpleNamespace
 
-    from aughor.kernel import metering
+    from pramanyx.kernel import metering
 
     completion = _fake_completion(name="run_sql", arguments='{"sql": "SELECT 1"}')
     completion.usage = SimpleNamespace(prompt_tokens=11, completion_tokens=7)

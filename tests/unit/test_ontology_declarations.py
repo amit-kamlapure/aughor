@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.ontology.declarations import (
+from pramanyx.ontology.declarations import (
     EXCLUSION_REASONS,
     GREEN,
     ORANGE,

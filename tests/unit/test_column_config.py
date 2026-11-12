@@ -5,7 +5,7 @@ Deterministic defaults from profiler facts, persisted as an editable YAML tree k
 consumed by the schema render (prune), the value-annotation injector (sample), the
 profiler's R5 capture gate (index) and the R8 doc tree (marking).
 
-Fully hermetic: the store root is a per-test tmp dir (AUGHOR_COLUMN_CONFIG_ROOT),
+Fully hermetic: the store root is a per-test tmp dir (PRAMANYX_COLUMN_CONFIG_ROOT),
 in-memory DuckDB for the profiler, plain namespaces for profile ducks.
 """
 from __future__ import annotations
@@ -16,8 +16,8 @@ from types import SimpleNamespace
 import duckdb
 import pytest
 
-from aughor.db.connection import DuckDBConnection
-from aughor.ontology.column_config import (
+from pramanyx.db.connection import DuckDBConnection
+from pramanyx.ontology.column_config import (
     ColumnFlags,
     apply_column_config_to_schema,
     default_flags,
@@ -30,13 +30,13 @@ from aughor.ontology.column_config import (
     save_table_config,
     set_column_flags,
 )
-from aughor.tools.profiler import build_column_profiles
+from pramanyx.tools.profiler import build_column_profiles
 
 
 @pytest.fixture()
 def store(monkeypatch, tmp_path):
     root = tmp_path / "colcfg"
-    monkeypatch.setenv("AUGHOR_COLUMN_CONFIG_ROOT", str(root))
+    monkeypatch.setenv("PRAMANYX_COLUMN_CONFIG_ROOT", str(root))
     return root
 
 
@@ -250,7 +250,7 @@ def test_helper_sets():
 # ── inject_value_annotations honours sample_disabled ─────────────────────────
 
 def test_inject_value_annotations_respects_sample_disabled():
-    from aughor.tools.schema import inject_value_annotations
+    from pramanyx.tools.schema import inject_value_annotations
     schema = "TABLE: sales  (10 rows)\n  status  VARCHAR"
     cp = {"sales.status": SimpleNamespace(
         top_values=["open", "closed"], is_low_cardinality=True,
@@ -315,7 +315,7 @@ def test_profiler_index_config_cannot_break_cardinality_band():
 # ── the wired path: apply_schema_enrichment prunes only when the flag is on ──
 
 def test_apply_schema_enrichment_prunes_only_when_flag_on(monkeypatch, store):
-    from aughor.tools.schema import apply_schema_enrichment
+    from pramanyx.tools.schema import apply_schema_enrichment
     set_column_flags("connX", "default", "sales", "notes", visible=False)
     raw = "TABLE: sales  (10 rows)\n  id  INTEGER\n  notes  VARCHAR"
 
@@ -327,8 +327,8 @@ def test_apply_schema_enrichment_prunes_only_when_flag_on(monkeypatch, store):
 # ── doc tree: column nodes carry the config marks ────────────────────────────
 
 def test_doctree_stamps_config_flags():
-    from aughor.ontology.doctree import build_doc_tree
-    from aughor.ontology.models import EntityProperty, OntologyEntity, OntologyGraph
+    from pramanyx.ontology.doctree import build_doc_tree
+    from pramanyx.ontology.models import EntityProperty, OntologyEntity, OntologyGraph
     ent = OntologyEntity(
         id="sales", display_name="Sales", source_tables=["sales"],
         identity_key="id", grain_verified=True,

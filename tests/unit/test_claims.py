@@ -13,8 +13,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 
-from aughor.hub import claims as C
-from aughor.hub.claims import CONTRADICTED, MEASURED, UNCHECKED, check_claim
+from pramanyx.hub import claims as C
+from pramanyx.hub.claims import CONTRADICTED, MEASURED, UNCHECKED, check_claim
 
 PROMISE = "promise:order_to_delivery.dispatch"
 FILED = {"breached": 187, "reached": 2000, "breach_rate": 0.0935, "as_of": "2026-09-18", "connection_id": "olist"}
@@ -49,12 +49,12 @@ class TestTheThreeOutcomes:
 
 class TestWhoIsAsked:
     def test_a_metrics_catalog_owner_and_a_processs_owner_resolve_the_cb3_way(self, monkeypatch):
-        monkeypatch.setattr("aughor.semantic.metrics.get_metric", lambda name, path=None, connection_id=None: SimpleNamespace(owner="group:finance"))
+        monkeypatch.setattr("pramanyx.semantic.metrics.get_metric", lambda name, path=None, connection_id=None: SimpleNamespace(owner="group:finance"))
         assert C.owner_of("metric:revenue", "c1") == ("group:finance", "group:finance")
         proc = SimpleNamespace(owner="Ops lead")
-        monkeypatch.setattr("aughor.agent.framing.served_graph", lambda cid, schema=None: SimpleNamespace(processes={"order_to_delivery": proc}, rules={}))
+        monkeypatch.setattr("pramanyx.agent.framing.served_graph", lambda cid, schema=None: SimpleNamespace(processes={"order_to_delivery": proc}, rules={}))
         assert C.owner_of(PROMISE, "c1") == ("", "Ops lead")        # declared, not linked
-        from aughor.rbac import owners as OW
+        from pramanyx.rbac import owners as OW
         OW.link_owner("default", "Ops lead", "user:ops@corp")
         try:
             assert C.owner_of(PROMISE, "c1") == ("user:ops@corp", "Ops lead")
@@ -65,7 +65,7 @@ class TestWhoIsAsked:
 
 class TestTheArrivalIsChecked:
     def test_a_filed_reply_is_checked_stored_and_listed(self, client, monkeypatch):
-        from aughor.hub import links as L
+        from pramanyx.hub import links as L
         monkeypatch.setattr(L, "stamped_measures", lambda ref: FILED)
         L.file_link(object_ref=PROMISE, kind="thread", ref="C9:1712.009", title="Dispatch promise breached", source="automation:a1")
         monkeypatch.setattr(C, "owner_of", lambda ref, cid: ("user:ops@corp", "Ops lead"))
@@ -81,7 +81,7 @@ class TestTheArrivalIsChecked:
         assert claims["counts"]["contradicted"] >= 1 and claims["contradictions"][0]["question_to"] == "user:ops@corp"
         # the Record keeps one SAID claim per reply (the 2027 study §E, the hub writer): the second
         # reply is counted beside the first, never over it
-        from aughor.record import claims as RC
+        from pramanyx.record import claims as RC
         assert body["claim"] and r2.json()["claim"] and body["claim"] != r2.json()["claim"]
         first, second = RC.get(body["claim"]), RC.get(r2.json()["claim"])
         assert first.kind == "said" and first.state == "supported" and first.about.key == PROMISE and first.author == "person:Ana"
@@ -95,7 +95,7 @@ def _yesterday() -> str:
 
 class TestOnlyACheckedNoteReachesAPrompt:
     def _pieces(self, *verifications):
-        from aughor.hub.provenance import ContextPiece, Provenance
+        from pramanyx.hub.provenance import ContextPiece, Provenance
         return [ContextPiece(text=f"note {i} says 187 breached", subject=PROMISE, piece_id=str(i),
                              provenance=Provenance(source_kind="conversation", authority="measured" if v == "measured" else "said",
                                                    author="Ana", author_kind="person", scope_kind="object", scope_key=PROMISE,
@@ -105,23 +105,23 @@ class TestOnlyACheckedNoteReachesAPrompt:
                 for i, v in enumerate(verifications)]
 
     def test_measured_notes_are_let_through_said_and_contradicted_are_not(self, monkeypatch):
-        from aughor.hub import injection as I
-        monkeypatch.setattr("aughor.hub.adapters.conversation_note_pieces", lambda cid: self._pieces("measured", "unverified", "contradicted"))
+        from pramanyx.hub import injection as I
+        monkeypatch.setattr("pramanyx.hub.adapters.conversation_note_pieces", lambda cid: self._pieces("measured", "unverified", "contradicted"))
         block = I.ranked_notes_block("olist")
         assert block.startswith("CONTEXT FROM PEOPLE, CHECKED AGAINST THE DATA")
         assert "note 0" in block and "note 1" not in block and "note 2" not in block
-        monkeypatch.setattr("aughor.hub.adapters.conversation_note_pieces", lambda cid: self._pieces("unverified"))
+        monkeypatch.setattr("pramanyx.hub.adapters.conversation_note_pieces", lambda cid: self._pieces("unverified"))
         assert I.ranked_notes_block("olist") == ""
 
     def test_the_gate_admits_exactly_the_checked_kind(self):
-        from aughor.hub.injection import INJECTABLE_SOURCE_KINDS
+        from pramanyx.hub.injection import INJECTABLE_SOURCE_KINDS
         assert INJECTABLE_SOURCE_KINDS == ("conversation:measured",)
 
     def test_the_adapter_reads_the_check_into_the_envelope(self, monkeypatch):
-        from aughor.hub import adapters as A
+        from pramanyx.hub import adapters as A
         row = {"id": "n1", "note": "187 breached", "status": "pending", "provenance": {"author": "Ana"},
                "check": {"verification": "measured"}, "last_seen": "2026-09-23"}
         monkeypatch.setattr(A, "_noted_object_refs", lambda cid: [PROMISE])
-        monkeypatch.setattr("aughor.ontology.agent_notes.object_notes_for", lambda cid, ref: [row])
+        monkeypatch.setattr("pramanyx.ontology.agent_notes.object_notes_for", lambda cid, ref: [row])
         piece = A.conversation_note_pieces("olist")[0]
         assert piece.provenance.authority == "measured" and piece.provenance.verification == "measured"

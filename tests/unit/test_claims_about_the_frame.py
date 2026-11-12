@@ -13,8 +13,8 @@ from types import SimpleNamespace as NS
 
 import pytest
 
-from aughor.ontology.framing import frame_about, frame_question
-from aughor.ontology.models import OntologyGraph
+from pramanyx.ontology.framing import frame_about, frame_question
+from pramanyx.ontology.models import OntologyGraph
 
 THELOOK = "evals/ablation_thelook_business_ontology.json"
 OLIST = "evals/ablation_olist_business_ontology.json"
@@ -52,14 +52,14 @@ def test_a_frame_that_defines_nothing_leaves_the_claim_about_its_connection():
 
 @pytest.fixture
 def ledger(tmp_path, monkeypatch):
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     led = Ledger(str(tmp_path / "system.db"))
     monkeypatch.setattr(Ledger, "default", classmethod(lambda cls: led))
     return led
 
 
 def _book(about: dict) -> str:
-    from aughor.record.writers import book_from_receipt
+    from pramanyx.record.writers import book_from_receipt
     out = book_from_receipt(kind="chat_answer", natural_key="chat:c:inv1", receipt_id="rcpt-1", connection_id="c",
                             question="How many completed orders were placed in 2025?",
                             headline="31,204 completed orders were placed in 2025", sql="SELECT COUNT(*) FROM orders",
@@ -68,7 +68,7 @@ def _book(about: dict) -> str:
 
 
 def test_the_claim_is_about_the_frames_subject(ledger, monkeypatch):
-    from aughor.record.claims import get
+    from pramanyx.record.claims import get
     claim = get(_book({"kind": "segment", "key": "completed_orders"}))
     assert (claim.about.kind, claim.about.key, claim.statement.object_set) == ("segment", "completed_orders",
                                                                               "completed_orders")
@@ -76,8 +76,8 @@ def test_the_claim_is_about_the_frames_subject(ledger, monkeypatch):
 
 def test_a_claim_about_a_segment_is_one_a_release_touches(ledger, monkeypatch):
     # The point of the subject: OC-2's restatement finds this claim when the rule that derives the segment changes.
-    from aughor.ontology.release import _touches
-    monkeypatch.setattr("aughor.cards.store.list_cards", lambda **k: [])
+    from pramanyx.ontology.release import _touches
+    monkeypatch.setattr("pramanyx.cards.store.list_cards", lambda **k: [])
     cid = _book({"kind": "segment", "key": "completed_orders"})
     assert [c["id"] for c in _touches("c", {"completed_orders"}, [])["claims"]] == [cid]
 
@@ -89,9 +89,9 @@ def test_a_deep_report_s_claims_reach_the_run_s_inquiry():
     hands what it booked to the run's inquiry."""
     import uuid
 
-    from aughor.kernel.ledger import DEEP_REPORT_KIND
-    from aughor.record import inquiry as I
-    from aughor.record.writers import book_from_receipt
+    from pramanyx.kernel.ledger import DEEP_REPORT_KIND
+    from pramanyx.record import inquiry as I
+    from pramanyx.record.writers import book_from_receipt
     conn, run = "c-" + uuid.uuid4().hex[:6], "inv-" + uuid.uuid4().hex[:6]
     q = I.attach_run_result(run_id=run, connection_id=conn, question="Why did margin fall?",
                             report={"headline": "Margin fell on one shop", "data_gaps": []}, hypotheses=[])

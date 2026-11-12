@@ -3,11 +3,11 @@
 A monitor built from a Briefing finding inherits a FROZEN absolute date window; this
 slides every date literal forward by the gap to the data's live activity edge so the
 window keeps its shape but tracks the latest data. Fallback-safe: returns the SQL
-unchanged on any failure. See aughor/monitors/window.py.
+unchanged on any failure. See pramanyx/monitors/window.py.
 """
 from datetime import datetime
 
-from aughor.monitors.window import reanchor_trailing_window
+from pramanyx.monitors.window import reanchor_trailing_window
 
 
 class _Result:

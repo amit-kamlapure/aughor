@@ -5,8 +5,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.integrations import broker, store
-from aughor.integrations.models import Connection
+from pramanyx.integrations import broker, store
+from pramanyx.integrations.models import Connection
 
 
 @pytest.fixture(autouse=True)
@@ -109,7 +109,7 @@ def test_a_blank_secret_keeps_the_stored_one(client):
     fixed = client.put("/integrations/google/app", json={"client_id": "2222-cidtwo.apps.googleusercontent.com"})
     assert fixed.status_code == 200, fixed.text
 
-    from aughor.integrations.store import get_app_decrypted
+    from pramanyx.integrations.store import get_app_decrypted
     app = get_app_decrypted("google")
     assert app.client_id == "2222-cidtwo.apps.googleusercontent.com"
     assert app.client_secret == "secret-1"      # unchanged, not blanked
@@ -206,8 +206,8 @@ def test_a_stored_callback_that_cannot_work_is_not_readiness(client):
     `https://<workspace>.slack.com/oauth/callback`, saved before the domain rule existed.
     Readiness looked only at the scheme, saw `https://`, and would have gone on offering
     the button that cannot open. It asks the validator now, so the two cannot disagree."""
-    from aughor.integrations.models import ProviderApp
-    from aughor.integrations.store import save_app
+    from pramanyx.integrations.models import ProviderApp
+    from pramanyx.integrations.store import save_app
 
     # Written directly: the route refuses this now, and the point is a record that
     # PREDATES the rule.
@@ -283,8 +283,8 @@ def test_a_google_client_id_of_the_wrong_shape_is_refused_by_name(client):
 
 
 def test_a_stored_placeholder_is_said_on_its_card_and_connect_never_reaches_google(client):
-    from aughor.integrations.models import ProviderApp
-    from aughor.integrations.store import save_app
+    from pramanyx.integrations.models import ProviderApp
+    from pramanyx.integrations.store import save_app
     save_app(ProviderApp(id="google", client_id="demo-client-id.apps.googleusercontent.com", client_secret="demo"))
     google = next(p for p in client.get("/integrations/catalog").json()["providers"] if p["id"] == "google")
     assert "is not a Google client id" in google["client_id_problem"] and google["oauth_ready"] is False
@@ -296,9 +296,9 @@ def test_a_stored_placeholder_is_said_on_its_card_and_connect_never_reaches_goog
 
 
 def test_a_withheld_card_is_said_on_the_return_page_and_on_the_catalog(client, monkeypatch):
-    from aughor.integrations import broker
-    from aughor.integrations.models import Connection
-    from aughor.integrations.store import save_connection
+    from pramanyx.integrations import broker
+    from pramanyx.integrations.models import Connection
+    from pramanyx.integrations.store import save_connection
     drive = "https://www.googleapis.com/auth/drive.readonly"
     conn = Connection(provider="google", user_id="", scopes="openid email", withheld=drive, status="active")
     monkeypatch.setattr(broker, "complete", lambda state, code: conn)

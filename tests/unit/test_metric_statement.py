@@ -17,9 +17,9 @@ import duckdb
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.semantic import metric_statement as ms
-from aughor.semantic import metric_time as mt
+from pramanyx.api import app
+from pramanyx.semantic import metric_statement as ms
+from pramanyx.semantic import metric_time as mt
 
 client = TestClient(app)
 
@@ -292,7 +292,7 @@ def test_the_platform_proposes_the_runnable_statement_for_an_expression():
 
 
 def test_the_proposals_door_offers_statements_and_dates_or_says_why_not(monkeypatch):
-    monkeypatch.setattr("aughor.tools.profile_cache.latest_profile_entry", lambda cid: PROFILE if cid == "c1" else {})
+    monkeypatch.setattr("pramanyx.tools.profile_cache.latest_profile_entry", lambda cid: PROFILE if cid == "c1" else {})
     door = "/metrics/proposals"
     body = client.post(door, json={"connection": "c1", "sql": RR_STMT["sql"], "name": "return_rate"}).json()
     assert body["statements"] == [] and body["statement_note"] == ""
@@ -322,7 +322,7 @@ def test_the_doors_require_a_statement_for_a_new_formula_and_keep_an_old_express
     assert res.status_code == 201, res.text
     # A row written before the rule (seeded straight into the store) keeps its expression
     # while its dates are confirmed, and is refused only when the formula itself changes.
-    from aughor.semantic.metrics import MetricDefinition, save_metric
+    from pramanyx.semantic.metrics import MetricDefinition, save_metric
     save_metric(MetricDefinition(name="stmt_rule_old", label="Old", sql="COUNT(*)", tables=["orders"],
                                  connection="stmt-conn"))
     old = client.get("/metrics?connection_id=stmt-conn").json()
@@ -337,7 +337,7 @@ def test_the_doors_require_a_statement_for_a_new_formula_and_keep_an_old_express
 
 
 def _approved(name, **over):
-    from aughor.semantic.metrics import MetricDefinition, save_metric
+    from pramanyx.semantic.metrics import MetricDefinition, save_metric
     save_metric(MetricDefinition(**{"name": name, "label": name, "sql": "SELECT COUNT(*) AS n FROM orders", "tables": ["orders"],
                                     "connection": "stmt-conn", "status": "approved", "approved_by": "test", "version": 1, **over}))
 
@@ -373,7 +373,7 @@ def test_changing_the_formula_goes_on_its_trail_once(client):
 
 
 def test_the_value_path_still_wraps_an_old_expression_the_same_way():
-    from aughor.semantic.metrics import MetricDefinition, value_query
+    from pramanyx.semantic.metrics import MetricDefinition, value_query
     m = MetricDefinition(name="rev", label="Rev", sql="SUM(amount)", tables=["orders"], filters=["a = 1"])
     assert value_query(m) == "SELECT (SUM(amount)) AS _v FROM orders WHERE a = 1"
     s = MetricDefinition(name="rev", label="Rev", sql="SELECT SUM(amount) AS rev FROM orders", tables=[])

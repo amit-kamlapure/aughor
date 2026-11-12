@@ -28,13 +28,13 @@ from pathlib import Path
 
 import pytest
 
-from aughor.mcpservers import call as door
-from aughor.mcpservers import store
-from aughor.mcpservers.discover import discover, health, tool_named
-from aughor.mcpservers.models import (
+from pramanyx.mcpservers import call as door
+from pramanyx.mcpservers import store
+from pramanyx.mcpservers.discover import discover, health, tool_named
+from pramanyx.mcpservers.models import (
     CALLABLE, REFUSED_MUTATING, McpServer, McpTool, classify,
 )
-from aughor.mcpservers.session import McpUnreachable
+from pramanyx.mcpservers.session import McpUnreachable
 
 #: A real MCP server, in-tree, offering one tool of each annotation shape. Written as a
 #: file rather than constructed in-process because stdio is the transport being proven —
@@ -236,7 +236,7 @@ def test_a_usage_cap_BLOCKS_rather_than_refuses(monkeypatch):
     """The three outcomes are never flattened into two: `blocked` means nothing was sent and
     the same call is legitimate next window, `refused` means we declined and retrying
     changes nothing. A caller that could not tell them apart would retry a refusal forever."""
-    from aughor.govern.outbound import OutboundBlocked
+    from pramanyx.govern.outbound import OutboundBlocked
 
     s = _fixture_server()
     discover(s)
@@ -244,7 +244,7 @@ def test_a_usage_cap_BLOCKS_rather_than_refuses(monkeypatch):
     def _blocked(*_a, **_k):
         raise OutboundBlocked("mcp", "monthly outbound cap reached")
 
-    monkeypatch.setattr("aughor.govern.outbound.external_call", _blocked)
+    monkeypatch.setattr("pramanyx.govern.outbound.external_call", _blocked)
     r = door.call(s.id, "read_the_weather", {"city": "Berlin"})
     assert r.status == "blocked"
     assert "cap" in r.message
@@ -261,7 +261,7 @@ def test_every_call_is_RECORDED_not_merely_wrapped(monkeypatch):
     was entered; it could not prove anything was written, and the wrapper being entered was
     never the claim. A proxy is not the measure.
     """
-    from aughor.telemetry import current_trace_id
+    from pramanyx.telemetry import current_trace_id
 
     recorded: list[tuple] = []
 
@@ -273,7 +273,7 @@ def test_every_call_is_RECORDED_not_merely_wrapped(monkeypatch):
         # fail no matter how badly the trace was missing.
         recorded.append((kind, kw.get("name", ""), kw.get("trace_id") or current_trace_id()))
 
-    monkeypatch.setattr("aughor.obs.session_log.emit", _emit)
+    monkeypatch.setattr("pramanyx.obs.session_log.emit", _emit)
     s = _fixture_server()
     discover(s)
     door.call(s.id, "read_the_weather", {"city": "Berlin"})
@@ -289,7 +289,7 @@ def test_every_call_is_RECORDED_not_merely_wrapped(monkeypatch):
 def test_the_service_name_is_the_ID_not_the_renameable_display_name():
     """`service` is what a cap is written against and what an audit line is read back by; a
     name a person can rename would silently detach both."""
-    from aughor.mcpservers.models import service_name
+    from pramanyx.mcpservers.models import service_name
     s = _fixture_server(name="Finance tools")
     assert service_name(s) == f"mcp:{s.id}"
 

@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import pytest
 
-import aughor.business_profile.metric_kb as metric_kb
-import aughor.playbook.store as store
-from aughor.business_profile.metric_kb import kb_entry_industry, load_industry_kbs
-from aughor.playbook import builder, retriever
-from aughor.playbook.models import DATA_QUALITY_TAG, PlaybookEntry
+import pramanyx.business_profile.metric_kb as metric_kb
+import pramanyx.playbook.store as store
+from pramanyx.business_profile.metric_kb import kb_entry_industry, load_industry_kbs
+from pramanyx.playbook import builder, retriever
+from pramanyx.playbook.models import DATA_QUALITY_TAG, PlaybookEntry
 
 
 def _kb_with_causes() -> list[dict]:
@@ -119,9 +119,9 @@ def test_the_block_says_proven_only_when_a_play_has_an_outcome(monkeypatch):
 
 
 def test_a_definitional_answer_carries_the_industrys_play(monkeypatch):
-    import aughor.semantic.connection_kb as connection_kb
-    import aughor.semantic.kb_retriever as kb_retriever
-    from aughor.agent.nodes import answer_text_only
+    import pramanyx.semantic.connection_kb as connection_kb
+    import pramanyx.semantic.kb_retriever as kb_retriever
+    from pramanyx.agent.nodes import answer_text_only
 
     monkeypatch.setattr(kb_retriever, "retrieve_for_planning", lambda q, top_k=3: "")
     monkeypatch.setattr(connection_kb, "retrieve_for_question", lambda q, conn: "")

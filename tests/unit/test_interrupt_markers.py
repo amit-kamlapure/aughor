@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.kernel.jobs import UNCERTAIN_RESULT
-from aughor.kernel.ledger import Ledger
+from pramanyx.kernel.jobs import UNCERTAIN_RESULT
+from pramanyx.kernel.ledger import Ledger
 
 
 @pytest.fixture
@@ -59,10 +59,10 @@ def test_the_marker_uses_the_one_shared_sentence():
     marker, the kernel's job error and the web client all say this."""
     import inspect
 
-    from aughor.explorer import agent as A
+    from pramanyx.explorer import agent as A
 
     src = inspect.getsource(A)
-    assert "from aughor.kernel.jobs import UNCERTAIN_RESULT" in src
+    assert "from pramanyx.kernel.jobs import UNCERTAIN_RESULT" in src
     assert "previous pass over this domain was interrupted" in src
     assert UNCERTAIN_RESULT == "its result is uncertain and was not replayed"
 
@@ -72,7 +72,7 @@ def test_the_marker_tells_the_model_what_to_DO():
     building on a finding, and that the list may be incomplete."""
     import inspect
 
-    from aughor.explorer import agent as A
+    from pramanyx.explorer import agent as A
 
     src = inspect.getsource(A)
     assert "confirm one before building on it" in src

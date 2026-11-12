@@ -12,7 +12,7 @@ import sqlite3
 
 import pytest
 
-from aughor.db import home, migrate
+from pramanyx.db import home, migrate
 
 
 @pytest.fixture
@@ -37,7 +37,7 @@ def staged(monkeypatch, tmp_path):
 
     hm = tmp_path / "home"
     monkeypatch.setenv(home.HOME_ENV, str(hm))
-    monkeypatch.setattr("aughor.db.serving.serving_pid", lambda: None)
+    monkeypatch.setattr("pramanyx.db.serving.serving_pid", lambda: None)
     try:
         yield source, hm
     finally:
@@ -47,7 +47,7 @@ def staged(monkeypatch, tmp_path):
 class TestItRefuses:
     def test_while_the_api_is_serving(self, staged, monkeypatch):
         source, hm = staged
-        monkeypatch.setattr("aughor.db.serving.serving_pid", lambda: 4242)
+        monkeypatch.setattr("pramanyx.db.serving.serving_pid", lambda: 4242)
         out = migrate.migrate(source)
         assert out.status == "refused"
         assert "4242" in out.reason

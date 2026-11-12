@@ -20,7 +20,7 @@ upper bound; only a model run measures the real number.
 
     uv run python evals/object_query_coverage.py --output evals/object_query_coverage_results.json
 
-Beside a serving API, redirect every AUGHOR_*_DB first (the list is tests/conftest.py's): executing
+Beside a serving API, redirect every PRAMANYX_*_DB first (the list is tests/conftest.py's): executing
 a query records guard verdicts and popularity, and those stores are served.
 """
 from __future__ import annotations
@@ -68,7 +68,7 @@ def _jsonl(path: Path) -> list[dict]:
 
 def _open_warehouse(source: list[dict], samples_db: str | None):
     """Read-only: the set's own DuckDB file, or the bundled samples SQL seeded into a scratch file."""
-    from aughor.db.connection import open_connection
+    from pramanyx.db.connection import open_connection
     first = source[0]
     if first.get("duckdb_path"):
         path = Path(first["duckdb_path"])
@@ -82,7 +82,7 @@ def _open_warehouse(source: list[dict], samples_db: str | None):
         if not path.exists():
             import duckdb
 
-            from aughor.demo.setup import _seed_ecommerce
+            from pramanyx.demo.setup import _seed_ecommerce
             con = duckdb.connect(str(path))
             _seed_ecommerce(con)
             con.close()
@@ -93,8 +93,8 @@ def _open_warehouse(source: list[dict], samples_db: str | None):
 
 def measure(records: str = RECORDS, *, datasets: list[str] | None = None, samples_db: str | None = None,
             compile_only: bool = False) -> dict:
-    from aughor.ontology.models import OntologyGraph
-    from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query
+    from pramanyx.ontology.models import OntologyGraph
+    from pramanyx.semantic.object_query import ObjectQueryRefused, compile_object_query
     from evals.ablation_eval import _classify_plain
     from evals.sql_accuracy import score_single
 
@@ -136,7 +136,7 @@ def measure(records: str = RECORDS, *, datasets: list[str] | None = None, sample
             if db is not None:
                 db.close()
     return {"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "compiler": "aughor.semantic.object_query", "graphs": {d: GRAPHS[d] for d in sets},
+            "compiler": "pramanyx.semantic.object_query", "graphs": {d: GRAPHS[d] for d in sets},
             "notes": notes, "summary": summarize(rows), "rows": rows}
 
 

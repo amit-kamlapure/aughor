@@ -1,6 +1,6 @@
 "use client";
 /**
- * The connection knowledge graph — the Intelligence workspace's Graph tab, redone to `aughor-v2/CLARITY.md`
+ * The connection knowledge graph — the Intelligence workspace's Graph tab, redone to `pramanyx-v2/CLARITY.md`
  * (2026-10-13).
  *
  * It is a map, so it leads with the picture. Above it, one line of what the graph holds (tables · joins · metrics ·

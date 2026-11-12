@@ -4,7 +4,7 @@ The guard already caught `status = 'cancelled'` when the data holds 'canceled' (
 NO rows). The eval surfaced the NEGATED mirror: `status != 'cancelled'` EXCLUDES no rows
 (every row is kept), so a deep analysis concluded "cancellation rate is zero across all
 dimensions" despite 15,737 canceled orders. This locks extraction + the operator-aware
-message + the real-DB probe for both polarities. See aughor/sql/join_guard.py.
+message + the real-DB probe for both polarities. See pramanyx/sql/join_guard.py.
 """
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ from pathlib import Path
 
 import duckdb
 
-from aughor.db.connection import DuckDBConnection
-from aughor.sql.join_guard import (
+from pramanyx.db.connection import DuckDBConnection
+from pramanyx.sql.join_guard import (
     _extract_filter_literals,
     check_filter_value_domains,
     FilterDomainWarning,

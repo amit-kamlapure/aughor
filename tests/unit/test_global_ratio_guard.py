@@ -7,14 +7,14 @@ that HAD a refund. The scan reported a ~73% refund rate (true ≈ 10%) and told 
 was INVERTED. No fan-out/saturation guard caught it (values sit inside [0,100], no row multiplication).
 This guard computes the metric's TRUE global level independently — each aggregate over its own full
 table — and suppresses the ratio when every segment is implausibly far above it.
-See _global_ratio_plausibility_guard in aughor/agent/investigate.py.
+See _global_ratio_plausibility_guard in pramanyx/agent/investigate.py.
 """
 import json
 
 import duckdb
 import pytest
 
-from aughor.agent.investigate import (
+from pramanyx.agent.investigate import (
     _parse_ratio_sources,
     _independent_global_ratio,
     _global_ratio_plausibility_guard,
@@ -138,7 +138,7 @@ def test_guard_suppresses_numbers_when_it_fires(conn):
     """When it fires, the corrupted key_numbers are cleared and the chart dropped, so the artifact
     numbers cannot reach the synthesis headline."""
     findings = _findings([73.0, 79.0, 85.0])
-    from aughor.agent.investigate import _suppress_fanned_ratio
+    from pramanyx.agent.investigate import _suppress_fanned_ratio
     res = _global_ratio_plausibility_guard(findings, conn, INV1_METRIC_SQL, "refund rate")
     assert res is not None
     # mirror the wiring: guard returns {caveat, ...}; caller suppresses with the caveat text
@@ -162,7 +162,7 @@ def test_guard_noop_when_global_unavailable(tmp_path):
 # artifacts. Cause: suppression was local to the cross-section guard; the temporal phase computed
 # its own corrupt value and sailed through, and the one caveat rendered ~8×.
 
-from aughor.agent.investigate import (
+from pramanyx.agent.investigate import (
     _scrub_suppressed_metric_everywhere,
     _dedupe_repeated_caveats,
     _norm_measure,
@@ -307,7 +307,7 @@ def test_multilens_propagates_the_suppression_signal_to_synthesis(monkeypatch):
     from the plain return but DROPPED at the multilens merge, so on the real 'losing money'
     path (always multilens) the temporal 58.8% tile + synthesis citation survived. Assert the
     signal rides `_suppressed_ratio` all the way out of ada_cross_section_multilens."""
-    import aughor.agent.investigate as inv
+    import pramanyx.agent.investigate as inv
 
     sig = {"metric_label": "refund leakage rate (%)", "caveat": "corrupt", "true_global_str": None}
 

@@ -19,7 +19,7 @@ const WEEK = "2026-10-05";
 
 const departure = (over: Record<string, unknown>) => ({
   id: "d", ts: "2026-10-11T09:03:00Z", org_id: "default", kind: "slack_post", state: "departed", conn_id: "c1",
-  automation_id: "a1", automation_name: "The Look - Daily Briefing", actor: "", target: "sb_1:#ask_aughor", addressed_to: "",
+  automation_id: "a1", automation_name: "The Look - Daily Briefing", actor: "", target: "sb_1:#ask_pramanyx", addressed_to: "",
   reasons: [], checks: { triage: "mission 0.00 · size 0.00 · waiting 0.50 · novelty 1.00 → score 0.30" }, guards: {},
   receipt: {}, question: {}, text_preview: "TheLook generated $21,414.64 in revenue on October 3.",
   source_kind: "automation", source_id: "a1", origin: "unattended", about: "", as_of: "", verdict: "", verdict_note: "",
@@ -124,7 +124,7 @@ describe("Now", () => {
     const groups = await screen.findAllByTestId("now-send-group");
     expect(groups).toHaveLength(2);
     expect(groups[0]).toHaveTextContent("The Look - Daily Briefing");
-    expect(groups[0]).toHaveTextContent("→ #ask_aughor");
+    expect(groups[0]).toHaveTextContent("→ #ask_pramanyx");
     expect(groups[0]).toHaveTextContent("×2");
     expect(groups[0]).toHaveTextContent("ranked on its novelty, the cost of waiting — score 0.30");
     expect(groups[1]).toHaveTextContent("no place · used no slot");
@@ -137,7 +137,7 @@ describe("Now", () => {
     await screen.findAllByTestId("now-send-group");
     expect(screen.getByTestId("now-fig-held")).toHaveTextContent("nothing lost a slot");
     expect(screen.queryByTestId("now-held")).toBeNull();
-    routes.held = [{ departure_id: "h1", at: now, kind: "slack_post", target: "sb_1:#ask_aughor", addressed_to: "", by: "Daily Briefing",
+    routes.held = [{ departure_id: "h1", at: now, kind: "slack_post", target: "sb_1:#ask_pramanyx", addressed_to: "", by: "Daily Briefing",
       text: "Revenue fell 3%", why: "the week's slots were spent", triage: "novelty 1.00 → score 0.20" }];
     mount();
     const held = await screen.findByTestId("now-held");

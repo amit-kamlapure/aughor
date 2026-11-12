@@ -72,14 +72,14 @@ def analyst_seams(monkeypatch):
             "recommendations": [], "data_gaps": [],
         }}
 
-    monkeypatch.setattr("aughor.agent.investigate.ada_intake", _fake_intake)
-    monkeypatch.setattr("aughor.agent.investigate.ada_decompose", _fake_decompose)
-    monkeypatch.setattr("aughor.agent.investigate.ada_synthesize", _fake_synthesize)
+    monkeypatch.setattr("pramanyx.agent.investigate.ada_intake", _fake_intake)
+    monkeypatch.setattr("pramanyx.agent.investigate.ada_decompose", _fake_decompose)
+    monkeypatch.setattr("pramanyx.agent.investigate.ada_synthesize", _fake_synthesize)
 
 
 def test_deep_turn_streams_through_the_analyst(client, builtin_conn_id,
                                                analyst_seams, faux_llm, monkeypatch):
-    from aughor.llm.faux import FauxToolCall
+    from pramanyx.llm.faux import FauxToolCall
 
     faux_llm.set_responses([
         FauxToolCall(payload={"dimension": "payment_method"}, name="decompose"),
@@ -115,7 +115,7 @@ def test_deep_turn_streams_through_the_analyst(client, builtin_conn_id,
         < types.index("answer_report") < types.index("done")
 
     # The run is FILED: a real investigation row, under the session it was asked in.
-    from aughor.db.history import get_investigation
+    from pramanyx.db.history import get_investigation
     start = next(f for f in frames if f.get("type") == "start")
     inv = get_investigation(start["investigation_id"])
     assert inv is not None and inv.get("status") == "complete"
@@ -125,14 +125,14 @@ def test_deep_turn_streams_through_the_analyst(client, builtin_conn_id,
 def test_a_binding_without_tools_keeps_the_phase_script(client, builtin_conn_id, monkeypatch):
     """§5's ladder: with a coder binding that cannot make a tool call, a deep turn reaches the
     phase script — the analyst body must not have replaced the fallback."""
-    monkeypatch.setattr("aughor.agent.converse_tools.binding_calls_tools", lambda: False)
+    monkeypatch.setattr("pramanyx.agent.converse_tools.binding_calls_tools", lambda: False)
     seen = {}
 
     async def _fake_job_stream(question, conn_id, request, **kw):
         seen["question"] = question
         yield 'data: {"type": "done"}\n\n'
 
-    monkeypatch.setattr("aughor.routers.investigations._investigation_job_streamed",
+    monkeypatch.setattr("pramanyx.routers.investigations._investigation_job_streamed",
                         _fake_job_stream)
 
     frames = _frames(client, {

@@ -22,7 +22,7 @@ What was lost is the title, so the title is what these tests demand back.
 """
 from __future__ import annotations
 
-from aughor.export.document import Block
+from pramanyx.export.document import Block
 
 
 class _Recorder:
@@ -34,7 +34,7 @@ class _Recorder:
     """
 
     def __init__(self):
-        from aughor.export.slides import _Deck
+        from pramanyx.export.slides import _Deck
         self.deck = _Deck()
         self.images: list[tuple[bytes, str]] = []
         self.tables: list[tuple[list, list, str]] = []

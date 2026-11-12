@@ -13,15 +13,15 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.quality.caveats import (
+from pramanyx.quality.caveats import (
     assemble,
     blocking_reasons,
     candidates_from_profile,
     caveat_for,
     caveats_for_answer,
 )
-from aughor.quality.results import Result, latest_for_tables, new_run_id, record
-from aughor.quality.rules import (
+from pramanyx.quality.results import Result, latest_for_tables, new_run_id, record
+from pramanyx.quality.rules import (
     CHECK_KINDS,
     CRITICALITIES,
     Rule,
@@ -36,7 +36,7 @@ from aughor.quality.rules import (
 @pytest.fixture(autouse=True)
 def quality_db(tmp_path, monkeypatch):
     """Never the real store."""
-    import aughor.quality.results as R
+    import pramanyx.quality.results as R
 
     monkeypatch.setattr(R, "_DB_PATH", tmp_path / "quality.db")
 
@@ -180,7 +180,7 @@ class TestOneResultsStore:
     def test_a_check_and_a_monitor_land_in_the_same_table(self):
         """J12. A check result looks exactly like a monitor alert, so the sixth surface
         was one convenient table away."""
-        from aughor.quality.results import record_monitor_alert
+        from pramanyx.quality.results import record_monitor_alert
 
         run = new_run_id()
         record(Result(connection_id="c1", table_name="orders", producer="check",
@@ -194,7 +194,7 @@ class TestOneResultsStore:
     def test_there_is_exactly_one_write_path(self):
         """Every producer comes through `record`; a second writer is a second store with
         extra steps."""
-        import aughor.quality.results as R
+        import pramanyx.quality.results as R
 
         writers = [n for n in dir(R)
                    if n.startswith(("record", "save", "insert", "write"))]
@@ -215,7 +215,7 @@ class TestOneResultsStore:
         assert {r.rule_name for r in rows} == {"fresh", "not_null"}
 
     def test_the_run_id_ties_a_run_together(self):
-        from aughor.quality.results import results_for_run
+        from pramanyx.quality.results import results_for_run
 
         run = new_run_id()
         record(Result(connection_id="c1", table_name="a", run_id=run))
@@ -307,7 +307,7 @@ def test_an_unreadable_health_store_never_fails_an_answer(monkeypatch):
     def _boom(*a, **k):
         raise RuntimeError("store down")
 
-    monkeypatch.setattr("aughor.quality.results.latest_for_tables", _boom)
+    monkeypatch.setattr("pramanyx.quality.results.latest_for_tables", _boom)
     out = caveats_for_answer("c1", ["orders"], declaration_caveats=["still rendered"])
     assert out == ["still rendered"]
 
@@ -326,7 +326,7 @@ def test_caveats_for_an_answer_only_cover_failing_tables():
 def test_profiler_candidates_reuse_the_O4_type():
     """Q's proposals are a different KIND, not a different type. A second candidate model
     is a second queue with extra steps (J10)."""
-    from aughor.ontology.candidates import Candidate
+    from pramanyx.ontology.candidates import Candidate
 
     got = candidates_from_profile("c1", "orders", [
         {"name": "order_id", "null_ratio": 0.0, "distinct_count": 100_000}])
@@ -393,7 +393,7 @@ class TestCaveatsReachTheReceipt:
         import inspect
         import textwrap
 
-        from aughor.trust import receipt as R
+        from pramanyx.trust import receipt as R
 
         tree = ast.parse(textwrap.dedent(inspect.getsource(R.build_public_receipt)))
         fn = tree.body[0]
@@ -408,14 +408,14 @@ class TestCaveatsReachTheReceipt:
             assert io_call not in called, f"the pure projection must not call {io_call}"
 
     def test_health_caveats_land_on_the_receipt(self):
-        from aughor.trust.receipt import build_public_receipt
+        from pramanyx.trust.receipt import build_public_receipt
 
         out = build_public_receipt(self._raw(), signed=False,
                                    health_caveats=["`orders` failed freshness"])
         assert "`orders` failed freshness" in out["caveats"]
 
     def test_no_health_caveats_is_byte_identical_to_before(self):
-        from aughor.trust.receipt import build_public_receipt
+        from pramanyx.trust.receipt import build_public_receipt
 
         a = build_public_receipt(self._raw(), signed=False)
         b = build_public_receipt(self._raw(), signed=False, health_caveats=[])
@@ -426,14 +426,14 @@ class TestCaveatsReachTheReceipt:
         step back to a reader seeing the same concern twice in different words."""
         import inspect
 
-        from aughor.trust import receipt as R
+        from pramanyx.trust import receipt as R
 
         src = inspect.getsource(R.build_public_receipt)
         assert "assemble(" in src
         assert "dict.fromkeys" not in src        # the old local de-dup is gone
 
     def test_a_duplicate_between_producers_renders_once(self):
-        from aughor.trust.receipt import build_public_receipt
+        from pramanyx.trust.receipt import build_public_receipt
 
         raw = self._raw()
         raw["artifact"]["payload"]["caveats"] = ["`orders` failed freshness"]
@@ -446,28 +446,28 @@ class TestCaveatsReachTheReceipt:
         intended. A caveat about a table the query never touched is noise."""
         import inspect
 
-        from aughor.routers import receipt as RR
+        from pramanyx.routers import receipt as RR
 
         src = inspect.getsource(RR._health_caveats)
         assert 'relation") == "input"' in src
 
     def test_an_unreadable_store_never_breaks_the_receipt(self, monkeypatch):
         """A quality plane that can break a receipt is one operators disable."""
-        from aughor.routers import receipt as RR
+        from pramanyx.routers import receipt as RR
 
         def _boom(*a, **k):
             raise RuntimeError("quality store down")
 
-        monkeypatch.setattr("aughor.quality.caveats.caveats_for_answer", _boom)
+        monkeypatch.setattr("pramanyx.quality.caveats.caveats_for_answer", _boom)
         assert RR._health_caveats("c1", self._raw()) == []
 
     def test_no_connection_means_no_lookup(self):
-        from aughor.routers import receipt as RR
+        from pramanyx.routers import receipt as RR
 
         assert RR._health_caveats(None, self._raw()) == []
 
     def test_no_tables_means_no_lookup(self):
-        from aughor.routers import receipt as RR
+        from pramanyx.routers import receipt as RR
 
         raw = {"artifact": {"payload": {}}, "lineage": []}
         assert RR._health_caveats("c1", raw) == []

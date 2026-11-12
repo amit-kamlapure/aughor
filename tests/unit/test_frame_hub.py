@@ -11,7 +11,7 @@ import asyncio
 
 import pytest
 
-from aughor.util.frame_hub import ConsumerLagged, FrameHub, RunExists
+from pramanyx.util.frame_hub import ConsumerLagged, FrameHub, RunExists
 
 
 async def _collect(consumer, limit: int | None = None) -> list[str]:

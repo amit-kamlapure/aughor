@@ -1,4 +1,4 @@
-# Aughor Quality Sweep — Findings (2026-06-08)
+# Pramanyx Quality Sweep — Findings (2026-06-08)
 
 Harness: `scripts/quality_sweep.py` (resumable, usage-paced, self-flagging).
 Scope this wave: **13 Insight (/chat) cases across all 5 connections** + Deep Analysis

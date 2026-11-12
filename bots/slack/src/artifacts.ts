@@ -4,7 +4,7 @@
  * This file used to BUILD the table (`gfmTable`, `renderGrid`, `toCsv`): one of the three
  * unshared answers to "show a table" that Arc CP's census counted, and the one that posted
  * `54496.64009666443` into a thread, because it formatted no cell. The table is now built
- * once, in Python (`aughor/answer/exhibit.py`, by the web table's own rule), and this file
+ * once, in Python (`pramanyx/answer/exhibit.py`, by the web table's own rule), and this file
  * asks for it through `POST /exhibits/table` with Slack's ENCODINGS — the only part of a
  * table this door owns:
  *
@@ -40,19 +40,19 @@ export interface TableRendering {
 export type TableRenderer = (grid: Grid) => Promise<TableRendering | null>;
 
 interface Env {
-  AUGHOR_API_URL?: string;
-  AUGHOR_API_KEY?: string;
-  AUGHOR_CONNECTION_ID?: string;
+  PRAMANYX_API_URL?: string;
+  PRAMANYX_API_KEY?: string;
+  PRAMANYX_CONNECTION_ID?: string;
 }
 
 export function createTableRenderer(
   env: Env = process.env,
   fetchImpl: typeof fetch = fetch,
 ): TableRenderer {
-  const base = (env.AUGHOR_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
+  const base = (env.PRAMANYX_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
   // The connection names the org whose currency a money column reads in — never on the
   // `/ask` wire, so it rides here the way it rides on the chart request.
-  const connection = env.AUGHOR_CONNECTION_ID ?? "workspace";
+  const connection = env.PRAMANYX_CONNECTION_ID ?? "workspace";
 
   return async function renderTable({ columns, rows }) {
     if (!columns.length || !rows.length) return null;
@@ -61,7 +61,7 @@ export function createTableRenderer(
         method: "POST",
         headers: {
           "content-type": "application/json",
-          ...(env.AUGHOR_API_KEY ? { "x-api-key": env.AUGHOR_API_KEY } : {}),
+          ...(env.PRAMANYX_API_KEY ? { "x-api-key": env.PRAMANYX_API_KEY } : {}),
         },
         body: JSON.stringify({
           columns, rows,

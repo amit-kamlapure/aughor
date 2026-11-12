@@ -11,7 +11,7 @@ describe("the look", () => {
   });
 
   it("offers presets that are every knob, each a value the knob admits", () => {
-    expect(PRESETS.aughor).toBe(DEFAULT_LOOK);
+    expect(PRESETS.pramanyx).toBe(DEFAULT_LOOK);
     for (const look of Object.values(PRESETS)) {
       for (const key of Object.keys(LOOK_VALUES) as (keyof typeof LOOK_VALUES)[]) {
         expect(LOOK_VALUES[key]).toContain(look[key]);
@@ -45,7 +45,7 @@ describe("the look", () => {
   });
 
   it("reads a stored look that is not JSON as the default", () => {
-    window.localStorage.setItem("aughor_look", "{not json");
+    window.localStorage.setItem("pramanyx_look", "{not json");
     const quiet = vi.spyOn(console, "error").mockImplementation(() => {});
     expect(getLook()).toEqual(DEFAULT_LOOK);
     quiet.mockRestore();

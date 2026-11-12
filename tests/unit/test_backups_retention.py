@@ -1,4 +1,4 @@
-"""Arc SV-2 — the retention rule, a port of ``shouldKeepSnapshots`` (``aughor/db/retention.py``).
+"""Arc SV-2 — the retention rule, a port of ``shouldKeepSnapshots`` (``pramanyx/db/retention.py``).
 
 The first half is the original's own test file (grist-core ``test/server/lib/DocSnapshots.ts``, Apache-2.0), ported case
 for case under the original's caps: if the port drifted from the original, these are the strings that would say so. The second
@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from aughor.db.retention import AUGHOR, GRIST, LABELLED_ONLY, Policy, should_keep
+from pramanyx.db.retention import PRAMANYX, GRIST, LABELLED_ONLY, Policy, should_keep
 
 
 def _parse(entry: str) -> tuple[datetime, str | None]:
@@ -159,7 +159,7 @@ def test_grist_enforces_the_window():
 
 # ── Pramanyx's caps ─────────────────────────────────────────────────────────────────
 
-def test_aughor_keeps_the_newest_five_then_one_an_hour_day_and_week():
+def test_pramanyx_keeps_the_newest_five_then_one_an_hour_day_and_week():
     # 2026-10-27 is a Tuesday; its ISO week began on Monday 2026-10-26.
     _check([
         "+2026-10-27 14:00Z",
@@ -172,19 +172,19 @@ def test_aughor_keeps_the_newest_five_then_one_an_hour_day_and_week():
         "+2026-09-01 15:00Z",                    # 55 days 23 hours back: inside the eight weeks
         "-2026-09-01 12:00Z",                    # 56 days 2 hours back: outside them
         "-2026-08-01 00:00Z",
-    ], AUGHOR)
+    ], PRAMANYX)
 
 
-def test_aughor_keeps_24_hours_and_no_25th():
+def test_pramanyx_keeps_24_hours_and_no_25th():
     newest = datetime(2026, 10, 27, 23, 0, tzinfo=timezone.utc)
     snaps = [(newest - timedelta(hours=h), None) for h in range(30)]
-    kept = should_keep(snaps, AUGHOR)
+    kept = should_keep(snaps, PRAMANYX)
     # 22:00 back to 2026-10-26 23:00 spend the 24 hours (the last of them opens a new day too); 22:00 the day
     # before is the 25th hour, in a day already kept.
     assert kept == [True] * 25 + [False] * 5
 
 
-def test_aughor_keeps_a_labelled_backup_30_days_and_not_31():
+def test_pramanyx_keeps_a_labelled_backup_30_days_and_not_31():
     now = datetime(2026, 10, 27, 12, 0, tzinfo=timezone.utc)
     labelled = [(now - timedelta(days=d), "v1-before-v12") for d in (1, 29, 31, 45)]
     assert should_keep(labelled, LABELLED_ONLY, now=now, protect_newest=False) == [True, True, False, False]
@@ -202,9 +202,9 @@ def test_the_window_is_measured_from_the_clock_when_now_is_given():
     """A quiet install takes no new backup, so measured from the newest a removal would last as long as the quiet."""
     newest = datetime(2026, 6, 1, tzinfo=timezone.utc)
     snaps = [(newest, None), (newest - timedelta(days=1), None), (newest - timedelta(days=2), None)]
-    assert should_keep(snaps, AUGHOR) == [True, True, True]
+    assert should_keep(snaps, PRAMANYX) == [True, True, True]
     later = newest + timedelta(weeks=9)
-    assert should_keep(snaps, AUGHOR, now=later) == [True, False, False]   # the newest is still the present state
+    assert should_keep(snaps, PRAMANYX, now=later) == [True, False, False]   # the newest is still the present state
 
 
 def test_hourly_backups_pruned_every_hour_for_four_months_stay_bounded():
@@ -214,7 +214,7 @@ def test_hourly_backups_pruned_every_hour_for_four_months_stay_bounded():
     for h in range(24 * 120):
         now = start + timedelta(hours=h)
         kept.insert(0, now)
-        decisions = should_keep([(t, None) for t in kept], AUGHOR, now=now)
+        decisions = should_keep([(t, None) for t in kept], PRAMANYX, now=now)
         kept = [t for t, k in zip(kept, decisions) if k]
     now = kept[0]
     assert len(kept) <= 5 + 24 + 14 + 8
@@ -230,4 +230,4 @@ def test_hourly_backups_pruned_every_hour_for_four_months_stay_bounded():
 
 
 def test_nothing_in_nothing_out():
-    assert should_keep([], AUGHOR) == []
+    assert should_keep([], PRAMANYX) == []

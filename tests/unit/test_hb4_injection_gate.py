@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from aughor.ontology.agent_notes import propose_note
+from pramanyx.ontology.agent_notes import propose_note
 
 #: A conversation note lives OBSERVATION_TTL_DAYS past `observed_at` (hub/provenance.py). The
 #: fixture used to say 2026-09-15T08:00Z, and at 08:00 UTC on 2026-10-15 the gate's own tests
@@ -36,7 +36,7 @@ def test_the_gate_holds_for_what_people_merely_said_even_with_notes_present():
     this one — is still stored and shown, never injected; the `conversation` kind as a whole still
     waits on measured lift."""
     _file_a_note()
-    from aughor.hub.injection import INJECTABLE_SOURCE_KINDS, ranked_notes_block
+    from pramanyx.hub.injection import INJECTABLE_SOURCE_KINDS, ranked_notes_block
     assert INJECTABLE_SOURCE_KINDS == ("conversation:measured",)
     assert "conversation" not in INJECTABLE_SOURCE_KINDS
     assert ranked_notes_block("hb4conn") == ""      # unchecked: stored and shown, never injected
@@ -44,14 +44,14 @@ def test_the_gate_holds_for_what_people_merely_said_even_with_notes_present():
 
 def test_the_grounding_producer_is_byte_inert_while_the_gate_holds():
     _file_a_note()
-    from aughor.agent.grounding import hub_notes
+    from pramanyx.agent.grounding import hub_notes
     assert hub_notes("hb4conn") == ""
 
 
 def test_a_graduated_kind_renders_ranked_and_stamped(monkeypatch):
     _file_a_note(conn="hb4conn2")
-    monkeypatch.setattr("aughor.hub.injection.INJECTABLE_SOURCE_KINDS", ("conversation",))
-    from aughor.hub.injection import ranked_notes_block
+    monkeypatch.setattr("pramanyx.hub.injection.INJECTABLE_SOURCE_KINDS", ("conversation",))
+    from pramanyx.hub.injection import ranked_notes_block
     block = ranked_notes_block("hb4conn2")
     assert "CONTEXT FROM PEOPLE" in block
     assert "carrier X was on strike last week" in block
@@ -62,10 +62,10 @@ def test_the_two_prompt_seams_stay_in_lockstep():
     """The receipt's `_BLOCKS` list and `_stream_chat`'s prepend chain are two
     orderings of the same blocks, and nothing else fails when they disagree — so
     THIS does: the hub-notes block must appear in both, or in neither."""
-    from aughor.agent import grounding
+    from pramanyx.agent import grounding
     keys = [b[0] for b in grounding._BLOCKS]
     assert "hub_notes" in keys, "the receipt lost the hub-notes block"
-    live = Path("aughor/routers/investigations.py").read_text()
+    live = Path("pramanyx/routers/investigations.py").read_text()
     assert "hub_notes" in live, "the live prompt lost the hub-notes prepend"
 
 

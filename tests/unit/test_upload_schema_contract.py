@@ -11,8 +11,8 @@ import json
 
 import pytest
 
-from aughor.connectors.file.local_upload import LocalUploadConnection, _is_pinnable_type
-from aughor.control_plane import vending
+from pramanyx.connectors.file.local_upload import LocalUploadConnection, _is_pinnable_type
+from pramanyx.control_plane import vending
 
 
 @pytest.fixture(autouse=True)

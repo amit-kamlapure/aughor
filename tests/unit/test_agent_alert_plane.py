@@ -1,6 +1,6 @@
 """VA-6 — the alert plane, wired.
 
-`aughor/obs/agent_alerts.py` shipped complete and inert: metrics, rules, verdicts, and one
+`pramanyx/obs/agent_alerts.py` shipped complete and inert: metrics, rules, verdicts, and one
 importer in the whole repo — its own test. Nothing stored a rule, nothing evaluated one, and
 nothing could deliver the result, so an agent could fail sixty times an hour in silence with a
 green suite. This file is deliberately weighted towards the SEAMS rather than the arithmetic,
@@ -19,10 +19,10 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from aughor.kernel.ledger import Ledger
-from aughor.obs import agent_alert_store as store
-from aughor.obs.agent_alert_runner import run_rule
-from aughor.obs.agent_alerts import AgentAlertRule
+from pramanyx.kernel.ledger import Ledger
+from pramanyx.obs import agent_alert_store as store
+from pramanyx.obs.agent_alert_runner import run_rule
+from pramanyx.obs.agent_alerts import AgentAlertRule
 
 
 @pytest.fixture(autouse=True)
@@ -60,7 +60,7 @@ def test_an_enabled_rule_reaches_the_one_loop():
     """The whole wave in one assertion: the heartbeat can SEE the rule.
 
     Everything else here could pass with the plane still inert — this is the wire."""
-    from aughor.automations.adopt import AGENT_ALERT_PREFIX, list_adopted_automations
+    from pramanyx.automations.adopt import AGENT_ALERT_PREFIX, list_adopted_automations
 
     rule = _rule(name="reachable")
 
@@ -76,7 +76,7 @@ def test_an_enabled_rule_reaches_the_one_loop():
 
 
 def test_a_disabled_rule_is_not_adopted():
-    from aughor.automations.adopt import AGENT_ALERT_PREFIX, list_adopted_automations
+    from pramanyx.automations.adopt import AGENT_ALERT_PREFIX, list_adopted_automations
 
     rule = _rule(name="off", enabled=False)
 
@@ -85,7 +85,7 @@ def test_a_disabled_rule_is_not_adopted():
 
 def test_the_tick_counts_agent_alerts_as_their_own_family():
     """'40 automations were evaluated' is not an answer to 'is the alert plane running'."""
-    from aughor.automations.scheduler import tick_once
+    from pramanyx.automations.scheduler import tick_once
 
     _rule(name="counted")
 
@@ -97,13 +97,13 @@ def test_the_tick_counts_agent_alerts_as_their_own_family():
 def test_the_effect_kind_is_claimed_as_outward():
     """Two loops ticking together both read `last_notified_at` before either writes it, so
     the rule's own debounce cannot close that race. The delivery claim is what does."""
-    from aughor.automations.engine import OUTWARD_EFFECT_KINDS
+    from pramanyx.automations.engine import OUTWARD_EFFECT_KINDS
 
     assert "agent_alert" in OUTWARD_EFFECT_KINDS
 
 
 def test_the_dispatcher_is_registered_for_the_kind():
-    from aughor.automations.engine import _DISPATCHERS
+    from pramanyx.automations.engine import _DISPATCHERS
 
     assert "agent_alert" in _DISPATCHERS
 
@@ -251,7 +251,7 @@ def test_acknowledging_an_event_takes_it_out_of_the_unacknowledged_feed():
 def client():
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -260,7 +260,7 @@ def test_the_metric_vocabulary_comes_from_the_code(client):
     `/activity` follows for event kinds."""
     from typing import get_args
 
-    from aughor.obs.agent_alerts import Metric
+    from pramanyx.obs.agent_alerts import Metric
 
     body = client.get("/obs/agent-alerts/metrics").json()
 

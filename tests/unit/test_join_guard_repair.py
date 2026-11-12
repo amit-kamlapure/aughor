@@ -14,7 +14,7 @@ from pathlib import Path
 
 import duckdb
 
-from aughor.db.connection import DuckDBConnection
+from pramanyx.db.connection import DuckDBConnection
 
 
 def _conn():
@@ -62,7 +62,7 @@ class _StubProvider:
 # ── ADA path: _execute_safe ──────────────────────────────────────────────────
 
 def test_ada_execute_safe_adopts_clearing_fix(monkeypatch):
-    from aughor.agent import investigate as I
+    from pramanyx.agent import investigate as I
 
     monkeypatch.setattr(I, "_provider", lambda role="coder": _StubProvider(_GOOD))
     conn = _conn()
@@ -74,7 +74,7 @@ def test_ada_execute_safe_adopts_clearing_fix(monkeypatch):
 
 
 def test_ada_execute_safe_rejects_nonclearing_fix(monkeypatch):
-    from aughor.agent import investigate as I
+    from pramanyx.agent import investigate as I
 
     # Stub returns a fix that STILL joins on the disjoint column → must be rejected.
     monkeypatch.setattr(I, "_provider", lambda role="coder": _StubProvider(_BAD))
@@ -87,7 +87,7 @@ def test_ada_execute_safe_rejects_nonclearing_fix(monkeypatch):
 
 
 def test_ada_execute_safe_clean_join_no_repair(monkeypatch):
-    from aughor.agent import investigate as I
+    from pramanyx.agent import investigate as I
 
     # If the provider is called on a clean join it would corrupt the result;
     # assert it is NOT called (no mismatch → no repair).

@@ -8,15 +8,15 @@ its first named person, because a refused bootstrap is not cached as "checked".
 """
 from __future__ import annotations
 
-from aughor.rbac import resolver
-from aughor.rbac.roles import OWNER
-from aughor.rbac.store import roles_for_user
-from aughor.security.authz import Principal
-from aughor.security.service_principals import PREFIX
+from pramanyx.rbac import resolver
+from pramanyx.rbac.roles import OWNER
+from pramanyx.rbac.store import roles_for_user
+from pramanyx.security.authz import Principal
+from pramanyx.security.service_principals import PREFIX
 
 
 def test_anonymous_and_service_principals_never_bootstrap(monkeypatch):
-    monkeypatch.setenv("AUGHOR_RBAC_AUTO_BOOTSTRAP", "1")
+    monkeypatch.setenv("PRAMANYX_RBAC_AUTO_BOOTSTRAP", "1")
     resolver._reset_bootstrap_cache()
     org = "a5-org"
     assert resolver.maybe_bootstrap_owner(Principal(user_id="anonymous", org_id=org)) is False
@@ -32,11 +32,11 @@ def test_anonymous_and_service_principals_never_bootstrap(monkeypatch):
 
 
 def test_over_http_an_anonymous_first_caller_is_a_viewer(client, monkeypatch):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    monkeypatch.setenv("AUGHOR_RBAC_AUTO_BOOTSTRAP", "1")
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    monkeypatch.setenv("PRAMANYX_RBAC_AUTO_BOOTSTRAP", "1")
     resolver._reset_bootstrap_cache()
-    nobody = {"X-Aughor-Org": "a5-http-org"}                 # no X-Aughor-User → "anonymous"
+    nobody = {"X-Pramanyx-Org": "a5-http-org"}                 # no X-Pramanyx-User → "anonymous"
     assert client.get("/rbac/me", headers=nobody).json()["roles"] == ["viewer"]
     assert client.get("/rbac/assignments", headers=nobody).status_code == 403
-    someone = {"X-Aughor-Org": "a5-http-org", "X-Aughor-User": "amit"}
+    someone = {"X-Pramanyx-Org": "a5-http-org", "X-Pramanyx-User": "amit"}
     assert client.get("/rbac/me", headers=someone).json()["roles"] == [OWNER]

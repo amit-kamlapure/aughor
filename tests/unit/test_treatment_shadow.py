@@ -8,8 +8,8 @@ what a turn did read from its own trace, and the corpus reader over the rows alr
 """
 from __future__ import annotations
 
-from aughor.judgment import treatment as T
-from aughor.judgment.seam import Answer, CHOICE, NOUL, SCORE
+from pramanyx.judgment import treatment as T
+from pramanyx.judgment.seam import Answer, CHOICE, NOUL, SCORE
 
 
 class _Judge:
@@ -99,7 +99,7 @@ def test_an_unavailable_lever_records_its_reason_not_a_silent_blank():
 
 def _emit_turn(trace, *, steps=(), statements=0, marker=""):
     """Write a turn's events the way the bodies do, under one trace."""
-    from aughor.obs import session_log
+    from pramanyx.obs import session_log
     if marker:
         session_log.emit(session_log.TOOL_CALL, name=marker, trace_id=trace)
     for name, rows in steps:
@@ -136,8 +136,8 @@ def test_an_unreadable_trace_leaves_the_row_unlabelled_not_zero():
 def test_the_corpus_reader_labels_an_older_row_from_its_trace():
     """A row written before the fix carries the dead count and no body. While its trace is in
     the log it is scored on what the turn did; the fold then has a real outcome to read."""
-    from aughor.judgment.calibration import calibrate
-    from aughor.obs import session_log
+    from pramanyx.judgment.calibration import calibrate
+    from pramanyx.obs import session_log
 
     _emit_turn("cp2-old", marker="ask.analyst", steps=(("run_sql", 4), ("run_sql", 4)))
     session_log.emit(T.TREATMENT_SHADOW, name="treatment_shadow", trace_id="cp2-old",

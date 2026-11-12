@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.obs.vocabulary_uptake import vocabulary_uptake
+from pramanyx.obs.vocabulary_uptake import vocabulary_uptake
 
 
 class _Ledger:
@@ -27,7 +27,7 @@ class _Ledger:
 def ledger(monkeypatch):
     def _install(rows):
         led = _Ledger(rows)
-        monkeypatch.setattr("aughor.kernel.ledger.Ledger.default",
+        monkeypatch.setattr("pramanyx.kernel.ledger.Ledger.default",
                             classmethod(lambda cls: led))
         return led
     return _install
@@ -66,7 +66,7 @@ def test_an_unreadable_log_reports_measured_false_and_no_rate(monkeypatch):
         def session_events(self, **kw):
             raise RuntimeError("no such table: session_events")
 
-    monkeypatch.setattr("aughor.kernel.ledger.Ledger.default",
+    monkeypatch.setattr("pramanyx.kernel.ledger.Ledger.default",
                         classmethod(lambda cls: _Boom()))
     out = vocabulary_uptake()
     # 0% would be a claim about the product; this is a claim about the log.

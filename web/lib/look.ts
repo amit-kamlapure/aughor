@@ -5,7 +5,7 @@
  * The skin (dark or light) is not here: it has been `<html data-theme>` since before this and
  * stays where it is (`lib/themeSwitch.ts`). These four are the Theme's own props; the root
  * (`app/theme-root.tsx`) reads them from this store and hands them to `<Theme>`, and every
- * token in `aughor-v2/theme/tokens-v2.css` follows because each is a name for a Radix step.
+ * token in `pramanyx-v2/theme/tokens-v2.css` follows because each is a name for a Radix step.
  *
  * Two homes, like the skin: this browser first (so the page paints as it was left), the
  * person's own settings second (so the look follows them to another browser). The shell

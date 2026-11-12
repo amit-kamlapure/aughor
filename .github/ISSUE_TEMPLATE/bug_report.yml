@@ -46,7 +46,7 @@ body:
       options:
         - Web UI
         - HTTP API
-        - CLI (`aughor investigate`)
+        - CLI (`pramanyx investigate`)
         - MCP server
         - Not sure
     validations:
@@ -77,5 +77,5 @@ body:
     id: logs
     attributes:
       label: Relevant logs
-      description: "From /tmp/aughor-api.log or the console. Please redact credentials."
+      description: "From /tmp/pramanyx-api.log or the console. Please redact credentials."
       render: shell

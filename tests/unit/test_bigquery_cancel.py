@@ -21,7 +21,7 @@ import threading
 
 import pytest
 
-from aughor.connectors.warehouse.bigquery import BigQueryConnection
+from pramanyx.connectors.warehouse.bigquery import BigQueryConnection
 
 
 class _Job:
@@ -135,6 +135,6 @@ def test_cancel_reaches_across_threads():
 def test_the_connector_no_longer_relies_on_the_base_implementation():
     """A rot-guard: if someone deletes the override, the base returns False against a REST
     client forever and every test above still passes except this one."""
-    from aughor.db.connection import DatabaseConnection
+    from pramanyx.db.connection import DatabaseConnection
 
     assert BigQueryConnection.interrupt is not DatabaseConnection.interrupt

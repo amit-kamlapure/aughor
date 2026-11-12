@@ -29,31 +29,31 @@ o9,boleto,99.00
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
-    from aughor.actions import overlay
+    monkeypatch.setenv("PRAMANYX_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "system.db"))
+    from pramanyx.actions import overlay
     monkeypatch.setattr(overlay, "_DB_PATH", tmp_path / "overlay.db")
-    from aughor.sheets import projection
+    from pramanyx.sheets import projection
     projection.reset()
     yield tmp_path
     projection.reset()
 
 
 def _make(env, name, text):
-    from aughor.sheets import files, service
+    from pramanyx.sheets import files, service
     path = env / f"{name}.csv"
     path.write_text(text)
     return service.create_from_file(files.stage(path, path.name), name=name, by="user:ana")
 
 
 def _col(sheet, row, name):
-    from aughor.sheets import model, projection
+    from pramanyx.sheets import model, projection
     s = model.get(sheet.id)
     return (projection.read_row(s, row) or {}).get(s.column(name).id)
 
 
 def test_a_link_counts_every_match_and_every_miss_before_it_is_kept(env):
-    from aughor.sheets import combine
+    from pramanyx.sheets import combine
     orders, customers = _make(env, "Orders", ORDERS), _make(env, "Customers", CUSTOMERS)
     seen = combine.link_preview(orders, "customer_id", customers.id, "customer_id")
     assert (seen["matched"], seen["missed"], seen["empty"]) == (2, 1, 1)
@@ -61,7 +61,7 @@ def test_a_link_counts_every_match_and_every_miss_before_it_is_kept(env):
 
 
 def test_a_looked_up_column_follows_the_sheet_it_reads(env):
-    from aughor.sheets import combine, model, service
+    from pramanyx.sheets import combine, model, service
     orders, customers = _make(env, "Orders", ORDERS), _make(env, "Customers", CUSTOMERS)
     city = customers.column("customer_city").id
     combine.link_keep(orders, "customer_id", customers.id, "customer_id", bring=[city], by="user:ana")
@@ -70,14 +70,14 @@ def test_a_looked_up_column_follows_the_sheet_it_reads(env):
     service.set_cells(model.get(customers.id), [{"row": 1, "column": "customer_city", "value": "santos"}],
                       by="user:ana")
     assert _col(orders, 1, "customer_city") == "santos"
-    from aughor.sheets import projection
+    from pramanyx.sheets import projection
     assert projection.check(model.get(orders.id))["same"]
 
 
 def test_a_linked_total_equals_the_same_total_by_sql_over_the_two_sheets(env):
     """SH-7's falsifier."""
-    from aughor.sheets import combine, model, service
-    from aughor.sheets.connection import SheetsConnection
+    from pramanyx.sheets import combine, model, service
+    from pramanyx.sheets.connection import SheetsConnection
     orders, payments = _make(env, "Orders", ORDERS), _make(env, "Payments", PAYMENTS)
     seen = combine.total_preview(orders, "order_id", payments.id, "order_id", "sum",
                                  payments.column("payment_value").id)
@@ -101,14 +101,14 @@ def test_a_linked_total_equals_the_same_total_by_sql_over_the_two_sheets(env):
 
 
 def test_a_count_of_no_rows_is_zero(env):
-    from aughor.sheets import combine
+    from pramanyx.sheets import combine
     orders, payments = _make(env, "Orders", ORDERS), _make(env, "Payments", PAYMENTS)
     combine.total_keep(orders, "order_id", payments.id, "order_id", "count", name="Payments", by="user:ana")
     assert _col(orders, 1, "Payments") == 2 and _col(orders, 4, "Payments") == 0
 
 
 def test_a_looked_up_column_needs_one_row_per_key_in_the_other_sheet(env):
-    from aughor.sheets import combine, service
+    from pramanyx.sheets import combine, service
     orders, payments = _make(env, "Orders", ORDERS), _make(env, "Payments", PAYMENTS)
     # o1 is paid in two parts: which payment's type would an order read?
     with pytest.raises(service.Refused, match="repeat in Payments"):
@@ -125,7 +125,7 @@ o5,c3,created,55.50
 
 
 def test_a_newer_file_is_previewed_cell_by_cell_then_applied_and_undone_as_one_change(env):
-    from aughor.sheets import combine, files, model, projection, service
+    from pramanyx.sheets import combine, files, model, projection, service
     orders = _make(env, "Orders", ORDERS)
     newer = env / "orders_november.csv"
     newer.write_text(NEWER)
@@ -145,7 +145,7 @@ def test_a_newer_file_is_previewed_cell_by_cell_then_applied_and_undone_as_one_c
 
 
 def test_a_merge_refuses_a_preview_the_sheet_has_moved_on_from(env):
-    from aughor.sheets import combine, files, model, service
+    from pramanyx.sheets import combine, files, model, service
     orders = _make(env, "Orders", ORDERS)
     newer = env / "n.csv"
     newer.write_text(NEWER)
@@ -157,7 +157,7 @@ def test_a_merge_refuses_a_preview_the_sheet_has_moved_on_from(env):
 
 
 def test_a_removed_sheet_leaves_what_read_it_empty_not_wrong(env):
-    from aughor.sheets import combine, model, service
+    from pramanyx.sheets import combine, model, service
     orders, customers = _make(env, "Orders", ORDERS), _make(env, "Customers", CUSTOMERS)
     combine.link_keep(orders, "customer_id", customers.id, "customer_id",
                       bring=[customers.column("customer_state").id], by="user:ana")
@@ -167,7 +167,7 @@ def test_a_removed_sheet_leaves_what_read_it_empty_not_wrong(env):
 
 
 def test_a_records_total_says_how_many_rows_it_adds_up(env):
-    from aughor.sheets import combine, model, record
+    from pramanyx.sheets import combine, model, record
     orders = _make(env, "orders", ORDERS)
     payments = _make(env, "payments", PAYMENTS)
     combine.total_keep(orders, "order_id", payments.id, "order_id", "sum", "payment_value", name="Paid", by="user:ana")
@@ -181,7 +181,7 @@ def test_sheets_that_read_each_other_are_rebuilt_when_the_projection_is_lost(env
     """A backup leaves the projection out because it can be rebuilt, so this is what a restore does first. Each sheet here
     reads the other, so whichever is listed first reads a table that is not there yet unless every table is built before
     any is derived. It once answered every sheet's read with a 500."""
-    from aughor.sheets import combine, files, model, projection
+    from pramanyx.sheets import combine, files, model, projection
     orders, customers = _make(env, "Orders", ORDERS), _make(env, "Customers", CUSTOMERS)
     combine.link_keep(orders, "customer_id", customers.id, "customer_id", bring=[customers.column("customer_city").id],
                       by="user:ana")

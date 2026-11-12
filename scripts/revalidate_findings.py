@@ -13,7 +13,7 @@ import argparse
 import glob
 import os
 
-from aughor.explorer.revalidate import revalidate_file
+from pramanyx.explorer.revalidate import revalidate_file
 
 
 def _col_types_for(store_path: str) -> dict:
@@ -30,8 +30,8 @@ def _col_types_for(store_path: str) -> dict:
     check silently no-ops (it reported "no offenders" against a workspace whose 33
     luxexperience tables were sitting right there)."""
     try:
-        from aughor.db.connection import open_connection_for
-        from aughor.tools.schema import col_types_from_schema
+        from pramanyx.db.connection import open_connection_for
+        from pramanyx.tools.schema import col_types_from_schema
 
         stem = os.path.basename(store_path).removeprefix("exploration_").removesuffix(".json")
         if stem.startswith("canvas_"):

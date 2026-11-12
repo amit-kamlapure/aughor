@@ -11,12 +11,12 @@ from __future__ import annotations
 
 import sqlite3
 
-from aughor.db.backend import is_postgres
+from pramanyx.db.backend import is_postgres
 
 import pytest
 
-from aughor.org import using_org
-from aughor.metastore import (
+from pramanyx.org import using_org
+from pramanyx.metastore import (
     accessible_catalog_ids,
     add_grant,
     catalog_securable,
@@ -35,8 +35,8 @@ from aughor.metastore import (
 @pytest.fixture()
 def stores(tmp_path, monkeypatch):
     """Hermetic metastore + workspace stores."""
-    import aughor.metastore.store as ms_store
-    import aughor.workspace.store as ws_store
+    import pramanyx.metastore.store as ms_store
+    import pramanyx.workspace.store as ws_store
     monkeypatch.setattr(ms_store, "_DB_PATH", tmp_path / "metastore.db")
     monkeypatch.setattr(ws_store, "_DB_PATH", tmp_path / "workspaces.db")
     return ws_store
@@ -51,7 +51,7 @@ class TestCatalogStore:
         upsert_catalog("c1", name="One v2", conn_id="c1")   # idempotent update, not insert
         assert get_catalog("c1").name == "One v2"
         assert len(list_catalogs()) == 1
-        from aughor.metastore import delete_catalog
+        from pramanyx.metastore import delete_catalog
         assert delete_catalog("c1") is True
         assert get_catalog("c1") is None
 
@@ -97,7 +97,7 @@ class TestMigrationIdempotent:
 
 class TestCatalogSync:
     def test_catalogs_mirror_connections(self, stores, monkeypatch):
-        import aughor.db.registry as registry
+        import pramanyx.db.registry as registry
         monkeypatch.setattr(registry, "list_connections", lambda: [
             {"id": "a1", "name": "Alpha"}, {"id": "b2", "name": "Bravo"},
         ])
@@ -111,7 +111,7 @@ class TestCatalogSync:
 class TestGateParity:
     def test_gate_matches_workspace_membership(self, stores):
         ws_store = stores
-        from aughor.workspace.store import workspace_connection_ids
+        from pramanyx.workspace.store import workspace_connection_ids
         ws_store.create_workspace(name="Default", workspace_id="default",
                                   connection_ids=["c1", "c2", "c3"], is_default=True)
         ws_store.create_workspace(name="Sales", workspace_id="ws_sales", connection_ids=["c2"])
@@ -133,7 +133,7 @@ class TestGateParity:
 
 class TestSchemaStore:
     def test_upsert_list_and_reconcile(self, stores):
-        from aughor.metastore import list_schemas, set_catalog_schemas, upsert_schema
+        from pramanyx.metastore import list_schemas, set_catalog_schemas, upsert_schema
         upsert_schema("c1", "main")
         upsert_schema("c1", "main")   # idempotent
         assert {s.name for s in list_schemas("c1")} == {"main"}
@@ -145,7 +145,7 @@ class TestSchemaStore:
         assert set_catalog_schemas("c1", ["finance"]) == 0   # idempotent
 
     def test_full_name_and_securable_roundtrip(self, stores):
-        from aughor.metastore import schema_securable, securable_schema, upsert_schema
+        from pramanyx.metastore import schema_securable, securable_schema, upsert_schema
         s = upsert_schema("cat1", "sales")
         assert s.full_name == "cat1.sales"
         sec = schema_securable("cat1", "sales")
@@ -159,7 +159,7 @@ class TestLiveGate:
 
     def test_membership_is_read_live(self, stores):
         ws_store = stores
-        from aughor.workspace.store import workspace_connection_ids
+        from pramanyx.workspace.store import workspace_connection_ids
         ws_store.create_workspace(name="W", workspace_id="w1", connection_ids=["c1", "c2"])
         assert accessible_catalog_ids("w1") == {"c1", "c2"} == workspace_connection_ids("w1")
         ws_store.update_workspace("w1", connection_ids=["c2", "c3"])
@@ -189,7 +189,7 @@ class TestGrantApi:
     """The independent access-control endpoints (grant/revoke/list explicit grants)."""
 
     def test_grant_revoke_list_roundtrip(self, stores):
-        from aughor.routers.metastore import (
+        from pramanyx.routers.metastore import (
             GrantRequest, grant_workspace_catalog, list_workspace_grants, revoke_workspace_catalog,
         )
         stores.create_workspace(name="W", workspace_id="w1", connection_ids=["c1"])
@@ -203,7 +203,7 @@ class TestGrantApi:
 
     def test_grant_unknown_catalog_404(self, stores):
         from fastapi import HTTPException
-        from aughor.routers.metastore import GrantRequest, grant_workspace_catalog
+        from pramanyx.routers.metastore import GrantRequest, grant_workspace_catalog
         with pytest.raises(HTTPException) as e:
             grant_workspace_catalog("w1", GrantRequest(catalog_id="ghost"))
         assert e.value.status_code == 404

@@ -16,14 +16,14 @@ _REPO_ROOT = Path(__file__).parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from aughor.db.connection import open_connection_for
+from pramanyx.db.connection import open_connection_for
 
 
 def _safe_exec(db, sql: str) -> tuple[bool, list[str], list[list], str | None]:
     """Execute SQL via raw DuckDB cursor to bypass _validate/_normalize_to_duckdb.
 
     One thing the connection does is kept: a JULIANDAY refusal is healed once, exactly as `DuckDBConnection` heals it
-    (`aughor.db.connection.heal_duckdb_refusal`). Every product path runs the statement that way, so scoring the
+    (`pramanyx.db.connection.heal_duckdb_refusal`). Every product path runs the statement that way, so scoring the
     refusal would score an error no user sees; a heal that still fails scores the original error."""
     try:
         conn = getattr(db, "_conn", None)
@@ -35,7 +35,7 @@ def _safe_exec(db, sql: str) -> tuple[bool, list[str], list[list], str | None]:
         try:
             conn.execute(sql)
         except Exception as refused:
-            from aughor.db.connection import is_julianday_refusal, rewrite_julianday
+            from pramanyx.db.connection import is_julianday_refusal, rewrite_julianday
             rewritten = rewrite_julianday(sql) if is_julianday_refusal(str(refused)) else ""
             if not rewritten:
                 raise

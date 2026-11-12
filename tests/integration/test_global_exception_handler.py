@@ -9,7 +9,7 @@ from __future__ import annotations
 
 
 def test_unhandled_exception_returns_generic_500(client):
-    from aughor.api import app
+    from pramanyx.api import app
 
     @app.get("/_test_unhandled_boom")
     def _boom():
@@ -28,7 +28,7 @@ def test_unhandled_exception_returns_generic_500(client):
 
 def test_httpexception_still_passes_through(client):
     """A deliberate HTTPException keeps its status + detail (not swallowed to 500)."""
-    from aughor.api import app
+    from pramanyx.api import app
     from fastapi import HTTPException
 
     @app.get("/_test_teapot")

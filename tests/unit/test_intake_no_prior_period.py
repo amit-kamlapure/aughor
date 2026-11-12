@@ -10,13 +10,13 @@ data holds it, and otherwise a typed `no_prior_period` verdict the router reads.
 """
 from __future__ import annotations
 
-from aughor.agent.investigate import (
+from pramanyx.agent.investigate import (
     _clamp_intake_to_coverage,
     _preceding_window,
     _window_label,
     route_after_baseline,
 )
-from aughor.agent.prompts_investigate import IntakeOutput
+from pramanyx.agent.prompts_investigate import IntakeOutput
 
 
 def _intake(**kw) -> IntakeOutput:

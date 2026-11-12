@@ -1,0 +1,704 @@
+"""Append-only audit log — every query execution is recorded in data/audit.db.
+
+Design:
+  - SQLite WAL mode for concurrent reads alongside the main app
+  - Records are never deleted or updated (append-only semantics)
+  - Each record captures: who (connection), what (SQL), when, verdict, outcome
+
+API:
+    AuditLogger.log(...)   → write a record, returns record_id
+    AuditLogger.recent()   → last N records
+    AuditLogger.stats()    → aggregate counts per connection
+"""
+from __future__ import annotations
+
+import atexit
+import sqlite3
+import threading
+import time
+import uuid
+from contextlib import contextmanager
+from contextvars import ContextVar
+from pathlib import Path
+from typing import Any, Iterator
+
+from pramanyx.db.migrations import Migration, add_column_if_missing, run_migrations
+from pramanyx.db.sqlite_util import resolve_db_path
+from pramanyx.db.backend import connect_store
+from pramanyx.db.store_pool import ensure_once
+
+_DB_PATH = resolve_db_path("PRAMANYX_AUDIT_DB", Path("data/audit.db"))
+
+# Schema evolution (DATA-05). The `audit_log` base table is v1; changes are Migration(v>=2).
+_MIGRATIONS = [
+    Migration(2, "tenant key: org_id on audit_log",
+              lambda c: add_column_if_missing(c, "audit_log", "org_id", "TEXT NOT NULL DEFAULT 'default'")),
+    # Wave E1: correlate an audited statement to the run that issued it. This table
+    # sees EVERY execution — including the quick path, which bypasses the
+    # span-emitting executor — so it is the one place where "which run ran this
+    # SQL" is answerable for all paths at once. Defaulted from the ambient trace,
+    # so no call site changes.
+    Migration(3, "correlation key: trace_id on audit_log",
+              lambda c: add_column_if_missing(c, "audit_log", "trace_id", "TEXT NOT NULL DEFAULT ''")),
+    # TJ-2 — `guard_verdicts.phase` carried two meanings: the execution phase on an E1
+    # row (`execute`, `validate`, `trust_scope`, `deep`, `eval`) and the ACTION on a
+    # rewrite-hook row (`repaired_sql` 335, `flagged` 28 on the live store, 2026-09-26).
+    # `action` takes the second meaning; the rows that carried it move, and read
+    # `execute` for their phase — the hook fires at execution. Portable SQL, one
+    # statement per execute, numbered off the LIVE user_version (3), rehearsed on a
+    # `.backup` first (§3.47 TJ-2).
+    Migration(4, "guard_verdicts.action: the rewrite kind leaves the phase column",
+              lambda c: _migrate_guard_action(c)),
+    # The statement as the person wrote it, beside `sql_full` — what ran, capped and translated. Recent runs reopened
+    # `sql_full`, and run again its cap and translation were made again on top of themselves (2026-11-09: a statement
+    # three NULLIFs and two caps deep). Empty on a row no person wrote, and on every row before this one.
+    Migration(5, "the statement as written: sql_written on audit_log",
+              lambda c: add_column_if_missing(c, "audit_log", "sql_written", "TEXT NOT NULL DEFAULT ''")),
+]
+
+#: The statement as written, for the audit rows of the run that executes it — set by `as_written`.
+_WRITTEN: ContextVar[str] = ContextVar("audit_sql_written", default="")
+
+
+@contextmanager
+def as_written(sql: str) -> Iterator[None]:
+    """Audit rows written inside this block keep ``sql`` as the statement as written (`sql_written`), beside what ran."""
+    token = _WRITTEN.set(sql)
+    try:
+        yield
+    finally:
+        _WRITTEN.reset(token)
+
+#: The words a guard receipt's `action` takes (`emit_guard_receipt`'s callers) — what the
+#: hook wrote into `phase` before migration 4 moved it. Declared beside the migration so
+#: the backfill reads the code's own vocabulary; `envelope.WARNING_ACTIONS` and the
+#: exporters' rewrite set are subsets of it.
+RECEIPT_ACTIONS: frozenset[str] = frozenset({
+    "rewrote_sql", "repaired_sql", "flagged", "caveated", "caveated_headline", "hinted",
+    "kept_original", "passed", "ok",
+})
+
+
+def _migrate_guard_action(c: sqlite3.Connection) -> None:
+    add_column_if_missing(c, "guard_verdicts", "action", "TEXT NOT NULL DEFAULT ''")
+    marks = ", ".join("?" for _ in RECEIPT_ACTIONS)
+    c.execute(f"UPDATE guard_verdicts SET action = phase WHERE action = '' AND phase IN ({marks})",
+              tuple(sorted(RECEIPT_ACTIONS)))
+    c.execute(f"UPDATE guard_verdicts SET phase = 'execute' WHERE action != '' AND phase IN ({marks})",
+              tuple(sorted(RECEIPT_ACTIONS)))
+
+
+def _connect() -> sqlite3.Connection:
+    c = connect_store(_DB_PATH, check_same_thread=False)
+    c.row_factory = sqlite3.Row
+    return c
+
+
+def _ensure_schema(c: sqlite3.Connection) -> None:
+    c.executescript("""
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id            TEXT    PRIMARY KEY,
+            ts            TEXT    NOT NULL,
+            connection_id TEXT    NOT NULL,
+            hypothesis_id TEXT    NOT NULL DEFAULT '',
+            sql_digest    TEXT    NOT NULL,
+            sql_full      TEXT    NOT NULL,
+            verdict       TEXT    NOT NULL DEFAULT 'safe',
+            row_count     INTEGER NOT NULL DEFAULT 0,
+            duration_ms   REAL    NOT NULL DEFAULT 0,
+            pii_redacted  INTEGER NOT NULL DEFAULT 0,
+            error         TEXT,
+            org_id        TEXT    NOT NULL DEFAULT 'default'
+        );
+        CREATE INDEX IF NOT EXISTS idx_audit_conn ON audit_log (connection_id);
+        CREATE INDEX IF NOT EXISTS idx_audit_ts   ON audit_log (ts);
+
+        -- MI-1: the guard verdict, kept. Guards were computed on every execution and
+        -- discarded at birth -- `run_trust_checks` returned E1 issues and the rewrite
+        -- receipts fanned out to an SSE sink, so the best free supervision signal on the
+        -- platform lived only as long as a browser tab. It rides THIS database because
+        -- `audit_log` is the one table that sees every execution (quick path included),
+        -- which makes "run -> executed SQL -> guard fire" a single-store join instead of
+        -- a cross-database reconstruction.
+        --
+        -- FIRES ONLY, deliberately: the denominator is `audit_log` itself. Every execution
+        -- writes an audit row, so "clean" is an audit row with no guard_verdicts sibling —
+        -- a rate whose denominator is already durable, without doubling the write volume
+        -- of the busiest table in the system.
+        CREATE TABLE IF NOT EXISTS guard_verdicts (
+            id         TEXT NOT NULL PRIMARY KEY,
+            ts         TEXT NOT NULL,
+            trace_id   TEXT NOT NULL,
+            org_id     TEXT NOT NULL DEFAULT 'default',
+            sql_digest TEXT NOT NULL DEFAULT '',
+            pattern    TEXT NOT NULL,
+            subject    TEXT NOT NULL DEFAULT '',
+            phase      TEXT NOT NULL DEFAULT '',
+            detail     TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_guard_trace   ON guard_verdicts (trace_id);
+        CREATE INDEX IF NOT EXISTS idx_guard_ts      ON guard_verdicts (ts);
+        CREATE INDEX IF NOT EXISTS idx_guard_pattern ON guard_verdicts (pattern);
+
+        -- GM-5: the platform's own statements (`internal=True` on the door call) leave no audit row -- a probe is
+        -- not activity -- but the page says how many ran, per connection and day, rather than implying none did.
+        CREATE TABLE IF NOT EXISTS internal_counts (
+            org_id        TEXT    NOT NULL DEFAULT 'default',
+            connection_id TEXT    NOT NULL,
+            day           TEXT    NOT NULL,
+            n             INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (org_id, connection_id, day)
+        );
+
+        -- The gate map's "last used": how often each of the SQL door's methods was the way a caller came in, per
+        -- day, and when it last was. Counted from the day this table exists -- nothing earlier was recorded.
+        CREATE TABLE IF NOT EXISTS door_counts (
+            org_id  TEXT    NOT NULL DEFAULT 'default',
+            door    TEXT    NOT NULL,
+            day     TEXT    NOT NULL,
+            n       INTEGER NOT NULL DEFAULT 0,
+            last_at TEXT    NOT NULL DEFAULT '',
+            PRIMARY KEY (org_id, door, day)
+        );
+        PRAGMA journal_mode=WAL;
+    """)
+    run_migrations(c, _MIGRATIONS, store="audit")
+    c.commit()
+
+
+class AuditLogger:
+    """Append-only audit writer. Thread-safe via per-call connection open/close."""
+
+    @classmethod
+    def log(
+        cls,
+        *,
+        connection_id: str,
+        hypothesis_id: str = "",
+        sql: str,
+        verdict: str = "safe",
+        row_count: int = 0,
+        duration_ms: float = 0.0,
+        pii_redacted: int = 0,
+        error: str | None = None,
+        org_id: str | None = None,
+        trace_id: str | None = None,
+    ) -> str:
+        """Write one audit record. Returns the new record ID. ``org_id`` defaults to
+        the current tenant context so every audited query is tenant-keyed, and
+        ``trace_id`` to the ambient run so the statement joins to the session log
+        without any caller threading it through."""
+        from pramanyx.org.context import current_org_id
+        record_id = str(uuid.uuid4())
+        digest = sql[:120].replace("\n", " ").strip()
+        ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        oid = org_id or current_org_id()
+        if trace_id is None:
+            try:
+                from pramanyx.telemetry import current_trace_id
+                trace_id = current_trace_id()
+            except Exception:
+                trace_id = ""
+        c = _connect()
+        try:
+            ensure_once(c, _ensure_schema)
+            c.execute(
+                """INSERT INTO audit_log
+                   (id, ts, connection_id, hypothesis_id, sql_digest, sql_full,
+                    verdict, row_count, duration_ms, pii_redacted, error, org_id, trace_id, sql_written)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (record_id, ts, connection_id, hypothesis_id, digest, sql,
+                 verdict, row_count, round(duration_ms, 2), pii_redacted, error, oid,
+                 trace_id or "", _WRITTEN.get()),
+            )
+            c.commit()
+        finally:
+            c.close()
+        return record_id
+
+    @classmethod
+    def reads_by_month(
+        cls,
+        connection_id: str,
+        tables: list[str],
+        *,
+        months: int = 12,
+        org_id: str | None = None,
+        now: float | None = None,
+    ) -> list[dict[str, Any]]:
+        """How many audited statements on ``connection_id`` named one of ``tables`` in each of the last
+        ``months`` calendar months, oldest first and every month present (a quiet month is 0, not absent).
+        A table is named when it stands as a whole word in the statement — ``events`` does not count a
+        read of ``event_log``; a schema-qualified ``shop.events`` counts. ``org_id`` is the tenant filter,
+        as in :meth:`recent`. An empty ``tables`` counts nothing."""
+        import re
+        from datetime import datetime, timezone
+        stamp = datetime.fromtimestamp(now if now is not None else time.time(), tz=timezone.utc)
+        keys: list[str] = []
+        year, month = stamp.year, stamp.month
+        for _ in range(max(1, months)):
+            keys.append(f"{year:04d}-{month:02d}")
+            month -= 1
+            if month == 0:
+                year, month = year - 1, 12
+        keys.reverse()
+        counts = {k: 0 for k in keys}
+        names = [t.strip() for t in tables if t and t.strip()]
+        if not names:
+            return [{"month": k, "reads": 0} for k in keys]
+        pattern = re.compile(r"(?<![a-z0-9_])(?:" + "|".join(re.escape(n) for n in names) + r")(?![a-z0-9_])")
+        c = _connect()
+        try:
+            ensure_once(c, _ensure_schema)
+            clauses = ["connection_id = ?", "ts >= ?"]
+            params: list[Any] = [connection_id, keys[0] + "-01T00:00:00Z"]
+            if org_id is not None:
+                clauses.append("org_id = ?")
+                params.append(org_id)
+            rows = c.execute(f"SELECT ts, sql_full FROM audit_log WHERE {' AND '.join(clauses)}", params).fetchall()
+        finally:
+            c.close()
+        for ts, sql in rows:
+            key = str(ts)[:7]
+            if key in counts and pattern.search(str(sql or "")):
+                counts[key] += 1
+        return [{"month": k, "reads": counts[k]} for k in keys]
+
+    @classmethod
+    def reads_within(
+        cls,
+        connection_id: str,
+        tables_by_key: dict[str, list[str]],
+        *,
+        days: int = 30,
+        org_id: str | None = None,
+        now: float | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        """For each key of ``tables_by_key`` (an entity, say), the audited statements on ``connection_id`` in the last
+        ``days`` days — today included — that named one of its tables as a whole word, as :meth:`reads_by_month` names
+        them: ``{"reads": n, "last_read": the newest such statement's ts or None, "runs": {trace id: how many of them
+        that run issued}}`` — a statement no run issued is counted under ``""``. One scan of the log for every key; a
+        key with no tables counts nothing."""
+        import re
+        from datetime import datetime, timedelta, timezone
+        stamp = datetime.fromtimestamp(now if now is not None else time.time(), tz=timezone.utc)
+        since = (stamp - timedelta(days=max(1, days) - 1)).strftime("%Y-%m-%dT00:00:00Z")
+        # One pattern for every table, over each statement lowered once — the keys a table belongs to are looked up
+        # after. A pattern per key read each statement once per entity: 7 passes over ~100,000 statements, 19 s on
+        # theLook; this is one (17 s → 2.9 s on 100,000 synthetic statements, the same counts).
+        owners: dict[str, set[str]] = {}
+        for key, tables in tables_by_key.items():
+            for t in tables:
+                if t and t.strip():
+                    owners.setdefault(t.strip().lower(), set()).add(key)
+        out: dict[str, dict[str, Any]] = {k: {"reads": 0, "last_read": None, "runs": {}} for k in tables_by_key}
+        if not owners:
+            return out
+        names = sorted(owners, key=len, reverse=True)
+        pattern = re.compile(r"(?<![a-z0-9_])(?:" + "|".join(re.escape(n) for n in names) + r")(?![a-z0-9_])")
+        c = _connect()
+        try:
+            ensure_once(c, _ensure_schema)
+            clauses = ["connection_id = ?", "ts >= ?"]
+            params: list[Any] = [connection_id, since]
+            if org_id is not None:
+                clauses.append("org_id = ?")
+                params.append(org_id)
+            rows = c.execute(f"SELECT ts, sql_full, trace_id FROM audit_log WHERE {' AND '.join(clauses)}",
+                             params).fetchall()
+        finally:
+            c.close()
+        for ts, sql, trace_id in rows:
+            keys: set[str] = set()
+            for m in pattern.finditer(str(sql or "").lower()):
+                keys |= owners.get(m.group(0), set())
+            for key in keys:
+                row = out[key]
+                row["reads"] += 1
+                if row["last_read"] is None or str(ts) > row["last_read"]:
+                    row["last_read"] = str(ts)
+                run = str(trace_id or "")
+                row["runs"][run] = row["runs"].get(run, 0) + 1
+        return out
+
+    @classmethod
+    def recent(
+        cls,
+        limit: int = 100,
+        connection_id: str | None = None,
+        verdict: str | None = None,
+        label: str | None = None,
+        org_id: str | None = None,
+        trace_id: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return recent records, newest first. Optional filters by connection/verdict/label
+        (``label`` matches the ``hypothesis_id`` column — the surface that issued the SQL,
+        e.g. ``query_builder`` / ``query_workbench`` — which is what makes the SQL editor's
+        history rail a filtered read of this log, SE-0).
+
+        ``org_id`` is the TENANT filter (DATA-06). Every row is written with the tenant
+        that ran it, so the predicate is the row's own ``org_id`` rather than a set of
+        currently-registered connection ids: an audit row must stay scoped even after its
+        connection is deleted (8,558 such rows exist in one local log), and a read whose
+        scope depends on the registry's present state would re-expose them. ``None`` means
+        no tenant filter — localhost/identity-off, where a single tenant owns everything.
+
+        ``since``/``until`` bound ``ts`` half-open (Arc TC, TC-5: the governance feed's
+        window); both ``None`` adds no clause.
+        """
+        c = _connect()
+        try:
+            ensure_once(c, _ensure_schema)
+            clauses: list[str] = []
+            params: list[Any] = []
+            if since is not None:
+                clauses.append("ts >= ?")
+                params.append(since)
+            if until is not None:
+                clauses.append("ts < ?")
+                params.append(until)
+            if org_id is not None:
+                clauses.append("org_id = ?")
+                params.append(org_id)
+            if connection_id:
+                clauses.append("connection_id = ?")
+                params.append(connection_id)
+            if trace_id:
+                clauses.append("trace_id = ?")
+                params.append(trace_id)
+            if verdict:
+                clauses.append("verdict = ?")
+                params.append(verdict)
+            if label:
+                clauses.append("hypothesis_id = ?")
+                params.append(label)
+            where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+            rows = c.execute(
+                # `rowid DESC` is not decoration. `ts` is written at SECOND resolution
+                # (`time.strftime("%Y-%m-%dT%H:%M:%SZ")`), so every statement run inside the
+                # same second carries an identical key and `ORDER BY ts DESC` alone leaves
+                # their order to the query plan — which scans the `idx_audit_ts` index and
+                # returns them ASCENDING by rowid. "Newest first" therefore served the
+                # current second BACKWARDS: `recent(...)[0]` was the OLDEST row of that
+                # second, not the newest. rowid is insertion order on a rowid table, which
+                # is the tiebreaker the key itself is too coarse to supply. (The same shape
+                # is already used by `learning/decisions.py`.)
+                f"SELECT * FROM audit_log {where} ORDER BY ts DESC, rowid DESC LIMIT ?",
+                [*params, limit],
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            c.close()
+
+    @classmethod
+    def stats(cls, connection_id: str | None = None,
+              org_id: str | None = None) -> dict[str, Any]:
+        """Aggregate stats: totals, blocked count, suspicious count, PII redactions.
+
+        ``org_id`` scopes to one tenant (DATA-06) — an aggregate over every org's
+        traffic is a leak of a quieter kind: it says how much SQL another tenant runs
+        and how often it is blocked. ``None`` = no tenant filter (localhost)."""
+        c = _connect()
+        try:
+            ensure_once(c, _ensure_schema)
+            clauses: list[str] = []
+            params_l: list[Any] = []
+            if org_id is not None:
+                clauses.append("org_id = ?")
+                params_l.append(org_id)
+            if connection_id:
+                clauses.append("connection_id = ?")
+                params_l.append(connection_id)
+            where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+            params = tuple(params_l)
+            row = c.execute(
+                f"""SELECT
+                       COUNT(*)                                           AS total,
+                       SUM(CASE WHEN verdict='blocked'    THEN 1 ELSE 0 END) AS blocked,
+                       SUM(CASE WHEN verdict='suspicious' THEN 1 ELSE 0 END) AS suspicious,
+                       -- a refused statement never ran: its reason sits in `error`, but it is counted as blocked
+                       SUM(CASE WHEN error IS NOT NULL AND COALESCE(verdict, '') <> 'blocked'
+                                THEN 1 ELSE 0 END)                         AS errors,
+                       SUM(pii_redacted)                                  AS pii_redacted,
+                       AVG(duration_ms)                                   AS avg_duration_ms
+                    FROM audit_log {where}""",
+                params,
+            ).fetchone()
+            out = dict(row) if row else {}
+        finally:
+            c.close()
+        # GM-5 — withheld is said: what the log does not list, and since when it has been counted.
+        out.update(InternalCounter.totals(connection_id=connection_id, org_id=org_id))
+        return out
+
+
+class InternalCounter:
+    """GM-5 — how many statements the platform ran as its own plumbing (`internal=True` on the door call), per
+    connection and day. They leave no audit row, which is the point — a guard probe or a profiler scan is not
+    somebody's activity — but a page that listed only what it audited would imply the rest never ran.
+
+    Counted in memory and written in batches: a guard battery or a profile runs dozens of probes, and a write per
+    probe would cost more than the probe. A batch is written at ``FLUSH_AT`` statements, after ``FLUSH_EVERY_S``,
+    at exit, and before any read, so a count a reader sees is never behind this process."""
+
+    FLUSH_AT = 100
+    FLUSH_EVERY_S = 10.0
+    _lock = threading.Lock()
+    _pending: dict[tuple[str, str, str], int] = {}
+    _pending_n = 0
+    _last_flush = time.monotonic()
+
+    @classmethod
+    def count(cls, connection_id: str) -> None:
+        from pramanyx.org.context import current_org_id
+        key = (current_org_id() or "default", connection_id or "", time.strftime("%Y-%m-%d", time.gmtime()))
+        with cls._lock:
+            cls._pending[key] = cls._pending.get(key, 0) + 1
+            cls._pending_n += 1
+            due = cls._pending_n >= cls.FLUSH_AT or time.monotonic() - cls._last_flush >= cls.FLUSH_EVERY_S
+        if due:
+            cls.flush()
+
+    @classmethod
+    def flush(cls) -> None:
+        with cls._lock:
+            pending, cls._pending, cls._pending_n = cls._pending, {}, 0
+            cls._last_flush = time.monotonic()
+        if not pending:
+            return
+        c = _connect()
+        try:
+            ensure_once(c, _ensure_schema)
+            c.executemany(
+                """INSERT INTO internal_counts (org_id, connection_id, day, n) VALUES (?,?,?,?)
+                   ON CONFLICT(org_id, connection_id, day) DO UPDATE SET n = n + excluded.n""",
+                [(*key, n) for key, n in pending.items()])
+            c.commit()
+        finally:
+            c.close()
+
+    @classmethod
+    def totals(cls, connection_id: str | None = None, org_id: str | None = None) -> dict[str, Any]:
+        """``{"internal_statements": n, "internal_since": first day counted or None}`` for the scope asked."""
+        cls.flush()
+        c = _connect()
+        try:
+            ensure_once(c, _ensure_schema)
+            clauses, params = [], []
+            if org_id is not None:
+                clauses.append("org_id = ?")
+                params.append(org_id)
+            if connection_id:
+                clauses.append("connection_id = ?")
+                params.append(connection_id)
+            where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+            row = c.execute(f"SELECT COALESCE(SUM(n), 0) AS n, MIN(day) AS since FROM internal_counts {where}",
+                            tuple(params)).fetchone()
+            return {"internal_statements": int(row["n"] or 0), "internal_since": row["since"]}
+        finally:
+            c.close()
+
+
+class DoorCounter:
+    """How often each of the SQL door's methods was the way a caller came in, and when it last was — the gate map's
+    "last used" (`pramanyx/db/door_count.py` says what one use is). Per organisation and day.
+
+    Batched exactly as ``InternalCounter`` is, and for its reason: a write per statement would cost more than many
+    of the statements. A count a reader sees is never behind this process — ``totals`` writes the batch first."""
+
+    FLUSH_AT = 100
+    FLUSH_EVERY_S = 10.0
+    _lock = threading.Lock()
+    _pending: dict[tuple[str, str, str], tuple[int, str]] = {}
+    _pending_n = 0
+    _last_flush = time.monotonic()
+
+    @classmethod
+    def count(cls, door: str) -> None:
+        from pramanyx.org.context import current_org_id
+        now = time.gmtime()
+        key = (current_org_id() or "default", door, time.strftime("%Y-%m-%d", now))
+        at = time.strftime("%Y-%m-%dT%H:%M:%S+00:00", now)
+        with cls._lock:
+            n, _ = cls._pending.get(key, (0, ""))
+            cls._pending[key] = (n + 1, at)
+            cls._pending_n += 1
+            due = cls._pending_n >= cls.FLUSH_AT or time.monotonic() - cls._last_flush >= cls.FLUSH_EVERY_S
+        if due:
+            cls.flush()
+
+    @classmethod
+    def flush(cls) -> None:
+        with cls._lock:
+            pending, cls._pending, cls._pending_n = cls._pending, {}, 0
+            cls._last_flush = time.monotonic()
+        if not pending:
+            return
+        c = _connect()
+        try:
+            ensure_once(c, _ensure_schema)
+            c.executemany(
+                """INSERT INTO door_counts (org_id, door, day, n, last_at) VALUES (?,?,?,?,?)
+                   ON CONFLICT(org_id, door, day) DO UPDATE
+                   SET n = n + excluded.n, last_at = MAX(last_at, excluded.last_at)""",
+                [(*key, n, at) for key, (n, at) in pending.items()])
+            c.commit()
+        finally:
+            c.close()
+
+    @classmethod
+    def totals(cls, org_id: str | None = None) -> dict[str, Any]:
+        """``{"since": the first day counted or None, "doors": {door: {"uses": n, "last_used": iso}}}``."""
+        cls.flush()
+        c = _connect()
+        try:
+            ensure_once(c, _ensure_schema)
+            where, params = ("WHERE org_id = ?", (org_id,)) if org_id is not None else ("", ())
+            rows = c.execute(f"SELECT door, SUM(n) AS n, MAX(last_at) AS last_at, MIN(day) AS since "
+                             f"FROM door_counts {where} GROUP BY door", params).fetchall()
+            since = min((r["since"] for r in rows if r["since"]), default=None)
+            return {"since": since,
+                    "doors": {r["door"]: {"uses": int(r["n"] or 0), "last_used": r["last_at"] or ""} for r in rows}}
+        finally:
+            c.close()
+
+
+def _flush_at_exit() -> None:
+    """The last batch, written at exit — never an error there: a test run's store may already be gone."""
+    for counter, what in ((InternalCounter, "internal-statement"), (DoorCounter, "door-use")):
+        try:
+            counter.flush()
+        except Exception:  # noqa: BLE001
+            import logging
+            logging.getLogger(__name__).debug("the last %s count could not be written at exit", what, exc_info=True)
+
+
+atexit.register(_flush_at_exit)
+
+
+class GuardVerdicts:
+    """MI-1 — the durable half of the guard plane. Append-only, one row per FIRE.
+
+    Two producers feed this sink, and they are deliberately separate because the guard
+    families have genuinely different shapes: `run_trust_checks` records its E1 semantic
+    caveats (pattern + the column they are about), and the kernel's `emit_guard_receipt`
+    seam records interventions that rewrote SQL (guard name + what changed). Both are
+    registration-free — neither depends on the agent plugin being wired, so a bare
+    platform, an automation tick and the quick path all record.
+    """
+
+    @classmethod
+    def record(
+        cls,
+        *,
+        pattern: str,
+        subject: str = "",
+        phase: str = "",
+        sql: str = "",
+        detail: str = "",
+        trace_id: str | None = None,
+        org_id: str | None = None,
+        action: str = "",
+    ) -> None:
+        """Persist one guard fire. Best-effort; never raises.
+
+        `phase` is WHEN it fired (`execute`, `validate`, `quick`, `deep`, `eval`); `action`
+        is what a rewrite hook DID (`repaired_sql`, `flagged`, …) — two columns since
+        migration 4, one meaning each (TJ-2).
+
+        **Written whether or not a trace is bound**, and the first version of this got
+        that wrong. It dropped trace-less fires by analogy with the session log's law —
+        but that law is about session EVENTS, which are meaningless outside the run they
+        describe. A guard verdict is not an event; it is a standalone labeled example
+        (this SQL, this verdict), which is precisely what MI-3's dataset plane consumes.
+        Measured on the live deployment the day the gate shipped: 189 audit rows, 28 with
+        a trace — `bind_trace` is bound at the ask door, so the workbench and the
+        on-demand validate endpoint carry none. The gate would have discarded ~85% of the
+        signal in a slice whose entire purpose is to stop discarding it. `trace_id` is ''
+        when absent; the run -> SQL -> fire join still works for the runs that have one,
+        and the rest still join to `audit_log` on the `sql_digest` column.
+
+        `phase` is what keeps the mixed population usable — `execute`, `validate`, `deep`
+        and `eval` fires are all real, but only some are production supervision, and
+        MI-3 must be able to tell them apart.
+
+        Guarding must never cost a query its answer: every failure here is tolerated,
+        exactly like the audit write it sits beside.
+        """
+        try:
+            if trace_id is None:
+                from pramanyx.telemetry import current_trace_id
+                trace_id = current_trace_id()
+            from pramanyx.org.context import current_org_id
+            c = _connect()
+            try:
+                ensure_once(c, _ensure_schema)
+                c.execute(
+                    """INSERT INTO guard_verdicts
+                       (id, ts, trace_id, org_id, sql_digest, pattern, subject, phase, detail, action)
+                       VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    (str(uuid.uuid4()),
+                     time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                     trace_id,
+                     org_id or current_org_id(),
+                     (sql or "")[:120].replace("\n", " ").strip(),
+                     pattern, subject, phase, (detail or "")[:500], action or ""),
+                )
+                c.commit()
+            finally:
+                c.close()
+        except Exception as exc:
+            from pramanyx.kernel.errors import tolerate
+            tolerate(exc, "guard-verdict persistence is additive; the guard still fired",
+                     counter="guard.verdict_record")
+
+    @classmethod
+    def recent(cls, limit: int = 100, trace_id: str | None = None,
+               pattern: str | None = None,
+               org_id: str | None = None) -> list[dict[str, Any]]:
+        """Recent guard fires, newest first. ``org_id`` is the tenant filter (DATA-06),
+        with the same contract as :meth:`AuditLogger.recent`: ``None`` means no filter."""
+        c = _connect()
+        try:
+            ensure_once(c, _ensure_schema)
+            clauses: list[str] = []
+            params: list[Any] = []
+            if org_id is not None:
+                clauses.append("org_id = ?")
+                params.append(org_id)
+            if trace_id:
+                clauses.append("trace_id = ?")
+                params.append(trace_id)
+            if pattern:
+                clauses.append("pattern = ?")
+                params.append(pattern)
+            where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+            rows = c.execute(
+                # Same second-resolution `ts`, same inversion, same tiebreaker — see the
+                # note in `AuditLogger.recent`. A verdict table is read newest-first to
+                # answer "what did the guards just say", so serving a second backwards is
+                # the same defect wearing different data.
+                f"SELECT * FROM guard_verdicts {where} ORDER BY ts DESC, rowid DESC LIMIT ?",
+                [*params, limit],
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            c.close()
+
+    @classmethod
+    def first_live_fire(cls, org_id: str | None = None) -> str | None:
+        """When the guards first fired on real traffic (never an eval run's), or None — the start of the guard record
+        MI-4's fourth entry gate counts days from (PENDING item 23: the gate report checked three gates of four)."""
+        c = _connect()
+        try:
+            ensure_once(c, _ensure_schema)
+            where, params = "WHERE phase != 'eval'", []
+            if org_id is not None:
+                where += " AND org_id = ?"
+                params.append(org_id)
+            row = c.execute(f"SELECT MIN(ts) FROM guard_verdicts {where}", params).fetchone()
+            return row[0] if row and row[0] else None
+        finally:
+            c.close()

@@ -1,7 +1,7 @@
 """ON-3b — the ontology map's arrangement is a per-user preference, not a per-browser one.
 
 A person drags the cards on the ontology map where they want them; that has to follow them to their next browser
-and their next machine, which is what `aughor/db/user_prefs.py` is for. This file holds the two things that makes
+and their next machine, which is what `pramanyx/db/user_prefs.py` is for. This file holds the two things that makes
 true: the value's shape is CHECKED on the way in (a preferences store with a closed key registry stops being one
 the moment a key takes whatever a UI sends), and what goes in comes back out per user.
 """
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.db.user_prefs import ALLOWED_KEYS, MAX_CARDS, MAX_MAPS, get_preferences, set_preference
+from pramanyx.db.user_prefs import ALLOWED_KEYS, MAX_CARDS, MAX_MAPS, get_preferences, set_preference
 
 KEY = "ontology_map_layout"
 LAYOUT = {"914df862:luxexperience": {"Order": {"x": 12, "y": -40.5}, "Product": {"x": 300, "y": 8}}}

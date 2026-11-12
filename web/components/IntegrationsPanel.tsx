@@ -1,6 +1,6 @@
 "use client";
 /**
- * Integrations — redone to `aughor-v2/CLARITY.md` (2026-10-13): figures (connected, not connected, Slack bots, the
+ * Integrations — redone to `pramanyx-v2/CLARITY.md` (2026-10-13): figures (connected, not connected, Slack bots, the
  * supervisor), then what needs a person — a provider set up with nothing connected, a grant to renew, a bot whose
  * @mentions are refused, a supervisor that stopped — then the providers as rows with their buttons, the Slack bots and
  * their supervisor, and the MCP servers. The set-up form, Slack's app door and a bot's edit form open only on their

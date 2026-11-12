@@ -2,7 +2,7 @@
 that is executed against the live data before it is written, so a pass means "the right
 numbers", not "the numbers reached before".
 
-    AUGHOR_SYSTEM_DB=$PWD/data/system.db .venv/bin/python scripts/author_superstore_suite.py
+    PRAMANYX_SYSTEM_DB=$PWD/data/system.db .venv/bin/python scripts/author_superstore_suite.py
 
 Why this exists (2026-08-14): the only answer-quality suites target `workspace`, whose
 schema context is 116,744 chars — past the 60k linker budget — so any small-schema flag
@@ -14,7 +14,7 @@ is a real question. Cases are chosen so pruning has something to lose: cross-tab
 would drop for a question that never names them.
 
 Idempotent by name: re-running finds the existing suite, deletes its cases, re-adds.
-The reference checker (`aughor.evals.targets.reference_checker`) is order-insensitive,
+The reference checker (`pramanyx.evals.targets.reference_checker`) is order-insensitive,
 float-normalised and tolerant of extra columns, so a richer-but-correct answer passes.
 """
 from __future__ import annotations
@@ -22,11 +22,11 @@ from __future__ import annotations
 import os
 import sys
 
-if not os.environ.get("AUGHOR_SYSTEM_DB"):
-    sys.exit("set AUGHOR_SYSTEM_DB (a bare script does not load conftest's isolation)")
+if not os.environ.get("PRAMANYX_SYSTEM_DB"):
+    sys.exit("set PRAMANYX_SYSTEM_DB (a bare script does not load conftest's isolation)")
 
-from aughor.db.connection import open_connection_for  # noqa: E402
-from aughor.evals import store  # noqa: E402
+from pramanyx.db.connection import open_connection_for  # noqa: E402
+from pramanyx.evals import store  # noqa: E402
 
 CONN = "8d36d4c2"
 SUITE_NAME = "Superstore — accuracy (reference SQL, small schema)"

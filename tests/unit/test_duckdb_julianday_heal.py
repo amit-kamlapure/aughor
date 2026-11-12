@@ -16,8 +16,8 @@ import sqlite3
 import duckdb
 import pytest
 
-from aughor.control_plane.contracts.execution import QueryResult
-from aughor.db.connection import DuckDBConnection, heal_duckdb_refusal, is_julianday_refusal, rewrite_julianday
+from pramanyx.control_plane.contracts.execution import QueryResult
+from pramanyx.db.connection import DuckDBConnection, heal_duckdb_refusal, is_julianday_refusal, rewrite_julianday
 
 #: DuckDB's refusal, verbatim (duckdb 1.5).
 _REFUSAL = 'Catalog Error: Scalar Function with name julianday does not exist!\nDid you mean "julian"?'
@@ -178,8 +178,8 @@ def test_a_connection_keeps_an_honest_refusal_it_cannot_heal(warehouse):
 def test_the_workspace_connection_heals_too(tmp_path, monkeypatch):
     """`LocalUploadConnection` is DuckDB-backed but is not a `DuckDBConnection` — the asymmetry that has already
     cost this codebase three capabilities that landed on one class only."""
-    from aughor.connectors.file.local_upload import LocalUploadConnection
-    from aughor.control_plane import vending
+    from pramanyx.connectors.file.local_upload import LocalUploadConnection
+    from pramanyx.control_plane import vending
 
     monkeypatch.setattr(vending, "STORAGE_ROOT", tmp_path / "uploads")
     conn = LocalUploadConnection(connection_id="ws")
@@ -207,7 +207,7 @@ def test_the_eval_scorer_scores_what_the_connection_runs(warehouse):
 
 
 def test_the_audit_log_records_the_statement_that_ran(warehouse):
-    from aughor.security.audit import AuditLogger
+    from pramanyx.security.audit import AuditLogger
 
     result = warehouse.execute("h", _LOST["ob06 raw"][0])
     assert not result.error, result.error

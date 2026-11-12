@@ -6,9 +6,9 @@ generator only proposes; the Phase-8 guards dispose, so these stay grounded.
 """
 from __future__ import annotations
 
-from aughor.explorer.coverage_manifest import ManifestCell
-from aughor.explorer.manifest_query import cell_question, cell_to_sql
-from aughor.tools.profiler import ColumnProfile, TableProfile
+from pramanyx.explorer.coverage_manifest import ManifestCell
+from pramanyx.explorer.manifest_query import cell_question, cell_to_sql
+from pramanyx.tools.profiler import ColumnProfile, TableProfile
 
 
 def _additive():

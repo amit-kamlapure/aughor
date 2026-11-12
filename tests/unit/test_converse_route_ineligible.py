@@ -12,8 +12,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.agent import converse_tools as ct
-from aughor.routers.investigations import _converse_eligible
+from pramanyx.agent import converse_tools as ct
+from pramanyx.routers.investigations import _converse_eligible
 
 
 def _req(**kw):

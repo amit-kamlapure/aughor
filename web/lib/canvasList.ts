@@ -1,6 +1,6 @@
 /**
  * What an open Data Canvas says, decided here and laid out by `components/CanvasWorkspace.tsx`, to
- * `aughor-v2/CLARITY.md`: the facts a canvas wears as chips, and its history with a question asked eleven times said
+ * `pramanyx-v2/CLARITY.md`: the facts a canvas wears as chips, and its history with a question asked eleven times said
  * once. (The list of canvases, `CanvasBrowser.tsx`, is kept as it was — the user, 2026-10-12.) Pure: nothing here
  * fetches.
  */

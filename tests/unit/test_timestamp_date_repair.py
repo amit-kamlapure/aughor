@@ -24,8 +24,8 @@ import inspect
 
 import pytest
 
-from aughor.db.dialects import rules_for_dialect
-from aughor.sql import writer as W
+from pramanyx.db.dialects import rules_for_dialect
+from pramanyx.sql import writer as W
 
 ERR = ("400 No matching signature for operator >= for argument types: TIMESTAMP, DATE\n"
        "  Signature: T1 >= T1\n    Unable to find common supertype")

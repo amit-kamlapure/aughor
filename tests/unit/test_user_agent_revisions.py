@@ -23,10 +23,10 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.custom_agents import create_agent, delete_agent, get_agent, list_agents, update_agent
-from aughor.custom_agents.models import EVAL_CURRENT, EVAL_NONE, EVAL_STALE, EVAL_UNKNOWN
-from aughor.custom_agents.revisions import list_revisions, record_revision, revision_config
-from aughor.custom_agents.store import record_eval
+from pramanyx.custom_agents import create_agent, delete_agent, get_agent, list_agents, update_agent
+from pramanyx.custom_agents.models import EVAL_CURRENT, EVAL_NONE, EVAL_STALE, EVAL_UNKNOWN
+from pramanyx.custom_agents.revisions import list_revisions, record_revision, revision_config
+from pramanyx.custom_agents.store import record_eval
 
 ORIGINAL = "Segment by cohort first."
 INVERTED = "Ignore cohorts. Report totals only."
@@ -53,12 +53,12 @@ def _passed(agent_id, passed=5, total=5):
 
 @pytest.fixture()
 def client():
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
 def _flag_on(monkeypatch):
-    import aughor.kernel.flags as flags
+    import pramanyx.kernel.flags as flags
     monkeypatch.setattr(flags, "flag_enabled",
                         lambda name: name == "agents.user_defined")
 
@@ -134,7 +134,7 @@ def test_a_chip_written_before_revisions_existed_is_unknown_not_current():
     exactly the defect this wave fixed; calling them stale would libel agents nobody has
     touched. Neither can be shown, so neither is claimed."""
     agent = _agent()
-    from aughor.custom_agents.store import _connect, _now
+    from pramanyx.custom_agents.store import _connect, _now
     legacy = json.dumps({"passed": 5, "total": 5, "at": "2026-07-01T00:00:00Z"})
     with _connect() as conn:
         conn.execute("UPDATE user_agents SET last_eval = ?, updated_at = ? WHERE id = ?",
@@ -223,7 +223,7 @@ def test_restoring_a_version_that_does_not_exist_is_a_404(client, monkeypatch):
 
 
 def test_the_revision_routes_404_when_the_flag_is_off(client, monkeypatch):
-    import aughor.kernel.flags as flags
+    import pramanyx.kernel.flags as flags
     monkeypatch.setattr(flags, "flag_enabled", lambda name: False)
     assert client.get("/agents/custom/anything/revisions").status_code == 404
     assert client.post("/agents/custom/anything/revisions/1/restore").status_code == 404

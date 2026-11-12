@@ -1,5 +1,5 @@
-"""Where a sentence ends (`aughor/util/prose.py`) — the one rule the answer's headline and the evidence ledger share."""
-from aughor.util.prose import first_sentence
+"""Where a sentence ends (`pramanyx/util/prose.py`) — the one rule the answer's headline and the evidence ledger share."""
+from pramanyx.util.prose import first_sentence
 
 
 def test_a_sentence_ends_at_a_stop_and_a_space_never_inside_a_figure():

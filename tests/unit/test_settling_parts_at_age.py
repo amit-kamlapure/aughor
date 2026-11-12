@@ -19,14 +19,14 @@ from types import SimpleNamespace
 import duckdb
 import pytest
 
-from aughor.briefing import edition as E
-from aughor.briefing import guide as G
-from aughor.briefing import ranges
-from aughor.briefing.compose import sources as S
-from aughor.semantic import metric_time as mt
-from aughor.semantic.metric_time import Window
-from aughor.settling import parts as P
-from aughor.settling import store
+from pramanyx.briefing import edition as E
+from pramanyx.briefing import guide as G
+from pramanyx.briefing import ranges
+from pramanyx.briefing.compose import sources as S
+from pramanyx.semantic import metric_time as mt
+from pramanyx.semantic.metric_time import Window
+from pramanyx.settling import parts as P
+from pramanyx.settling import store
 
 TODAY = date(2026, 11, 10)          # a Tuesday: last week is 2–8 November, read on its second day
 
@@ -283,7 +283,7 @@ def test_the_send_re_reads_every_range_read_at_its_age(con, home, monkeypatch):
     spec = _week()
     _settling_mornings(con, date(2026, 8, 20), TODAY)
     fig = _figure(con, spec)
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda connection_id=None, **kw: [TOTAL])
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda connection_id=None, **kw: [TOTAL])
     got = ranges._at_age_again("c1", [fig], dialect="duckdb", current_of={fig["sql"]: fig["current"]})
     assert fig["equal_age"].get("usual"), "read at equal age"
     for known in fig["equal_age"]["usual"].values():
@@ -307,7 +307,7 @@ def test_a_morning_sweeps_the_readings_of_a_definition_that_no_longer_exists_and
 
 
 def test_deleting_a_definition_takes_its_readings_and_leaves_another_datasets_definition_of_the_name(home):
-    from aughor.semantic.metrics import MetricDefinition, delete_metric, list_metrics, save_metric
+    from pramanyx.semantic.metrics import MetricDefinition, delete_metric, list_metrics, save_metric
 
     one = MetricDefinition(name="rev_br8", label="Revenue", connection="c1", schema_name="s1", sql="SELECT SUM(amount) FROM items",
                            time_column="items.created_at", time_kind="flow")

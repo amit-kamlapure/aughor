@@ -2,13 +2,13 @@
 
 The web named each guard for the reader in B2 (`GuardReceiptChain.tsx`); the export printed the
 raw fields (``extra_filter_replan — replanned_queries — …``) under "Checks" until 2026-10-15. The
-Python maps in `aughor/answer/receipts.py` must stay byte-equal to the TSX maps — a guard named on
+Python maps in `pramanyx/answer/receipts.py` must stay byte-equal to the TSX maps — a guard named on
 one surface is named the same on the other — so this reads the TSX and compares.
 """
 import re
 from pathlib import Path
 
-from aughor.answer.receipts import ACTION_VERB, GUARD_LABEL, receipt_sentence
+from pramanyx.answer.receipts import ACTION_VERB, GUARD_LABEL, receipt_sentence
 
 TSX = Path(__file__).resolve().parents[2] / "web" / "components" / "GuardReceiptChain.tsx"
 
@@ -30,7 +30,7 @@ def test_the_action_verbs_are_the_webs_verbs():
 
 def test_every_guard_the_backend_writes_has_a_label():
     """A receipt the routers or the executor write today is named on both surfaces."""
-    root = Path(__file__).resolve().parents[2] / "aughor"
+    root = Path(__file__).resolve().parents[2] / "pramanyx"
     written: set[str] = set()
     for path in root.rglob("*.py"):
         text = path.read_text(encoding="utf-8", errors="ignore")

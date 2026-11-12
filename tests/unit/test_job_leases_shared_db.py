@@ -14,11 +14,11 @@ import os
 
 import pytest
 
-from aughor.db import backend as B
-from aughor.kernel.jobs import JobKernel, JobState
-from aughor.kernel.ledger import Ledger
+from pramanyx.db import backend as B
+from pramanyx.kernel.jobs import JobKernel, JobState
+from pramanyx.kernel.ledger import Ledger
 
-PG_URL = os.environ.get("AUGHOR_PG_TEST_URL", "postgres://postgres:aughor@localhost:5544/aughor")
+PG_URL = os.environ.get("PRAMANYX_PG_TEST_URL", "postgres://postgres:pramanyx@localhost:5544/pramanyx")
 
 
 def _pg_available() -> bool:

@@ -4,9 +4,9 @@ from __future__ import annotations
 import sqlglot
 import pytest
 
-import aughor.rbac.row_policy as rp
-from aughor.rbac.row_policy import resolve_row_filters
-from aughor.sql.rls import inject_row_filters
+import pramanyx.rbac.row_policy as rp
+from pramanyx.rbac.row_policy import resolve_row_filters
+from pramanyx.sql.rls import inject_row_filters
 
 
 # ── inject_row_filters (AST rewrite) ──────────────────────────────────────────

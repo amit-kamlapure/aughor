@@ -1,0 +1,429 @@
+"""Arc OC-2 — the compatibility catalogue: what a change to a declaration does to what reads it (ROADMAP §3.56).
+
+Every change waiting in a draft is classed before it can be published, from what it changes and what depends on it:
+
+* **ERR** — breaks what reads it: a withdrawal something depends on, a type's key or source changed, a link's join
+  changed or widened from to-one to to-many, a process moved to another type, an action's parameters changed, a
+  declaration whose own measurement did not bind. Publishing is refused while one stands.
+* **MEANING** — Pramanyx's own class: the element still reads, but what it *means* moved — a promise from two days to
+  three, a stage's anchor, how an object leaves a process, a rule's values, a segment's filter, a metric's statement. Publishing one restates every
+  claim computed under the old meaning (`ontology.release.publish`), so nobody keeps a number whose definition changed
+  under it without being told.
+* **WARN** — readers keep working but should look: a governed action's criteria, effects or risk changed; a binding
+  withdrawn; a promise renamed, which renames what it derives.
+* **SAFE** — adds something, or changes only words: a name, a description, an owner.
+
+A change's class is the most serious of its reasons, in that order. A field the catalogue does not know is a WARN —
+said, never assumed safe. The falsifier (§3.56): replayed over the declarations' own history, every past change that
+broke a consumer must class as ERR or WARN.
+"""
+from __future__ import annotations
+
+from typing import Any, Optional
+
+ORDER = ("ERR", "MEANING", "WARN", "SAFE")
+
+#: Fields that change only words a person reads.
+_WORDS = {"display_name", "description", "owner", "origin", "provenance", "domain", "entity_type", "label",
+          "name_origin", "name_provenance", "declared", "note",
+          # how the Business Atlas draws an entity: a picture a person reads, nothing a query or an agent does
+          "drawn_as"}
+
+
+def _changed(before: dict, after: dict) -> set[str]:
+    return {k for k in set(before) | set(after) if before.get(k) != after.get(k)}
+
+
+def _to_many(cardinality: Any) -> bool:
+    return isinstance(cardinality, str) and cardinality.endswith(":N")
+
+
+def _entity(before: dict, after: dict) -> list[tuple[str, str]]:
+    out = []
+    for k in sorted(_changed(before, after)):
+        if k in _WORDS or k == "display_property":
+            out.append(("SAFE", f"its {k.replace('_', ' ')} changed"))
+        elif k == "backing":
+            old, new = before.get(k) or {}, after.get(k) or {}
+            moved = [f for f in ("kind", "table", "sql", "primary_key") if old.get(f) != new.get(f)]
+            if moved:
+                out.append(("ERR", "the rows it is made of or its key changed (" + ", ".join(moved) + ")"))
+        elif k == "bindings":
+            old, new = before.get(k) or {}, after.get(k) or {}
+            for name in sorted(set(old) - set(new)):
+                out.append(("WARN", f"its binding '{name}' was withdrawn — the properties it supplied stop reading"))
+            for name in sorted(set(old) & set(new)):
+                o, n = old[name] or {}, new[name] or {}
+                if any(o.get(f) != n.get(f) for f in ("table", "sql", "key", "kind", "time_column")):
+                    out.append(("ERR", f"its binding '{name}' reads another source or key"))
+                elif o != n:
+                    out.append(("MEANING", f"what its binding '{name}' supplies changed"))
+            for name in sorted(set(new) - set(old)):
+                out.append(("SAFE", f"a binding '{name}' was added"))
+        elif k in ("active_filter", "default_filters", "exclude_when", "lifecycle_states", "terminal_states",
+                   "expressions", "semiadditive"):
+            out.append(("MEANING", f"its {k.replace('_', ' ')} changed — what counts as one of its objects, or how "
+                                   "a property adds up, is different"))
+        elif k in ("absorbed_into", "withdrawn_bindings"):
+            out.append(("WARN", f"its {k.replace('_', ' ')} changed"))
+        elif k in ("row_policies", "sensitive"):
+            continue                                            # said once, below
+        else:
+            out.append(("WARN", f"'{k}' changed — the catalogue does not class it; read it before publishing"))
+    return out + _security(before, after)
+
+
+def _security(before: dict, after: dict) -> list[tuple[str, str]]:
+    """Arc OC-7 — what a reader may see changes: worth a look, and said in the reader's terms."""
+    out = []
+    old_rows, new_rows = before.get("row_policies") or [], after.get("row_policies") or []
+    if old_rows != new_rows:
+        if new_rows:
+            said = "; ".join(f"{p.get('group')}: " + " and ".join(
+                f"{c.get('path')} {c.get('op') or '='} "
+                f"{', '.join(map(str, c['values'])) if c.get('values') else c.get('value', '')}".rstrip()
+                for c in p.get("conditions") or []) for p in new_rows)
+            out.append(("WARN", f"who sees which of its objects changes — {said}; a reader in none of these groups "
+                                "sees none of them"))
+        else:
+            out.append(("WARN", "its row policies are withdrawn — every reader sees every object"))
+    old_s, new_s = before.get("sensitive") or {}, after.get("sensitive") or {}
+    for prop in sorted(set(old_s) | set(new_s)):
+        o, n = old_s.get(prop), new_s.get(prop)
+        if n and n != o:
+            out.append(("WARN", f"{prop} is masked except for {', '.join(n.get('visible_to') or []) or 'no group'}"))
+        elif o and not n:
+            out.append(("WARN", f"{prop} is no longer masked — every reader sees it"))
+    return out
+
+
+def _link(before: dict, after: dict) -> list[tuple[str, str]]:
+    out = []
+    for k in sorted(_changed(before, after)):
+        if k in _WORDS or k in ("name", "reverse_name"):
+            out.append(("SAFE", f"its {k.replace('_', ' ')} changed — renamed, the same link"))
+        elif k in ("from_entity", "to_entity", "from_column", "to_column"):
+            out.append(("ERR", f"what it joins changed ({k.replace('_', ' ')})"))
+        elif k == "cardinality":
+            if not _to_many(before.get(k)) and _to_many(after.get(k)):
+                out.append(("ERR", "it widened from to-one to to-many — every path through it can multiply rows"))
+            else:
+                out.append(("MEANING", f"its cardinality changed ({before.get(k)} → {after.get(k)})"))
+        else:
+            out.append(("WARN", f"'{k}' changed — the catalogue does not class it; read it before publishing"))
+    return out
+
+
+def _promise(stage: str, old: Optional[dict], new: Optional[dict], watched: set[str]) -> list[tuple[str, str]]:
+    if old == new:
+        return []
+    if old is None:
+        noun = new.get("name") or stage
+        if noun != stage:
+            # A stage's lag is named for its promise when it has one: adding a promise under its own name renames the
+            # lag (`<stage>_lag_days` → `<promise>_lag_days`) and whatever read the old name loses it — found by the
+            # catalogue's own replay over theLook's history (2026-10-10), which a by-hand replay had passed.
+            return [("WARN", f"a promise '{noun}' was added on '{stage}' — the stage's lag is renamed "
+                             f"{stage}_lag_days → {noun}_lag_days")]
+        return [("SAFE", f"a promise was added on '{stage}'")]
+    name = old.get("name") or stage
+    if new is None:
+        return [("ERR" if name in watched else "MEANING", f"the promise on '{stage}' was dropped"
+                 + (" — an automation watches it" if name in watched else ""))]
+    out = []
+    if (new.get("name") or stage) != name:
+        out.append(("WARN", f"the promise '{name}' was renamed — what it derives is renamed with it"))
+    moved = [f for f in ("within_days", "within_hours", "deadline", "grain", "via", "target")
+             if old.get(f) != new.get(f)]
+    if moved:
+        said = ", ".join(f"{f} {old.get(f)} → {new.get(f)}" for f in moved)
+        out.append(("MEANING", f"the promise '{name}' changed: {said}"))
+    return out
+
+
+def _leaving(leaves: Any) -> str:
+    if not isinstance(leaves, dict) or not leaves.get("values"):
+        return "none declared"
+    return f"{leaves.get('property')} is {', '.join(str(v) for v in leaves['values'])}"
+
+
+def _process(before: dict, after: dict, watched: set[str]) -> list[tuple[str, str]]:
+    out = []
+    for k in sorted(_changed(before, after) - {"stages"}):
+        if k in _WORDS:
+            out.append(("SAFE", f"its {k.replace('_', ' ')} changed"))
+        elif k == "entity":
+            out.append(("ERR", f"it runs on another type ({before.get(k)} → {after.get(k)})"))
+        elif k == "transitions":
+            out.append(("WARN", "its declared moves between stages changed — what reads as a move nobody declared "
+                                "moves with them"))
+        elif k == "leaves":
+            # Who has left the process is who is never open, never overdue: the board's open and overdue counts and
+            # every `overdue_<noun>` list move with it (OC-4, found on theLook's live receipt — 18,726 Cancelled).
+            out.append(("MEANING", f"how an object leaves it changed ({_leaving(before.get(k))} → {_leaving(after.get(k))})"
+                                   " — what is open and overdue moves with it"))
+        else:
+            out.append(("WARN", f"'{k}' changed — the catalogue does not class it; read it before publishing"))
+    old = {s.get("name"): s for s in before.get("stages") or []}
+    new = {s.get("name"): s for s in after.get("stages") or []}
+    for name in [n for n in old if n not in new]:
+        promise = (old[name] or {}).get("promise")
+        named = (promise or {}).get("name") or name
+        out.append(("ERR" if promise and named in watched else "MEANING", f"the stage '{name}' was removed"))
+    for name in [n for n in new if n not in old]:
+        out.append(("SAFE", f"a stage '{name}' was added"))
+    for name in [n for n in new if n in old]:
+        o, n = old[name] or {}, new[name] or {}
+        for f in ("timestamp", "state", "property"):
+            if o.get(f) != n.get(f):
+                out.append(("MEANING", f"the stage '{name}' is anchored differently ({f})"))
+        out.extend(_promise(name, o.get("promise"), n.get("promise"), watched))
+    if [s.get("name") for s in before.get("stages") or []] != [s.get("name") for s in after.get("stages") or []] \
+            and set(old) == set(new):
+        out.append(("MEANING", "its stages are in a different order"))
+    return out
+
+
+def _rule(before: dict, after: dict) -> list[tuple[str, str]]:
+    out = []
+    for k in sorted(_changed(before, after)):
+        if k in _WORDS:
+            out.append(("SAFE", f"its {k.replace('_', ' ')} changed"))
+        elif k == "entity":
+            out.append(("ERR", f"it is defined over another type ({before.get(k)} → {after.get(k)})"))
+        elif k in ("values", "conditions", "property", "kind"):
+            out.append(("MEANING", f"what it admits changed ({k})"))
+        else:
+            out.append(("WARN", f"'{k}' changed — the catalogue does not class it; read it before publishing"))
+    return out
+
+
+def _impact(before: dict, after: dict) -> list[tuple[str, str]]:
+    """Arc OC-5 — the frame ranks drivers by an impact and the Briefing explains a moved promise by it: which promises
+    it joins, its mechanism and its window move what they read; its formula or evidence is what a reader is told."""
+    out = []
+    for k in sorted(_changed(before, after) - {"lead", "path", "to_many"}):
+        if k in _WORDS:
+            out.append(("SAFE", f"its {k.replace('_', ' ')} changed"))
+        elif k in ("upstream", "downstream"):
+            out.append(("MEANING", f"its {k} promise changed ({before.get(k)} → {after.get(k)})"))
+        elif k in ("mechanism", "window_days"):
+            out.append(("MEANING", f"its {k.replace('_', ' ')} changed ({before.get(k)} → {after.get(k)})"))
+        elif k in ("formula", "evidence"):
+            out.append(("WARN", f"its {k} changed — what a reader is told it rests on"))
+        else:
+            out.append(("WARN", f"'{k}' changed — the catalogue does not class it; read it before publishing"))
+    return out
+
+
+def _sql_bearing(before: dict, after: dict, meaning: set[str]) -> list[tuple[str, str]]:
+    out = []
+    for k in sorted(_changed(before, after)):
+        if k in _WORDS:
+            out.append(("SAFE", f"its {k.replace('_', ' ')} changed"))
+        elif k in meaning:
+            out.append(("MEANING", f"its {k.replace('_', ' ')} changed"))
+        else:
+            out.append(("WARN", f"'{k}' changed — the catalogue does not class it; read it before publishing"))
+    return out
+
+
+def _params(before: list, after: list) -> list[tuple[str, str]]:
+    old = {p.get("name"): p for p in before or []}
+    new = {p.get("name"): p for p in after or []}
+    out = []
+    for name in sorted(set(old) - set(new)):
+        out.append(("ERR", f"its parameter '{name}' was removed — a caller still passes it"))
+    for name in sorted(set(new) - set(old)):
+        if new[name].get("required", True) and new[name].get("default_value") in (None, ""):
+            out.append(("ERR", f"a required parameter '{name}' was added — no caller passes it"))
+        else:
+            out.append(("SAFE", f"an optional parameter '{name}' was added"))
+    for name in sorted(set(old) & set(new)):
+        o, n = old[name], new[name]
+        if any(o.get(f) != n.get(f) for f in ("data_type", "kind", "object_type")):
+            out.append(("ERR", f"its parameter '{name}' takes something else now"))
+        elif not o.get("required", True) and n.get("required", True):
+            out.append(("ERR", f"its parameter '{name}' became required"))
+    return out
+
+
+def _action(before: dict, after: dict) -> list[tuple[str, str]]:
+    out = []
+    for k in sorted(_changed(before, after)):
+        if k in _WORDS:
+            out.append(("SAFE", f"its {k.replace('_', ' ')} changed"))
+        elif k == "params":
+            out.extend(_params(before.get(k) or [], after.get(k) or []))
+        elif k == "submission_criteria":
+            out.append(("WARN", "its submission criteria changed — a proposal that passed may now be refused"))
+        else:
+            out.append(("WARN", f"what it does changed ({k.replace('_', ' ')})"))
+    return out
+
+
+def _unbound(binding: Optional[dict]) -> list[str]:
+    """The verdicts a draft carries that did not bind — a declaration that does not compile or measure."""
+    out = []
+    for field, verdict in (binding or {}).items():
+        if isinstance(verdict, dict) and verdict.get("bound") is False:
+            out.append(f"{field}: {verdict.get('note') or 'did not bind'}")
+    return out
+
+
+def _mark_words(mark: Any) -> str:
+    if not isinstance(mark, dict):
+        return "a mark"
+    return f"retiring on {mark.get('on') or '?'}, to be replaced by '{mark.get('successor') or '?'}'"
+
+
+def _retiring(before: Optional[dict], after: Optional[dict]) -> list[tuple[str, str]]:
+    """Arc FA, FA-3 — a retiring mark that changed: always a MEANING change, whatever the kind, because every reader is
+    told to use something else from then on. A withdrawal says itself, unless the mark was all the declaration held
+    (a built element's mark taken off)."""
+    old = (before or {}).get("retiring")
+    if after is None:
+        if old is not None and not set(before or {}) - {"retiring"}:
+            return [("MEANING", f"it is no longer marked retiring ({_mark_words(old)}) — readers stop being told to "
+                                "use another")]
+        return []
+    new = after.get("retiring")
+    if new == old:
+        return []
+    if old is None:
+        return [("MEANING", f"it is marked {_mark_words(new)} — it still serves, and every reader is told to use the "
+                            "successor instead")]
+    if new is None:
+        return [("MEANING", f"it is no longer marked retiring ({_mark_words(old)}) — readers stop being told to use "
+                            "another")]
+    return [("MEANING", f"its retiring mark changed: {_mark_words(old)} → {_mark_words(new)}")]
+
+
+def classify(kind: str, before: Optional[dict], after: Optional[dict], *, dependents: list[dict] = (),
+             binding: Optional[dict] = None, watched_promises: set[str] = frozenset()) -> tuple[str, list[dict]]:
+    """``(class, reasons)`` for one change: ``before`` is the published declaration's fields (None when the draft adds
+    it), ``after`` the draft's (None when the draft withdraws it). ``dependents`` are what rely on the published
+    element (`ontology.dependents`); ``watched_promises`` the promise names an automation's trigger names."""
+    # Arc FA, FA-3 — the retiring mark is classed before any kind's own rules, which then read the rest of the fields
+    reasons: list[tuple[str, str]] = _retiring(before, after)
+    if reasons:
+        before = None if before is None else {k: v for k, v in before.items() if k != "retiring"}
+        after = None if after is None else {k: v for k, v in after.items() if k != "retiring"}
+        if not before and not after:
+            # the mark is the whole declaration (a built element, marked or unmarked): it is the whole change
+            return "MEANING", [{"class": c, "why": w} for c, w in reasons]
+    if after is None or (kind == "link" and after.get("withdrawn") and not (before or {}).get("withdrawn")):
+        if dependents:
+            named = "; ".join(f"{d['consumer']} '{d['name']}' ({d['how']})" for d in dependents[:6])
+            reasons.append(("ERR", f"it is withdrawn, and {len(dependents)} thing"
+                                   f"{'s' if len(dependents) != 1 else ''} rely on it: {named}"))
+        else:
+            reasons.append(("SAFE", "it is withdrawn, and nothing relies on it"))
+    elif before is None:
+        reasons.append(("SAFE", "it is added"))
+        if kind == "entity":
+            reasons.extend(_security({}, after))
+    else:
+        handler = {"entity": _entity, "link": _link, "rule": _rule, "action": _action, "impact": _impact}.get(kind)
+        if kind == "process":
+            reasons.extend(_process(before, after, set(watched_promises)))
+        elif handler is not None:
+            reasons.extend(handler(before, after))
+        elif kind == "object_set":
+            reasons.extend(_sql_bearing(before, after, {"filter_sql", "is_default"}))
+        elif kind in ("metric", "computed_property"):
+            reasons.extend(_sql_bearing(before, after, {"formula_sql", "grain", "unit"}))
+        else:
+            reasons.append(("WARN", f"a {kind} changed — the catalogue does not class it; read it before publishing"))
+        if not reasons:
+            reasons.append(("SAFE", "nothing it says changed"))
+    if after is not None:
+        for why in _unbound(binding):
+            reasons.append(("ERR", f"it does not bind — {why}"))
+    worst = min((ORDER.index(c) for c, _ in reasons), default=ORDER.index("SAFE"))
+    return ORDER[worst], [{"class": c, "why": w} for c, w in reasons]
+
+
+# ── the falsifier, read again as history grows ──────────────────────────────────────────────────────────────────────
+
+#: The kinds a replay judges: what a consumer reads from them is COMPILED from the declaration (a promise's segments,
+#: rate and lags; a rule's filters), so whether a change moved it is read from the compiled definitions, not from the
+#: field names this catalogue classes by. Every other kind is classed and not judged.
+JUDGED = ("process", "rule")
+
+
+def _definitions(kind: str, target_id: str, fields: Optional[dict]) -> dict[str, str]:
+    """The definitions consumers read from one version of a declaration, by derived name — {} for a withdrawn one."""
+    if fields is None:
+        return {}
+    from pramanyx.ontology.derived import (
+        late_name, overdue_name, process_derivations, promise_filters, rate_name, rule_filters,
+    )
+    from pramanyx.ontology.models import BusinessRule, Process
+    if kind == "rule":
+        rule = BusinessRule.model_validate({**fields, "id": target_id})
+        return {rule.id: repr((rule.entity, rule_filters(rule)))}
+    process = Process.model_validate({**fields, "id": target_id})
+    out = {p.name: repr((p.entity, p.start, p.end)) for p in process_derivations(process).properties}
+    for i, stage in enumerate(process.stages):
+        spec = promise_filters(process, i)
+        if spec is None:
+            continue
+        clock = (spec.get("start"), spec.get("within_days"), spec.get("within_hours"), spec.get("deadline"))
+        out[late_name(stage)] = repr((spec["grain"], spec["breach"]))
+        out[rate_name(stage)] = repr((spec["grain"], spec["breach"], spec["reached"]))
+        out[overdue_name(stage)] = repr((spec["grain"], spec["open"], clock))
+    return out
+
+
+def _moved(before: dict[str, str], after: dict[str, str]) -> list[str]:
+    """The definitions a consumer already read that a change altered or took away; a name it adds moves nobody."""
+    return sorted(name for name, definition in before.items() if after.get(name) != definition)
+
+
+def replay(limit: int = 5000) -> dict[str, Any]:
+    """Arc OC-2's falsifier over the history every save and withdrawal keeps (`ontology/history.py`): each change a reader
+    saw — from one version in force to the next, drafts skipped — classed by this catalogue, and, for the kinds it can
+    judge, set beside the definitions it moved. A change that moved one and is classed SAFE is a ``miss``; one miss and
+    the catalogue is wrong. A withdrawal is classed and not judged (``withdrawals``). Taken with every daily census
+    reading, so the check re-runs itself as history grows."""
+    from pramanyx.kernel import lifecycle
+    from pramanyx.kernel.ledger import Ledger
+    from pramanyx.ontology.history import KIND
+    out: dict[str, Any] = {"changes": 0, "by_class": {c: 0 for c in ORDER}, "judged": 0, "moved": 0,
+                           "misses": [], "withdrawals": 0, "unread": 0}
+    for art in Ledger.default().artifacts_of_kind(KIND, limit=limit):
+        key = str(art.get("natural_key") or "")
+        try:
+            _conn, _schema, kind, target_id = key.removeprefix("ontology:").split("/", 3)
+        except ValueError:
+            out["unread"] += 1
+            continue
+        seen = [r for r in reversed(lifecycle.history(KIND, key, limit=500)) if r.state in ("published", "archived")]
+        for older, newer in zip(seen, seen[1:]):
+            before = None if older.state == "archived" else dict(older.body.get("fields") or {})
+            after = None if newer.state == "archived" else dict(newer.body.get("fields") or {})
+            if before is None and after is None:
+                continue
+            cls, reasons = classify(kind, before, after)
+            out["changes"] += 1
+            out["by_class"][cls] += 1
+            if kind not in JUDGED:
+                continue
+            if after is None:
+                # a withdrawal breaks exactly what relied on it then, and the history does not keep who did: the class
+                # it was given at the time named them (ERR), which a replay cannot rebuild — counted, not judged
+                out["withdrawals"] += 1
+                continue
+            try:
+                moved = _moved(_definitions(kind, target_id, before), _definitions(kind, target_id, after))
+            except Exception:  # noqa: BLE001 — a version that no longer reads is counted, never guessed at
+                out["unread"] += 1
+                continue
+            out["judged"] += 1
+            if moved:
+                out["moved"] += 1
+            if moved and cls == "SAFE":
+                out["misses"].append({"element": key, "from": older.version, "to": newer.version, "moved": moved,
+                                      "why": "; ".join(r["why"] for r in reasons)})
+    return out

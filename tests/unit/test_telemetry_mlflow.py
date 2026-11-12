@@ -1,5 +1,5 @@
 """
-Unit tests for the MLflow leg of aughor.telemetry (feature flag `obs.mlflow`).
+Unit tests for the MLflow leg of pramanyx.telemetry (feature flag `obs.mlflow`).
 
 Hermetic: the mlflow package is stubbed via sys.modules — no server, no real
 dependency. The contract under test:
@@ -27,7 +27,7 @@ import types
 
 import pytest
 
-import aughor.telemetry as tel
+import pramanyx.telemetry as tel
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -106,7 +106,7 @@ def _fresh_mlflow_state(monkeypatch):
     monkeypatch.setattr(tel, "_mlf", None)
     monkeypatch.setattr(tel, "_mlf_retry_at", 0.0)
     for k in ("MLFLOW_HTTP_REQUEST_TIMEOUT", "MLFLOW_HTTP_REQUEST_MAX_RETRIES",
-              "AUGHOR_MLFLOW_TRACKING_URI", "MLFLOW_TRACKING_URI"):
+              "PRAMANYX_MLFLOW_TRACKING_URI", "MLFLOW_TRACKING_URI"):
         monkeypatch.delenv(k, raising=False)
     yield
     tel._mlf = None
@@ -119,9 +119,9 @@ def _set_flag(monkeypatch, value: bool):
     # Self-gating on the tracking URI since the 2026-07-31 flag strategy deleted the
     # `obs.mlflow` flag (§4C): a set URI IS the operator's intent, an unset one is off.
     if value:
-        monkeypatch.setenv("AUGHOR_MLFLOW_TRACKING_URI", "http://localhost:5001")
+        monkeypatch.setenv("PRAMANYX_MLFLOW_TRACKING_URI", "http://localhost:5001")
     else:
-        monkeypatch.delenv("AUGHOR_MLFLOW_TRACKING_URI", raising=False)
+        monkeypatch.delenv("PRAMANYX_MLFLOW_TRACKING_URI", raising=False)
         monkeypatch.delenv("MLFLOW_TRACKING_URI", raising=False)
 
 
@@ -209,13 +209,13 @@ def test_init_sets_experiment_and_autologs_once(monkeypatch):
     _set_flag(monkeypatch, True)
     stub = _make_stub()
     monkeypatch.setitem(sys.modules, "mlflow", stub)
-    monkeypatch.setenv("AUGHOR_MLFLOW_TRACKING_URI", "http://mlflow.test:5001")
+    monkeypatch.setenv("PRAMANYX_MLFLOW_TRACKING_URI", "http://mlflow.test:5001")
     with tel.mlflow_tool_span("sql.execute"):
         pass
     with tel.mlflow_tool_span("sql.execute"):
         pass
     assert stub.calls["uri"] == ["http://mlflow.test:5001"]
-    assert stub.calls["experiment"] == ["aughor"]
+    assert stub.calls["experiment"] == ["pramanyx"]
     assert len(stub.calls["autolog"]) == 2  # langchain + openai, once each
 
 
@@ -279,9 +279,9 @@ def test_trace_tagged_with_ambient_session_user_agent(monkeypatch):
     tag; session/user go through update_current_trace's dedicated kwargs."""
     import types as _types
 
-    from aughor.org.context import (reset_session_id, reset_user_id,
+    from pramanyx.org.context import (reset_session_id, reset_user_id,
                                     set_session_id, set_user_id)
-    from aughor.custom_agents.context import activate_agent, release_agent
+    from pramanyx.custom_agents.context import activate_agent, release_agent
 
     _set_flag(monkeypatch, True)
     stub = _make_stub(active=True)
@@ -386,7 +386,7 @@ def test_executor_emits_tool_span(monkeypatch):
     stub = _make_stub(active=True)
     monkeypatch.setitem(sys.modules, "mlflow", stub)
 
-    from aughor.control_plane.contracts.execution import QueryResult
+    from pramanyx.control_plane.contracts.execution import QueryResult
 
     class _Conn:
         dialect = "duckdb"
@@ -395,7 +395,7 @@ def test_executor_emits_tool_span(monkeypatch):
             return QueryResult(hypothesis_id=query_id, sql=sql,
                                columns=["n"], rows=[[1]], row_count=1, error=None)
 
-    from aughor.sql.executor import execute_guarded
+    from pramanyx.sql.executor import execute_guarded
     result = execute_guarded(_Conn(), "SELECT 1 AS n", query_id="q-obs")
     assert result.row_count == 1
     names = [s.name for s in stub.calls["spans"]]
@@ -442,14 +442,14 @@ def test_real_mlflow_trace_roundtrip(monkeypatch, tmp_path):
     # URIs don't exist in a fresh env (CI caught exactly that), and MLflow
     # ≥3.14 gates the filesystem backend behind an env opt-out.
     monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
-    monkeypatch.setenv("AUGHOR_MLFLOW_TRACKING_URI", str(tmp_path / "mlruns"))
-    monkeypatch.setenv("AUGHOR_MLFLOW_EXPERIMENT", "aughor-test")
+    monkeypatch.setenv("PRAMANYX_MLFLOW_TRACKING_URI", str(tmp_path / "mlruns"))
+    monkeypatch.setenv("PRAMANYX_MLFLOW_EXPERIMENT", "pramanyx-test")
 
     import types as _types
 
-    from aughor.org.context import (reset_session_id, reset_user_id,
+    from pramanyx.org.context import (reset_session_id, reset_user_id,
                                     set_session_id, set_user_id)
-    from aughor.custom_agents.context import activate_agent, release_agent
+    from pramanyx.custom_agents.context import activate_agent, release_agent
 
     prev_uri = mlflow.get_tracking_uri()
     st = set_session_id("sess-int")
@@ -495,12 +495,12 @@ def test_agent_trace_stats_real_aggregation(monkeypatch, tmp_path):
     _set_flag(monkeypatch, True)
     monkeypatch.setenv("MLFLOW_ENABLE_ASYNC_TRACE_LOGGING", "false")
     monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
-    monkeypatch.setenv("AUGHOR_MLFLOW_TRACKING_URI", str(tmp_path / "mlruns"))
-    monkeypatch.setenv("AUGHOR_MLFLOW_EXPERIMENT", "aughor-stats")
+    monkeypatch.setenv("PRAMANYX_MLFLOW_TRACKING_URI", str(tmp_path / "mlruns"))
+    monkeypatch.setenv("PRAMANYX_MLFLOW_EXPERIMENT", "pramanyx-stats")
 
     import types as _types
 
-    from aughor.custom_agents.context import activate_agent, release_agent
+    from pramanyx.custom_agents.context import activate_agent, release_agent
 
     prev_uri = mlflow.get_tracking_uri()
     try:

@@ -17,8 +17,8 @@ import json
 import pytest
 import yaml
 
-from aughor.semantic.glossary import CONNECTIONS_KEY, load_glossary
-from aughor.semantic.metrics import (
+from pramanyx.semantic.glossary import CONNECTIONS_KEY, load_glossary
+from pramanyx.semantic.metrics import (
     GLOBAL_CONNECTION,
     MetricDefinition,
     delete_metric,
@@ -133,7 +133,7 @@ class TestAPromptAboutOneConnectionReadsItsOwnMetrics:
     SCHEMA = "TABLE: orders\n  order_id  BIGINT\n  total_amount  DOUBLE\n"
 
     def test_the_metrics_block_carries_this_connections_metrics_and_the_global_ones(self, metrics_path, monkeypatch):
-        from aughor.semantic import metrics as M
+        from pramanyx.semantic import metrics as M
         metrics_path.write_text(json.dumps([
             {"name": "shared_revenue", "label": "Shared revenue", "sql": "SUM(total_amount)", "tables": ["orders"]},
             {"name": "a_orders", "label": "A orders", "sql": "COUNT(order_id)", "tables": ["orders"],
@@ -150,8 +150,8 @@ class TestAPromptAboutOneConnectionReadsItsOwnMetrics:
     def test_the_explorers_metric_vocabulary_is_its_own_connections(self, monkeypatch):
         from types import SimpleNamespace
 
-        from aughor.explorer import metric_coherence as MC
-        from aughor.semantic import metrics as M
+        from pramanyx.explorer import metric_coherence as MC
+        from pramanyx.semantic import metrics as M
         rows = [_m("zzalphametric", connection="conn_a"), _m("zzbetametric", connection="conn_b"),
                 _m("zzglobalmetric")]
 
@@ -162,8 +162,8 @@ class TestAPromptAboutOneConnectionReadsItsOwnMetrics:
         assert "zzalphametric" in vocab and "zzglobalmetric" in vocab and "zzbetametric" not in vocab
 
     def test_a_connections_catalogue_lifts_its_own_metrics_and_the_global_ones(self, monkeypatch):
-        from aughor.ontology import builder as B
-        from aughor.semantic import metrics as M
+        from pramanyx.ontology import builder as B
+        from pramanyx.semantic import metrics as M
         rows = [_m("zzalphametric", connection="conn_a"), _m("zzbetametric", connection="conn_b"),
                 _m("zzglobalmetric")]
         monkeypatch.setattr(M, "list_metrics", lambda path=None, connection_id=None: [
@@ -181,8 +181,8 @@ class TestAConnectionReadsItsOwnGlossary:
 
     def test_a_connection_reads_a_persons_global_words_and_its_own_never_a_models_unnamed_ones(self, tmp_path,
                                                                                                monkeypatch):
-        from aughor.semantic.glossary import load_merged_glossary
-        monkeypatch.setattr("aughor.semantic.dbt.load_dbt_glossary", lambda: None)
+        from pramanyx.semantic.glossary import load_merged_glossary
+        monkeypatch.setattr("pramanyx.semantic.dbt.load_dbt_glossary", lambda: None)
         p = tmp_path / "glossary.yaml"
         p.write_text(yaml.safe_dump({
             "tables": {"customers": {"description": "a person's words"}},
@@ -201,7 +201,7 @@ class TestAConnectionReadsItsOwnGlossary:
         assert {"customers", "orders"} <= set(load_merged_glossary(p)["tables"])   # naming none reads what it did
 
     def test_the_split_keeps_a_models_words_for_one_connection_out_of_the_tracked_file(self, tmp_path):
-        from aughor.semantic.glossary import generated_path, save_glossary
+        from pramanyx.semantic.glossary import generated_path, save_glossary
         p = tmp_path / "glossary.yaml"
         data = {"tables": {"customers": {"description": "a person's words"}},
                 CONNECTIONS_KEY: {"conn_a": {"tables": {
@@ -216,23 +216,23 @@ class TestAConnectionReadsItsOwnGlossary:
 
     def test_autoseed_writes_a_models_words_for_the_connection_it_read_and_for_no_connection_writes_nothing(
             self, tmp_path, monkeypatch):
-        from aughor.semantic import autoseed as A
-        from aughor.semantic.glossary import load_merged_glossary
+        from pramanyx.semantic import autoseed as A
+        from pramanyx.semantic.glossary import load_merged_glossary
         p = tmp_path / "glossary.yaml"
         p.write_text(yaml.safe_dump({"tables": {}}))
         (tmp_path / "glossary_generated.yaml").write_text(yaml.safe_dump({"tables": {
             "lux.orders": {"description": "a model's words naming no connection", **self.MODEL}}}))
-        monkeypatch.setenv("AUGHOR_GLOSSARY_PATH", str(p))
+        monkeypatch.setenv("PRAMANYX_GLOSSARY_PATH", str(p))
         monkeypatch.setattr(A, "_ENABLED", True)
-        monkeypatch.setattr("aughor.db.schema_cache.is_complete", lambda fp: False)
-        monkeypatch.setattr("aughor.db.schema_cache.mark_complete", lambda fp: None)
+        monkeypatch.setattr("pramanyx.db.schema_cache.is_complete", lambda fp: False)
+        monkeypatch.setattr("pramanyx.db.schema_cache.mark_complete", lambda fp: None)
         asked = []
 
         class Model:
             def complete(self, system, user, response_model, temperature):
                 asked.append(user)
                 return A.TableAnnotation(description="written for A", grain="one row per order", columns=[])
-        monkeypatch.setattr("aughor.llm.provider.get_provider", lambda *a, **k: Model())
+        monkeypatch.setattr("pramanyx.llm.provider.get_provider", lambda *a, **k: Model())
         schema = "TABLE: lux.orders\n  order_id  VARCHAR\n"
         assert A.seed_missing_tables("TABLE: lux.refunds\n  refund_id  VARCHAR\n", schema="lux") is False
         assert asked == []                   # a table nothing describes, and still no words without a connection
@@ -245,8 +245,8 @@ class TestAConnectionReadsItsOwnGlossary:
         assert "lux.orders" not in load_merged_glossary(p, "conn_b")["tables"]
 
     def test_the_schema_text_carries_the_words_its_connection_reads(self, tmp_path, monkeypatch):
-        from aughor.semantic.glossary import apply_glossary
-        monkeypatch.setattr("aughor.semantic.dbt.load_dbt_glossary", lambda: None)
+        from pramanyx.semantic.glossary import apply_glossary
+        monkeypatch.setattr("pramanyx.semantic.dbt.load_dbt_glossary", lambda: None)
         p = tmp_path / "glossary.yaml"
         p.write_text(yaml.safe_dump({"tables": {}}))
         (tmp_path / "glossary_generated.yaml").write_text(yaml.safe_dump({
@@ -258,9 +258,9 @@ class TestAConnectionReadsItsOwnGlossary:
         assert "a model's words for A" in text and "naming no connection" not in text
 
     def test_the_schema_index_embeds_the_words_its_connection_reads(self, monkeypatch):
-        from aughor.semantic import retriever
+        from pramanyx.semantic import retriever
         seen = []
-        monkeypatch.setattr("aughor.semantic.glossary.load_merged_glossary",
+        monkeypatch.setattr("pramanyx.semantic.glossary.load_merged_glossary",
                             lambda path=None, connection_id=None: seen.append(connection_id) or {"tables": {}})
         retriever.build_schema_index(connection_id="conn_a", schema_name="lux")
         assert seen == ["conn_a"]

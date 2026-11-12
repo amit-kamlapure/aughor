@@ -12,9 +12,9 @@ from datetime import datetime, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.automations.store import get_automation
-from aughor.dashboards import questions as Q
-from aughor.db import history as H
+from pramanyx.automations.store import get_automation
+from pramanyx.dashboards import questions as Q
+from pramanyx.db import history as H
 
 CONN = "thelook-q"
 
@@ -35,7 +35,7 @@ REPORT = {
 
 @pytest.fixture(scope="module")
 def client():
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -49,7 +49,7 @@ def _answered(question: str, *, session: str = "", report: dict | None = None) -
 # ── a run outside a question ───────────────────────────────────────────────────────────────
 
 def test_a_run_with_no_session_is_filed_exactly_as_before():
-    from aughor.runners.investigation import InvestigationRequest, _ask_request
+    from pramanyx.runners.investigation import InvestigationRequest, _ask_request
     plain = _ask_request(InvestigationRequest(question="q", connection_id=CONN))
     tagged = _ask_request(InvestigationRequest(question="q", connection_id=CONN, session_id="question:abc"))
     assert plain.session_id == "" and tagged.session_id == "question:abc"
@@ -126,8 +126,8 @@ def test_a_weekly_question_is_next_asked_on_a_monday_at_nine():
 
 
 def test_an_automation_that_is_not_a_question_is_no_question(client):
-    from aughor.automations.models import Automation
-    from aughor.automations.store import upsert_automation
+    from pramanyx.automations.models import Automation
+    from pramanyx.automations.store import upsert_automation
     other = upsert_automation(Automation(conn_id=CONN, name="a chain", conditions=[{"kind": "webhook", "config": {}}],
                                          effects=[{"kind": "investigate", "config": {"question": "q"}}]))
     assert client.get(f"/dashboards/questions/{other.id}").status_code == 404
@@ -149,19 +149,19 @@ def test_asking_now_goes_through_the_same_gates_the_schedule_uses(client, monkey
     seen = {}
 
     def fake_trigger(automation_id, run_id=None, via="hand"):
-        from aughor.automations.models import AutomationRun, EffectOutcome
+        from pramanyx.automations.models import AutomationRun, EffectOutcome
         seen["id"], seen["via"] = automation_id, via
         return AutomationRun(automation_id=automation_id, outcome="fired",
                              effects=[EffectOutcome(kind="investigate", target="q", status="executed")])
-    monkeypatch.setattr("aughor.automations.scheduler.trigger_now", fake_trigger)
+    monkeypatch.setattr("pramanyx.automations.scheduler.trigger_now", fake_trigger)
     r = client.post(f"/dashboards/questions/{out['automation_id']}/ask")
     assert r.status_code == 200 and r.json()["asked"] is True
     assert seen == {"id": out["automation_id"], "via": "hand"}
 
 
 def test_a_scheduled_step_files_its_run_under_the_question_s_session(monkeypatch):
-    from aughor.automations import engine
-    from aughor.runners.investigation import InvestigationRun
+    from pramanyx.automations import engine
+    from pramanyx.runners.investigation import InvestigationRun
     out = Q.keep(connection_id=CONN, question="Week over week?")
     a = get_automation(out["automation_id"])
     seen = {}
@@ -169,7 +169,7 @@ def test_a_scheduled_step_files_its_run_under_the_question_s_session(monkeypatch
     def fake_run(req, **kw):
         seen["session"] = req.session_id
         return InvestigationRun("submitted", "")
-    monkeypatch.setattr("aughor.runners.run_investigation", fake_run)       # the name the dispatch imports
+    monkeypatch.setattr("pramanyx.runners.run_investigation", fake_run)       # the name the dispatch imports
     engine._dispatch_investigate(a.effects[0], a)
     assert seen["session"] == out["session"]
 
@@ -199,7 +199,7 @@ def test_a_dashboard_keeps_a_question_a_person_kept_on_its_connection(client):
     out = Q.keep(connection_id=desk.connection, question="How did sales change week over week, and why?")
     r = client.put(desk.path, params=desk.q, json={"spec": _with_question(desk.spec, out["automation_id"])})
     assert r.status_code == 200, r.text
-    from aughor.dashboards import versions
+    from pramanyx.dashboards import versions
     assert versions.latest(desk.home)["spec"]["elements"]["question1"] == {
         "type": "Question", "props": {"automation": out["automation_id"]}, "children": []}
 
@@ -241,7 +241,7 @@ def test_a_question_taken_off_stops_being_asked_and_put_back_is_asked_again(clie
 
 @needs_rules
 def test_a_retired_dashboard_s_questions_stop_and_a_paused_one_stays_paused_across_an_edit(client):
-    from aughor.automations.store import set_automation_enabled
+    from pramanyx.automations.store import set_automation_enabled
     desk = Desk()
     aid = Q.keep(connection_id=desk.connection, question="Week over week?")["automation_id"]
     with_q = _with_question(desk.spec, aid)

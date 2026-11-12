@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.ontology.models import Backing, OntologyEntity, OntologyGraph
+from pramanyx.ontology.models import Backing, OntologyEntity, OntologyGraph
 
 CONN = "triggers-t"
 
@@ -28,10 +28,10 @@ def _graph() -> OntologyGraph:
 @pytest.fixture
 def client(monkeypatch):
     graph = _graph()
-    monkeypatch.setattr("aughor.routers.ontology.served_ontology_graph", lambda conn, schema=None: graph)
+    monkeypatch.setattr("pramanyx.routers.ontology.served_ontology_graph", lambda conn, schema=None: graph)
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -46,7 +46,7 @@ def test_a_trigger_names_its_entity_and_keeps_the_table_it_reads(client):
     assert r.status_code == 200, r.text
     (cond,) = r.json()["conditions"]
     assert cond["config"] == {"entity": "Order", "table": "orders"}
-    from aughor.automations.models import Condition
+    from pramanyx.automations.models import Condition
     assert Condition(kind="entity_appears", config=cond["config"]).describe() == "entity_appears(Order)"
 
 
@@ -57,21 +57,21 @@ def test_an_entity_with_no_table_to_watch_is_refused(client, entity, says):
 
 
 def test_the_probe_reads_the_entitys_table_again_on_every_tick(monkeypatch):
-    from aughor.automations import probes
-    from aughor.automations.models import Automation, Condition, Effect
+    from pramanyx.automations import probes
+    from pramanyx.automations.models import Automation, Condition, Effect
     auto = Automation(name="x", conn_id=CONN, conditions=[Condition(kind="entity_appears",
                                                                     config={"entity": "Order", "table": "orders"})],
                       effects=[Effect(kind="investigate", config={"question": "q"})])
-    monkeypatch.setattr("aughor.ontology.keys.entity_table", lambda conn, entity: "orders_v2")   # its backing moved
+    monkeypatch.setattr("pramanyx.ontology.keys.entity_table", lambda conn, entity: "orders_v2")   # its backing moved
     assert probes._watched_table(auto.conditions[0], auto) == "orders_v2"
     plain = Condition(kind="source_change", config={"table": "events"})
     assert probes._watched_table(plain, auto) == "events"
 
 
 def test_a_trigger_keyed_to_an_entity_relies_on_it_and_is_counted(client):
-    from aughor.automations.store import list_automations
-    from aughor.ontology.dependents import dependents_of
-    from aughor.ontology.keys import keyed_counts
+    from pramanyx.automations.store import list_automations
+    from pramanyx.ontology.dependents import dependents_of
+    from pramanyx.ontology.keys import keyed_counts
     assert client.post("/automations", json=_body(entity="Order")).status_code == 200
     autos = [a for a in list_automations(conn_id=CONN)]
     rows = dependents_of(_graph(), CONN, "entity", "Order", automations=autos)

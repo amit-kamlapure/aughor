@@ -1,0 +1,1189 @@
+"""
+Deep analysis phase prompts.
+
+Each phase asks the LLM to: (1) plan SQL, then (2) interpret results.
+All prompts are schema-adaptive — column names come from the actual schema,
+never hardcoded.
+"""
+
+# ── Phase 1: Question intake (parsing only — no SQL) ─────────────────────────
+
+INTAKE_PROMPT = """\
+You are a senior data analyst performing question intake.
+
+QUESTION: {question}
+
+SCHEMA:
+{schema}
+
+PROFILE CONTEXT (date ranges, row counts, key columns):
+{scan_context}
+
+{sql_context}
+
+{events_section}
+{origin_finding_section}
+TASK: Parse this question into a precise investigation specification.
+
+1. MEASURES — What does the question ask to measure?
+   Infer each from the question and schema. Use the exact SQL expression (e.g. SUM(final_price_usd))
+   and name it (e.g. "net revenue", "order count", "average order value"). The FIRST measure goes in
+   metric_label / metric_sql; EVERY OTHER measure the question asks for goes in other_measures —
+   "from placed to shipped to delivered" asks two durations, "revenue and order count" two totals.
+   ONE aggregate expression per measure: never two expressions joined by a comma in one field.
+   BINDING RULE (critical): if a CANONICAL METRICS section appears below and the question's
+   metric matches one of those names, use ITS aggregate expression VERBATIM — do not re-derive
+   it, do not add or drop columns (e.g. never multiply a margin formula by a `quantity` column
+   the governed formula doesn't use), and keep its filters. The governed formula is the
+   authority; use the schema only for columns it doesn't already name.
+   INTENT GUARD (critical): if the question is about money / profitability / "losing money" /
+   cost / margin / revenue / sales, the metric MUST be a financial measure (revenue, sales,
+   profit, margin, cost, or spend) — NEVER a proxy such as review count, star rating, sentiment,
+   or NPS. If the question names no explicit metric and asks where/what is weakest, underperforming,
+   or losing money, default to the primary revenue / value measure in the schema. A money question
+   must never resolve to a sentiment or review metric.
+   LOSS GUARD (critical): the guard above admits "cost or spend", which is right for a COST question
+   and wrong for a LOSS one. "Losing money" / leakage / waste / bleeding / shrinkage asks about a
+   NEGATIVE OUTCOME, and gross spend is not one: SUM(cost) is what the business SPENT, so the
+   department that spends most is simply the BIGGEST department. Ranking cost concentration answers
+   "which is largest", never "where are we losing" — and it reads as an accusation of the most
+   productive part of the business.
+   For a loss question choose the FIRST of these the schema supports, and name the reading in
+   intake_notes so the reader knows which sense of "losing" was measured:
+     (a) an explicit loss / refund / write-off / chargeback AMOUNT column;
+     (b) MARGIN — a revenue column minus a cost column (e.g. `SUM(sale_price - cost)`), which is
+         also the only reading that can go negative;
+     (c) the value of REVERSED transactions — rows whose status / lifecycle column marks them
+         returned, cancelled, refunded or charged back
+         (e.g. `SUM(CASE WHEN status IN ('Returned','Cancelled') THEN sale_price END)`);
+     (d) unsold / obsolete stock — the cost of rows that never reached a sale.
+   Use a bare cost / spend total ONLY when the question itself asks about cost or spend ("where is
+   our cost highest", "what are we spending most on"). If none of (a)–(d) is derivable from the
+   schema, say so in intake_notes and state which sense you fell back to — never present spend as
+   loss silently.
+   MAGNITUDE GUARD (critical): when the question names a QUANTITY — a delay, a duration, a lead
+   time, an age, a distance, an amount — and the schema records BOTH the measured quantity and a
+   0/1 indicator that merely flags it, the metric is the MEASURED QUANTITY. "Shipping delay" over a
+   schema holding `Days for shipping (real)`, `Days for shipment (scheduled)` and `Late_delivery_risk`
+   is `AVG("Days for shipping (real)" - "Days for shipment (scheduled)")`, NOT `AVG(Late_delivery_risk)`:
+   the flag answers "how often", the question asked "how much", and a rate cannot be read back as a
+   magnitude. Indicator columns are recognisable by name (`*_risk`, `is_*`, `has_*`, `*_flag`,
+   `*_indicator`) or by holding only 0 and 1. Use the flag only when the question itself asks about
+   frequency ("how often are we late", "what share of orders are late").
+
+2. OBSERVATION PERIOD — What time period is in question?
+   Extract explicit dates or infer from question language ("February 2026" → 2026-02-01 to 2026-02-28).
+   GRAIN: the PROFILE states the analytical grain and how much history exists (e.g. "53 weeks of
+   history"). Use THAT grain for the observation and comparison periods — do NOT default to months.
+   A question that names NO period and asks about no change ("how long does it take an order to
+   ship", "which centres are slowest") has none: leave observation_start, observation_end and
+   observation_label EMPTY — the answer covers all the data, and says so. A question about a change
+   that names no period ("why did revenue drop") takes the most recent COMPLETE period at that grain.
+   CROSS-SECTIONAL: set cross_sectional=true when the question asks where/which/what is weakest /
+   losing money / underperforming — it asks WHICH SEGMENT, so the answer is a comparison across
+   DIMENSIONS (segments / regions / products) rather than across periods. Use the full data range
+   as the observation.
+   That flag is a statement about the QUESTION. It is NOT a statement about the data, and it must
+   never be used to conclude one: STILL POPULATE date_column whenever the schema has a usable date.
+   "Where are we losing money" is answered better, not worse, by also knowing whether the weakness is
+   GROWING — and an empty date_column silently disables every temporal check downstream, so a schema
+   with ten date columns gets reported as having no time axis.
+   Report NO time axis only when that is a fact about the SCHEMA: the PROFILE says "analyse
+   cross-sectionally" (too few periods for a trend), or the metric table and every population table
+   join-reachable from it genuinely carry no date column.
+   DRIVER / RELATIONSHIP (critical): if the question asks whether one thing AFFECTS / RELATES TO /
+   DRIVES / LOWERS / RAISES / HURTS / IMPROVES / CORRELATES WITH another — e.g. "do late deliveries
+   lower review scores", "do new customers spend more", "does installment count affect cancellations"
+   — it is a GROUP COMPARISON, NOT a time trend. Set cross_sectional=true and populate
+   comparison_segment_sql with the boolean/CASE SQL for the condition X (e.g.
+   (order_delivered_ts > order_estimated_delivery) for "late deliveries", or (is_new_customer) for
+   "new customers") plus comparison_segment_label (e.g. "late vs on-time delivery"). The metric Y is
+   then compared ACROSS that segment. Do NOT analyse Y as a weekly/monthly trend: the condition X may
+   hold in EVERY period, so a time series is structurally blind to the relationship.
+   TWO SIDES RULE (critical): X and Y must be DIFFERENT columns. If the condition you would write for
+   X uses a column metric_sql already reads, you have written the metric twice — leave
+   comparison_segment_sql EMPTY. Grouping a metric by its own definition returns 100% and 0% no
+   matter what the data holds, which answers nothing.
+   NAME BOTH SIDES: whenever the question asks how two things relate — including "is there a
+   correlation between A and B" — also populate relationship_left_sql and relationship_right_sql with
+   the COLUMN each side refers to (a bare column name, or the arithmetic that measures it, e.g.
+   `"Days for shipping (real)" - "Days for shipment (scheduled)"`), plus a short human label for each.
+   These are the two sides of the relationship, not a metric and a filter: fill them even when the
+   two sides are of different kinds (a measured quantity against a category is a valid pair, and so is
+   a category against a category). Resolve the user's words to the schema's columns — "shipping delay"
+   means the measured delay.
+   ONE CONCEPT, SEVERAL COLUMNS: a schema usually spreads a concept like "customer location" across
+   city, state, country and region, and testing only one of them answers a narrower question than the
+   user asked — country has two values and can hide everything city would show. Put that side on the
+   RIGHT: name the most specific column in relationship_right_sql and list the others (most specific
+   first, up to 3) in relationship_right_alternatives. Each is tested and the strongest is reported.
+   INTERVENTION (rare, and only when real): set intervention_column ONLY when the data records an
+   assignment somebody APPLIED — a treatment arm, an A/B variant, a deliberately assigned campaign
+   flag, a policy switched on from a date. A column that merely moves with the outcome is not an
+   intervention, and naming one that isn't grants the report causal language it has not earned.
+   When in doubt leave it empty: the analysis still runs, and it reports a relationship instead of
+   a cause.
+
+3. COMPARISON BASIS — What is the baseline for comparison?
+   ONLY when the question asks to compare periods — a change, a drop or a rise, growth, "vs",
+   "compared to", MoM / YoY — or asks why something changed. Otherwise leave comparison_start,
+   comparison_end, comparison_label, yoy_start and yoy_end EMPTY: a comparison nobody asked for
+   becomes the answer to a question nobody asked (a 2025 cohort question was headlined as 2024 vs
+   2025). When the question does ask: both PoP (prior period of same length) AND YoY (same period
+   prior year).
+   CRITICAL — every comparison window MUST contain data. Read the PROFILE CONTEXT date range
+   (e.g. "2024-05-01 → 2024-05-31") and period count FIRST:
+   - PoP guard: the prior period must fall INSIDE the data's date range. If the prior period is
+     before the earliest date (e.g. data starts 2024-05-01 but PoP would need April 2024), there
+     is NO prior-period data — do NOT invent it. Either pick the most recent PRIOR period that
+     actually has data, or leave comparison_start/comparison_end EMPTY ("") and state in
+     intake_notes "no prior period available — only N period(s) of data". NEVER set the
+     comparison equal to the observation window: a period compared against itself is a
+     tautology, not a baseline.
+   - YoY guard: if the earliest date is AFTER the YoY period end (e.g. data starts 2025-01-01 but
+     YoY needs 2024-06-01), there is NO prior-year data — do NOT set yoy_start/yoy_end. Note it.
+   - If the schema date range covers less than 13 months total, use PoP only.
+   - PARTIAL trailing period: if the profile marks the last month "PARTIAL (incomplete)", do NOT
+     use it as the observation period or read its low value as a decline — use the last COMPLETE
+     period instead and note the partial month in intake_notes.
+   - Only set windows the data actually covers. Never compare against an empty period.
+
+4. DATE COLUMN — Which table.column holds the primary transaction timestamp?
+   Rules (all mandatory):
+   - NEVER use an _id, _key, _code, or _num column as the date column. These are identifiers, not dates.
+   - NEVER use a column of type INTEGER, BIGINT, VARCHAR, or TEXT as the date column.
+   - Only use columns whose schema type contains DATE, TIMESTAMP, or TIME.
+   - If the primary metric table has a "⚠ No date/timestamp columns" annotation (check schema),
+     look in directly joinable tables (via foreign key) for a DATE/TIMESTAMP column.
+   - Set date_column to the ACTUAL date column found, written `<table>.<column>` exactly as the SCHEMA
+     spells both — never an `_id` column, never a column the SCHEMA does not list for that table.
+   - If a join is required to reach the date column, document the join path in intake_notes.
+   - If NO date column exists anywhere reachable by join, set date_column to "NONE" and explain in intake_notes.
+
+5. METRIC TABLE — Which table contains the metric?
+   CRITICAL: the table name MUST appear verbatim in the SCHEMA above. Do NOT invent or assume table names.
+   Prefer fact tables. Use the EXACT table name as shown in the SCHEMA (e.g. ecommerce.orders).
+   If the SCHEMA shows a schema prefix (e.g. "TABLE: ecommerce.orders"), you MUST include that prefix in metric_table.
+
+6. AVAILABLE DIMENSIONS — List every categorical column available for drill-down.
+   Include table name. Max 8 dimensions.
+
+7. TRANSACTION STATUS FILTER — Does the metric table have a status/state column?
+   If yes, list the distinct status values present and note which appear terminal vs active.
+   - Do NOT automatically filter by status — include ALL rows in metric_sql by default.
+   - Only apply a status filter if the user's question explicitly asks about completed/valid
+     transactions (e.g. "successful orders", "paid invoices", "delivered shipments").
+   - If you do filter, document the exact filter and reasoning in intake_notes.
+   - If all rows represent valid transactions (no status column), use plain SUM().
+
+Be precise. Every answer must be grounded in the schema provided.
+If something is genuinely unknowable from the schema, say so.
+"""
+
+# P2 of the canvas-output study (2026-10-14) — the intake on the PE-2 diet. `INTAKE_PROMPT` above
+# is 12.9k chars: seven numbered sections and ten "(critical)" / "all mandatory" guards, each a past
+# failure written out as case law, four of them telling the model to read a PROFILE block that is
+# EMPTY on the analyst path. Nearly every guard has a verifier that runs AFTER the model answers —
+# `_validate_intake_metric_table`, `_validate_intake_dimensions` and `_validate_intake_windows`
+# with one named-correction retry; `_resolve_date_column`; `_clamp_intake_to_coverage`;
+# `periods_asked`; the cross-sectional and temporal-change routers; `_pin_canonical_metric`; the
+# money-coherence and over-count retries; `_drop_self_referential_segment`; the loss directive —
+# so the prose was prophylaxis on top of enforcement. A capable binding gets the ASK: what each
+# field means and the judgments only the model can make (which measure, which reading of "loss",
+# which columns a relationship's words refer to); the checks do the rest. A baseline model keeps
+# the long form, as the narrator's `BASELINE_GUARDRAILS` do.
+INTAKE_ASK = """\
+You are a senior data analyst reading a business question into an investigation specification. \
+The schema below is the whole of what exists: every table and column you name is in it, spelled \
+as it shows them.
+
+QUESTION: {question}
+
+SCHEMA:
+{schema}
+
+{scan_section}{sql_context}
+
+{events_section}
+{origin_finding_section}
+Fill the specification from the question and the schema.
+
+MEASURES — what the question asks to measure. The first goes in metric_label / metric_sql, every \
+other one in other_measures, one aggregate expression each. A CANONICAL METRIC listed below whose \
+name matches is used verbatim, its filters included: the governed formula is the authority. A money \
+question (revenue, sales, cost, margin, losing money) is measured in money, never by a count, a \
+rating or a review. "Losing money" is a negative outcome, not spend: a refund, write-off or \
+chargeback amount; else a margin (revenue minus cost); else the value of reversed transactions \
+(returned, cancelled, refunded); else unsold stock — name the reading you took in intake_notes, \
+because a bare spend total answers only a question about spend. A quantity the question names (a \
+delay, a duration, an amount) is measured as the quantity, not as a 0/1 flag that marks it: the \
+flag answers "how often", the question asked "how much".
+
+OBSERVATION PERIOD — the period the question names, as ISO dates; none when it names none, and \
+the answer then covers all the data. A question about a change that names no period takes the \
+most recent complete period. The clock above says which day is settled.
+
+COMPARISON — only when the question compares periods or asks why something changed: the period of \
+the same length before the observation, and the same period a year earlier when the data reaches \
+it. Otherwise every comparison field stays empty.
+
+WHERE, WHICH and DRIVER questions — cross_sectional is true when the question asks which segment is \
+weakest, strongest or losing, or whether one thing affects another: the answer compares groups, \
+not periods. For a driver or relationship question name both sides: comparison_segment_sql is the \
+condition (a boolean or CASE expression on a column the metric does not already read), and \
+relationship_left_sql / relationship_right_sql are the columns the question's words refer to — \
+the most specific column on the right, the others carrying the same concept in \
+relationship_right_alternatives. An intervention_column only when the data records an assignment \
+someone applied: a treatment arm, a variant, a policy from a date.
+
+DATE COLUMN — the table.column of the primary transaction timestamp, a DATE or TIMESTAMP column. \
+When the metric table has none, one reachable by a join, with the join in intake_notes. Populate \
+it whenever the schema has one, whatever the question's shape.
+
+METRIC TABLE — the table that holds the metric, exactly as the schema names it, prefix included.
+
+DIMENSIONS — the categorical table.columns a reader could cut the metric by, up to 8.
+
+STATUS — when the metric table carries a status column, say in intake_notes which values look \
+terminal; filter on it only when the question asks about completed or valid transactions, and \
+say that you did.
+
+intake_notes carries every judgment above a reader would need to follow. What the schema cannot \
+answer, say.
+"""
+
+
+def intake_prompt(capable: bool) -> str:
+    """The intake template for one binding: the ask for a capable model, the long form for a
+    baseline one (PE-2's tiering rule — prose a stronger model makes unnecessary is a restriction,
+    scaled with the model; the checks run for every tier)."""
+    return INTAKE_ASK if capable else INTAKE_PROMPT
+
+
+# ── Phase 2: Baseline & anomaly detection ────────────────────────────────────
+
+BASELINE_PLAN_PROMPT = """\
+You are investigating: "{question}"
+
+INVESTIGATION SPEC:
+  Metric:            {metric_label} → SQL: {metric_sql}
+  Observation:       {observation_period}
+  Comparison:        {comparison_basis}
+  Date column:       {date_column}
+  Primary table:     {metric_table}
+
+SCHEMA:
+{schema}
+
+{events_section}
+
+PHASE: Baseline & Anomaly Assessment
+
+Write 2–3 SQL queries to:
+  1. Compute {metric_label} for at least 13 consecutive periods (months/weeks) ending
+     at or after the observation period — to establish a baseline distribution.
+  2. Compute period-over-period (PoP) and year-over-year (YoY) percentage changes
+     for the observation period vs its comparators.
+  3. Compute a z-score: how many standard deviations is the observation from the
+     trailing baseline mean (EXCLUDE the observation period from baseline stats)?
+
+{sql_rules}
+
+Return the queries with a short title and chart_type for each.
+"""
+
+#: The long-form rules the baseline template carried, kept for a BASELINE-tier model (P3). The
+#: "DuckDB dialect only" line is gone from every tier: the SQL DIALECT line names the engine, and
+#: this one contradicted it on every BigQuery and Postgres connection.
+_BASELINE_SQL_RULES = """\
+SQL RULES:
+  - ALWAYS use the exact table names shown in the SCHEMA, including schema prefix (e.g. ecommerce.orders)
+  - DATE_TRUNC for period alignment
+  - NULLIF(x, 0) before every division
+  - Filter date column BEFORE joins (early predicate pushdown)
+  - Compact result sets (≤ 20 rows)
+  - Use ONLY tables and columns that are explicitly listed in the SCHEMA above. NEVER invent table names.
+  - Alias every computed column with a human-readable name
+  - TABLE NAMES: Use table names EXACTLY as shown in the SCHEMA section above. If the schema
+    shows "inventory_movements" (no prefix), use that name as-is. If it shows "schema.table",
+    include that prefix. Never add or remove schema prefixes that aren't in the schema.
+  - NEVER cast an identifier column (_id, _key, _code, _num) as DATE or TIMESTAMP.
+    If `date_column` is "invoices.order_id" or similar integer/string ID, it is WRONG — look for
+    the real DATE/TIMESTAMP column in a joined table and JOIN to reach it instead.
+  - If `date_column` belongs to a different table than the primary metric table, you MUST
+    write an explicit JOIN to reach it. Never filter on a date column without joining its table.
+  - NO EXTRA FILTERS: Only filter on the date range specified above. Do NOT add
+    filters on status, amount thresholds, delay days, price bands, or any other column
+    unless the investigation spec explicitly requires it. Arbitrary extra WHERE clauses
+    will bias the results by excluding the majority of rows."""
+
+BASELINE_INTERPRET_PROMPT = """\
+INVESTIGATION: "{question}"
+PHASE: Baseline & Anomaly Assessment
+
+QUERY RESULTS:
+{results_text}
+
+{events_section}
+
+Interpret these results clearly and honestly.
+
+For EACH query result, write:
+  - title: short descriptive label
+  - interpretation: 2–3 tight sentences that lead with the finding. Cite actual numbers from
+    the data.
+    State whether the observed change is statistically significant.
+    If a business calendar event may explain the anomaly, note it.
+  - key_numbers: the 1–3 most important values (label, value, delta, context)
+  - chart_type: name the data's JOB (see the field's own description) — typically "trend"
+    for a time series, "magnitude" to compare sizes, "change" for a signed per-item delta,
+    "none" for a single value. The renderer picks the form from the job.
+  - stat_note: if z-score is available, format as "z = X.X — [significant/within normal range]"
+  - is_significant: true ONLY when the change is BOTH statistically significant (|z| > {z_threshold})
+    AND practically material (absolute change ≥ {pct_threshold}% of the prior-period value). A large
+    z-score is NOT enough on its own: at high row counts (tens or hundreds of thousands of rows) even a
+    trivial 0.1–0.3pp difference produces a huge z (e.g. z = 150). That is statistical noise dressed as
+    a signal — set is_significant=false and say the difference is negligible / not material. Never call a
+    sub-1% relative change a "trend", "driver", or "significant" because its z-score is large.
+
+phase_summary: one sentence that leads with the key number — the most important finding from this phase.
+Do NOT fabricate numbers. If a query errored or returned no rows, say so honestly.
+"""
+
+# ── Phase 3: Metric decomposition ────────────────────────────────────────────
+
+DECOMPOSE_PLAN_PROMPT = """\
+INVESTIGATION: "{question}"
+BASELINE FINDING: {baseline_summary}
+  Total change: {total_change}
+
+INVESTIGATION SPEC:
+  Metric:        {metric_label} → {metric_sql}
+  Observation:   {observation_period}  ({obs_start} to {obs_end} inclusive) — filter: {obs_filter}
+  Comparison:    {comp_start} to {comp_end} inclusive — filter: {comp_filter}
+  Date column:   {date_column}
+  Primary table: {metric_table}
+
+SCHEMA:
+{schema}
+
+PHASE: Metric Decomposition
+
+The metric {metric_label} can be decomposed into multiplicative or additive sub-metrics.
+Choose a decomposition that fits the data — common patterns include:
+  - Volume × Value (e.g. order_count × avg_value)
+  - Segment breakdown (by category, region, channel, customer type — whatever dimensions exist)
+  - Funnel stages (if lifecycle states exist)
+
+Write 2–3 SQL queries to break down WHAT drove the change:
+  - Use dimensions that actually exist in the SCHEMA — do not assume columns like "customer_type"
+    or "channel" unless they appear in the schema.
+  - Pick the decomposition that best explains the metric's components in THIS dataset.
+
+For EACH sub-metric, compute it for BOTH the observation period AND the comparison period.
+Use EXACT date ranges from the spec above. Include absolute change AND % contribution to total change.
+
+Use the CASE WHEN date pattern to compare periods in a single query:
+  SUM(CASE WHEN {date_column} >= '{obs_start}' AND {date_column} < date '{obs_end}' + INTERVAL 1 DAY
+           THEN metric ELSE 0 END) AS obs_value,
+  SUM(CASE WHEN {date_column} >= '{comp_start}' AND {date_column} < date '{comp_end}' + INTERVAL 1 DAY
+           THEN metric ELSE 0 END) AS comp_value
+
+{sql_rules}
+"""
+
+_DECOMPOSE_SQL_RULES = """\
+SQL RULES: NULLIF, DATE_TRUNC, compact output.
+  TABLE NAMES: Use table names exactly as shown in SCHEMA — no added/removed prefixes.
+  Never CAST an _id/_key/_code column as DATE. If the date_column is in a joined table, JOIN to reach it.
+  NO EXTRA FILTERS: Only filter on the two date ranges above. Do NOT add filters on status, amount,
+  or any other column beyond what the metric_sql expression already includes. All rows count."""
+
+DECOMPOSE_INTERPRET_PROMPT = """\
+INVESTIGATION: "{question}"
+PHASE: Metric Decomposition
+BASELINE CONTEXT: {baseline_summary}
+
+QUERY RESULTS:
+{results_text}
+
+For each query, interpret what sub-metric drove the overall change.
+  - Was it volume (fewer transactions) or value (lower per-transaction amount)?
+  - Was it new customers, returning customers, or both?
+  - Which component explains the largest share of the total change?
+
+Write clear, number-anchored interpretations. Cite values from the data. Use NO markdown emphasis — no bold, no italics.
+State the key_numbers that demonstrate the decomposition.
+phase_summary: "The decline was driven by X (Y%), not Z" — be definitive if the data supports it.
+"""
+
+# ── Phase 4: Dimensional drill-down ──────────────────────────────────────────
+
+DIMENSIONAL_PLAN_PROMPT = """\
+INVESTIGATION: "{question}"
+BASELINE FINDING: {baseline_summary}
+DECOMPOSITION FINDING: {decomposition_summary}
+
+INVESTIGATION SPEC:
+  Metric:        {metric_label} → {metric_sql}
+  Observation:   {observation_period}  ({obs_start} to {obs_end} inclusive) — filter: {obs_filter}
+  Comparison:    {comp_start} to {comp_end} inclusive — filter: {comp_filter}
+  Date column:   {date_column}
+  Primary table: {metric_table}
+
+SCHEMA:
+{schema}
+
+AVAILABLE DIMENSIONS (categorical columns for slicing):
+{dimensions_list}
+
+PHASE: Dimensional Drill-Down — WHERE did the change concentrate?
+
+Write 1 SQL query per dimension (up to 4 dimensions). Each query must:
+  1. Group by the dimension
+  2. Compute metric for BOTH observation and comparison period
+  3. Compute absolute change and CONTRIBUTION to total change (as % of total absolute change)
+  4. ORDER BY ABS(absolute_change) DESC — the largest movers first, in either direction. A capped
+     result then holds the biggest contributors to the change; sorted worst-first under a cap, a
+     scan showed the 15 smallest movers and hid the largest gain (55e58a3b, 2026-10-14).
+
+CONTRIBUTION FORMULA (use window function):
+  ROUND(100.0 * (obs - comp) / NULLIF(SUM(obs - comp) OVER (), 0), 1) AS contribution_pct
+
+The dimensions above are listed in the order to analyse them; with fewer than 4, analyse what exists.
+
+{sql_rules}
+"""
+
+#: P3 — the retail "DIMENSION PRIORITY" paragraph (customer type › channel › category › geography)
+#: is gone from both tiers: the list the prompt receives is already in order (`_prioritize_dimensions`,
+#: the question's own cuts first), and the paragraph restated one industry's ranking to every connection.
+_DIMENSIONAL_SQL_RULES = """\
+SQL RULES: NULLIF, compact output (≤ 15 rows per query).
+  TABLE NAMES: Use table names exactly as shown in SCHEMA — no added/removed prefixes.
+  Never CAST an _id/_key/_code column as DATE. If the date_column is in a joined table, JOIN to reach it.
+  NO EXTRA FILTERS: Filter ONLY on the two date ranges above (observation vs comparison).
+  Do NOT add filters on status, price range, delay, or any other attribute. All rows count —
+  adding extra filters will silently exclude data and produce biased contribution numbers."""
+
+DIMENSIONAL_INTERPRET_PROMPT = """\
+INVESTIGATION: "{question}"
+PHASE: Dimensional Analysis
+PRIOR CONTEXT: {prior_summary}
+
+QUERY RESULTS:
+{results_text}
+
+BASELINE GUARD (read FIRST): contribution / abs_change is a real "driver of the change" ONLY when
+the prior-period comparison values are present. If the comparison column (comp_*, *_prior, yoy_*) is
+NULL / empty / 0 for the rows, there is NO measured change — abs_change has collapsed to the current
+LEVEL, and any "contribution_pct" is a share of the current total, NOT of a decline. In that case you
+MUST NOT name a "primary driver", MUST NOT raise a "severity alert", and MUST NOT claim "X% of the
+decline came from" any value. Say plainly that segment-level attribution is impossible without a
+baseline, and report only the current-period levels. Do this even if a contribution_pct column exists.
+
+For each dimension analysed (ONLY when a real baseline is present), interpret the contribution analysis:
+  - Which dimension value(s) account for > 30% of the total change? (primary drivers)
+  - Is the decline concentrated (1–2 values driving 60%+ of change) or diffuse (uniform across all)?
+  - Any dimension where one value has > 50% relative decline, even if small absolute? (severity alert)
+
+Write dimension-by-dimension findings with specific numbers. Use NO markdown emphasis.
+Highlight the SINGLE most actionable finding across all dimensions.
+phase_summary: when a baseline exists and concentration exists, "X% of the total decline came from
+[dimension: value]"; when the baseline is missing, state that no prior-period data is
+available so the late-period change cannot be attributed to any segment.
+"""
+
+# ── Cross-sectional weakness scan (non-temporal diagnostic) ───────────────────
+
+CROSS_SECTION_PLAN_PROMPT = """\
+DIAGNOSTIC QUESTION: "{question}"
+
+This is a CROSS-SECTIONAL question — "where / which is weakest", "where are we losing money".
+There is NO useful time axis; do NOT compare periods. Instead rank the metric across each
+dimension to find WHERE value is lowest or most concentrated.
+{comparison_segment_section}{premise_check_section}
+METRIC: {metric_label} → {metric_sql}
+PRIMARY TABLE: {metric_table}
+
+SCHEMA:
+{schema}
+
+DIMENSIONS (categorical columns to slice by, priority order):
+{dimensions_list}
+
+Write 1 SQL query per dimension (up to 5). Each query MUST:
+{metric_computation_block}
+
+SQL RULES: DuckDB. NULLIF before every division. Use table names EXACTLY as in SCHEMA. If the
+dimension lives in another table, JOIN to reach it (use DISTINCT or a pre-aggregated subquery so a
+one-to-many join does NOT fan out and multiply the metric). NO date filters and NO status/price/other
+filters — every row counts. SELECT the dimension column FIRST, aliased with the dimension's OWN name
+(e.g. channel, region, product, currency) — never a generic alias like "dimension_value"; that label
+becomes the chart axis. metric_total comes SECOND. chart_type: "magnitude" (a ranked bar),
+or "change" when the measure is a signed delta per item.
+"""
+
+# The metric-computation steps are branched by metric KIND. An ADDITIVE metric (a plain
+# SUM/COUNT) can be totalled, averaged-per-record and shared-of-total. A RATIO/percentage
+# metric (SUM(num)/SUM(den), AVG, anything *100) CANNOT — summing a ratio or dividing it by
+# COUNT(*) is nonsense, which is exactly what the additive template used to make the coder do
+# (it silently dropped the denominator and reported SUM(numerator) as the metric). ada_cross_section
+# selects the block; the additive block is byte-for-byte the historical instructions.
+CROSS_SECTION_ADDITIVE_BLOCK = """\
+  1. GROUP BY the dimension value.
+  2. Compute the metric ({metric_sql}) per value AS metric_total, plus COUNT(*) AS n.
+  3. Compute the AVERAGE per record: ROUND(<metric> / NULLIF(COUNT(*), 0), 2) AS avg_per_record.
+     This separates per-unit weakness from sheer volume — a value can be small in total yet
+     efficient per record (high average), or large in total yet inefficient (low average).
+  4. Compute each value's share of the metric total:
+     ROUND(100.0 * <metric> / NULLIF(SUM(<metric>) OVER (), 0), 1) AS pct_of_total
+  5. ORDER BY metric_total ASC (weakest first) so the worst performers surface.
+  6. LIMIT 15."""
+
+CROSS_SECTION_RATIO_BLOCK = """\
+  1. GROUP BY the dimension value.
+  2. Compute the metric per value DIRECTLY as the ratio, SELECTED VERBATIM:
+       {metric_sql} AS metric_total
+     This metric is a RATIO / percentage / per-unit rate, NOT an additive total. It is built from
+     numerator/denominator aggregates (e.g. SUM(num)/NULLIF(SUM(den),0)); adding GROUP BY re-computes
+     the correct ratio WITHIN each group automatically. Keep the numerator AND denominator aggregates
+     EXACTLY as written — do NOT replace the metric with SUM(numerator) alone, do NOT drop the
+     denominator, and do NOT divide the ratio by COUNT(*). The WHOLE expression above is metric_total.
+  3. Also SELECT COUNT(*) AS n and the raw building blocks so the ratio is auditable: the numerator
+     aggregate AS numerator_total and the denominator aggregate AS denominator_total (the same
+     numerator/denominator that appear INSIDE the metric expression).
+  4. Do NOT compute avg_per_record (a ratio has no per-record average) and do NOT compute a
+     share-of-total (you cannot meaningfully SUM a ratio across groups).
+  5. ORDER BY metric_total ASC (lowest ratio first) so the extremes surface.
+  6. LIMIT 15."""
+
+# A bare AVG/MEAN/MEDIAN is a per-record average — non-additive like a ratio, but UNLIKE a
+# composite ratio (SUM(num)/SUM(den), *100) it is SELF-CONTAINED: the AVG re-computes correctly
+# within each GROUP BY on its own. Expanding it into numerator_total/denominator_total columns is
+# pure noise for the reader (and was the source of the "why is SUM/COUNT in my AOV query?" gripe),
+# so this block keeps the SELECT to just the dimension + the average + a row count.
+CROSS_SECTION_AVG_BLOCK = """\
+  1. GROUP BY the dimension value.
+  2. Compute the metric ({metric_sql}) per value AS metric_total. This is a per-record AVERAGE and
+     is already correct within each group — do NOT expand it into separate numerator/denominator
+     columns, do NOT replace it with SUM(...), and do NOT divide it by COUNT(*). The AVG stands alone.
+  3. Also SELECT COUNT(*) AS n — the number of records behind each group's average — AND the
+     within-group spread as STDDEV_SAMP(<the same expression the AVG averages>) AS sd. Two group
+     averages cannot be compared without both: a group of 3 records sits at the top of a ranking on
+     noise alone, and the spread inside each group is what says whether the gap between them is real.
+  4. Do NOT compute avg_per_record (the metric is already an average) and do NOT compute a
+     share-of-total (you cannot meaningfully SUM an average across groups).
+  5. ORDER BY metric_total ASC (weakest first) so the lowest averages surface.
+  6. LIMIT 15."""
+
+BREAKDOWN_INTERPRET_PROMPT = """\
+QUESTION: "{question}"
+METRIC: {metric_label}
+PHASE: Breakdown
+
+QUERY RESULTS — the metric grouped by each cut the question asked for:
+{results_text}
+
+The question asked to SEE this breakdown. It did not ask what is wrong with it.
+Describe what the data shows and stop there.
+
+For EACH cut, write a finding:
+  - title: the cut, in the question's own words (e.g. "Flights by route", "Revenue by
+    region"). Use the SAME wording as the query so the card matches its chart.
+  - interpretation: 2-3 tight sentences of PLAIN DESCRIPTION. Say how the values are
+    spread: the largest and smallest, roughly how many groups there are, and whether the
+    distribution is concentrated in a few or spread evenly. Cite real values only.
+
+FORBIDDEN, because nothing here measures them:
+  - "weak", "underperforming", "poor", "a problem", "concerning", "needs attention"
+  - any claim that a value is BAD. The lowest value in a list is the lowest value in a
+    list; without a target, a benchmark or a prior period it is not a shortfall.
+  - "declined", "fell", "improved", or any change language. There is no comparison period
+    in this phase, so no direction exists to report.
+  - recommendations. The question asked to see the data.
+
+If a cut has many groups, name the top few and give the count of the rest rather than
+listing them all. No markdown emphasis.
+
+phase_summary: one sentence saying what the breakdown covers and at what grain.
+"""
+
+
+#: P3, closed 2026-10-15 — the SEVERITY GROUNDING paragraph the cross-section interpret prompts
+#: carried on every tier, and the one-line ask a CAPABLE binding reads instead. The verifiers run
+#: either way: `_ranking_noise_caveat` writes a STATISTICAL VERDICT above the rows the model reads,
+#: `_lead_with_verdict` moves a standout claim the verdict denies into the stat note, and
+#: `check_noise_findings_not_cited` refuses a headline built on a noise-level ranking. The long
+#: paragraph was prophylaxis on top of that; a capable model gets the contract in one line.
+_SEVERITY_GROUNDING_LONG = """\
+    SEVERITY GROUNDING: "lowest in the ranking" is NOT the same as "weak". Only call a value
+    'weak', 'critically low', 'underperforming', or 'a problem' if it is below a stated
+    benchmark/target OR far below the in-result average. If the values are tightly clustered
+    and all healthy (e.g. margins all 47–55%), say so and use relative language ("the lowest
+    at 47% vs the ~51% average") — never an absolute superlative.
+"""
+_SEVERITY_GROUNDING_RATIO_LONG = """\
+    DIRECTION + SEVERITY GROUNDING: "lowest in the ranking" is NOT "weak". For many ratios LOW is
+    GOOD (a low cost-%, a low defect-rate, a low freight-%); for others HIGH is good. Judge direction
+    by what the ratio MEASURES — do NOT assume the minimum is the problem. Only call a value
+    'weak'/'a problem'/'underperforming' if it is clearly adverse versus a benchmark or a genuine
+    outlier far from the rest. If the ratios are tightly clustered, say so and use relative language
+    ("the lowest at 2.2% vs the ~4.3% of the rest").
+"""
+SEVERITY_GROUNDING_ASK = """\
+    SEVERITY: the lowest value in a ranking is the lowest, not "weak" — call a value weak, underperforming
+    or a problem only against a benchmark or far below the others; a tight spread is healthy, say so.
+"""
+SEVERITY_GROUNDING_RATIO_ASK = """\
+    DIRECTION + SEVERITY: judge direction by what the ratio measures (a low cost-% is good); the lowest
+    of a tight spread is the lowest, not weak — call a value adverse only against a benchmark or far from
+    the rest.
+"""
+
+
+CROSS_SECTION_INTERPRET_PROMPT = """\
+DIAGNOSTIC QUESTION: "{question}"
+METRIC: {metric_label}
+PHASE: Cross-Sectional Weakness Scan
+
+QUERY RESULTS — each dimension value with its metric_total, avg_per_record, n, and
+pct_of_total share:
+{results_text}
+
+{population_note}
+
+For EACH dimension, write a finding:
+  - title: the dimension (e.g. "By franchise", "By region", "By product"). Use the SAME
+    dimension wording as the query so the card matches its chart.
+  - interpretation: 2–3 tight sentences. Name the WEAKEST values by total AND read the
+    AVERAGE: distinguish low TOTAL from low AVERAGE — a value can bill little in total yet be
+    efficient per record, or look large yet be inefficient (low avg). Call out where the two
+    lenses diverge (e.g. "11 franchises bill under $1,000; the worst, X, also averages just
+    $4.20/order vs the ~$9 typical"). Use NO markdown emphasis.
+    Cite real values only.
+""" + _SEVERITY_GROUNDING_LONG + """\
+  - key_numbers: the 1–3 most telling values — include a TOTAL and an AVERAGE where the
+    average reveals something the total hides.
+  - chart_type: "magnitude" (a ranked bar), or "change" when the measure is a signed delta
+    per item, or "share" when the rows are parts of one whole.
+  - is_significant: true ONLY when this dimension is below a benchmark or far below the average — not merely the minimum of a healthy spread.
+
+Be honest: if a dimension is healthy or evenly spread, say it is NOT a problem area.
+
+phase_summary: one sentence naming where value is most concentrated or weakest — lead with the
+decisive number, e.g. "Losses concentrate in 11 underperforming franchises (< $1,000 each)."
+"""
+
+# Ratio-metric variant: the metric is a percentage / rate / per-unit ratio, so metric_total must be
+# read AS THAT RATIO (never as a dollar total or per-record average), and a LOW ratio is not
+# automatically bad — direction depends on what the ratio measures (a low cost-% is GOOD).
+CROSS_SECTION_RATIO_INTERPRET_PROMPT = """\
+DIAGNOSTIC QUESTION: "{question}"
+METRIC: {metric_label}  (this is a RATIO / percentage / rate — NOT a dollar total)
+PHASE: Cross-Sectional Weakness Scan
+
+QUERY RESULTS — each dimension value with its metric_total (the RATIO/percentage itself), n, and
+the numerator_total / denominator_total it was built from:
+{results_text}
+
+{population_note}
+
+For EACH dimension, write a finding:
+  - title: the dimension (e.g. "By country", "By category"). Use the SAME dimension wording as the
+    query so the card matches its chart.
+  - interpretation: 2–3 tight sentences. The metric is a RATIO ({metric_label}); read metric_total
+    AS THAT RATIO in its OWN units (%, rate, per-unit) — NEVER describe it as a dollar total or a
+    per-order average. Name the values with the lowest and highest ratio. The numerator_total /
+    denominator_total explain WHY a ratio is high or low (a low cost-ratio can come from a low
+    numerator OR a large denominator). Use NO markdown emphasis. Cite real
+    values only.
+""" + _SEVERITY_GROUNDING_RATIO_LONG + """\
+  - key_numbers: the 1–3 most telling values — include the ratio, and the numerator or denominator
+    where it explains the result.
+  - chart_type: "magnitude" (a ranked bar), or "change" when the measure is a signed delta
+    per item, or "share" when the rows are parts of one whole.
+  - is_significant: true ONLY when this dimension is clearly adverse vs a benchmark or a genuine
+    outlier — not merely the minimum of a tight, healthy spread.
+
+Be honest: if the ratios are evenly spread, say it is NOT a problem area. If the lowest ratio is the
+FAVOURABLE direction, say so explicitly rather than framing it as a weakness.
+
+phase_summary: one sentence naming where the ratio is highest/lowest and whether it actually matters
+— lead with the decisive number and the correct direction, e.g. "Freight runs 2.2% of
+order value in Germany vs ~4.3% elsewhere — the LOWEST cost ratio, a strength rather than a weakness."
+"""
+
+
+def cross_section_interpret_prompt(ratio: bool, capable: bool) -> str:
+    """The cross-section interpret template for one binding: the long SEVERITY GROUNDING paragraph
+    for a BASELINE interpreter, the one-line ask for a CAPABLE one (the narrator's and the planners'
+    tiering, applied to the phase interpreters). `ratio` picks the ratio-metric variant."""
+    template = CROSS_SECTION_RATIO_INTERPRET_PROMPT if ratio else CROSS_SECTION_INTERPRET_PROMPT
+    if not capable:
+        return template
+    long_, ask = ((_SEVERITY_GROUNDING_RATIO_LONG, SEVERITY_GROUNDING_RATIO_ASK) if ratio
+                  else (_SEVERITY_GROUNDING_LONG, SEVERITY_GROUNDING_ASK))
+    return template.replace(long_, ask)
+
+# ── Phase 5: Behavioral & operational ────────────────────────────────────────
+
+BEHAVIORAL_PLAN_PROMPT = """\
+INVESTIGATION: "{question}"
+PRIOR FINDINGS SUMMARY:
+{prior_summary}
+
+DOMINANT FINDING FROM DIMENSIONAL ANALYSIS (Tier-2 output — focus your Tier-3 queries here):
+{dominant_finding}
+
+INVESTIGATION SPEC:
+  Metric:        {metric_label} → {metric_sql}
+  Observation:   {observation_period}  ({obs_start} to {obs_end} inclusive) — filter: {obs_filter}
+  Comparison:    {comp_start} to {comp_end} inclusive — filter: {comp_filter}
+  Date column:   {date_column}
+  Primary table: {metric_table}
+
+SCHEMA:
+{schema}
+
+{events_section}
+
+PHASE: Behavioral & Operational Diagnostics (Tier 3 — Second-Order Diagnosis)
+
+YOUR JOB: Explain WHY the dominant finding above occurred.
+Generate queries targeted at the specific segment, channel, or dimension identified
+in the dominant finding — NOT generic checks. Examples:
+  - If dominant = "mobile channel declined 65%" → query mobile-specific conversion,
+    session quality, or mobile product coverage — NOT generic new vs. returning split.
+  - If dominant = "Category X drove 72% of drop" → check stockout/pricing/promotion
+    history for Category X specifically.
+  - If dominant = "returning customers declined 40%" → run cohort retention analysis
+    to find which acquisition cohort stopped buying.
+
+Part A — Targeted behavioral queries (1–2):
+  Directly test the most likely mechanisms behind the dominant finding.
+
+Part B — Operational checks (1–2):
+  - Refund/return rate change in the observation period?
+  - Discount depth change?
+  - Stockout signals for the affected segment/category (if inventory table exists)?
+  - If required tables don't exist, set sql to null and explain in rationale.
+
+Return max 4 queries total. Prioritise TARGETED queries over generic ones.
+If a required table (sessions, refunds, inventory, etc.) does not exist in the schema above,
+set sql to null and provide a one-line explanation in rationale — do NOT fabricate table names.
+
+{sql_rules}
+"""
+
+_BEHAVIORAL_SQL_RULES = """\
+SQL RULES: NULLIF, compact output (≤ 15 rows per query).
+  TABLE NAMES: Use table names exactly as shown in SCHEMA — no added/removed prefixes.
+  Never CAST an _id/_key/_code column as DATE. If the date_column is in a joined table, JOIN to reach it.
+  NO EXTRA FILTERS: Filter only on the date ranges above and the specific segment from the dominant
+  finding. Do NOT add filters on amount, status, delay days, price bands, or unrelated attributes.
+  Column aliases must match the actual schema column name or a clearly descriptive label — never
+  alias a column with a name that belongs to a different schema column (e.g. don't alias utm_source as plan_type)."""
+
+#: P3 — what a capable model is told about its SQL, once. Each sentence is a guard that runs on the
+#: planned query: a window anchored on today is re-planned (`_uses_relative_date`), a join that
+#: fans the metric out is re-planned and caveated (the Verifier), a filter the spec does not declare
+#: is re-planned and caveated (`_extra_filters`), and a name the schema lacks fails at execution
+#: and is retried with the hint. The long blocks above repeated these as prose in four prompts.
+_SQL_RULES_ASK = """\
+SQL: the schema's names exactly as shown, prefix included; the metric's own table at its own grain,
+with a dimension reached through its lookup table's unique key; NULLIF before a division; filter only
+on the windows above and the metric's declared filter — a query that anchors on today's date, fans the
+metric out across a join, or keeps rows by any other column is sent back once to be rewritten."""
+
+_PLAN_SQL_RULES = {"baseline": _BASELINE_SQL_RULES, "decompose": _DECOMPOSE_SQL_RULES,
+                   "dimensional": _DIMENSIONAL_SQL_RULES, "behavioral": _BEHAVIORAL_SQL_RULES}
+
+
+def plan_sql_rules(phase: str, capable: bool) -> str:
+    """The SQL rules a phase planner reads: the ask for a capable binding, the phase's long-form
+    block for a baseline one (the narrator's and the intake's tiering, applied to the planners)."""
+    return _SQL_RULES_ASK if capable else _PLAN_SQL_RULES[phase]
+
+BEHAVIORAL_INTERPRET_PROMPT = """\
+INVESTIGATION: "{question}"
+PHASE: Behavioral & Operational Diagnostics
+PRIOR CONTEXT: {prior_summary}
+
+QUERY RESULTS:
+{results_text}
+
+For behavioral findings:
+  - Did new customer acquisition drop, returning customer activity drop, or both?
+  - What was the magnitude of the behavioral shift?
+
+For operational findings:
+  - Did refund rate / discount depth / stockout rate change materially (> 20% relative)?
+  - If so, does the magnitude explain any portion of the overall revenue change?
+
+For untestable checks (missing data), note them as data gaps.
+phase_summary: "Behaviorally, [X]. Operationally, [Y]." — two-part finding, each part anchored on its own number.
+"""
+
+# ── Phase 6: Synthesis — attribution waterfall ────────────────────────────────
+
+# PE-2: the per-call template carries ONLY what changes per call. The writing contract
+# lives in the SYSTEM prompt (a stable prefix providers can cache); the field-level
+# rules ride the response schema's own descriptions; and the correctness contracts the
+# old 1,700-token instruction tail lectured about (signs, waterfall sums, grounding,
+# question-addressed) are now VERIFIED by pramanyx/agent/report_checks.py after the model
+# writes — one named-violation retry beats prophylaxis on every call. The specimen this
+# dieted measured 45% static boilerplate against 22% evidence.
+ADA_SYNTHESIZE_PROMPT = """\
+{clock_section}
+ORIGINAL QUESTION: {question}
+
+INVESTIGATION FINDINGS BY PHASE:
+{phases_summary}
+
+FULL EVIDENCE (query results by phase):
+{evidence_log}
+
+{events_section}
+
+{metric_targets_section}
+
+{playbook_section}
+
+{org_intelligence_section}
+
+{external_context_section}
+
+Write the complete, honest investigation report.
+"""
+
+
+#: The whole writing contract, compressed to what a capable model needs stated once.
+#: Lives in the SYSTEM prompt: stable across calls (cacheable prefix), and read before
+#: the evidence rather than after 3,000 tokens of it.
+SYNTHESIS_CORE_RULES = """REPORT RULES:
+- headline: max 16 words, answering the question ASKED — a breakdown question gets its \
+dimensional answer even when the overall change is normal variance.
+- Every number is either quoted from FULL EVIDENCE or plain arithmetic over two evidence \
+values (a change, a share, a difference). Never estimate — a figure no query returned and no \
+arithmetic reaches is described qualitatively, never manufactured. A total of several rows is \
+quoted from its TOTAL line; a result with none gets no total.
+- If the evidence does not explain WHY, say "the data analysed does not reveal the \
+cause" and name what to check next. A negligible spread is negligible — say so; never \
+present a tiny sub-segment reversal as the driver.
+- Signs: losses/declines NEGATIVE, gains POSITIVE, the same quantity never flips sign \
+anywhere.
+- confidence: HIGH = phases converge, attribution ~complete · MEDIUM = cause found, \
+gaps remain · LOW = evidence cannot discriminate.
+- recommendations: for controllable causes and material gaps; at least one whenever a \
+lever exists (a missing cost column is not a reason to go empty); prioritise metric \
+targets in warning/critical.
+- closing_summary: the bottom line that CLOSES the report, never a copy of \
+executive_summary. data_gaps: hypotheses this schema cannot test."""
+
+
+#: The long-form register of the same rules, kept for BASELINE-tier models — the small
+#: free models these paragraphs were originally written against, which demonstrably
+#: fabricated shares and flipped signs without them. A capable model gets the short
+#: contract above and the post-generation checks; a baseline model keeps the guidance.
+#: (PE-2's tiering rule: prose that a stronger model makes unnecessary is a RESTRICTION
+#: — scale it with the model; the CHECKS are verification and run for every tier.)
+
+
+BASELINE_GUARDRAILS = """\
+GROUNDING (critical): state a number ONLY if it appears in FULL EVIDENCE. This applies
+especially to SHARES ("X% of total"): never divide two numbers yourself to manufacture a
+percentage — if no query computed the share, say "a small share" / "the largest
+contributor" instead. Drop a number you cannot find above rather than approximating it.
+
+MATERIALITY: before asserting a "driver" or cause, confirm it is MATERIAL. If the values
+cluster within a couple of percent, say "the difference is negligible" — do NOT slice
+into ever-finer sub-segments for a cherry-picked reversal. At high row counts a sub-1%
+change is statistically significant and practically meaningless: not a trend, not a
+driver; cap confidence at MEDIUM.
+
+SIGN CONVENTION: total_change_label is signed by the overall direction ("-$330K" decline,
+"+$120K" growth); each waterfall entry's amount_label and pct_of_total share ONE sign
+(down-pushers negative, offsets positive); the signed contributions net to the direction
+of total_change_label."""
+
+# ── Pydantic response models for structured LLM outputs ──────────────────────
+
+from pydantic import BaseModel, Field
+
+from pramanyx.agent.chart_vocab import chart_vocab_field_description
+from typing import Literal, Optional
+
+
+#: CA-4/A5 — the chart vocabulary, read from the ONE registry. Bound at import because a
+#: pydantic `Field(description=…)` is evaluated once at class definition; `chart_vocab.py`
+#: is pure, so this cannot go stale relative to the prompt sentence it shares its dicts with.
+_CHART_VOCAB = chart_vocab_field_description()
+
+
+class IntakeMeasure(BaseModel):
+    """One more measure the question asks for, beside the intake's first."""
+    label: str = Field(description="Human-readable name, e.g. 'average days to deliver'")
+    sql: str = Field(description="ONE SQL aggregation expression, e.g. AVG(TIMESTAMP_DIFF(delivered_at, shipped_at, DAY))")
+
+
+class IntakeOutput(BaseModel):
+    metric_label: str = Field(description="Human-readable name of the FIRST measure the question asks for, e.g. 'net revenue'")
+    metric_sql: str = Field(description="ONE SQL aggregation expression for it, e.g. SUM(final_price_usd)")
+    other_measures: list[IntakeMeasure] = Field(default_factory=list, description="Every OTHER measure the question asks for — 'from placed to shipped to delivered' is two durations. One aggregate expression each. Empty when it asks for one.")
+    observation_start: str = Field(default="", description="ISO date YYYY-MM-DD; empty when the question names no period")
+    observation_end: str = Field(default="", description="ISO date YYYY-MM-DD; empty when the question names no period")
+    observation_label: str = Field(default="", description="Human label, e.g. 'February 2026'; empty when the question names no period")
+    comparison_start: str = Field(default="", description="ISO date of prior-period start; empty unless the question asks to compare periods")
+    comparison_end: str = Field(default="", description="ISO date of prior-period end; empty unless the question asks to compare periods")
+    comparison_label: str = Field(default="", description="e.g. 'January 2026 (MoM)'; empty unless the question asks to compare periods")
+    period_named: bool = Field(default=True, description="False when a question that asks to SEE the data names no period, so its answer covers all of it (set by code from the question; leave True).")
+    comparison_asked: bool = Field(default=True, description="False when a question that asks to SEE the data asks to compare no periods (set by code from the question; leave True).")
+    no_prior_period: bool = Field(default=False, description="True when the data holds NO period before the observation window to compare against (set by code from the real date coverage; leave False).")
+    descriptive_only: bool = Field(default=False, description="True when the question asks for a breakdown or a count rather than a change or a cause (set by code from the question; leave False).")
+    named_dimensions: list[str] = Field(default_factory=list, description="Dimensions the question named outright, matched to real columns (set by code from the question; leave empty).")
+    metric_filters: list[str] = Field(default_factory=list, description="The declared filters of the governed metric this question was matched to — the rows its formula is over (set by code from the metric catalogue; leave empty).")
+    measure_definitions: list[dict] = Field(default_factory=list, description="Each further measure matched to a governed metric: its table, the date that puts its rows in a range, and its filters (set by code from the metric catalogue; leave empty).")
+    framed_metric: dict = Field(default_factory=dict, description="The approved metric a person keyed to an entity that the question frame resolved, taken as declared — with the objects the question's rules chose (set by code from the question frame; leave empty).")
+    yoy_start: Optional[str] = Field(default=None, description="YoY comparison start, or null if data < 13 months")
+    yoy_end: Optional[str] = Field(default=None)
+    date_column: str = Field(description="Fully qualified: table.column")
+    metric_table: str
+    dimensions: list[str] = Field(description="List of 'table.column' pairs available for drill-down")
+    cross_sectional: bool = Field(default=False, description="True when the question asks where/which/what is weakest / losing money / underperforming, OR the data has too few periods for a trend, OR it is a DRIVER question (does X affect/relate to/drive Y) — analyse across DIMENSIONS/SEGMENTS, not time.")
+    metric_is_ratio: bool = Field(default=False, description="True when metric_sql is a RATIO / percentage / rate / per-unit average rather than a plain additive total — i.e. it divides one aggregate by another (SUM(a)/SUM(b)), scales by *100, or is an AVG / per-record mean, e.g. 'freight as % of order value', 'cancellation rate', 'average order value', 'margin %'. Such a metric must NOT be summed across groups or divided by COUNT(*); it is re-aggregated per group as numerator/denominator. False for plain SUM/COUNT totals of revenue, orders or units.")
+    comparison_segment_sql: str = Field(default="", description="For a DRIVER question (does X lower/raise/affect/relate-to Y), the boolean/CASE SQL expression defining the contrasted condition X — e.g. (order_delivered_ts > order_estimated_delivery) for 'late deliveries', or (is_new_customer) for 'new vs returning'. Empty for non-driver questions.")
+    comparison_segment_label: str = Field(default="", description="Human label for comparison_segment_sql, e.g. 'late vs on-time delivery'. Empty when comparison_segment_sql is empty.")
+    relationship_left_sql: str = Field(default="", description="For a RELATIONSHIP question (how do A and B relate / is there a correlation between A and B), the column — or the arithmetic measuring it — for the FIRST side, e.g. '\"Days for shipping (real)\" - \"Days for shipment (scheduled)\"' for 'shipping delay'. NOT an aggregate: no SUM/AVG/COUNT. Empty for non-relationship questions.")
+    relationship_left_label: str = Field(default="", description="Short human label for relationship_left_sql, e.g. 'shipping delay (days)'.")
+    relationship_right_sql: str = Field(default="", description="The SECOND side of the relationship, same rules as relationship_left_sql — e.g. 'Customer State' for 'customer location'. Must be a DIFFERENT column from relationship_left_sql.")
+    relationship_right_label: str = Field(default="", description="Short human label for relationship_right_sql, e.g. 'customer state'.")
+    relationship_right_alternatives: list[str] = Field(default_factory=list, description="Other columns carrying the SAME concept as relationship_right_sql, when the schema spreads it across several — e.g. for 'customer location': ['Customer City', 'Customer Country', 'Order Region']. Most specific first, up to 3. Each is tested and the strongest relationship is reported. Empty when one column carries the concept.")
+    intervention_column: str = Field(default="", description="A column recording an INTERVENTION or ASSIGNMENT that was applied to units — a treatment arm, an A/B variant, a campaign flag deliberately assigned, a policy applied from a date. This is what makes a causal contrast identifiable. Empty unless the data genuinely records an assignment; a column that merely correlates with an outcome is NOT an intervention.")
+    claim_type_suggestion: str = Field(default="", description="Optional: the weakest claim this question needs — one of 'descriptive', 'associational', 'predictive'. Never 'causal'; a causal licence comes from the design, not from this field. Leave empty unless the question is clearly weaker than the design allows.")
+    intake_notes: str = Field(description="Any caveats about the schema or question interpretation")
+    record: list[dict] = Field(default_factory=list, description="What the pipeline decided about this spec — the claim licence, the routing, a dropped cut, the coverage — as typed entries for the code that reads them (set by code; leave empty).")
+
+
+#: What the MODEL is actually asked for: `IntakeOutput` minus the fields code overwrites
+#: immediately afterwards.
+#:
+#: Four of the 29 fields carry "(set by code …)" in their own description — `descriptive_only`
+#: (overwritten unconditionally from the question), `no_prior_period` (decided by
+#: `_clamp_intake_to_coverage` from the real date coverage), `named_dimensions` (resolved from
+#: the question against the schema) and `metric_filters` (copied from the governed metric the
+#: question was matched to). The model was being asked to reason about, and emit, values
+#: that were thrown away on the next line. That costs its attention as well as the tokens.
+#:
+#: The subset is DERIVED from that marker, not listed beside it: add another code-set field and
+#: it leaves the ask automatically, and nothing here has to be remembered. Every excluded field has
+#: a default, so widening back to `IntakeOutput` reproduces exactly the object the code then
+#: overwrites — this is a removal of wasted work, not a behaviour change, and
+#: `test_intake_ask_model` holds the two equal.
+_CODE_SET_INTAKE_FIELDS = frozenset(
+    name for name, f in IntakeOutput.model_fields.items()
+    if "set by code" in (f.description or "")
+)
+
+
+def _build_intake_ask_model():
+    from pydantic import create_model
+    keep = {n: (f.annotation, f) for n, f in IntakeOutput.model_fields.items()
+            if n not in _CODE_SET_INTAKE_FIELDS}
+    return create_model("IntakeAsk", __doc__=IntakeOutput.__doc__, **keep)
+
+
+IntakeAsk = _build_intake_ask_model()
+
+
+def widen_intake(asked) -> IntakeOutput:
+    """The model's answer as a full `IntakeOutput`; the code-set fields take their defaults,
+    which is precisely the value the caller overwrites a few lines later."""
+    return IntakeOutput(**asked.model_dump())
+
+
+class SemanticField(BaseModel):
+    """One field to pull out of a free-text column."""
+    name: str = Field(description="Short snake_case column name for the extracted value, e.g. 'root_cause'.")
+    description: str = Field(default="", description="What to extract, e.g. 'the product area the complaint is about'.")
+
+
+class SemanticStep(BaseModel):
+    """An LLM operator to run over ONE free-text column of this query's result, after the SQL runs."""
+    operator: Literal["filter", "extract", "top_k", "aggregate"]
+    column: str = Field(description="The free-TEXT column in this query's result to operate on.")
+    predicate: str = Field(default="", description="filter only: keep rows whose text satisfies this NL predicate, e.g. 'the ticket is a billing complaint'.")
+    fields: list[SemanticField] = Field(default_factory=list, description="extract only: the fields to pull from the text into new columns.")
+    criterion: str = Field(default="", description="top_k only: rank rows by how well the text matches this criterion, keep the best k, e.g. 'most severe outage'.")
+    k: int = Field(default=10, description="top_k only: how many top rows to keep.")
+    instruction: str = Field(default="", description="aggregate only: synthesize ONE answer from all the rows' text per this instruction, e.g. 'summarize the recurring complaint themes'.")
+
+
+class PhaseQueryPlan(BaseModel):
+    title: str
+    sql: str
+    chart_type: Literal["auto", "magnitude", "trend", "identity", "change", "share", "distribution", "relation", "histogram", "boxplot", "counter", "funnel", "waterfall", "sankey", "small_multiples", "line_forecast", "gantt", "choropleth", "point_map", "treemap", "heatmap", "none"] = Field(
+        default="auto", description=_CHART_VOCAB)
+    rationale: str
+    semantic: Optional[SemanticStep] = Field(
+        default=None,
+        description=(
+            "OPTIONAL. Attach ONLY when this query returns a free-TEXT column (support tickets, reviews, "
+            "notes, descriptions, comments) that needs reasoning SQL cannot do. 'filter' keeps rows whose "
+            "text matches a natural-language predicate; 'extract' pulls named fields from the text into new "
+            "columns. Leave null for ordinary numeric/aggregate/dimensional queries — most queries."
+        ),
+    )
+
+
+class PhasePlan(BaseModel):
+    queries: list[PhaseQueryPlan]
+
+
+class PhaseKeyNumberModel(BaseModel):
+    label: str
+    value: str
+    delta: Optional[str] = None
+    context: Optional[str] = None
+
+
+class PhaseFindingModel(BaseModel):
+    title: str
+    claim: Optional[str] = Field(
+        default=None,
+        description=(
+            "The one-sentence CLAIM this exhibit demonstrates — it becomes the chart's "
+            "title ('APAC drove the November dip', never 'Revenue by region'). State "
+            "the finding with its direction; the query's descriptive name stays on "
+            "`title` and moves to the source affordance."
+        ),
+    )
+    interpretation: str
+    key_numbers: list[PhaseKeyNumberModel] = Field(default_factory=list)
+    chart_type: Literal["auto", "magnitude", "trend", "identity", "change", "share", "distribution", "relation", "histogram", "boxplot", "counter", "funnel", "waterfall", "sankey", "small_multiples", "line_forecast", "gantt", "choropleth", "point_map", "treemap", "heatmap", "none"] = Field(
+        default="auto", description=_CHART_VOCAB)
+    stat_note: Optional[str] = None
+    is_significant: bool = False
+
+
+class PhaseInterpretation(BaseModel):
+    phase_summary: str
+    findings: list[PhaseFindingModel]
+    passes_to_next: str = Field(description="Key insight to carry into the next phase")
+
+
+class WaterfallEntryModel(BaseModel):
+    cause: str
+    amount_label: str = Field(description="Signed magnitude, e.g. '-$287K' for a loss/decline contributor, '+$120K' for a gain. The leading sign MUST match pct_of_total.")
+    pct_of_total: float = Field(description="Share of the total change, SIGNED: negative if this cause reduced the metric (a loss driver), positive if it increased it. Same sign as amount_label.")
+    controllable: bool
+    structural: bool
+
+
+class AnswerRecommendationModel(BaseModel):
+    action: str
+    # P4 (canvas-output study, 2026-10-14): the three were REQUIRED, so the narrator invented them —
+    # "Logistics Operations", "2026-10-30" — and the page printed the inventions. Each is asked only
+    # when the evidence holds it; the page prints only what is there.
+    expected_impact: str = Field(default="", description=(
+        "Only when the evidence supports a figure or a direction for this action; otherwise empty — "
+        "never an estimate."))
+    owner: str = Field(default="", description=(
+        "Only when the data or the question names who owns this; otherwise empty — never a guess at a team."))
+    timeline: str = Field(default="", description=(
+        "Only when the data or the question names when; otherwise empty — never an invented date."))
+
+
+# Arc ED, ED-5 (the user, 2026-10-24: "Impacts are the one store") — no ``causal_links``: what one promise does to
+# another is a declared impact (``ontology/impacts.py``), never a cause the narrator proposes. (No docstring: it would
+# ride into the schema the narrator is asked for.)
+class ADASynthesisModel(BaseModel):
+    headline: str
+    executive_summary: str
+    closing_summary: str = Field(
+        default="",
+        description="A 1-2 sentence BOTTOM LINE that CLOSES the report — the single most "
+        "important takeaway and its implication for the business. Distinct from "
+        "executive_summary (which OPENS the report); do not copy it verbatim. Plain prose.",
+    )
+    total_change_label: str
+    attribution_waterfall: list[WaterfallEntryModel]
+    confidence: Literal["HIGH", "MEDIUM", "LOW"]
+    confidence_justification: str
+    recommendations: list[AnswerRecommendationModel]
+    data_gaps: list[str] = Field(default_factory=list)
+
+
+#: P4 — what the narrator is asked for when no waterfall can exist: `ADASynthesisModel` minus
+#: `attribution_waterfall`. A waterfall apportions a CHANGE among its CAUSES, so it is asked for
+#: only under a causal licence on a change question; measured on 88 stored reports it was empty
+#: in 86 (forced empty on every cross-sectional run), while three of the seven narrator rules
+#: and two checks governed it. Derived from the full model, like `IntakeAsk`, so the two cannot
+#: drift; `widen_synthesis` turns an answer back into the full model with an empty waterfall.
+def _build_synthesis_ask_model(name: str = "SynthesisAsk", drop: frozenset = frozenset({"attribution_waterfall"})):
+    from pydantic import create_model
+    keep = {n: (f.annotation, f) for n, f in ADASynthesisModel.model_fields.items()
+            if n not in drop}
+    return create_model(name, __doc__=ADASynthesisModel.__doc__, **keep)
+
+
+SynthesisAsk = _build_synthesis_ask_model()
+
+
+def synthesis_ask_model(waterfall: bool):
+    """The response model for one narrator call: the full model when a waterfall is asked for,
+    else the same model without that field."""
+    return ADASynthesisModel if waterfall else SynthesisAsk
+
+
+def widen_synthesis(asked) -> ADASynthesisModel:
+    """The narrator's answer as a full `ADASynthesisModel`; a waterfall not asked for is empty."""
+    if asked is None or isinstance(asked, ADASynthesisModel):
+        return asked
+    return ADASynthesisModel(**{"attribution_waterfall": [], **asked.model_dump()})
+
+
+# R16 P2 — the argument-style writing contract.
+# The strongest analyst reports ARGUE in prose — a verdict first, numbers bold
+# inline in sentences, entities named by their identifiers, causes hedged
+# honestly. Always appended to the synthesis system prompt.
+ARGUMENT_STYLE_ADDENDUM = """WRITING STYLE — argue like an analyst, not a dashboard:
+- Every figure that matters appears inline in a sentence ("operates at 74.5% capacity vs 77.2% on short-haul"). Never assume the UI will surface a number for you.
+- Name entities by their identifier exactly as they appear in the data (route GVA-DEL, customer CU0036204). When ranking, list at most three as compact bullets: "GVA-DEL: 65.2% load factor (168K per flight)". Figures carry the currency the evidence carries, or none — never a currency it does not.
+- executive_summary: the verdict sentence FIRST, then one sentence per major claim, each carrying its own number. 3-5 sentences total — length discipline is credibility.
+- recommendations: each one is an object whose action is one line — imperative verb + the lever; quantify expected_impact when the evidence supports a number, otherwise omit the number rather than invent one.
+- Causes are hypotheses until proven: hedge honestly ("likely", "consistent with", "operationally impossible → points to a data-quality issue"). Never present a hypothesis as a finding."""
+
+
+#: The waterfall's own rule — in the system prompt only on a call that asks for one (P4).
+WATERFALL_RULE = ("- attribution_waterfall: entries account for ~100% of the change (add \"Unexplained / "
+                  "residual\" if short); amount_label and pct_of_total share their sign.")
+
+
+def synthesis_system_prompt(waterfall: bool = True) -> str:
+    """The narrator's system prompt. R16 P2: the argument-style writing contract
+    above is appended, so the prose argues like an analyst instead of pointing at a
+    dashboard. Lives here (not investigate.py) both because it is a prompt and
+    because module-level functions in investigate.py are auto-wrapped by the
+    node-span instrumentation, which expects a `state` argument.
+
+    ``waterfall`` says whether this call asks for one (`synthesis_ask_model`); its rule rides
+    only then — a rule for a field the call does not carry is a rule for nothing."""
+    base = (
+        "You are a senior data analyst writing a board-level investigation report. "
+        "Every number must trace to the evidence log. No fabrication. "
+        "Be definitive where evidence is strong; honest about uncertainty where it isn't."
+    )
+    rules = SYNTHESIS_CORE_RULES + ("\n" + WATERFALL_RULE if waterfall else "")
+    parts = [base, ARGUMENT_STYLE_ADDENDUM, rules]
+    # PE-2 tiering: the long-form guardrails ride along only for BASELINE-tier
+    # narrators. Fail to the conservative register — an unresolvable binding means a
+    # bare harness or broken config, exactly where the verbose guidance is safest.
+    try:
+        from pramanyx.llm.profile import profile_for
+        capable = profile_for("narrator").capable
+    except Exception:
+        capable = False
+    if not capable:
+        parts.append(BASELINE_GUARDRAILS)
+    return "\n\n".join(parts)

@@ -14,11 +14,11 @@ from datetime import date
 
 import pytest
 
-from aughor.dashboards import from_object as FO
-from aughor.dashboards import pieces
-from aughor.db.connection import open_connection
-from aughor.ontology.models import OntologyGraph
-from aughor.semantic.object_query import compile_object_query
+from pramanyx.dashboards import from_object as FO
+from pramanyx.dashboards import pieces
+from pramanyx.db.connection import open_connection
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.semantic.object_query import compile_object_query
 from tests.unit.test_dashboard_pieces import _graph as _pieces_graph
 from tests.unit.test_object_bindings import GRAPH, seed
 
@@ -140,7 +140,7 @@ def test_only_the_actions_declared_on_this_object_are_offered(order):
 # ── what is never offered ─────────────────────────────────────────────────────────────────────
 
 def test_a_property_the_reader_may_not_read_is_never_offered(db, monkeypatch):
-    monkeypatch.setattr("aughor.ontology.security.masked",
+    monkeypatch.setattr("pramanyx.ontology.security.masked",
                         lambda entity, prop, who=None: "masked" if prop == "status" else None)
     g = _graph()
     asked: list = []
@@ -150,7 +150,7 @@ def test_a_property_the_reader_may_not_read_is_never_offered(db, monkeypatch):
 
 
 def test_a_property_read_through_a_link_the_reader_may_not_read_is_never_offered(db, monkeypatch):
-    monkeypatch.setattr("aughor.ontology.security.masked",
+    monkeypatch.setattr("pramanyx.ontology.security.masked",
                         lambda entity, prop, who=None: "masked" if entity.id == "Customer" else None)
     g = _graph()
     asked: list = []
@@ -195,10 +195,10 @@ CONN = "from-object-door-t"
 
 @pytest.fixture
 def door(tmp_path, monkeypatch):
-    import aughor.db.connection as C
-    from aughor.ontology import store as ST
-    from aughor.routers._shared import invalidate_schema_cache
-    from aughor.util.json_store import KeyedJsonStore
+    import pramanyx.db.connection as C
+    from pramanyx.ontology import store as ST
+    from pramanyx.routers._shared import invalidate_schema_cache
+    from pramanyx.util.json_store import KeyedJsonStore
 
     monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
     ST.save_ontology(CONN, "ecommerce", "fp", OntologyGraph.model_validate(json.loads(GRAPH.read_text())))
@@ -211,7 +211,7 @@ def door(tmp_path, monkeypatch):
 
 
 def _flags(monkeypatch) -> None:
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda name: False)
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled", lambda name: False)
 
 
 def test_the_door_offers_a_cockpit_measured_on_the_warehouse(door, client, monkeypatch):
@@ -285,7 +285,7 @@ def test_each_piece_reads_its_entity():
 def test_a_linked_category_saying_what_an_own_one_says_is_not_offered_twice():
     """Found on theLook (2026-10-11): an inventory item's filter column offered "Product category" twice — its own
     `product_category` and its product's `category`. The linked one is the same filter, and is not offered again."""
-    from aughor.ontology.models import EntityProperty
+    from pramanyx.ontology.models import EntityProperty
     g = _graph()
     order = g.entities["Order"]
     # the order's own copy of its customer's name, first among its categories; the first linked one is the same

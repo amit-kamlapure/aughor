@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.agent.delegation import (
+from pramanyx.agent.delegation import (
     DelegationContext,
     DelegationLimits,
     DelegationRefused,
@@ -115,9 +115,9 @@ def test_an_unknown_target_is_named_before_any_budget_is_blamed():
 
 def test_every_hop_stamps_depth_and_path_for_the_trace_view():
     attrs = DelegationContext(agent_path=("a", "b")).span_attributes()
-    assert attrs["aughor.delegation.depth"] == 2
-    assert attrs["aughor.delegation.path"] == "a/b"
-    assert "aughor.delegation.steps_used" in attrs and "aughor.delegation.cost_usd" in attrs
+    assert attrs["pramanyx.delegation.depth"] == 2
+    assert attrs["pramanyx.delegation.path"] == "a/b"
+    assert "pramanyx.delegation.steps_used" in attrs and "pramanyx.delegation.cost_usd" in attrs
 
 
 def test_the_guard_can_actually_fire():

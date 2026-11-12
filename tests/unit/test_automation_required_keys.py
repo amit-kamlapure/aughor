@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-from aughor.automations.models import _CONDITION_REQUIRED, _EFFECT_REQUIRED
+from pramanyx.automations.models import _CONDITION_REQUIRED, _EFFECT_REQUIRED
 
 API_TS = Path(__file__).resolve().parents[2] / "web" / "lib" / "api.ts"
 

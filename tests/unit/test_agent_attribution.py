@@ -18,8 +18,8 @@ work ran, versus whose persona asked — and conflating them would misattribute 
 """
 from __future__ import annotations
 
-from aughor.obs.usage import AXES, rollup
-from aughor.trust.receipt import build_public_receipt
+from pramanyx.obs.usage import AXES, rollup
+from pramanyx.trust.receipt import build_public_receipt
 
 
 def _call(*, agent_id="", provider="openrouter", model="m:free") -> dict:
@@ -85,7 +85,7 @@ def test_the_persona_is_inside_the_signature():
     """Attribution that can be edited without breaking the signature is not attribution."""
     raw = _raw({"question": "q", "headline": "h", "agent": {"id": "ua_1", "name": "A"}})
     signed = build_public_receipt(raw, signed=True)
-    from aughor.trust.receipt import verify
+    from pramanyx.trust.receipt import verify
 
     assert verify(signed) is True
     tampered = {**signed, "agent": {"id": "ua_2", "name": "B"}}

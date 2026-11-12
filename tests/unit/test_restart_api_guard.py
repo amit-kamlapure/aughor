@@ -89,7 +89,7 @@ class TestMutualExclusion:
         try:
             proc = subprocess.run(
                 [sys.executable, str(SCRIPT), "--port", "54330"],
-                env={**os.environ, "AUGHOR_STATE_DIR": str(state),
+                env={**os.environ, "PRAMANYX_STATE_DIR": str(state),
                      "PYTHONPATH": str(REPO_ROOT)},
                 capture_output=True, text=True, timeout=90,
             )
@@ -142,7 +142,7 @@ class TestRefusalsBeforeStarting:
         try:
             proc = subprocess.run(
                 [sys.executable, str(SCRIPT), "--port", str(port)],
-                env={**os.environ, "AUGHOR_STATE_DIR": str(state),
+                env={**os.environ, "PRAMANYX_STATE_DIR": str(state),
                      "PYTHONPATH": str(REPO_ROOT)},
                 capture_output=True, text=True, timeout=90,
             )

@@ -7,9 +7,9 @@ from __future__ import annotations
 import duckdb
 import pytest
 
-from aughor.db import snapshot as snap
-from aughor.explorer.grounding import numeric_cells_block
-from aughor.explorer.revalidate import revalidate_finding
+from pramanyx.db import snapshot as snap
+from pramanyx.explorer.grounding import numeric_cells_block
+from pramanyx.explorer.revalidate import revalidate_finding
 
 SQL = "SELECT SUM(amt) AS total FROM orders"
 
@@ -28,7 +28,7 @@ pytestmark = pytest.mark.skipif(not _ducklake_available(), reason="ducklake exte
 
 
 def _conn(tmp_path):
-    from aughor.db.ducklake import DuckLakeConnection
+    from pramanyx.db.ducklake import DuckLakeConnection
     c = DuckLakeConnection(str(tmp_path / "cat.ducklake"), connection_id="dl")
     c._conn.execute("CREATE TABLE orders(id INT, amt DOUBLE)")
     c._conn.execute("INSERT INTO orders VALUES (1,10),(2,20)")   # snapshot here: total = 30

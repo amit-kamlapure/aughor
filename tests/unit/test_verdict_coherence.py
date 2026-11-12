@@ -4,9 +4,9 @@ Deep-Analysis audit finding (inv1 original): the report shipped headline "the pr
 Fragrance is not the problem segment" WHILE every recommendation prescribed action on Fragrance, and
 the contradiction_report reported severity "none" — because the cross-phase detector inspects only
 phase summaries, never headline-vs-recommendations. `detect_verdict_recommendation_incoherence` is a
-deterministic backstop. See aughor/agent/orchestrator.py.
+deterministic backstop. See pramanyx/agent/orchestrator.py.
 """
-from aughor.agent.orchestrator import detect_verdict_recommendation_incoherence, ContradictionReport
+from pramanyx.agent.orchestrator import detect_verdict_recommendation_incoherence, ContradictionReport
 
 
 def _rec(action):

@@ -27,11 +27,11 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.automations.engine import (
+from pramanyx.automations.engine import (
     MAX_SUBCHAIN_DEPTH, _CHAIN, _dispatch_subchain, resume_run, run_automation,
 )
-from aughor.automations.models import Automation, Condition, Effect, EffectOutcome
-from aughor.automations.store import (
+from pramanyx.automations.models import Automation, Condition, Effect, EffectOutcome
+from pramanyx.automations.store import (
     cycle_problem, get_run, get_runs, set_automation_enabled, upsert_automation,
 )
 
@@ -165,7 +165,7 @@ def test_a_dangling_reference_is_a_dispatch_error_not_a_crash():
 def test_a_step_after_a_subchain_can_guard_on_what_it_did():
     """`executed` exists so a caller can say "post the summary only if the shared chain
     actually did something"."""
-    from aughor.automations.models import GuardClause
+    from pramanyx.automations.models import GuardClause
 
     child = _automation(_post(alias="shared"), name="quiet")
     parent = _automation(
@@ -266,7 +266,7 @@ def test_the_save_route_answers_a_cycle_with_422_not_500():
     lesson `_validation_detail` was written for, one release later."""
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
 
     client = TestClient(app)
     b = _automation(_post(alias="b1"), name="B-route")
@@ -318,13 +318,13 @@ def test_a_child_that_pauses_parks_its_parent():
     # …and the parent stages NO proposal of its own. The human is being asked by the CHILD;
     # a second row here would be a phantom approval for a step with no action to approve —
     # and, because nothing would ever resolve it, a parent that could never resume.
-    from aughor.actions.inbox import proposals_for_run
+    from pramanyx.actions.inbox import proposals_for_run
     assert proposals_for_run(run.id) == []
     assert run.checkpoint["proposal_ids"] == []
 
 
 def test_resolving_the_child_resumes_the_parent():
-    from aughor.actions.inbox import _resolve_once, proposals_for_run
+    from pramanyx.actions.inbox import _resolve_once, proposals_for_run
 
     child = _automation(_governed(), _post(alias="child_after"), name="needs a human")
     parent = _automation(_sub(child.id), _post(alias="parent_after"), name="caller")
@@ -360,8 +360,8 @@ def test_the_heartbeat_sweep_resolves_a_whole_nested_tower():
     """The sweep takes passes, not one walk: finishing a nested chain makes its PARENT
     resumable, and the parent may already have been visited and correctly skipped earlier in
     the same list."""
-    from aughor.actions.inbox import _resolve_once, proposals_for_run
-    from aughor.automations.engine import resume_parked_runs
+    from pramanyx.actions.inbox import _resolve_once, proposals_for_run
+    from pramanyx.automations.engine import resume_parked_runs
 
     leaf = _automation(_governed(), _post(alias="leaf_after"), name="leaf")
     mid = _automation(_sub(leaf.id, alias="m"), name="mid")

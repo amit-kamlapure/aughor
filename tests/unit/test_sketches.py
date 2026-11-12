@@ -2,7 +2,7 @@
 inclusion–exclusion math used to estimate join overlap on huge tables. Pure + hermetic."""
 from __future__ import annotations
 
-from aughor.sql.sketches import (
+from pramanyx.sql.sketches import (
     minhash_signature, jaccard, containment, overlap_from_hll,
 )
 

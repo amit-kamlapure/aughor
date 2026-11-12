@@ -17,9 +17,9 @@ from types import SimpleNamespace
 import pytest
 from pydantic import BaseModel
 
-from aughor.llm import coordination as C
-from aughor.llm import provider as P
-from aughor.llm.provider import BindingConfigError, LLMProvider
+from pramanyx.llm import coordination as C
+from pramanyx.llm import provider as P
+from pramanyx.llm.provider import BindingConfigError, LLMProvider
 
 
 class Out(BaseModel):
@@ -93,7 +93,7 @@ def test_a_401_status_is_a_bad_key_even_without_the_words():
 def test_a_request_the_provider_refused_as_written_is_said_with_its_own_words_never_as_an_empty_reply():
     """2026-10-11: an Anthropic key was accepted, every request refused with 400, and the health check said "the model
     returned no content". A 400 is the provider refusing the request as written — its own message says what."""
-    from aughor.llm import reliability as R
+    from pramanyx.llm import reliability as R
 
     class BadRequest(Exception):
         status_code = 400
@@ -186,7 +186,7 @@ def test_a_guessed_model_id_fails_loudly_instead_of_falling_over(monkeypatch):
 
 def test_the_strict_check_has_an_escape_hatch(monkeypatch):
     """An operator mid-migration can restore the old papering-over behaviour."""
-    monkeypatch.setenv("AUGHOR_MODEL_ID_STRICT", "0")
+    monkeypatch.setenv("PRAMANYX_MODEL_ID_STRICT", "0")
     p, _ = _provider_raising(Exception("model_not_found: nope"))
     tried = []
     monkeypatch.setattr(LLMProvider, "_fallback_candidates", lambda self: ["anthropic"])
@@ -248,23 +248,23 @@ def test_bigquery_type_mismatch_classifies_semantic():
     cannot observe is the kind that passes for the wrong reason. Matching the phrase
     explicitly is behaviour-neutral today; it is worth doing so that a future genuine
     fallthrough is visible instead of hidden under this shape's volume."""
-    from aughor.tools.error_classifier import SqlErrorClass, classify_error_type
+    from pramanyx.tools.error_classifier import SqlErrorClass, classify_error_type
     assert classify_error_type(_BQ_TIMESTAMP_DATE, "", "bigquery") is SqlErrorClass.SEMANTIC
 
 
 def test_a_bigquery_name_error_is_a_binder_error():
     """It was SEMANTIC, so `error_class_guidance` answered a misspelled column with
     "A type or expression mismatch. Cast explicitly" — advice for a different failure."""
-    from aughor.tools.error_classifier import SqlErrorClass, classify_error_type
+    from pramanyx.tools.error_classifier import SqlErrorClass, classify_error_type
     assert classify_error_type(_BQ_UNRECOGNIZED, "", "bigquery") is SqlErrorClass.BINDER
 
 
 def test_a_bigquery_group_by_error_is_a_binder_error():
     """Postgres' "must appear in the GROUP BY" was matched; BigQuery's phrasing was not."""
-    from aughor.tools.error_classifier import SqlErrorClass, classify_error_type
+    from pramanyx.tools.error_classifier import SqlErrorClass, classify_error_type
     assert classify_error_type(_BQ_GROUP_BY, "", "bigquery") is SqlErrorClass.BINDER
 
 
 def test_a_bigquery_syntax_error_was_already_right_and_stays_right():
-    from aughor.tools.error_classifier import SqlErrorClass, classify_error_type
+    from pramanyx.tools.error_classifier import SqlErrorClass, classify_error_type
     assert classify_error_type(_BQ_SYNTAX, "", "bigquery") is SqlErrorClass.PARSER

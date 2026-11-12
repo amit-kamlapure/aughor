@@ -40,10 +40,10 @@ import pytest
 @pytest.fixture
 def store(tmp_path, monkeypatch):
     """A real platform store on a temp file, with the module globals left clean."""
-    from aughor.db import backend
+    from pramanyx.db import backend
     db = tmp_path / "rbac.db"
-    monkeypatch.setenv("AUGHOR_RBAC_DB", str(db))
-    from aughor.rbac import store as rs
+    monkeypatch.setenv("PRAMANYX_RBAC_DB", str(db))
+    from pramanyx.rbac import store as rs
     importlib.reload(rs)
     rs.assign_role("org", "u0", "viewer")       # one op: opens the store, attaches the WAL
     key = str(db)
@@ -154,7 +154,7 @@ def test_eviction_is_counted_so_the_cap_stays_a_measured_answer(tmp_path):
     """23 stores against a cap of 256 was measured on a live API, which is what retired
     eviction as a SIGBUS suspect. The high-water mark is what keeps that answer true
     rather than remembered."""
-    from aughor.db import backend
+    from pramanyx.db import backend
     before = backend._KEEPALIVE_HIGHWATER
     for i in range(3):
         backend._hold_wal_open(tmp_path / f"s{i}.db")
@@ -168,8 +168,8 @@ def test_eviction_is_counted_so_the_cap_stays_a_measured_answer(tmp_path):
 @pytest.fixture
 def served(tmp_path, monkeypatch):
     """A state directory, with the once-per-process memo reset between tests."""
-    from aughor.db import serving
-    monkeypatch.setenv("AUGHOR_STATE_DIR", str(tmp_path))
+    from pramanyx.db import serving
+    monkeypatch.setenv("PRAMANYX_STATE_DIR", str(tmp_path))
     serving._checked = False
     serving._foreign = False
     yield serving, tmp_path
@@ -226,7 +226,7 @@ def test_the_claim_is_released_so_the_next_process_is_not_warned(served, tmp_pat
 def test_windows_asks_whether_the_process_exited_and_never_signals_it(served, monkeypatch):
     """On Windows `os.kill(pid, 0)` is GenerateConsoleCtrlEvent(CTRL_C_EVENT, pid). `/health` made
     that call, the console host delivered the Ctrl+C to every process on the console, and
-    `aughor up` stopped itself: the Windows install job, red from 2026-09-15."""
+    `pramanyx up` stopped itself: the Windows install job, red from 2026-09-15."""
     serving, _ = served
     signalled, asked = [], []
     monkeypatch.setattr(serving, "_WINDOWS", True)
@@ -245,7 +245,7 @@ def test_signal_zero_is_sent_only_where_it_is_a_liveness_probe():
     `os.kill(pid, 0)` is the POSIX branch of `serving._alive`, read from the tree rather than a list."""
     root = Path(__file__).resolve().parents[2]
     found = []
-    for path in sorted((root / "aughor").rglob("*.py")):
+    for path in sorted((root / "pramanyx").rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
         for node in ast.walk(tree):
@@ -258,7 +258,7 @@ def test_signal_zero_is_sent_only_where_it_is_a_liveness_probe():
             while scope in parents and not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 scope = parents[scope]
             found.append((path.relative_to(root).as_posix(), getattr(scope, "name", "<module>")))
-    assert found == [("aughor/db/serving.py", "_alive")]
+    assert found == [("pramanyx/db/serving.py", "_alive")]
 
 
 # ── the surfaces an operator actually reads ─────────────────────────────────────
@@ -267,7 +267,7 @@ def test_signal_zero_is_sent_only_where_it_is_a_liveness_probe():
 def client():
     from fastapi.testclient import TestClient
 
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -291,7 +291,7 @@ def test_health_stays_ok_while_every_store_holds_its_wal(client):
 def test_health_goes_degraded_when_a_store_loses_its_wal_index(client, monkeypatch):
     """A condition with no in-process repair has to reach an operator the way a ledger
     integrity failure does. A log line is not that."""
-    from aughor.db import backend
+    from pramanyx.db import backend
     real = backend.wal_keepalive_report
 
     def drifted():
@@ -310,7 +310,7 @@ def test_health_goes_degraded_when_a_store_loses_its_wal_index(client, monkeypat
 def test_the_duckdb_ops_attach_leaves_the_wal_index_alone(tmp_path):
     """A second SQLite library inside one process is a real hazard, and we run one.
 
-    `AughorOpsConnection` ATTACHes the live `system.db` through duckdb's sqlite
+    `PramanyxOpsConnection` ATTACHes the live `system.db` through duckdb's sqlite
     extension, which links its OWN copy of SQLite. POSIX advisory locks never conflict
     within a process, so that copy can be granted the exclusive lock SQLite treats as
     "nobody else is here" — and `unixOpenSharedMemory` truncates the `-shm` to zero when
@@ -331,15 +331,15 @@ def test_the_duckdb_ops_attach_leaves_the_wal_index_alone(tmp_path):
     seed.commit()
     seed.close()
 
-    from aughor.db.backend import _hold_wal_open, _shm_state
+    from pramanyx.db.backend import _hold_wal_open, _shm_state
     _hold_wal_open(db)
     before = _shm_state(str(db))
     assert before is not None, "no WAL index to protect — the probe proves nothing"
 
     d = duckdb.connect(":memory:")
     try:
-        d.execute(f"ATTACH '{db.as_posix()}' AS aughor_ops (TYPE sqlite, READ_ONLY)")
-        d.execute("SELECT count(*) FROM aughor_ops.task_history").fetchone()
+        d.execute(f"ATTACH '{db.as_posix()}' AS pramanyx_ops (TYPE sqlite, READ_ONLY)")
+        d.execute("SELECT count(*) FROM pramanyx_ops.task_history").fetchone()
     finally:
         d.close()
 
@@ -379,7 +379,7 @@ def test_the_serving_marker_is_not_committable(tmp_path, monkeypatch):
     import subprocess
     from pathlib import Path
 
-    from aughor.db import serving
+    from pramanyx.db import serving
     repo = Path(__file__).resolve().parents[2]
     marker = f"data/{serving.PIDFILE_NAME}"
     result = subprocess.run(["git", "check-ignore", marker], cwd=repo,

@@ -3,9 +3,9 @@
 The Swiss-Air refund rate was COUNT(refund_id)/NULLIF(COUNT(ticket_id),0) over a LEFT
 JOIN — correct only if every ticket has ≤1 refund. count_ratio_distinct_risk flags the
 pattern so the analyst validates the cardinality and switches to COUNT(DISTINCT ...).
-See aughor/sql/fanout.py.
+See pramanyx/sql/fanout.py.
 """
-from aughor.sql.fanout import count_ratio_distinct_risk
+from pramanyx.sql.fanout import count_ratio_distinct_risk
 
 SWISS_AIR_SQL = """
 SELECT

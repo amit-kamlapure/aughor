@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.memory import trust as T
-from aughor.memory import skills as S
+from pramanyx.memory import trust as T
+from pramanyx.memory import skills as S
 
 
 def _runs(n_clean, n_dirty=0, conf=0.9):
@@ -72,7 +72,7 @@ class _FakeConn:
 
 @pytest.fixture
 def _store(tmp_path, monkeypatch):
-    from aughor.util.json_store import KeyedJsonStore
+    from pramanyx.util.json_store import KeyedJsonStore
     monkeypatch.setattr(S, "_STORE", KeyedJsonStore(str(tmp_path / "skills.json")))
 
 
@@ -80,8 +80,8 @@ def _wire_l2(monkeypatch, level=2, run_signals=None):
     monkeypatch.setattr(S, "_autonomy_level", lambda c: level)
     monkeypatch.setattr(S, "_run_signals", lambda inv: run_signals if run_signals is not None else {"grounded": True, "read_only": True})
     monkeypatch.setattr(S, "resolve_active_schema", lambda c: "missimi")
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda c: _FakeConn())
-    monkeypatch.setattr("aughor.db.history.get_investigation", lambda _id: {
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda c: _FakeConn())
+    monkeypatch.setattr("pramanyx.db.history.get_investigation", lambda _id: {
         "question": "top channels by AOV",
         "report": {"sql": "SELECT marketing_channel, SUM(order_value) AS rev FROM missimi.orders GROUP BY marketing_channel"}})
 
@@ -90,7 +90,7 @@ def test_auto_crystallize_stages_to_the_inbox_at_l2_and_accept_saves(_store, mon
     """AO-7e (§6 item 38(g), 2026-10-03): a clean L2 run STAGES the skill for a person;
     nothing a model shaped is saved without their accept. The accept is what saves."""
     staged: list = []
-    monkeypatch.setattr("aughor.actions.inbox.stage_proposal", lambda p: staged.append(p) or p)
+    monkeypatch.setattr("pramanyx.actions.inbox.stage_proposal", lambda p: staged.append(p) or p)
     _wire_l2(monkeypatch)
     S.auto_crystallize("inv-1", "c")
     assert S.load_learned_actions("c", "missimi") == {}, "an L2 run must not save by itself"

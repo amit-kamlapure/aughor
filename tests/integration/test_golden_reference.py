@@ -28,9 +28,9 @@ def golden_db(tmp_path_factory):
     """A fresh ecommerce fixture DB registered in the (test-isolated) registry."""
     import duckdb
 
-    from aughor.db import registry
-    from aughor.db.connection import open_connection_for
-    from aughor.demo.setup import _seed_ecommerce
+    from pramanyx.db import registry
+    from pramanyx.db.connection import open_connection_for
+    from pramanyx.demo.setup import _seed_ecommerce
 
     path = tmp_path_factory.mktemp("golden") / "samples.duckdb"
     conn = duckdb.connect(str(path))

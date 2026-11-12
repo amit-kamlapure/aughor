@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.semantic.glossary import (
+from pramanyx.semantic.glossary import (
     apply_glossary,
     canonical_key,
     lookup_table,
@@ -79,7 +79,7 @@ def test_canonical_key_qualifies_only_when_it_can():
 
 @pytest.fixture
 def gloss(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_GLOSSARY_PATH", str(tmp_path / "glossary.yaml"))
+    monkeypatch.setenv("PRAMANYX_GLOSSARY_PATH", str(tmp_path / "glossary.yaml"))
     return tmp_path / "glossary.yaml"
 
 
@@ -150,7 +150,7 @@ RETRIEVAL_SCHEMA = "TABLE: orders\n  id  INTEGER\n\nTABLE: widgets\n  id  INTEGE
 
 
 def test_qualified_index_still_keeps_a_bare_header_block():
-    from aughor.semantic.retriever import _filter_schema
+    from pramanyx.semantic.retriever import _filter_schema
 
     out = _filter_schema(RETRIEVAL_SCHEMA, {"beauty.orders"})
     assert "TABLE: orders" in out
@@ -158,7 +158,7 @@ def test_qualified_index_still_keeps_a_bare_header_block():
 
 
 def test_filter_never_keeps_another_schemas_same_named_table():
-    from aughor.semantic.retriever import _filter_schema
+    from pramanyx.semantic.retriever import _filter_schema
 
     # Only `other.widgets` was retrieved; the bare `widgets` header belongs to a different
     # schema in this run, so nothing matches → the safety net returns the full schema
@@ -168,7 +168,7 @@ def test_filter_never_keeps_another_schemas_same_named_table():
 
 
 def test_bare_index_and_bare_header_still_match():
-    from aughor.semantic.retriever import _filter_schema
+    from pramanyx.semantic.retriever import _filter_schema
 
     assert "TABLE: orders" in _filter_schema(RETRIEVAL_SCHEMA, {"orders"})
 
@@ -181,7 +181,7 @@ def test_bare_index_and_bare_header_still_match():
 
 from types import SimpleNamespace                                        # noqa: E402
 
-from aughor.agent.explore import _learn_from_exploration                 # noqa: E402
+from pramanyx.agent.explore import _learn_from_exploration                 # noqa: E402
 
 
 def _report(table: str, column: str, issue: str):
@@ -263,7 +263,7 @@ def test_the_call_site_passes_the_schema_not_the_connection(gloss):
     `connection_id` — the function would still look scoped and still write bare keys, with
     every test above passing. Guards the seam, not just the function."""
     from pathlib import Path
-    src = Path("aughor/agent/explore.py").read_text()
+    src = Path("pramanyx/agent/explore.py").read_text()
     call = [ln.strip() for ln in src.splitlines() if "_learn_from_exploration(" in ln
             and not ln.lstrip().startswith(("#", "def "))]
     assert call, "call site not found — did the learning loop move?"

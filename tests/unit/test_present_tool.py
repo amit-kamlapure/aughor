@@ -8,7 +8,7 @@ and the tool is absent from a turn that cannot render.
 """
 from __future__ import annotations
 
-from aughor.agent.present_tool import (
+from pramanyx.agent.present_tool import (
     PART_KINDS,
     present,
     present_tools,
@@ -75,7 +75,7 @@ def test_the_tool_is_absent_from_a_turn_that_cannot_render():
 
 
 def test_converse_offers_present_only_with_a_channel():
-    from aughor.agent.converse_tools import converse_tools
+    from pramanyx.agent.converse_tools import converse_tools
     with_channel = {t.name for t in converse_tools("conn-x", emit=lambda t, p: None)}
     without = {t.name for t in converse_tools("conn-x")}
     assert "present" in with_channel and "present" not in without
@@ -86,12 +86,12 @@ def test_the_whole_converse_path_renders_parts(monkeypatch):
     validation, the frame) with only the model scripted — it calls `present` with a
     fact set and an action, and the turn's frame channel carries the validated parts
     the web's own adapter-path test picks up from the other side."""
-    from aughor.agent.converse_tools import converse
-    from aughor.llm.faux import FauxToolCall, set_responses
-    from aughor.llm.provider import LLMProvider
+    from pramanyx.agent.converse_tools import converse
+    from pramanyx.llm.faux import FauxToolCall, set_responses
+    from pramanyx.llm.provider import LLMProvider
 
-    monkeypatch.delenv("AUGHOR_MAX_OUTPUT_TOKENS", raising=False)
-    monkeypatch.delenv("AUGHOR_TOOL_LOOP_STEPS", raising=False)
+    monkeypatch.delenv("PRAMANYX_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.delenv("PRAMANYX_TOOL_LOOP_STEPS", raising=False)
     provider = LLMProvider(backend="faux", role="coder")
     set_responses([
         FauxToolCall(name="present", payload={"parts": [

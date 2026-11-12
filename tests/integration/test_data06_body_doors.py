@@ -23,12 +23,12 @@ from fastapi.routing import APIRoute
 from pydantic import BaseModel
 from starlette.requests import Request
 
-from aughor.security.authz import Principal, connection_owner_guard, investigation_owner_guard
+from pramanyx.security.authz import Principal, connection_owner_guard, investigation_owner_guard
 
 # The same user in both organisations, as `test_data06_connection_doors.py` has it: an organisation's first identified
 # caller becomes its owner (`rbac.maybe_bootstrap_owner`), so a second name would meet the role gate, not the guard.
-INTRUDER = {"X-Aughor-Org": "orgB", "X-Aughor-User": "amit"}
-OWNER = {"X-Aughor-Org": "orgA", "X-Aughor-User": "amit"}
+INTRUDER = {"X-Pramanyx-Org": "orgB", "X-Pramanyx-User": "amit"}
+OWNER = {"X-Pramanyx-Org": "orgA", "X-Pramanyx-User": "amit"}
 
 
 #: Doors outside sign-in, each with its own credential, argued here and held by their own test below — the router
@@ -52,7 +52,7 @@ def _models(annotation) -> list[type[BaseModel]]:
 
 def _body_doors() -> list[tuple[APIRoute, list[str]]]:
     """Every door whose JSON body names a connection at its top level — the fields the guard reads."""
-    from aughor.api import app
+    from pramanyx.api import app
     found = []
     for route in app.routes:
         if not isinstance(route, APIRoute) or not route.dependant.body_params:
@@ -72,7 +72,7 @@ def _body_doors() -> list[tuple[APIRoute, list[str]]]:
 
 
 def _inv_doors() -> list[APIRoute]:
-    from aughor.api import app
+    from pramanyx.api import app
     return [r for r in app.routes if isinstance(r, APIRoute) and "{inv_id" in r.path]
 
 
@@ -101,11 +101,11 @@ def _refused(got: tuple[int, str]) -> bool:
 @pytest.fixture
 def orgA(tmp_path):
     """A connection of orgA's, a canvas on it, and an investigation over it."""
-    from aughor.canvas.models import CanvasScope
-    from aughor.canvas.store import create_canvas
-    from aughor.db import registry
-    from aughor.db.history import create_investigation
-    from aughor.org.context import using_org
+    from pramanyx.canvas.models import CanvasScope
+    from pramanyx.canvas.store import create_canvas
+    from pramanyx.db import registry
+    from pramanyx.db.history import create_investigation
+    from pramanyx.org.context import using_org
 
     with using_org("orgA"):
         conn = registry.add_connection("orgA-body", "duckdb", str(tmp_path / "orgA.duckdb"))
@@ -157,7 +157,7 @@ def test_the_guard_reads_every_name_a_body_carries_a_connection_or_a_canvas_unde
 
 def test_the_door_still_reads_the_body_the_guard_read(client, monkeypatch, orgA):
     """Starlette caches the body the guard read; the door must parse the same bytes after it."""
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
     r = client.post("/query/validate", json={"conn_id": orgA["conn"], "sql": "SELECT 1"}, headers=OWNER)
     assert r.status_code != 422, r.text            # the body reached the door whole
 
@@ -190,7 +190,7 @@ def test_every_door_that_addresses_an_investigation_depends_on_the_investigation
 
 
 def test_another_org_naming_its_connection_in_a_body_is_refused_on_every_door(client, monkeypatch, orgA):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
     answered = {}
     for route, named in _body_doors():
         if route.path.endswith("/stream") or route.path in KEYED_DOORS:
@@ -208,9 +208,9 @@ def test_another_org_naming_its_connection_in_a_body_is_refused_on_every_door(cl
 def test_an_agents_key_names_only_its_own_organisations_connection(client, monkeypatch, orgA):
     """An unbound agent's door took any connection its caller named; with identity on, the key holder stands in as the
     agent's organisation, and another organisation's connection is refused before anything is asked."""
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
-    from aughor.custom_agents import create_agent, delete_agent
-    from aughor.custom_agents.keys import issue_agent_key, revoke_agent_key
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
+    from pramanyx.custom_agents import create_agent, delete_agent
+    from pramanyx.custom_agents.keys import issue_agent_key, revoke_agent_key
     asked: list = []
 
     async def _fold(**kw):
@@ -218,7 +218,7 @@ def test_an_agents_key_names_only_its_own_organisations_connection(client, monke
         return {"agent_id": kw["agent_id"], "question": kw["question"], "headline": "", "sql": "", "columns": [],
                 "rows": [], "row_count": 0, "receipt_id": "", "investigation_id": "", "error": "", "truncated": False,
                 "frames": 1}
-    monkeypatch.setattr("aughor.custom_agents.reach.fold_ask", _fold)
+    monkeypatch.setattr("pramanyx.custom_agents.reach.fold_ask", _fold)
     orgB_agent = create_agent("Org B's desk", instructions="x", owner="orgB")
     orgA_agent = create_agent("Org A's desk", instructions="x", owner="orgA")
     keys = {a.id: {"Authorization": f"Bearer {issue_agent_key(a.id)}"} for a in (orgB_agent, orgA_agent)}
@@ -237,7 +237,7 @@ def test_an_agents_key_names_only_its_own_organisations_connection(client, monke
 
 
 def test_another_orgs_investigation_is_refused_on_every_door_that_addresses_one(client, monkeypatch, orgA):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
     answered = {}
     for route in _inv_doors():
         r = client.request(sorted(route.methods)[0], _url(route, orgA["conn"], orgA["inv"]), json={},
@@ -252,7 +252,7 @@ def test_another_orgs_investigation_is_refused_on_every_door_that_addresses_one(
 @pytest.fixture
 def answered(monkeypatch):
     """The stream bodies stubbed: a door that is not refused answers one frame, and no model is reached."""
-    import aughor.routers.investigations as inv
+    import pramanyx.routers.investigations as inv
     reached: list[str] = []
 
     async def one_frame(kind, conn_id):
@@ -271,7 +271,7 @@ def _agui(**forwarded) -> dict:
 
 
 def test_ask_chat_and_agui_refuse_another_orgs_connection_and_answer_its_own(client, monkeypatch, orgA, answered):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
     conn, canvas = orgA["conn"], orgA["canvas"]
     doors = [
         ("/ask", {"question": "what moved?", "connection_id": conn}),
@@ -291,7 +291,7 @@ def test_ask_chat_and_agui_refuse_another_orgs_connection_and_answer_its_own(cli
 
 
 def test_resume_refuses_another_orgs_investigation_on_both_doors(client, monkeypatch, orgA, answered):
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
     inv = orgA["inv"]
     agui_resume = {**_agui(), "messages": [], "resume": [{"interruptId": inv, "status": "resolved", "payload": {}}]}
     for path, body in ((f"/investigations/{inv}/feedback", {"feedback": "go on"}), ("/agui/run", agui_resume)):

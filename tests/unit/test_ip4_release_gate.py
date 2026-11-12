@@ -13,10 +13,10 @@ from pathlib import Path
 
 import yaml
 
-from aughor.packs import knowledge
-from aughor.packs.gate4 import package_fingerprint
-from aughor.packs.loader import load_pack
-from aughor.packs.models import KNOWLEDGE_LAYERS
+from pramanyx.packs import knowledge
+from pramanyx.packs.gate4 import package_fingerprint
+from pramanyx.packs.loader import load_pack
+from pramanyx.packs.models import KNOWLEDGE_LAYERS
 
 REPO_PACKS = Path(__file__).resolve().parents[2] / "packs"
 
@@ -36,8 +36,8 @@ def test_the_agents_read_exactly_the_active_knowledge_packages():
 
 
 def test_an_active_knowledge_package_never_steers():
-    from aughor.packs.intake import active_packs
-    from aughor.packs.routing import select_pack
+    from pramanyx.packs.intake import active_packs
+    from pramanyx.packs.routing import select_pack
 
     knowledge_ids = {m["id"] for m in _knowledge_manifests()}
     assert not knowledge_ids & {p.id for p in active_packs()}
@@ -47,7 +47,7 @@ def test_an_active_knowledge_package_never_steers():
 
 
 def test_the_chat_tool_does_not_read_a_knowledge_package_as_a_pack():
-    from aughor.agent.platform_tools import read_pack
+    from pramanyx.agent.platform_tools import read_pack
 
     answer = read_pack("any-connection", {"pack_id": "retail"})
     assert answer["readable"] is False

@@ -18,7 +18,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
+from pramanyx.api import app
 
 client = TestClient(app)
 
@@ -30,12 +30,12 @@ def saved(tmp_path, monkeypatch):
     The kernel ledger is redirected too: revisions ride it, so without this the test
     writes into the live `data/system.db`.
     """
-    monkeypatch.setenv("AUGHOR_SAVEDQUERY_DB", str(tmp_path / "sq.db"))
-    monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
+    monkeypatch.setenv("PRAMANYX_SAVEDQUERY_DB", str(tmp_path / "sq.db"))
+    monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "system.db"))
     import importlib
-    import aughor.savedquery.store as store
+    import pramanyx.savedquery.store as store
     importlib.reload(store)
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     Ledger._instances.clear()
 
     q = store.create_saved_query("conn-demo", "Margin", sql="SELECT 1", spec={})

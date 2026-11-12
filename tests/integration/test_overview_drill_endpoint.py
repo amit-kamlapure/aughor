@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from aughor.overview.drills import load_priors
+from pramanyx.overview.drills import load_priors
 
 
 def test_overview_drill_endpoint_records_prior(client: TestClient):

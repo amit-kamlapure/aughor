@@ -1,5 +1,5 @@
 """Phase 3 of the 2027 study, P3-2 and P3-3 — the scenario ladder's first three methods behind one
-interface (`aughor/record/scenario.py`), predictions scored by code, coverage counted by method, and
+interface (`pramanyx/record/scenario.py`), predictions scored by code, coverage counted by method, and
 law 5 narrowed so a forecast departs only on a scored method.
 
 What these hold: identity is exact arithmetic over named inputs and refuses anything else, saying
@@ -17,8 +17,8 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from aughor.record import claims as C
-from aughor.record import scenario as S
+from pramanyx.record import claims as C
+from pramanyx.record import scenario as S
 
 SPEC = {"metric_label": "total sales", "metric_sql": "SUM(sale_price)", "metric_table": "thelook.order_items",
         "date_column": "thelook.order_items.created_at", "window_days": 7, "window_basis": "observation"}
@@ -136,8 +136,8 @@ def test_against_band_reads_relative_bands_against_before_and_says_cannot_tell_w
 
 
 def test_a_scenario_is_booked_for_a_decision_through_the_door():
-    from aughor.record import decisions as D
-    from aughor.routers import record as R
+    from pramanyx.record import decisions as D
+    from pramanyx.routers import record as R
     conn = _conn()
     did = D.book_decision(D.Decision(question="raise the price 7%?", chosen="yes", decided_by="user:ana",
                                      connection_id=conn, source=D.Source(kind="declared", ref=uuid.uuid4().hex[:8])))
@@ -149,7 +149,7 @@ def test_a_scenario_is_booked_for_a_decision_through_the_door():
     assert out["scenario"]["for_id"] == did and out["scenario"]["tier"] == "identity"
     assert S.scenarios_for(did)[0].predictions == [out["prediction"]["id"]]
     # an assumption is the person who states it — the request's, never the `by` its body names
-    from aughor.org.context import reset_actor, set_actor
+    from pramanyx.org.context import reset_actor, set_actor
     token = set_actor("ana")
     try:
         declared = R.book_record_scenario(did, R.ScenarioRequest(
@@ -177,8 +177,8 @@ def test_a_scenario_is_booked_for_a_decision_through_the_door():
 # ── law 5, narrowed ────────────────────────────────────────────────────────────────────────
 
 def test_an_unscored_forecast_is_held_and_a_forecast_citing_a_scored_prediction_departs(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_DEPARTURES_DB", str(tmp_path / "departures.db"))
-    from aughor.govern.departure import gate_departure
+    monkeypatch.setenv("PRAMANYX_DEPARTURES_DB", str(tmp_path / "departures.db"))
+    from pramanyx.govern.departure import gate_departure
     conn = _conn()
     text = "Total sales are projected to reach 1,200 next week."
     held = gate_departure(kind="slack_post", org_id="default", conn_id=conn, text=text, automation_id="a1",
@@ -197,8 +197,8 @@ def test_an_unscored_forecast_is_held_and_a_forecast_citing_a_scored_prediction_
     starts = {(end - timedelta(days=7 * k + 6)).isoformat(): v for k, v in zip(range(6, 0, -1), [1000, 1040, 980, 1020, 1010, 990])}
     proj = S.history(SPEC, _run_sql_by_window(starts), end_day=end)
     scored = S.predict(metric="total sales", projection=proj, settles_on="2026-10-11", author="system", connection_id=conn)
-    from aughor.govern.departure import Measurement
-    from aughor.util.time import now_iso_z
+    from pramanyx.govern.departure import Measurement
+    from pramanyx.util.time import now_iso_z
     projected = Measurement(source=f"prediction {scored} (history)", values=[1200.0], measured_at=now_iso_z())
     ok = gate_departure(kind="slack_post", org_id="default", conn_id=conn, text=text, automation_id="a1",
                         automation_name="t", target="#ops-" + uuid.uuid4().hex[:4], predictions=[scored],

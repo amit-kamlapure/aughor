@@ -17,13 +17,13 @@ These tests pin the four properties that make that report impossible:
 """
 import pytest
 
-from aughor.agent.explore import (
+from pramanyx.agent.explore import (
     _execute_one_subq,
     _honesty_preamble,
     _reason_one_subq,
     synthesize_exploration,
 )
-from aughor.agent.state import (
+from pramanyx.agent.state import (
     PLANNER_FAILURE,
     SubQuestion,
     SubQuestionAnswer,
@@ -104,7 +104,7 @@ def _ok_answer(sid="Q1"):
 # ── 1. the planner failure never becomes SQL ─────────────────────────────────
 
 def test_planner_failure_emits_no_sql_and_runs_nothing(monkeypatch):
-    monkeypatch.setattr("aughor.agent.explore.get_provider", lambda _role: _RaisingProvider())
+    monkeypatch.setattr("pramanyx.agent.explore.get_provider", lambda _role: _RaisingProvider())
     conn = FakeConn()
     results, pitfalls, checks = _execute_one_subq(_state(), _subq(), [], conn)
 
@@ -135,7 +135,7 @@ def test_empty_plan_fails_the_same_way_as_a_raising_planner(monkeypatch):
         def complete(self, **kwargs):
             return _EmptyPlan()
 
-    monkeypatch.setattr("aughor.agent.explore.get_provider", lambda _role: _P())
+    monkeypatch.setattr("pramanyx.agent.explore.get_provider", lambda _role: _P())
     results, _p, checks = _execute_one_subq(_state(), _subq(), [], FakeConn())
     assert len(results) == 1 and is_planner_failure(results[0])
     assert "empty query plan" in results[0].error
@@ -148,7 +148,7 @@ def test_reasoning_calls_it_a_platform_failure_not_a_sql_error(monkeypatch):
     # Reasoning must not call the LLM here, and must not blame SQL — the old wording
     # ("Could not retrieve data … due to SQL errors") is what let the narrator file this
     # against the user's table.
-    monkeypatch.setattr("aughor.agent.explore.get_provider",
+    monkeypatch.setattr("pramanyx.agent.explore.get_provider",
                         lambda _role: pytest.fail("no LLM call for a failed step"))
     subq = _subq()
     answer, _obj = _reason_one_subq(
@@ -203,7 +203,7 @@ def test_preamble_is_silent_on_a_clean_complete_run():
 # ── 4. an all-failed chain is reported as a failure, with no narrator call ───
 
 def test_all_failed_chain_reports_failure_without_calling_the_narrator(monkeypatch):
-    monkeypatch.setattr("aughor.agent.explore.get_provider",
+    monkeypatch.setattr("pramanyx.agent.explore.get_provider",
                         lambda _role: pytest.fail("synthesis must not narrate an empty chain"))
     out = synthesize_exploration(_state(subq_answers=[_failed_answer("Q1"), _failed_answer("Q2")],
                                         sub_questions=[_subq("Q1"), _subq("Q2")]))

@@ -4,15 +4,15 @@ When P1 pins a metric to its GOVERNED definition over a materially-different par
 resolution is recorded in the Ambiguity Ledger (source=probe) so the definition burns down per
 connection and is read back as a plan-time prior on every path (chat + future ADA) — the "resolution
 that compounds" half of the deeper SOMA loop. These tests pin the write, the no-op, and fail-safety.
-The ledger DB is test-isolated (AUGHOR_AMBIGUITY_LEDGER_DB in conftest), so writes don't leak.
+The ledger DB is test-isolated (PRAMANYX_AMBIGUITY_LEDGER_DB in conftest), so writes don't leak.
 """
 from __future__ import annotations
 
 import types
 
-import aughor.agent.investigate as I
-from aughor.agent.prompts_investigate import IntakeOutput
-from aughor.semantic import ambiguity_ledger as L
+import pramanyx.agent.investigate as I
+from pramanyx.agent.prompts_investigate import IntakeOutput
+from pramanyx.semantic import ambiguity_ledger as L
 from dataclasses import dataclass, field
 
 
@@ -56,7 +56,7 @@ def _governed():
 
 
 def _pin_on(monkeypatch, metrics):
-    monkeypatch.setattr("aughor.semantic.canonical.resolve_planning_metrics",
+    monkeypatch.setattr("pramanyx.semantic.canonical.resolve_planning_metrics",
                         lambda *a, **k: list(metrics))
 
 
@@ -94,7 +94,7 @@ def test_failed_probe_does_not_write(monkeypatch):
 def test_crystallize_is_fail_safe(monkeypatch):
     # A ledger write error must never break the pin — the metric is still pinned.
     _pin_on(monkeypatch, [_governed()])
-    monkeypatch.setattr("aughor.semantic.ambiguity_ledger.save_resolution",
+    monkeypatch.setattr("pramanyx.semantic.ambiguity_ledger.save_resolution",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("ledger down")))
     intake = _intake()
     note = I._pin_canonical_metric(intake, "p4_failsafe", "schema", _StubConn(ok=True))
@@ -103,7 +103,7 @@ def test_crystallize_is_fail_safe(monkeypatch):
 
 def test_probe_resolution_does_not_clobber_a_user_choice(monkeypatch):
     # Override-wins: a prior user resolution outranks the probe write (same subject/connection/org).
-    from aughor.org.context import current_org_id
+    from pramanyx.org.context import current_org_id
     org = current_org_id() or ""
     conn_id = "p4_override"
     L.save_resolution(L.AmbiguityResolution(

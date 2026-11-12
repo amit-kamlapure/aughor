@@ -4,7 +4,7 @@
  * `card` prop, so the ontology's pieces drew as blank lines, and the strip named three of them by their element keys
  * (defects 1 and 5 of Arc AP-1, ROADMAP §3.57).
  *
- * The words are the server's own (`_WORDS` and `title_of` in `aughor/dashboards/pieces.py`): a piece is named by what it
+ * The words are the server's own (`_WORDS` and `title_of` in `pramanyx/dashboards/pieces.py`): a piece is named by what it
  * names — "Objects table · Order, overdue dispatch" — never by a key a person did not choose.
  */
 import type { ComponentName } from "@/lib/dashboards/catalog";

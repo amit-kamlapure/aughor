@@ -26,21 +26,21 @@ a4591c26,shipped,BACK\\slash,147.90,yes
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "ana")
-    from aughor.actions import overlay
-    from aughor.rbac import store as rbac_store
+    monkeypatch.setenv("PRAMANYX_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "system.db"))
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "ana")
+    from pramanyx.actions import overlay
+    from pramanyx.rbac import store as rbac_store
     monkeypatch.setattr(overlay, "_DB_PATH", tmp_path / "overlay.db")
     monkeypatch.setattr(rbac_store, "_DB_PATH", tmp_path / "rbac.db")
-    from aughor.sheets import projection
+    from pramanyx.sheets import projection
     projection.reset()
     yield tmp_path
     projection.reset()
 
 
 def _orders(env):
-    from aughor.sheets import files, service
+    from pramanyx.sheets import files, service
     path = env / "orders.csv"
     path.write_text(ORDERS)
     return service.create_from_file(files.stage(path, path.name), name="Olist orders", by="user:ana",
@@ -49,8 +49,8 @@ def _orders(env):
 
 def _ids(sheet, *conditions) -> list[str]:
     """The order ids the grid shows under these conditions, in the sheet's order."""
-    from aughor.sheets import projection
-    from aughor.sheets.model import Condition
+    from pramanyx.sheets import projection
+    from pramanyx.sheets.model import Condition
     page = projection.read_rows(sheet, conditions=[Condition(**c) for c in conditions], limit=100)
     at = 1 + [c.id for c in sheet.columns].index(sheet.column("order_id").id)
     return [r[at] for r in page["rows"]]
@@ -61,8 +61,8 @@ def _grid(sheet, *conditions) -> int:
 
 
 def _values(sheet, column, *conditions, **kw):
-    from aughor.sheets import views
-    from aughor.sheets.model import Condition
+    from pramanyx.sheets import views
+    from pramanyx.sheets.model import Condition
     return views.column_values(sheet, sheet.column(column).id, conditions=[Condition(**c) for c in conditions], **kw)
 
 
@@ -91,8 +91,8 @@ def test_contains_begins_with_and_ends_with_match_the_value_as_written(env):
 
 def test_the_new_matches_are_the_grids_operators_everywhere_a_filter_is_read(env):
     """The chat's show_rows tool and its words take them, and a view keeps them, as every other operator."""
-    from aughor.sheets import answer, service, views
-    from aughor.sheets.model import Condition, View
+    from pramanyx.sheets import answer, service, views
+    from pramanyx.sheets.model import Condition, View
     sheet = _orders(env)
     conds = answer.conditions_of(sheet, [{"column": "coupon", "op": "starts_with", "value": "50"},
                                          {"column": "coupon", "op": "ends_with", "value": "off"}])
@@ -121,8 +121,8 @@ def test_a_lists_empty_member_stands_for_the_empty_cells(env):
 
 def test_filled_is_the_exact_complement_of_empty_for_a_text_holding_nothing(env):
     """A text holding "" (a computed column can write one) is empty, so it is never also filled."""
-    from aughor.sheets import projection
-    from aughor.sheets.imports import ident
+    from pramanyx.sheets import projection
+    from pramanyx.sheets.imports import ident
     sheet = _orders(env)
     coupon = sheet.column("coupon")
     cur = projection.cursor()
@@ -181,7 +181,7 @@ def test_each_value_ticked_alone_shows_its_count_and_the_empty_cells_are_the_gri
 
 
 def test_a_long_list_says_how_many_it_did_not_list(env, monkeypatch):
-    from aughor.sheets import views
+    from pramanyx.sheets import views
     sheet = _orders(env)
     got = _values(sheet, "order_id", limit=3)
     assert [v["value"] for v in got["values"]] == ["136cce7f", "47770eb9", "53cdb2fc"]
@@ -200,7 +200,7 @@ def test_a_search_narrows_the_list_to_the_values_holding_it_as_written(env):
 
 
 def test_a_column_a_model_writes_lists_no_count_of_its_values(env):
-    from aughor.sheets import model_columns, views
+    from pramanyx.sheets import model_columns, views
     sheet = _orders(env)
     sheet = model_columns.add(sheet, name="Topic", instruction="the topic", reads=[sheet.column("coupon").id],
                               by="user:ana")
@@ -213,7 +213,7 @@ def test_the_route_reads_a_columns_values_as_the_rows_read_takes_a_filter(env, m
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from aughor.routers import sheets as sheets_router
+    from pramanyx.routers import sheets as sheets_router
     sheet = _orders(env)
     app = FastAPI()
     app.include_router(sheets_router.router)
@@ -230,10 +230,10 @@ def test_the_route_reads_a_columns_values_as_the_rows_read_takes_a_filter(env, m
     assert client.get(f"/sheets/{sheet.id}/columns/{status}/values", params={"filter": "[{"}).status_code == 422
     assert client.get(f"/sheets/{sheet.id}/columns/nope/values").status_code == 422
     # gated as the rows are: a sheet not shared with the person is refused, saying so
-    from aughor.sheets import model, sharing
+    from pramanyx.sheets import model, sharing
     sharing.set_sharing(model.get(sheet.id), "chosen", [{"kind": "person", "id": "bo", "level": "view"}], by="user:ana")
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "dee")
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "dee")
     refused = client.get(f"/sheets/{sheet.id}/columns/{status}/values")
     assert refused.status_code == 403 and "was not shared with you" in refused.json()["detail"]
-    monkeypatch.setenv("AUGHOR_LOCAL_USER", "bo")
+    monkeypatch.setenv("PRAMANYX_LOCAL_USER", "bo")
     assert client.get(f"/sheets/{sheet.id}/columns/{status}/values").status_code == 200

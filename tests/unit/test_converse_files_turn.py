@@ -23,8 +23,8 @@ import types
 
 import pytest
 
-from aughor.db.history import chat_session_turn_ids, get_investigation
-from aughor.routers import investigations as inv
+from pramanyx.db.history import chat_session_turn_ids, get_investigation
+from pramanyx.routers import investigations as inv
 
 SESSION = "slack:C0TEST:1788000000.000100"
 
@@ -40,7 +40,7 @@ def offline(monkeypatch):
     monkeypatch.setattr(inv, "build_history_section", lambda h: "")
     monkeypatch.setattr(inv, "build_prior_answers_section", lambda a: "")
     monkeypatch.setattr(inv, "resolve_prior_answers", lambda *a, **k: [])
-    monkeypatch.setattr("aughor.agent.converse_tools.ground_answer_numbers",
+    monkeypatch.setattr("pramanyx.agent.converse_tools.ground_answer_numbers",
                         lambda answer, rows, question="": (answer, None))
 
 
@@ -55,7 +55,7 @@ def _drive(question: str, session_id: str = SESSION) -> list[dict]:
 
 
 def test_a_tool_less_turn_is_filed_under_its_conversation(offline, monkeypatch):
-    monkeypatch.setattr("aughor.agent.converse_tools.converse",
+    monkeypatch.setattr("pramanyx.agent.converse_tools.converse",
                         lambda *a, **k: _result("Yes — the dip is inside normal variance."))
 
     before = set(chat_session_turn_ids(SESSION))
@@ -77,7 +77,7 @@ def test_a_tool_less_turn_is_filed_under_its_conversation(offline, monkeypatch):
 def test_a_turn_that_called_a_tool_is_not_filed_twice(offline, monkeypatch):
     """The tool's own row is the better one — it carries the SQL and the receipt.
     Two rows for one exchange would double-count every reader that counts turns."""
-    monkeypatch.setattr("aughor.agent.converse_tools.converse",
+    monkeypatch.setattr("pramanyx.agent.converse_tools.converse",
                         lambda *a, **k: _result("East leads.", steps=[
                             types.SimpleNamespace(tool="answer_question", arguments={}, ok=True,
                                                   detail="", result_chars=10)]))
@@ -93,7 +93,7 @@ def test_a_turn_that_called_a_tool_is_not_filed_twice(offline, monkeypatch):
             tool_emit("done", {"inv_id": "inner-row-1", "has_receipt": True})
         return _result("East leads.")
 
-    monkeypatch.setattr("aughor.agent.converse_tools.converse", _fake_converse)
+    monkeypatch.setattr("pramanyx.agent.converse_tools.converse", _fake_converse)
 
     before = set(chat_session_turn_ids(SESSION))
     frames = _drive("which region leads?")
@@ -107,7 +107,7 @@ def test_a_turn_that_called_a_tool_is_not_filed_twice(offline, monkeypatch):
 def test_filing_is_best_effort_and_never_costs_the_answer(offline, monkeypatch):
     """The answer has already been streamed by the time the row is written; a
     failed write must not turn a delivered answer into an error frame."""
-    monkeypatch.setattr("aughor.agent.converse_tools.converse",
+    monkeypatch.setattr("pramanyx.agent.converse_tools.converse",
                         lambda *a, **k: _result("Yes."))
     monkeypatch.setattr(inv, "save_chat_turn",
                         lambda **k: (_ for _ in ()).throw(RuntimeError("history is locked")))

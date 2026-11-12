@@ -13,8 +13,8 @@ from types import SimpleNamespace as NS
 
 import pytest
 
-from aughor.ontology.framing import frame_question
-from aughor.ontology.models import OntologyGraph
+from pramanyx.ontology.framing import frame_question
+from pramanyx.ontology.models import OntologyGraph
 
 GRAPH = "evals/ablation_thelook_business_ontology.json"
 

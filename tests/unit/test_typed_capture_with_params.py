@@ -19,8 +19,8 @@ import duckdb
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.db import registry
+from pramanyx.api import app
+from pramanyx.db import registry
 
 client = TestClient(app)
 
@@ -96,12 +96,12 @@ def test_an_internal_label_still_skips_the_capture():
     """The safety rule the wrapper exists to hold in ONE place: internal queries skip the
     PII/audit post-pass, so a typed capture there would be an unredacted side channel.
     Both entry points have to honour it, and now both read it from the same function."""
-    from aughor.db.connection import DatabaseConnection
+    from pramanyx.db.connection import DatabaseConnection
 
     class _Probe(DatabaseConnection):
         dialect = "duckdb"
         def execute(self, hypothesis_id, sql):
-            from aughor.db.connection import offer_typed_rows
+            from pramanyx.db.connection import offer_typed_rows
             offer_typed_rows([[1]], truncated=False, types=["BIGINT"])
             return _ok(sql)
         def execute_with_params(self, hypothesis_id, sql, params):
@@ -122,12 +122,12 @@ def test_an_internal_label_still_skips_the_capture():
 
 def test_an_errored_run_carries_no_typed_payload():
     """Fail closed. A payload alongside an error would be rows the legacy result dropped."""
-    from aughor.db.connection import DatabaseConnection, QueryResult
+    from pramanyx.db.connection import DatabaseConnection, QueryResult
 
     class _Broken(DatabaseConnection):
         dialect = "duckdb"
         def execute(self, hypothesis_id, sql):
-            from aughor.db.connection import offer_typed_rows
+            from pramanyx.db.connection import offer_typed_rows
             offer_typed_rows([[1]], truncated=False, types=["BIGINT"])
             return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[],
                                row_count=0, error="boom")
@@ -143,7 +143,7 @@ def test_an_errored_run_carries_no_typed_payload():
 
 
 def _ok(sql):
-    from aughor.db.connection import QueryResult
+    from pramanyx.db.connection import QueryResult
     return QueryResult(hypothesis_id="query_workbench", sql=sql, columns=["a"],
                        rows=[["1"]], row_count=1)
 
@@ -154,7 +154,7 @@ def test_sqlite_captures_on_its_bound_path_too(tmp_path):
     the types on exactly the connector where the fix above cannot reach."""
     import sqlite3
 
-    from aughor.connectors.file.sqlite import SQLiteConnection
+    from pramanyx.connectors.file.sqlite import SQLiteConnection
 
     path = tmp_path / "s.sqlite"
     c = sqlite3.connect(path)

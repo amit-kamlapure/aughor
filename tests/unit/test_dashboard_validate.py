@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from aughor.dashboards import validate as V
+from pramanyx.dashboards import validate as V
 
 REPO = Path(__file__).resolve().parents[2]
 FIXTURE = REPO / "web" / "lib" / "dashboards" / "premise.fixture.json"
@@ -185,7 +185,7 @@ def test_the_server_reads_the_vocabulary_the_web_declares():
                                    "ObjectFilters", "ObjectFigure", "ObjectChart", "ObjectBreakdown", "ActionButtons",
                                    "ObjectList", "ObjectMap", "ObjectTimeline", "ChooseOne", "ObjectSearch", "Drawer", "Question", "QueryFilters", "ScenarioInputs", "AddRow"]
     # the server's own lists of pieces are the web's, read from it — a piece the web adds is checked here or refused
-    from aughor.dashboards import app_pieces, pieces, questions
+    from pramanyx.dashboards import app_pieces, pieces, questions
     # every piece is the ontology's (or the picker's) or a person's Question (PENDING 54), each held to its own rules
     assert list(pieces.PIECES) + [questions.KIND] + list(pieces.FILE_PIECES) == vocab["components"][7:]
     assert list(app_pieces.PIECES) == vocab["components"][-10:-4]
@@ -219,7 +219,7 @@ def test_the_server_holds_a_section_on_the_grid_to_the_same_rules(premise):
 @needs_rules
 def test_a_cards_tones_are_the_answer_vocabularys_tones():
     """One scale of tones, not two: a dashboard card and an answer part mean the same by "bad"."""
-    from aughor.agent.present_tool import TONES
+    from pramanyx.agent.present_tool import TONES
     assert set(V.vocabulary()["tones"]) == set(TONES)
 
 
@@ -240,7 +240,7 @@ def test_no_node_is_not_checked_never_accepted(premise, monkeypatch):
 
 
 def test_a_node_that_cannot_start_is_not_checked(premise, monkeypatch):
-    monkeypatch.setenv("AUGHOR_NODE_BIN", "/nonexistent/node")
+    monkeypatch.setenv("PRAMANYX_NODE_BIN", "/nonexistent/node")
     _never_accepted(V.check_spec(premise, known_cards=CARDS), "FileNotFoundError")
 
 
@@ -279,9 +279,9 @@ def test_rules_that_hang_are_not_checked(premise, monkeypatch, tmp_path):
 
 @needs_rules
 def test_the_card_store_is_asked_for_the_persons_cards_and_the_connections(premise, monkeypatch):
-    from aughor.dashboards.home import Home
-    from aughor.cards import store
-    from aughor.cards.models import StoredCard
+    from pramanyx.dashboards.home import Home
+    from pramanyx.cards import store
+    from pramanyx.cards.models import StoredCard
 
     asked = []
 

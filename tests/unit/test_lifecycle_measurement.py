@@ -13,11 +13,11 @@ from pathlib import Path
 
 import duckdb
 
-from aughor.db.connection import open_connection
-from aughor.ontology.builder import render_ontology_annotations
-from aughor.ontology.lifecycle import apply_lifecycle_measurements, measure_entity, observed_states, rows_that_left
-from aughor.ontology.models import OntologyEntity, OntologyGraph, Segment
-from aughor.ontology.semantic_block import render_semantic_layer
+from pramanyx.db.connection import open_connection
+from pramanyx.ontology.builder import render_ontology_annotations
+from pramanyx.ontology.lifecycle import apply_lifecycle_measurements, measure_entity, observed_states, rows_that_left
+from pramanyx.ontology.models import OntologyEntity, OntologyGraph, Segment
+from pramanyx.ontology.semantic_block import render_semantic_layer
 
 REPO = Path(__file__).resolve().parents[2]
 SAMPLES_FIXTURE = REPO / "evals" / "ablation_samples_ecommerce_ontology.json"

@@ -13,14 +13,14 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from aughor.db.connection import open_connection
-from aughor.demo.setup import _seed_ecommerce
-from aughor.ontology import overrides as OV
-from aughor.ontology.backing import apply_backing_measurements
-from aughor.ontology.models import OntologyGraph
-from aughor.semantic.object_instances import list_linked
-from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query
-from aughor.semantic.object_types import describe_object_type, find_paths, link_name_problem, object_type_map
+from pramanyx.db.connection import open_connection
+from pramanyx.demo.setup import _seed_ecommerce
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.backing import apply_backing_measurements
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.semantic.object_instances import list_linked
+from pramanyx.semantic.object_query import ObjectQueryRefused, compile_object_query
+from pramanyx.semantic.object_types import describe_object_type, find_paths, link_name_problem, object_type_map
 
 GRAPH = Path(__file__).resolve().parents[2] / "evals" / "ablation_samples_ecommerce_ontology_measured.json"
 

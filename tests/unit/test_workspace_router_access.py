@@ -1,16 +1,16 @@
 """The workspace payload carries the EFFECTIVE access set, not just membership.
 
 The gate the routers enforce is ``membership ∪ explicit catalog grants``
-(`aughor.metastore.sync.accessible_catalog_ids`), but the workspace payload used
+(`pramanyx.metastore.sync.accessible_catalog_ids`), but the workspace payload used
 to carry membership alone — so the frontend picker, which can only filter on what
 the payload says, hid a granted catalog the API was happily serving. Every
 endpoint that returns a workspace now serves ``accessible_connection_ids``
 resolved by that same gate. (Also the first direct coverage this router has had.)
 """
-import aughor.workspace.store as wstore
-from aughor.metastore.models import USAGE, catalog_securable, workspace_principal
-from aughor.metastore.store import add_grant
-from aughor.routers.workspace import (
+import pramanyx.workspace.store as wstore
+from pramanyx.metastore.models import USAGE, catalog_securable, workspace_principal
+from pramanyx.metastore.store import add_grant
+from pramanyx.routers.workspace import (
     CreateWorkspaceRequest,
     UpdateWorkspaceRequest,
     create_workspace_endpoint,
@@ -22,7 +22,7 @@ from aughor.routers.workspace import (
 
 def _hermetic(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(wstore, "_DB_PATH", tmp_path / "workspaces.db")
-    import aughor.metastore.store as cat_store
+    import pramanyx.metastore.store as cat_store
     monkeypatch.setattr(cat_store, "_DB_PATH", tmp_path / "metastore.db")
 
 
@@ -66,7 +66,7 @@ def test_a_metastore_failure_degrades_to_membership(tmp_path, monkeypatch):
 
     def _boom(workspace_id):
         raise RuntimeError("metastore unavailable")
-    monkeypatch.setattr("aughor.metastore.sync.accessible_catalog_ids", _boom)
+    monkeypatch.setattr("pramanyx.metastore.sync.accessible_catalog_ids", _boom)
 
     row = next(w for w in get_workspaces() if w["id"] == ws.id)
     assert row["accessible_connection_ids"] == ["c1"]

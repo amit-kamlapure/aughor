@@ -13,8 +13,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from aughor.dashboards.intent import is_dashboard_ask
-from aughor.routers import investigations as inv
+from pramanyx.dashboards.intent import is_dashboard_ask
+from pramanyx.routers import investigations as inv
 
 #: The CT receipt's ten asks, verbatim.
 RECEIPT_ASKS = [
@@ -58,7 +58,7 @@ def door(monkeypatch):
 
 @pytest.mark.parametrize("ask", [RECEIPT_ASKS[5], RECEIPT_ASKS[7]])    # the two the gate paused
 def test_the_door_says_where_cockpits_are_made_instead_of_asking_which_metric(door, monkeypatch, ask):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda n: False)
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled", lambda n: False)
     evs = _events(door.post("/ask", json={"question": ask, "connection_id": "c1"}).text)
     assert not any(e["type"] == "clarify" for e in evs)
     headline = next(e["headline"] for e in evs if e["type"] == "headline")
@@ -69,14 +69,14 @@ def test_the_door_says_where_cockpits_are_made_instead_of_asking_which_metric(do
 
 
 def test_suggestions_without_a_model_serve_the_starters_and_say_why(monkeypatch):
-    from aughor.routers import system
+    from pramanyx.routers import system
 
     class _NoKey:
         def complete(self, **k):
             raise RuntimeError("no API key configured for the coder binding")
 
-    monkeypatch.setattr("aughor.llm.provider.get_provider", lambda role: _NoKey())
-    monkeypatch.setattr("aughor.semantic.suggestions_cache.get_cached", lambda *a: None)
+    monkeypatch.setattr("pramanyx.llm.provider.get_provider", lambda role: _NoKey())
+    monkeypatch.setattr("pramanyx.semantic.suggestions_cache.get_cached", lambda *a: None)
     app = FastAPI()
     app.include_router(system.router)
     r = TestClient(app).get("/suggestions", params={"connection_id": "workspace"})

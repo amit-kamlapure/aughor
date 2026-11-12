@@ -5,7 +5,7 @@
 > **One-line thesis.** The core engine (ADA / Insight / Explorer) **stays exactly as it is**.
 > On top of it we add **Specialist Agents** — *Customer Analytics*, *Supply Chain*, *Finance
 > Reporting*, *Web & Tracking* — that a **user builds and deploys** as a declarative **folder**.
-> The folder declares *intent*; aughor's existing grounding (profiler, KB, semantic compiler,
+> The folder declares *intent*; pramanyx's existing grounding (profiler, KB, semantic compiler,
 > SQL guards) **compiles that intent against the real warehouse**. A specialist is a persona +
 > vocabulary + workflow that *steers* the engine, never a parallel engine.
 
@@ -21,14 +21,14 @@ they are different **vocabularies, mental models, default questions, and surface
 same trusted substrate.
 
 The trap (the "Eve trap") is to let each team hand-roll an agent: write the SQL, wire the
-tables, maintain the prompts. That does not scale and it throws away aughor's single biggest
+tables, maintain the prompts. That does not scale and it throws away pramanyx's single biggest
 asset — **grounded correctness**. The resolution:
 
 > **The folder declares intent. Pramanyx is the compiler that grounds it.**
 
 A specialist author declares *what metrics matter, what questions this expert owns, what the
 entity model is*. They never write SQL or hardcode a table name. Binding to a specific
-warehouse happens at **deploy time** through aughor's profiler and ontology — which is exactly
+warehouse happens at **deploy time** through pramanyx's profiler and ontology — which is exactly
 why the same pack is portable across connections and customers.
 
 This is also the concrete, shippable first instance of the "agent/playbook as a folder" idea:
@@ -210,11 +210,11 @@ intent_tags: [retention, cohort, churn, nrr, ltv, rfm, repeat purchase]
 ```
 
 `intent_tags` reuse the exact mechanism the KB retriever already uses, so routing is the same
-embedding/keyword match aughor already runs — no new ranking stack.
+embedding/keyword match pramanyx already runs — no new ranking stack.
 
 ### 3.6 `playbooks/*.yaml` — investigation routines
 
-**Same shape as `PlaybookEntry`** (`aughor/playbook/models.py`): `trigger_metric`,
+**Same shape as `PlaybookEntry`** (`pramanyx/playbook/models.py`): `trigger_metric`,
 `trigger_condition`, `recommendation`, etc. A pack ships curated, domain-correct plays:
 
 ```yaml
@@ -275,7 +275,7 @@ metadata** that is injected into the *unchanged* engine.
 
 1. A question arrives (chat, briefing, monitor).
 2. The **router** scores it against every active pack's `questions.intent_tags` + `expertise`
-   embedding — the *same retrieval the KB already does* (`aughor/semantic/kb_retriever.py`).
+   embedding — the *same retrieval the KB already does* (`pramanyx/semantic/kb_retriever.py`).
 3. The best-matching pack (above a confidence floor) is selected. Below the floor → the
    generalist (today's behaviour) handles it. No pack ever *blocks* an answer; it only sharpens
    one.
@@ -316,7 +316,7 @@ reason packs are portable.
 **At deploy/activation**, for a `(pack, connection)`:
 
 1. **Propose.** Run the pack's `entities.yaml` roles against the connection's profile +
-   ontology. Pramanyx already profiles every table (`aughor/business_profile/`, `aughor/tools/profiler.py`)
+   ontology. Pramanyx already profiles every table (`pramanyx/business_profile/`, `pramanyx/tools/profiler.py`)
    and builds an entity graph. The resolver scores candidate tables/columns per role:
    - `customer` → the entity with a stable identity that other tables reference most.
    - `event` → a dated fact referencing `customer`.
@@ -343,7 +343,7 @@ pack lights up a different warehouse by re-running steps 1–3.
 All three produce the **same folder**. They differ only in who is comfortable with what.
 
 ### 6.1 Folder-native (power users / git)
-Write the YAML + markdown, run `aughor pack validate` (schema + binding dry-run against a
+Write the YAML + markdown, run `pramanyx pack validate` (schema + binding dry-run against a
 connection), commit. Git-native: a commit is a pack version; rollback is `git revert`. This is
 the Eve-style path and the ground truth all other paths serialise to.
 
@@ -351,10 +351,10 @@ the Eve-style path and the ground truth all other paths serialise to.
 A guided flow in the app:
 1. Name the expert, pick its owner team, set the default grain.
 2. **Add metrics** — pick from the KB/industry library, or define a new one through the existing
-   **propose-to-define** governance gate (`aughor/semantic/governance.py`), so even
+   **propose-to-define** governance gate (`pramanyx/semantic/governance.py`), so even
    user-authored metrics are governed.
-3. **Bind entities** — aughor proposes the role mapping (§5); the analyst confirms with one click.
-4. **Add questions** the expert owns; aughor suggests diagnostics from the KB.
+3. **Bind entities** — pramanyx proposes the role mapping (§5); the analyst confirms with one click.
+4. **Add questions** the expert owns; pramanyx suggests diagnostics from the KB.
 5. Preview against a connection → deploy.
 
 Under the hood this writes the folder and runs the same validator.
@@ -365,7 +365,7 @@ Under the hood this writes the folder and runs the same validator.
 Pramanyx introspects the connection (it already profiles it), retrieves relevant KB + industry
 recipes, and **drafts the entire pack** — persona, metrics, role bindings, questions, playbooks,
 surface — then drops the user into the §6.2 review flow to edit and confirm. This is only
-possible *because* of aughor's grounding: it can propose a *correct* expert, not a plausible one.
+possible *because* of pramanyx's grounding: it can propose a *correct* expert, not a plausible one.
 This is the demo that sells the platform.
 
 ---
@@ -373,11 +373,11 @@ This is the demo that sells the platform.
 ## 7 · Deploy & lifecycle (reuses the metastore)
 
 A pack is a **first-class metastore securable**, alongside Catalog/Schema/Volume
-(`aughor/metastore/`):
+(`pramanyx/metastore/`):
 
 - **Install** a pack into an org (the registry holds versions).
 - **Grant** `workspace → pack` (USAGE), exactly like the existing `workspace → catalog` Grant
-  (`aughor/metastore/models.py:Grant`). A pack is active for a workspace iff granted.
+  (`pramanyx/metastore/models.py:Grant`). A pack is active for a workspace iff granted.
 - **Bind** to one or more connections via the resolver (§5); binding records are versioned.
 - **Version & rollback** mirror `PlaybookEntry.version`/`receipt` — content fingerprint per
   version, preview-before-promote, one-click rollback.
@@ -391,16 +391,16 @@ Multi-tenant falls out for free: packs, grants and bindings are already `org_id`
 
 | Existing seam | Role in specialists | Change |
 |---|---|---|
-| `aughor/business_profile/` (BusinessProfile, NorthStarMetric) | proposes entity bindings; fills persona templates | reuse |
+| `pramanyx/business_profile/` (BusinessProfile, NorthStarMetric) | proposes entity bindings; fills persona templates | reuse |
 | `data/kb/*`, `data/kb/industry/*` | metric-recipe shape; routing tags; diagnostic library | reuse (pack metrics extend this shape) |
-| `aughor/semantic/` (compiler, governance, kb_retriever, metric_retrieval) | metric resolution, propose-to-define, routing | reuse |
-| `aughor/playbook/` | pack playbooks are seeded `PlaybookEntry`s | reuse |
-| `aughor/agent/` (graph, orchestrator, investigate, explore) | receives injected steering metadata at intake | **+injection hook**, executors unchanged |
-| `aughor/explorer/` | `explorer_angles` extend the hypothesis set | reuse (+angle source) |
-| `aughor/metastore/` (Grant, store, sync) | pack as securable; `workspace→pack` grants; bindings | **+pack securable type** |
+| `pramanyx/semantic/` (compiler, governance, kb_retriever, metric_retrieval) | metric resolution, propose-to-define, routing | reuse |
+| `pramanyx/playbook/` | pack playbooks are seeded `PlaybookEntry`s | reuse |
+| `pramanyx/agent/` (graph, orchestrator, investigate, explore) | receives injected steering metadata at intake | **+injection hook**, executors unchanged |
+| `pramanyx/explorer/` | `explorer_angles` extend the hypothesis set | reuse (+angle source) |
+| `pramanyx/metastore/` (Grant, store, sync) | pack as securable; `workspace→pack` grants; bindings | **+pack securable type** |
 | SQL safety / join+grain guards / dry-run | enforce grounding on pack-driven SQL | reuse (unchanged) |
 | Action Hub / brief delivery | deliver specialist briefings | reuse |
-| `aughor/kernel/flags.py` | gate the whole feature while it lands | reuse |
+| `pramanyx/kernel/flags.py` | gate the whole feature while it lands | reuse |
 
 The new code is concentrated in: **pack spec + loader/validator**, **entity-binding resolver**,
 **router + injection hook**, and the **authoring surfaces**.
@@ -441,7 +441,7 @@ binding**, not greenfield authoring.
 
 | Phase | Deliverable | Mostly… |
 |---|---|---|
-| **P0 — Spec & loader** | `packs/` format, schema, `aughor/packs/` loader + `pack validate`; a feature flag | new (small) |
+| **P0 — Spec & loader** | `packs/` format, schema, `pramanyx/packs/` loader + `pack validate`; a feature flag | new (small) |
 | **P1 — Binding resolver** | role→column proposal + confirm + dry-run verify + pinned binding record (§5) | **new (the crux)** |
 | **P2 — Routing & injection** | router (question→pack via existing retrieval) + intake injection hook into the modes | new glue over reuse |
 | **P3 — Retention reference pack** | author `packs/customer-analytics/` end-to-end through P0–P2; live-verify on `missimi`/`beautycommerce` | content + curation |
@@ -467,7 +467,7 @@ answered in their vocabulary, still passing every correctness guard.
 
 **Non-goals:**
 - No parallel agent runtime, no per-pack process, no arbitrary code execution (that fights
-  aughor's deterministic-SQL correctness story — explicitly rejected).
+  pramanyx's deterministic-SQL correctness story — explicitly rejected).
 - Packs do not own connection access; the metastore gate (`membership ∪ grants`) is still the
   only authority on what data is reachable.
 

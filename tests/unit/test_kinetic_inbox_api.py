@@ -12,9 +12,9 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.actions import inbox
-from aughor.ontology.models import ActionParameter, KineticAction
+from pramanyx.api import app
+from pramanyx.actions import inbox
+from pramanyx.ontology.models import ActionParameter, KineticAction
 
 client = TestClient(app)
 
@@ -28,7 +28,7 @@ def _action() -> KineticAction:
 
 @pytest.fixture
 def flag_on(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled",
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled",
                         lambda n: n == "automations.proposals")
 
 
@@ -36,9 +36,9 @@ def flag_on(monkeypatch):
 def wired(monkeypatch):
     class _G:
         kinetic_actions = {"refund": _action()}
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology",
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology",
                         lambda cid, schema=None: _G())
-    import aughor.actions.executor as ex
+    import pramanyx.actions.executor as ex
     calls: list = []
     monkeypatch.setattr(ex, "default_dispatch", lambda a, p, s="", **_k: calls.append((a.id, p)))
     return calls
@@ -93,10 +93,10 @@ def test_propose_stages_to_the_inbox(monkeypatch):
     Wave 2 hardwired automations.proposals, Wave 5 hardwired kinetic.agent_actions.)"""
     class _G:
         kinetic_actions = {"refund": _action()}
-    monkeypatch.setattr("aughor.routers.kinetic._resolve_graph", lambda c, s: _G())
+    monkeypatch.setattr("pramanyx.routers.kinetic._resolve_graph", lambda c, s: _G())
 
-    from aughor.actions.propose import Proposal
-    monkeypatch.setattr("aughor.actions.propose.propose_actions",
+    from pramanyx.actions.propose import Proposal
+    monkeypatch.setattr("pramanyx.actions.propose.propose_actions",
                         lambda graph, ctx, scope="", provider=None, **kw: [
                             Proposal("refund", "proposed", {"order_id": "8821"}, "because")])
 
@@ -113,7 +113,7 @@ def test_propose_stages_to_the_inbox(monkeypatch):
 
 def test_annotate_then_withdraw_over_http_and_a_second_withdrawal_is_404():
     """One edit, unsaid. Until this door the only way back was the connection-wide purge."""
-    from aughor.actions import overlay as OV
+    from pramanyx.actions import overlay as OV
     OV.purge_connections(["conn-withdraw-t"])
     try:
         params = {"connection_id": "conn-withdraw-t"}
@@ -135,7 +135,7 @@ def test_annotate_then_withdraw_over_http_and_a_second_withdrawal_is_404():
 
 
 def test_a_withdrawal_does_not_reach_another_connection_over_http():
-    from aughor.actions import overlay as OV
+    from pramanyx.actions import overlay as OV
     OV.purge_connections(["conn-withdraw-a", "conn-withdraw-b"])
     try:
         mine = client.post("/kinetic-actions/annotate", params={"connection_id": "conn-withdraw-a"},
@@ -162,7 +162,7 @@ def test_get_one_proposal_and_a_missing_one_is_404(flag_on):
 def test_accept_carries_fills_to_the_inbox(flag_on):
     """SP-9 — the card's open-choice answers ride the accept body. The refusal for a
     fill that names a non-hole comes back as the executor's own 4xx, proposal intact."""
-    import aughor.automations.store  # noqa: F401 — registers the holes door
+    import pramanyx.automations.store  # noqa: F401 — registers the holes door
     p = inbox.stage_proposal(inbox.StagedProposal(
         kind="automation_draft", connection_id="conn-api", action_id="automation:x",
         params={"conn_id": "conn-api", "name": "x",

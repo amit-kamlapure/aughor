@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.llm import provider as P
-from aughor.llm.reliability import UNAVAILABLE, Diagnosis, StructuredOutputError, _unavailable_detail
+from pramanyx.llm import provider as P
+from pramanyx.llm.reliability import UNAVAILABLE, Diagnosis, StructuredOutputError, _unavailable_detail
 
 
 class _Said(Exception):

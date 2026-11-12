@@ -19,12 +19,12 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from aughor.db.connection import open_connection
-from aughor.demo.setup import _seed_ecommerce
-from aughor.ontology import overrides as OV
-from aughor.ontology.expressions import expression_problem, probe_expression
-from aughor.ontology.models import ExpressionProperty, OntologyGraph
-from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query
+from pramanyx.db.connection import open_connection
+from pramanyx.demo.setup import _seed_ecommerce
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.expressions import expression_problem, probe_expression
+from pramanyx.ontology.models import ExpressionProperty, OntologyGraph
+from pramanyx.semantic.object_query import ObjectQueryRefused, compile_object_query
 
 GRAPH = Path(__file__).resolve().parents[2] / "evals" / "ablation_samples_ecommerce_ontology_measured.json"
 
@@ -44,7 +44,7 @@ def db(tmp_path_factory):
 def graph(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ontology_overrides")
     monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
-    monkeypatch.setattr("aughor.explorer.store.get_findings", lambda key: [])
+    monkeypatch.setattr("pramanyx.explorer.store.get_findings", lambda key: [])
     return OntologyGraph.model_validate(json.loads(GRAPH.read_text()))
 
 
@@ -129,7 +129,7 @@ def test_a_good_formula_verifies_on_the_objects_it_was_checked_on(db, graph):
 
 
 def test_the_builders_computed_properties_are_verified_on_many_rows_too(db):
-    from aughor.ontology.validator import _verify_formula_rows
+    from pramanyx.ontology.validator import _verify_formula_rows
     first = _one(db, "SELECT customer_id FROM customers LIMIT 1")[0]
     assert _verify_formula_rows(db, "CURRENT_DATE - signup_date", "customers") == (True, "")
     ok, note = _verify_formula_rows(db, f"CAST(CASE WHEN customer_id = '{first}' THEN '1' ELSE 'x' END AS INTEGER)",
@@ -140,7 +140,7 @@ def test_the_builders_computed_properties_are_verified_on_many_rows_too(db):
 # ── shown on the object page ─────────────────────────────────────────────────────────────────
 
 def test_the_object_page_shows_each_formula_evaluated_for_the_object(db, graph):
-    from aughor.semantic.object_instances import get_object
+    from pramanyx.semantic.object_instances import get_object
     _declared(graph, "Customer", "spend_per_signup_day", "lifetime_spend / NULLIF(days_since_signup, 0)")
     customer = get_object(graph, db, "customer", "C00042")
     shown = {p["name"]: p for p in customer.properties if p.get("formula")}
@@ -154,8 +154,8 @@ def test_the_object_page_shows_each_formula_evaluated_for_the_object(db, graph):
 
 
 def test_a_formula_the_compiler_refuses_is_said_on_the_page_and_costs_only_itself(db, graph):
-    from aughor.ontology.models import ComputedProperty
-    from aughor.semantic.object_instances import get_object
+    from pramanyx.ontology.models import ComputedProperty
+    from pramanyx.semantic.object_instances import get_object
     graph.entities["Customer"].computed_properties.insert(      # FIRST, so the ones after it prove it cost only itself
         0, ComputedProperty(id="orders_ever", label="Orders ever", formula_sql="COUNT(*)", verified=True))
     customer = get_object(graph, db, "customer", "C00042")

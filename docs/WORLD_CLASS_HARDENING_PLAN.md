@@ -81,10 +81,10 @@ connection-level Briefing still works (no regression). Effort: **S**.
 chain: seed materialization swallows all errors, the sample endpoint has no error field, and the UI
 renders "fetch failed" and "table empty" identically.**
 
-Lifecycle: `samples.duckdb` seeded at API startup (`aughor/api.py:61–68`, failure logged + swallowed) →
+Lifecycle: `samples.duckdb` seeded at API startup (`pramanyx/api.py:61–68`, failure logged + swallowed) →
 each Workspace connection ATTACHes it read-only and materializes tables into in-memory DuckDB
-(`aughor/connectors/file/local_upload.py:164–176`) → served by
-`GET /connections/{id}/tables/{t}/sample` (`aughor/routers/connections.py:310–340`) → rendered by
+(`pramanyx/connectors/file/local_upload.py:164–176`) → served by
+`GET /connections/{id}/tables/{t}/sample` (`pramanyx/routers/connections.py:310–340`) → rendered by
 `SampleGrid` (`web/components/CatalogScreen.tsx:460–498`).
 
 **Ranked candidates:**
@@ -95,7 +95,7 @@ each Workspace connection ATTACHes it read-only and materializes tables into in-
 2. **UI cannot distinguish error/empty/no-data** (`CatalogScreen.tsx:484`): seed-failed-but-schema-exists
    returns 200 + 0 rows → renders the same "No rows returned" as a genuinely empty table.
 3. **Concurrent ATTACH/DETACH race**: every Workspace session ATTACHes the same `samples.duckdb` with
-   no synchronization (`local_upload.py:115`, registry spawns fresh sessions `aughor/db/registry.py:152–157`).
+   no synchronization (`local_upload.py:115`, registry spawns fresh sessions `pramanyx/db/registry.py:152–157`).
 4. **Stale in-memory copies after re-seed/reset**: `ensure_samples_db` re-runs on API restart while old
    sessions hold materialized copies; the `data/_reset_backup_*` dirs show resets happen regularly.
 5. Type-serialization failure on exotic columns (`connections.py:331` `str(v)` per cell; an exception
@@ -125,18 +125,18 @@ all show full sample tables; (iii) unit tests for 2a/2b; UI states screenshot-ve
 ### WCH-3 — Ontology sometimes does not build up
 
 **Status: 8 ranked candidates across the 4-stage build pipeline (profiling → structural →
-LLM-enrichment → validation, `aughor/db/connection.py:732–853`). The pipeline is resilience-by-
+LLM-enrichment → validation, `pramanyx/db/connection.py:732–853`). The pipeline is resilience-by-
 swallowing: nearly every stage can fail without the UI ever knowing.**
 
-Build triggers: explicit `POST /ontology/rebuild` (`aughor/routers/ontology.py:317–350`), auto during
-exploration Phase 8 (`aughor/explorer/agent.py:886–908`), lazy on first `/ontology/*` GET. Cache:
+Build triggers: explicit `POST /ontology/rebuild` (`pramanyx/routers/ontology.py:317–350`), auto during
+exploration Phase 8 (`pramanyx/explorer/agent.py:886–908`), lazy on first `/ontology/*` GET. Cache:
 `data/ontology_cache.json`, key `{conn}:{schema}:{fingerprint}`, LRU 20.
 
 **Ranked candidates:**
 1. **Enrichment LLM failure half-surfaced** (`db/connection.py:807–820`): exception recorded in
    `last_build` but flagged `"ok": True`; no retry, no timeout param; a *partial* LLM success can save
    `enrichment_version=5` with missing fields → **never re-enriches** (the "rebuild doesn't help" smell).
-2. **Non-atomic JSON store, no locks** (`aughor/util/json_store.py:36–54`): load→mutate→save with zero
+2. **Non-atomic JSON store, no locks** (`pramanyx/util/json_store.py:36–54`): load→mutate→save with zero
    locking; concurrent rebuild + Phase-8 auto-build = last-write-wins cache corruption. Same store
    class backs 17+ caches.
 3. **Empty structural graph saved as success** (`ontology/builder.py:970–982`, `ontology/store.py:253`):
@@ -222,14 +222,14 @@ The perf/stress audit found a *class* of lifecycle bugs that manufacture intermi
 platform-wide. These likely co-cause all three reported bugs and are individually small fixes.
 
 ### WCH-4 — Paused explorers never resumed (CRITICAL)
-`aughor/routers/investigations.py:1157–1162` pauses every explorer on the connection when an
+`pramanyx/routers/investigations.py:1157–1162` pauses every explorer on the connection when an
 investigation starts; there is **no finally-block** — on stream drop, exception (`:1377–1390`), tab
 close, or LLM failure, explorers stay paused forever. Fix: wrap the investigation stream in
 try/finally that resumes `_paused_explorers`; resume in all failure handlers.
 **Gate:** kill an investigation mid-stream (close SSE), assert explorers return to running within seconds. **S.**
 
 ### WCH-5 — Periodic sweep + auto-resume
-`sweep_stale_running()` runs only once at startup (`aughor/api.py:72–81`). Add a periodic background
+`sweep_stale_running()` runs only once at startup (`pramanyx/api.py:72–81`). Add a periodic background
 task (5 min): mark stale-running investigations failed, resume orphaned paused explorers.
 **Gate:** simulate a stuck "running" investigation; assert it's swept within one cycle. **S.**
 

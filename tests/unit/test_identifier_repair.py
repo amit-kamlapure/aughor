@@ -3,7 +3,7 @@
 Pins: snake_case→camelCase remap (the dominant Bakehouse Binder class), exact columns
 untouched, invented columns left alone, table-scoped, ambiguity-safe, fail-safe.
 """
-from aughor.sql.identifiers import (
+from pramanyx.sql.identifiers import (
     repair_identifiers, unresolved_identifiers, qualify_table_names,
 )
 
@@ -142,7 +142,7 @@ class TestQualify:
         assert "ecommerce.reviews" in out
 
     def test_qualifying_exposes_cross_dataset_to_guard(self):
-        from aughor.explorer.scope import crosses_datasets as _crosses_datasets
+        from pramanyx.explorer.scope import crosses_datasets as _crosses_datasets
         sql = ("SELECT * FROM bakehouse.sales_customers sc JOIN reviews r "
                "ON sc.customerID = r.customer_id")
         assert _crosses_datasets(sql) is False          # bare `reviews` is invisible

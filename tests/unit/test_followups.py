@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.agent.followups import (
+from pramanyx.agent.followups import (
     artifact_from_history,
     followup_system,
     followup_user,
@@ -56,7 +56,7 @@ def test_the_quick_paths_clause_carries_the_same_voice():
     """The quick path merges narrative + follow-ups into ONE narrator call, so its ask
     rides inside the narrative prompt rather than using followup_system(). The voice
     instruction must still be there or the two paths drift."""
-    from aughor.routers.investigations import _FOLLOWUP_CLAUSE
+    from pramanyx.routers.investigations import _FOLLOWUP_CLAUSE
 
     assert "AS THE USER" in _FOLLOWUP_CLAUSE
     assert "Never write about the user" in _FOLLOWUP_CLAUSE

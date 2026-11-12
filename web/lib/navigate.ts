@@ -17,7 +17,7 @@
  * thing inside it; anything richer belongs in a store the destination reads.
  */
 
-export const NAVIGATE_EVENT = "aughor:navigate";
+export const NAVIGATE_EVENT = "pramanyx:navigate";
 
 export interface NavigateRequest {
   /** A NavTab id, validated by the shell — an unknown one is ignored, not guessed at. */

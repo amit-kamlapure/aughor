@@ -25,15 +25,15 @@ Three arms run on the SAME question against the SAME warehouse:
                     blocks teach cardinality upstream, the guards should fire LESS here than
                     on `guarded` — by-construction beating by-guard, measured.
   * **framed**    — ON-10's arm (ROADMAP §3.15, the second movement): the question's business terms resolved
-                    against the DECLARED ontology first (`aughor.ontology.framing` — processes, promises,
+                    against the DECLARED ontology first (`pramanyx.ontology.framing` — processes, promises,
                     rules, no model), its frame block — each definition with the SQL the object door
                     compiles for it, where to start, the drivers the declared links reach — beside the
                     raw arm's schema; a model chooses among definitions only when the words fit several
-                    equally (`aughor.agent.framing`, one extra call, counted). A question that reaches
+                    equally (`pramanyx.agent.framing`, one extra call, counted). A question that reaches
                     nothing declared gets no frame, so the arm IS raw there and spends no call. The
                     movement's falsifier: on records labelled `definition: declared` it must beat raw.
   * **framed_impact** — Arc OC-5's arm: the framed arm with the graph's declared impacts measured on the dataset's
-                    warehouse first (`aughor.ontology.impacts`), so a question framed to a promise another one bears on
+                    warehouse first (`pramanyx.ontology.impacts`), so a question framed to a promise another one bears on
                     also gets the upstream promise's measured reading — what the product's frame carries now. The
                     `framed` arm reads the same graph with no impact, as before OC-5. A question no measured impact
                     reaches gets the framed arm's block unchanged and is scored as framed, never spent on.
@@ -59,7 +59,7 @@ Usage:
     uv run python evals/ablation_eval.py --check-references --dataset evals/ablation_samples_ecommerce.jsonl
     # Beside a SERVING API: redirect the stores (one writer per data/) and hand the arm the
     # graph the API serves — the store is system.db, and a redirected store holds no ontology.
-    AUGHOR_SYSTEM_DB=/tmp/scratch/system.db uv run python evals/ablation_eval.py \
+    PRAMANYX_SYSTEM_DB=/tmp/scratch/system.db uv run python evals/ablation_eval.py \
         --dataset evals/ablation_samples_ecommerce.jsonl \
         --graph-json samples/ecommerce=/tmp/samples_ecommerce.json   # GET /ontology?connection_id=samples&schema_name=ecommerce
 """
@@ -80,7 +80,7 @@ if str(_REPO_ROOT) not in sys.path:
 # Skipped when the caller has declared it wants a clean environment. This runs at
 # IMPORT, so a test that imports anything from this module gets the developer's `.env`
 # in its process — which is how a suite that is green in CI fails on a laptop.
-if not os.environ.get("AUGHOR_SKIP_DOTENV"):
+if not os.environ.get("PRAMANYX_SKIP_DOTENV"):
     try:
         from dotenv import load_dotenv
         load_dotenv(_REPO_ROOT / ".env")
@@ -93,8 +93,8 @@ from pydantic import BaseModel, Field
 
 from evals.run_golden import generate_sql_chat, generate_sql_full_pipeline
 from evals.sql_accuracy import score_single
-from aughor.db.connection import open_connection_for, open_connection_for_with_schema
-from aughor.semantic.object_query import FilterOp
+from pramanyx.db.connection import open_connection_for, open_connection_for_with_schema
+from pramanyx.semantic.object_query import FilterOp
 
 _MATCH = 0.99  # result-set match threshold for "correct"
 
@@ -113,8 +113,8 @@ def apply_guards(raw_sql: str, db, tcols: dict) -> tuple[str, list[str]]:
     same guards `_stream_chat` runs. Fan-out is a deterministic de-fan REWRITE; the others
     are detectors whose firing means the product flags/repairs the query (never a silent
     wrong answer). Returns (sql_after_rewrites, fired_guards)."""
-    from aughor.sql.fanout import detect_fanout, defan, measure_times_key_arithmetic, avg_of_row_ratios
-    from aughor.sql.join_guard import check_filter_value_domains
+    from pramanyx.sql.fanout import detect_fanout, defan, measure_times_key_arithmetic, avg_of_row_ratios
+    from pramanyx.sql.join_guard import check_filter_value_domains
 
     fired: list[str] = []
     sql = raw_sql
@@ -163,7 +163,7 @@ def _classify_guarded(score: dict, sql: str | None, fired: list[str]) -> str:
 #: `framed_guarded` — the framed arm's SQL through the guard battery, as the product ships a framed answer.
 #: `framed_impact` — the framed arm with the graph's declared impacts measured and read (Arc OC-5).
 #: `notes` — HB-4's arm: the schema plus the ranked, provenance-stamped conversation-notes
-#: block (aughor/hub — what people SAID, enveloped). The injection gate
+#: block (pramanyx/hub — what people SAID, enveloped). The injection gate
 #: (hub/injection.INJECTABLE_SOURCE_KINDS) flips only on this arm's measured lift; until
 #: then notes are stored and shown, never injected. Inert-dropped when no notes exist.
 ARMS: tuple[str, ...] = ("raw", "guarded", "ontology", "ontology_guarded", "framed", "framed_guarded", "framed_impact",
@@ -312,7 +312,7 @@ _OBJECTS_SYSTEM = (
 
 def fill_object_query(question: str, schema_text: str, catalog_text: str) -> ObjectQueryFill:
     """The objects arm's one model call: the question in, a typed object query out."""
-    from aughor.llm.provider import get_provider
+    from pramanyx.llm.provider import get_provider
     user = (f"SCHEMA:\n{schema_text}\n\nCATALOG (object types, properties by role, links, segments, "
             f"metrics):\n{catalog_text}\n\nQUESTION: {question}\n\nReturn the object query.")
     return get_provider("coder").complete(system=_OBJECTS_SYSTEM, user=user, response_model=ObjectQueryFill,
@@ -324,7 +324,7 @@ def objects_arm(question: str, record: dict, db, graph, schema_text: str, catalo
     """One question through the objects arm. Classes: correct · silent-wrong · error (the fill or
     the execution failed) · refused (the compiler would not vouch) · declined (the model said the
     question is not an object query)."""
-    from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query
+    from pramanyx.semantic.object_query import ObjectQueryRefused, compile_object_query
     from evals.object_query_coverage import refusal_kind
     try:
         filled = fill(question, schema_text, catalog_text)
@@ -360,8 +360,8 @@ def ontology_context(graph, schema_text: str, tcols: dict) -> str:
     """
     if graph is None:
         return ""
-    from aughor.ontology.builder import render_ontology_annotations
-    from aughor.ontology.semantic_block import render_relationship_block, render_semantic_layer
+    from pramanyx.ontology.builder import render_ontology_annotations
+    from pramanyx.ontology.semantic_block import render_relationship_block, render_semantic_layer
     blocks = [
         _quiet(lambda: render_ontology_annotations(graph), ""),
         _quiet(lambda: render_relationship_block(graph, tcols), ""),
@@ -374,9 +374,9 @@ def framed_context(question: str, graph, *, dialect: str = "duckdb", choose=None
     """ON-10 — the frame block for one question, the frame itself (dumped) and the model calls framing spent.
 
     `choose(frame, graph) -> frame` is called only when the question's words fit several declared definitions
-    equally — the product's own posture (`aughor.agent.framing.choose_definition`). ("", frame, 0) when the question
+    equally — the product's own posture (`pramanyx.agent.framing.choose_definition`). ("", frame, 0) when the question
     reached nothing declared: the product adds nothing there, and neither does the arm."""
-    from aughor.ontology.framing import frame_question, render_frame_block
+    from pramanyx.ontology.framing import frame_question, render_frame_block
     frame = frame_question(question, graph, dialect=dialect)
     calls = 0
     if frame.ambiguous and choose is not None:
@@ -415,7 +415,7 @@ def measured_impacts(db, graph) -> tuple[object, object, list[dict]]:
     declares is resolved on it and counted on this warehouse, as the product's measure pass does; ``without`` is the
     same graph with none, the framed arm's. An impact that does not resolve or count is kept out and said in its
     reading, never guessed."""
-    from aughor.ontology.impacts import impact_fields, measure_impact, resolve_impact
+    from pramanyx.ontology.impacts import impact_fields, measure_impact, resolve_impact
     without = graph.model_copy(update={"impacts": {}})
     measured, readings = {}, []
     for impact_id, declared in sorted((getattr(graph, "impacts", None) or {}).items()):
@@ -478,7 +478,7 @@ def _open_dataset_db(record: dict):
     schema_name = record.get("schema")
     duckdb_path = record.get("duckdb_path")
     if duckdb_path:
-        from aughor.db.connection import open_connection
+        from pramanyx.db.connection import open_connection
         return open_connection("duckdb", str(Path(duckdb_path)), schema_name=schema_name, connection_id=conn_id)
     return (open_connection_for_with_schema(conn_id, schema_name) if schema_name
             else open_connection_for(conn_id))
@@ -492,16 +492,16 @@ def _load_graph(conn_id: str, schema_name: str | None,
     JSON of `GET /ontology?connection_id=…&schema_name=…` — the graph WITH the human
     overrides overlaid, exactly what the product's chat path reads. That door exists
     because the ontology store IS `system.db`: a bare run beside the serving API has to
-    redirect `AUGHOR_SYSTEM_DB` (one writer per data/), and a redirected store holds no
+    redirect `PRAMANYX_SYSTEM_DB` (one writer per data/), and a redirected store holds no
     ontology, so the arm would quietly equal raw. Without a mapping, the store is read.
     """
     label = f"{conn_id}/{schema_name}" if schema_name else conn_id
     path = (graph_json or {}).get(label) or (graph_json or {}).get(conn_id)
     if path:
-        from aughor.ontology.models import OntologyGraph
+        from pramanyx.ontology.models import OntologyGraph
         graph = OntologyGraph.model_validate(json.loads(Path(path).read_text()))
         return graph, f"file:{path}"
-    from aughor.ontology.store import load_latest_ontology
+    from pramanyx.ontology.store import load_latest_ontology
     return _quiet(lambda: load_latest_ontology(conn_id, schema_name), None), "store"
 
 
@@ -509,9 +509,9 @@ def notes_context(conn_id: str) -> str:
     """HB-4 — the ranked conversation-notes block, UNGATED: the arm exists to measure
     exactly what the gate asks, so it renders regardless of INJECTABLE_SOURCE_KINDS.
     '' when the connection holds no conversation notes."""
-    from aughor.hub.adapters import conversation_note_pieces
-    from aughor.hub.injection import NOTES_BLOCK_BUDGET_CHARS
-    from aughor.hub.ranker import rank
+    from pramanyx.hub.adapters import conversation_note_pieces
+    from pramanyx.hub.injection import NOTES_BLOCK_BUDGET_CHARS
+    from pramanyx.hub.ranker import rank
     pieces = _quiet(lambda: conversation_note_pieces(conn_id), [])
     if not pieces:
         return ""
@@ -552,10 +552,10 @@ def _llm_identity() -> dict:
     what produced it. Resolved from config with no network call, through the same seam
     `/health` reads. `fallback_chain` is what a throttled primary would fall over to —
     empty means a throttled call becomes an `error` row, never another model's answer
-    counted as this arm's (pin it with AUGHOR_FALLBACK_BACKENDS=none for a clean run).
+    counted as this arm's (pin it with PRAMANYX_FALLBACK_BACKENDS=none for a clean run).
     """
     try:
-        from aughor.llm import provider
+        from pramanyx.llm import provider
         backend, model, _base_url = provider.resolve_binding("coder")
         return {"backend": backend, "model": model, "role": "coder",
                 "fallback_chain": list(provider._fallback_backends())}
@@ -583,11 +583,11 @@ def run(dataset: str, limit: int | None, output: str | None,
     duckdb_path = records[0].get("duckdb_path")
     db = _open_dataset_db(records[0])
     schema_text = _quiet(db.get_schema, "")
-    from aughor.db.schema_render import parse_schema_tables
+    from pramanyx.db.schema_render import parse_schema_tables
     tcols = _quiet(lambda: parse_schema_tables(schema_text), {})
     # The engine's dialect rules, led the way the product's quick path leads them — every arm that asks a model
     # for SQL carries them, so no arm measures a generator the product does not run.
-    from aughor.db.dialects import writer_rules
+    from pramanyx.db.dialects import writer_rules
     dialect_rules = _quiet(lambda: writer_rules(db), "")
 
     label = f"{conn_id}{('/' + schema_name) if schema_name else ''}"
@@ -653,14 +653,14 @@ def run(dataset: str, limit: int | None, output: str | None,
         dropped = tuple(dropped) + notes_dropped
     choose = None
     if "framed" in arms:
-        from aughor.agent.framing import choose_definition
+        from pramanyx.agent.framing import choose_definition
 
         def choose(frame, g):
             return choose_definition(frame, g, dialect=getattr(db, "dialect", "") or "duckdb")
     framing_calls = 0
     catalog_text = ""
     if "objects" in arms:
-        from aughor.semantic.object_query import object_catalog, render_object_catalog
+        from pramanyx.semantic.object_query import object_catalog, render_object_catalog
         catalog_text = render_object_catalog(object_catalog(graph), max_chars=12000)
     onto_schema = (schema_text + "\n\n" + onto_ctx) if onto_ctx else schema_text
 
@@ -994,7 +994,7 @@ _CANONICAL_TRAPS = [
 def demo_traps(conn_id: str = "workspace", schema: str = "missimi") -> list[dict]:
     """Run each canonical trap unguarded vs guarded and report the numbers."""
     db = open_connection_for_with_schema(conn_id, schema)
-    tcols = _quiet(lambda: __import__("aughor.db.schema_render", fromlist=["parse_schema_tables"]).parse_schema_tables(db.get_schema()), {})
+    tcols = _quiet(lambda: __import__("pramanyx.db.schema_render", fromlist=["parse_schema_tables"]).parse_schema_tables(db.get_schema()), {})
 
     def _scalar(sql):
         r = db.execute("__trap__", sql)
@@ -1037,7 +1037,7 @@ def main():
     ap.add_argument("--graph-json", action="append", default=None, metavar="LABEL=PATH",
                     help="Ontology graph for a dataset's connection: LABEL is `conn` or `conn/schema`, "
                          "PATH holds the JSON of GET /ontology?connection_id=…&schema_name=…; repeatable. "
-                         "Use it when the store is redirected (AUGHOR_SYSTEM_DB) beside a serving API.")
+                         "Use it when the store is redirected (PRAMANYX_SYSTEM_DB) beside a serving API.")
     ap.add_argument("--traps", action="store_true", help="Run only the deterministic guard-efficacy demo (no LLM)")
     args = ap.parse_args()
     graph_json: dict[str, str] = {}

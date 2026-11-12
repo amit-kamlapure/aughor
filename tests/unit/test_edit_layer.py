@@ -7,8 +7,8 @@ moves a state the edit layer holds may make. Each is held here through the real 
 """
 from __future__ import annotations
 
-from aughor.actions import overlay as OVL
-from aughor.actions.executor import default_object_resolver, execute_kinetic_action
+from pramanyx.actions import overlay as OVL
+from pramanyx.actions.executor import default_object_resolver, execute_kinetic_action
 from tests.unit.test_object_actions import CONN, ORDER, _action, _declare, db, graph  # noqa: F401 — fixtures by name
 
 FLAG = {"display_name": "Flag", "kind": "annotate", "risk": "low", "object_type": "order",
@@ -30,7 +30,7 @@ def _run(graph, action_id: str, *, expected=None):  # noqa: F811
 
 
 def _machine(graph) -> None:  # noqa: F811
-    from aughor.ontology.models import EditStateMachine
+    from pramanyx.ontology.models import EditStateMachine
     graph.entities["Order"].edit_states = {"review_status": EditStateMachine(
         states=["flagged", "reviewed"], moves=[["", "flagged"], ["flagged", "reviewed"]], initial="")}
 
@@ -88,7 +88,7 @@ def test_a_criterion_reads_the_state_another_action_set(graph, db):  # noqa: F81
 
 
 def test_moves_are_declared_on_an_edit_layer_property_only_and_the_history_reads_over_http(graph, db, client, monkeypatch):  # noqa: F811
-    monkeypatch.setattr("aughor.routers.ontology._get_ontology_graph", lambda conn, schema=None: graph)
+    monkeypatch.setattr("pramanyx.routers.ontology._get_ontology_graph", lambda conn, schema=None: graph)
     params = {"connection_id": CONN, "schema_name": "ecommerce"}
     body = {"states": ["flagged", "reviewed"], "moves": [["", "flagged"], ["flagged", "reviewed"]], "initial": ""}
     source = client.put("/ontology/entities/Order/edit-states/status", params=params, json=body)
@@ -99,7 +99,7 @@ def test_moves_are_declared_on_an_edit_layer_property_only_and_the_history_reads
     kept = client.put("/ontology/entities/Order/edit-states/review_status", params=params, json=body)
     assert kept.status_code == 200, kept.text
     assert client.post("/ontology/release/publish", params=params).status_code == 200   # in force once published
-    from aughor.ontology.overrides import apply_overrides
+    from pramanyx.ontology.overrides import apply_overrides
     served, _ = apply_overrides(graph, CONN, "ecommerce")
     assert served.entities["Order"].edit_states["review_status"].moves == [["", "flagged"], ["flagged", "reviewed"]]
     _declare(graph, "flag", FLAG)
@@ -110,8 +110,8 @@ def test_moves_are_declared_on_an_edit_layer_property_only_and_the_history_reads
 
 
 def test_the_run_door_carries_the_versions_a_person_read(graph, db, client, monkeypatch):  # noqa: F811
-    monkeypatch.setattr("aughor.routers.kinetic._resolve_graph", lambda conn, schema: graph)
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")
+    monkeypatch.setattr("pramanyx.routers.kinetic._resolve_graph", lambda conn, schema: graph)
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "0")
     _declare(graph, "flag", FLAG)
     _declare(graph, "mark_reviewed", REVIEWED)
     _run(graph, "flag")

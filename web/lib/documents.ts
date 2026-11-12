@@ -1,6 +1,6 @@
 /**
  * What the Documents screen says about the corpus, decided here and laid out by `components/documents/DocumentsPage.tsx`
- * to `aughor-v2/CLARITY.md`: a document's name in the reader's words, its format as a chip, how much of it search can
+ * to `pramanyx-v2/CLARITY.md`: a document's name in the reader's words, its format as a chip, how much of it search can
  * see, and the figures the screen opens on. Pure: nothing here fetches.
  */
 import type { DocumentEntry, KnowledgeStatus } from "@/lib/api";

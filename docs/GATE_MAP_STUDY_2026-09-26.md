@@ -11,7 +11,7 @@
 ## 1 · The gates that exist, as the code applies them
 
 Every statement that reaches a customer warehouse goes through **the base door**, `DatabaseConnection._run`
-(`aughor/db/connection.py`), in this order:
+(`pramanyx/db/connection.py`), in this order:
 
 | # | step | what it does | who is exempt |
 |---|------|--------------|---------------|
@@ -22,7 +22,7 @@ Every statement that reaches a customer warehouse goes through **the base door**
 | 5 | `_run` | executes with the row cap (`MAX_ROWS`, or `execute_bounded`'s) | — |
 | 6 | `_security_post` | PII redaction, the row budget, the agent's guardrail policy, the audit row of what was returned | the same internal labels |
 
-On top of the base door sits **the guard battery door**, `execute_guarded` (`aughor/sql/executor.py`): `preflight_harden`
+On top of the base door sits **the guard battery door**, `execute_guarded` (`pramanyx/sql/executor.py`): `preflight_harden`
 (de-fan, deterministic pre-repair) → `trust.verify` (scope: the schema the caller declared; **blocks** with `[BLOCKED]`)
 → the base door → join value-domain guard → filter value-domain guard → id-arithmetic guard → zero-row diagnosis →
 E1 live trust checks → one deterministic repair, then one LLM repair when the caller supplies a fix prompt. Every
@@ -32,7 +32,7 @@ finding becomes a **caveat on the result** and a **guard receipt** (`GuardVerdic
 Beside them: **the safety door for a person's own SQL**, `gate_user_sql` — `SafetyChecker` + audit on the raw text,
 before any cache or wrapping (`/query/run`, the federated planner, the monitors router, the host contract).
 
-And one **seam that is not a door**: `native_sql(db, sql)` (`aughor/db/dialects.py`). Platform code writes probes and
+And one **seam that is not a door**: `native_sql(db, sql)` (`pramanyx/db/dialects.py`). Platform code writes probes and
 series in DuckDB's dialect (double-quoted identifiers); on a native engine a double-quoted identifier is a **string
 literal**. `native_sql` transpiles for native engines and returns the statement unchanged everywhere else. It is a
 function a caller must remember to call. **That is the flaw this study is about**: the base door applies steps 1–6
@@ -53,7 +53,7 @@ anything* on BigQuery lives outside the door, in the memory of each call site.
 
 ## 2 · The census — every place SQL reaches a warehouse
 
-Measured by walking `aughor/` for label-first `execute` / `execute_bounded` / `rows` / `read_typed_rows` /
+Measured by walking `pramanyx/` for label-first `execute` / `execute_bounded` / `rows` / `read_typed_rows` /
 `execute_guarded` calls and `run_sql` closures, excluding the platform's own SQLite stores: **184 sites in 90
 files**. A static window classifies 23 (18 through `native_sql`, 5 generating in the connection's dialect); the
 other 161 were read one by one. The full table is §5; the findings are here.
@@ -194,7 +194,7 @@ because the exempt ones leave no row at all.
   SQL). `native_sql` becomes the door's own step, and a caller that forgets is a caller that passed nothing —
   which the census ratchet below then names. Migration: the `none` sites in §2 first, then every
   `platform-fstring` site, mechanically.
-- **P2 — the census is a ratchet.** `tests/unit/test_sql_door_census.py` walks the same regex over `aughor/`
+- **P2 — the census is a ratchet.** `tests/unit/test_sql_door_census.py` walks the same regex over `pramanyx/`
   and holds `docs/SQL_DOORS.json`: every site classified (door, author, dialect handling, gates). A new site
   that is not in the file fails the test with the row to add; a site whose classification is `none` may only
   fall. This is the shape the repo already trusts (frame parity, the tool-prose ratchet, the private-import

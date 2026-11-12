@@ -15,12 +15,12 @@ Three deterministic fixes under test:
 """
 from types import SimpleNamespace
 
-from aughor.explorer.windowing import (
+from pramanyx.explorer.windowing import (
     role_aware_time_window as _role_aware_time_window,
     window_for_tables as _window_for_tables,
     _table_min,
 )
-from aughor.agent.investigate import (
+from pramanyx.agent.investigate import (
     _extract_data_date_range,
     _clamp_intake_to_coverage,
     _months_between,
@@ -340,7 +340,7 @@ class TestIntakeCoverageClamp:
         assert note is None or "duration artifact" not in note.lower()
 
     def test_a_warning_put_in_front_of_an_answer_never_cuts_it(self):
-        from aughor.agent.investigate import _POP_MISMATCH_SIGNATURE, _reframe_on_pop_duration_mismatch
+        from pramanyx.agent.investigate import _POP_MISMATCH_SIGNATURE, _reframe_on_pop_duration_mismatch
         table = "\n".join(f"| {y}-{m:02d}-01 | completed orders | {m * 1000} |"
                           for y in (2024, 2025, 2026) for m in range(1, 13))
         synth = SimpleNamespace(executive_summary="Revenue by month:\n\n| Month | Kind | Revenue |\n" + table,
@@ -351,7 +351,7 @@ class TestIntakeCoverageClamp:
         assert synth.executive_summary.endswith("| 2026-12-01 | completed orders | 12000 |")   # to its last row
 
     def test_the_trust_banner_is_put_in_front_and_cuts_nothing(self):
-        from aughor.agent.investigate import _reframe_on_trust_caveat
+        from pramanyx.agent.investigate import _reframe_on_trust_caveat
         table = "\n".join(f"| {y}-{m:02d}-01 | completed orders | {m * 1000 + 73} |"
                           for y in (2024, 2025, 2026) for m in range(1, 13))
         synth = SimpleNamespace(headline="h", executive_summary="Refund rate is 73.0%.\n\n" + table,

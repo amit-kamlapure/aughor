@@ -23,7 +23,7 @@ import base64
 
 import pytest
 
-import aughor.telemetry as tel
+import pramanyx.telemetry as tel
 
 langfuse = pytest.importorskip("langfuse", reason="observability extra not installed")
 

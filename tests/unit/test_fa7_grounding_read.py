@@ -17,8 +17,8 @@ import json
 
 import pytest
 
-from aughor.custom_agents import create_agent, delete_agent, list_agents
-from aughor.custom_agents.keys import issue_agent_key, revoke_agent_key
+from pramanyx.custom_agents import create_agent, delete_agent, list_agents
+from pramanyx.custom_agents.keys import issue_agent_key, revoke_agent_key
 
 QUESTION = "What was the zebra revenue in March?"         # a word no fixture holds, to grep the journal for
 
@@ -38,7 +38,7 @@ def warehouse(tmp_path):
     """A connection over a DuckDB file of the test's own, with one table — a warehouse read with no network."""
     import duckdb
 
-    from aughor.db import registry
+    from pramanyx.db import registry
     path = tmp_path / "fa7.duckdb"
     con = duckdb.connect(str(path))
     con.execute("CREATE TABLE orders (order_id INTEGER, amount DOUBLE, placed_at DATE)")
@@ -74,7 +74,7 @@ def embedder(monkeypatch):
         def __init__(self, *a, **k):
             self.embeddings = _FakeEmbeddings(seen)
 
-    monkeypatch.setenv("AUGHOR_EMBED_BACKEND", "ollama")
+    monkeypatch.setenv("PRAMANYX_EMBED_BACKEND", "ollama")
     monkeypatch.setenv("OLLAMA_BASE_URL", "http://embedder.invalid/v1")
     monkeypatch.setattr(openai, "OpenAI", _Client)
     return seen
@@ -83,7 +83,7 @@ def embedder(monkeypatch):
 @pytest.fixture
 def no_chat_model(monkeypatch):
     """Any chat model constructed during a read is recorded (and refused) — the read must construct none."""
-    from aughor.llm import provider
+    from pramanyx.llm import provider
     built: list = []
 
     def _refuse(self, *a, **k):
@@ -103,7 +103,7 @@ def _blocks(body) -> dict:
 
 
 def _journal(kind: str) -> list[dict]:
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
     return Ledger.default().events(kind=kind, limit=200)
 
 
@@ -125,7 +125,7 @@ def test_outside_a_read_the_grounding_receipt_reads_exactly_as_before(client, wa
     before."""
     def _boom(*a, **k):
         raise RuntimeError("exploration store unreadable")
-    monkeypatch.setattr("aughor.explorer.store.render_exploration_annotations", _boom)
+    monkeypatch.setattr("pramanyx.explorer.store.render_exploration_annotations", _boom)
     body = client.get("/ask/context", params={"connection": warehouse, "question": QUESTION}).json()
     failed = {b["key"]: b for b in body["receipt"]["blocks"]}["exploration"]
     assert failed["present"] is False and "note" not in failed
@@ -135,7 +135,7 @@ def test_outside_a_read_the_grounding_receipt_reads_exactly_as_before(client, wa
 
 def test_the_key_door_returns_every_block_with_content_and_each_absent_one_with_why(
         client, warehouse, embedder, no_chat_model, monkeypatch):
-    monkeypatch.setattr("aughor.agent.grounding.connection_glossary",
+    monkeypatch.setattr("pramanyx.agent.grounding.connection_glossary",
                         lambda q, c: "GLOSSARY — revenue: SUM(amount) of placed orders")
     agent = create_agent("Revenue desk", instructions="Answer in euros.", connection_id=warehouse,
                          tool_grants=["flag_order_for_review"])
@@ -144,7 +144,7 @@ def test_the_key_door_returns_every_block_with_content_and_each_absent_one_with_
     assert r.status_code == 200, r.text
     body = r.json()
     blocks = _blocks(body)
-    from aughor.custom_agents.grounding_read import ABSENT_WHY
+    from pramanyx.custom_agents.grounding_read import ABSENT_WHY
     assert set(blocks) == set(ABSENT_WHY), "every block the receipt carries has its sentence, and none is invented"
     assert "Answer in euros." in blocks["agent_brief"]["content"], "the agent is active: its brief is read"
     assert "SUM(amount)" in blocks["glossary"]["content"]
@@ -187,7 +187,7 @@ def test_documents_are_the_agents_own_and_an_agent_with_none_reads_none(client, 
              "text": "MINE: list prices are set quarterly.", "score": 0.9},
             {"doc_id": "doc_theirs", "chunk_index": 0, "title": "Payroll", "filename": "payroll.md",
              "text": "THEIRS: salaries by person.", "score": 0.95}]
-    monkeypatch.setattr("aughor.knowledge.indexer.search_documents", lambda q, top_k=4, connection_id=None: list(hits))
+    monkeypatch.setattr("pramanyx.knowledge.indexer.search_documents", lambda q, top_k=4, connection_id=None: list(hits))
     scoped = create_agent("Scoped", instructions="x", connection_id=warehouse, doc_ids=["doc_mine"])
     docs = _blocks(client.post(f"/doors/agents/{scoped.id}/grounding", json={"question": QUESTION},
                                headers=_key(scoped)).json())["docs"]
@@ -214,7 +214,7 @@ def test_the_agents_binding_holds_as_the_ask_door_holds_it(client, warehouse):
 
 
 def test_a_paused_agent_reads_nothing_and_says_so(client, warehouse):
-    from aughor.custom_agents import update_agent
+    from pramanyx.custom_agents import update_agent
     agent = create_agent("Paused", instructions="x", connection_id=warehouse)
     headers = _key(agent)
     update_agent(agent.id, enabled=False)
@@ -230,7 +230,7 @@ def test_a_block_whose_producer_failed_says_so_instead_of_reading_as_empty(clien
                                                                             monkeypatch):
     def _boom(*a, **k):
         raise RuntimeError("exploration store unreadable")
-    monkeypatch.setattr("aughor.explorer.store.render_exploration_annotations", _boom)
+    monkeypatch.setattr("pramanyx.explorer.store.render_exploration_annotations", _boom)
     agent = create_agent("Failing", instructions="x", connection_id=warehouse)
     failed = _blocks(client.post(f"/doors/agents/{agent.id}/grounding", json={"question": QUESTION},
                                  headers=_key(agent)).json())["exploration"]
@@ -253,13 +253,13 @@ def test_a_search_the_embedder_failed_is_not_read_as_nothing_matched(client, war
     monkeypatch.setattr(openai, "OpenAI", _Down)
 
     def _swallowing(q, c=""):
-        from aughor.semantic.embedder import embed_one
+        from pramanyx.semantic.embedder import embed_one
         try:
             embed_one(q)
         except ConnectionError:
             return ""                               # what a retriever that swallows its failure returns
         return "PATTERN"
-    monkeypatch.setattr("aughor.agent.grounding.kb_patterns", _swallowing)
+    monkeypatch.setattr("pramanyx.agent.grounding.kb_patterns", _swallowing)
     agent = create_agent("Embedder down", instructions="x", connection_id=warehouse)
     body = client.post(f"/doors/agents/{agent.id}/grounding", json={"question": QUESTION}, headers=_key(agent)).json()
     assert "the embedder failed" in _blocks(body)["kb_patterns"]["why"]
@@ -267,7 +267,7 @@ def test_a_search_the_embedder_failed_is_not_read_as_nothing_matched(client, war
 
 
 def test_an_unopenable_connection_is_said_on_the_schema_blocks_never_a_500(client, monkeypatch, tmp_path):
-    from aughor.db import registry
+    from pramanyx.db import registry
     conn_id = registry.add_connection("fa7-missing", "duckdb", str(tmp_path / "absent.duckdb"))
     try:
         agent = create_agent("Unreachable", instructions="x", connection_id=conn_id)
@@ -284,10 +284,10 @@ def test_an_unopenable_connection_is_said_on_the_schema_blocks_never_a_500(clien
 
 def test_the_embedder_is_said_as_the_backend_saw_it(client, warehouse, embedder, monkeypatch):
     def _patterns(q, c=""):
-        from aughor.semantic.embedder import embed_one
+        from pramanyx.semantic.embedder import embed_one
         embed_one(q)                                 # the planning-pattern retriever embeds the question
         return "PATTERN — revenue by month"
-    monkeypatch.setattr("aughor.agent.grounding.kb_patterns", _patterns)
+    monkeypatch.setattr("pramanyx.agent.grounding.kb_patterns", _patterns)
     agent = create_agent("Embeds", instructions="x", connection_id=warehouse)
     body = client.post(f"/doors/agents/{agent.id}/grounding", json={"question": QUESTION}, headers=_key(agent)).json()
     said = body["embedder"]
@@ -297,8 +297,8 @@ def test_the_embedder_is_said_as_the_backend_saw_it(client, warehouse, embedder,
 
 def test_an_embedder_never_called_is_said_as_not_called(client, warehouse, embedder, monkeypatch):
     for name in ("connection_glossary", "kb_patterns", "external_docs", "trusted_templates", "correction_priors"):
-        monkeypatch.setattr(f"aughor.agent.grounding.{name}", lambda *a, **k: "")
-    monkeypatch.setattr("aughor.agent.grounding.sql_examples", lambda q, c: ("", ""))
+        monkeypatch.setattr(f"pramanyx.agent.grounding.{name}", lambda *a, **k: "")
+    monkeypatch.setattr("pramanyx.agent.grounding.sql_examples", lambda q, c: ("", ""))
     agent = create_agent("Quiet", instructions="x", connection_id=warehouse)
     said = client.post(f"/doors/agents/{agent.id}/grounding", json={"question": QUESTION},
                        headers=_key(agent)).json()["embedder"]
@@ -307,11 +307,11 @@ def test_an_embedder_never_called_is_said_as_not_called(client, warehouse, embed
 
 def test_a_hosted_embedder_says_it_may_charge(client, warehouse, embedder, monkeypatch):
     def _patterns(q, c=""):
-        from aughor.semantic.embedder import embed_one
+        from pramanyx.semantic.embedder import embed_one
         embed_one(q)
         return ""
-    monkeypatch.setattr("aughor.agent.grounding.kb_patterns", _patterns)
-    monkeypatch.setattr("aughor.semantic.embedder.describe_backend",
+    monkeypatch.setattr("pramanyx.agent.grounding.kb_patterns", _patterns)
+    monkeypatch.setattr("pramanyx.semantic.embedder.describe_backend",
                         lambda: {"backend": "openrouter", "model": "some-embedder", "hosted": True})
     agent = create_agent("Hosted", instructions="x", connection_id=warehouse)
     said = client.post(f"/doors/agents/{agent.id}/grounding", json={"question": QUESTION},
@@ -320,7 +320,7 @@ def test_a_hosted_embedder_says_it_may_charge(client, warehouse, embedder, monke
 
 
 def test_the_embedder_tally_is_inert_outside_a_read_and_counts_failures_inside(embedder, monkeypatch):
-    from aughor.semantic import embedder as E
+    from pramanyx.semantic import embedder as E
     assert E.embed(["a"]) == [[0.1] * 8]           # no tally: an embedding is made exactly as before
     with E.tally_calls() as tally:
         E.embed(["a", "b"])
@@ -328,7 +328,7 @@ def test_the_embedder_tally_is_inert_outside_a_read_and_counts_failures_inside(e
         with pytest.raises(E.EmbeddingConfigError):
             E.embed(["c"])
     assert tally == {"requests": 1, "texts": 2, "failed": 1}
-    monkeypatch.setenv("AUGHOR_EMBED_BACKEND", "nonsense")
+    monkeypatch.setenv("PRAMANYX_EMBED_BACKEND", "nonsense")
     assert E.describe_backend()["unconfigured"] and E.describe_backend()["hosted"] is None
 
 
@@ -336,7 +336,7 @@ def test_the_embedder_tally_is_inert_outside_a_read_and_counts_failures_inside(e
 
 def test_each_read_is_journaled_once_with_who_and_what_and_never_the_content(client, warehouse, embedder,
                                                                              monkeypatch):
-    monkeypatch.setattr("aughor.agent.grounding.connection_glossary",
+    monkeypatch.setattr("pramanyx.agent.grounding.connection_glossary",
                         lambda q, c: "GLOSSARY — zebra revenue is SECRET-DEFINITION")
     agent = create_agent("Journaled", instructions="Speak plainly.", connection_id=warehouse)
     body = client.post(f"/doors/agents/{agent.id}/grounding", json={"question": QUESTION, "asker": "sdk@example.com"},
@@ -351,7 +351,7 @@ def test_each_read_is_journaled_once_with_who_and_what_and_never_the_content(cli
     text = json.dumps(rows[0])
     for leaked in ("zebra", "SECRET-DEFINITION", "Speak plainly"):
         assert leaked not in text, f"the journal carries the read's {leaked!r}"
-    from aughor.govern.audit_categories import feed
+    from pramanyx.govern.audit_categories import feed
     seen = [e for e in feed(category="data_access") if e.kind == "agent.grounding_read"]
     assert seen and "read what agent" in seen[0].summary and seen[0].actor == "api:http:sdk@example.com"
 
@@ -359,8 +359,8 @@ def test_each_read_is_journaled_once_with_who_and_what_and_never_the_content(cli
 # ── the session route: the MCP tool's door ─────────────────────────────────────────────
 
 def test_the_mcp_clients_call_is_a_read_the_agent_gate_audits(client, warehouse, embedder):
-    from aughor.mcp.client import AGENT_HEADER, AGENT_MARK, TOOL_HEADER
-    from aughor.orgsettings import agent_policy as AP
+    from pramanyx.mcp.client import AGENT_HEADER, AGENT_MARK, TOOL_HEADER
+    from pramanyx.orgsettings import agent_policy as AP
     agent = create_agent("Over MCP", instructions="x", connection_id=warehouse)
     AP.save_agent_policy("default", level="read", set_by="ana")
     try:
@@ -382,9 +382,9 @@ def test_with_identity_on_another_organisations_connection_is_refused_at_both_do
                                                                                     tmp_path):
     import duckdb
 
-    from aughor.db import registry
-    from aughor.org.context import using_org
-    monkeypatch.setenv("AUGHOR_REQUIRE_IDENTITY", "1")
+    from pramanyx.db import registry
+    from pramanyx.org.context import using_org
+    monkeypatch.setenv("PRAMANYX_REQUIRE_IDENTITY", "1")
     duckdb.connect(str(tmp_path / "orgA.duckdb")).close()
     with using_org("orgA"):
         theirs = registry.add_connection("fa7-orgA", "duckdb", str(tmp_path / "orgA.duckdb"))
@@ -395,14 +395,14 @@ def test_with_identity_on_another_organisations_connection_is_refused_at_both_do
         assert r.status_code == 403 and "belongs to another org" in r.text
         bound_there = create_agent("Bound to org A", instructions="x", connection_id=theirs)
         r = client.get(f"/agents/custom/{bound_there.id}/grounding", params={"question": QUESTION},
-                       headers={"X-Aughor-Org": "orgB"})
+                       headers={"X-Pramanyx-Org": "orgB"})
         assert r.status_code == 403 and "belongs to another org" in r.text, "the agent's own binding is checked too"
         r = client.get(f"/agents/custom/{mine.id}/grounding", params={"question": QUESTION, "connection_id": theirs},
-                       headers={"X-Aughor-Org": "orgB"})
+                       headers={"X-Pramanyx-Org": "orgB"})
         assert r.status_code == 403, "the named connection is refused by the owner guard"
         owned_by_a = create_agent("Org A's", instructions="x", owner="orgA", connection_id=theirs)
         r = client.get(f"/agents/custom/{owned_by_a.id}/grounding", params={"question": QUESTION},
-                       headers={"X-Aughor-Org": "orgB"})
+                       headers={"X-Pramanyx-Org": "orgB"})
         assert r.status_code == 404, "another organisation's agent is no agent to this reader"
         assert not _reads_of(mine, bound_there, owned_by_a), "a refused read is not journaled as a read"
     finally:
@@ -434,8 +434,8 @@ class _Api:
 
 
 def test_the_tool_is_a_read_absent_with_no_agent_and_listed_and_removed_live(monkeypatch):
-    from aughor.mcp import policy as P
-    from aughor.mcp import server as srv
+    from pramanyx.mcp import policy as P
+    from pramanyx.mcp import server as srv
     api = _Api(has_agent=False)
     monkeypatch.setattr(srv, "mcp", srv.PolicedFastMCP("t"))
     monkeypatch.setattr(srv, "_client", api)
@@ -468,16 +468,16 @@ def test_the_tool_is_a_read_absent_with_no_agent_and_listed_and_removed_live(mon
 
 def test_the_static_tool_list_is_unchanged():
     """The tool is registered live, never at import: the static roster and its level map stay equal."""
-    from aughor.mcp import policy as P
-    from aughor.mcp import server as srv
+    from pramanyx.mcp import policy as P
+    from pramanyx.mcp import server as srv
     assert "ground_agent" not in P.TOOL_LEVELS and "ground_agent" not in set(srv.mcp._tool_manager._tools)
 
 
 def test_a_refresh_asks_the_api_for_nothing_new(monkeypatch):
     """The grounding roster reads the agents roster's answer from the same refresh — one `/agents/custom` call."""
-    from aughor.mcp import server as srv
-    from aughor.mcp.client import AughorClient
-    api = AughorClient()
+    from pramanyx.mcp import server as srv
+    from pramanyx.mcp.client import PramanyxClient
+    api = PramanyxClient()
     paths: list[str] = []
 
     async def fake_get(path, params=None):

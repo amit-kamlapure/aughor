@@ -8,7 +8,7 @@ alias outranks a parsed one; no docs means empty shelves, never an error.
 """
 from __future__ import annotations
 
-from aughor.agent import platform_tools as pt
+from pramanyx.agent import platform_tools as pt
 
 _GLOSSARY = """# Glossary
 

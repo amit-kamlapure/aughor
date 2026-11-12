@@ -3,13 +3,13 @@
 A pack is a declarative folder; the loader is pure I/O and the validator catches every
 error findable without a connection (the deploy-time binding/dry-run is P1). The shipped
 packs/customer-analytics sample is validated here so the format stays loadable. See
-aughor/packs/.
+pramanyx/packs/.
 """
 from pathlib import Path
 
 import pytest
 
-from aughor.packs import load_pack, list_packs, validate_pack, PacksError
+from pramanyx.packs import load_pack, list_packs, validate_pack, PacksError
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -107,6 +107,6 @@ def test_shipped_customer_analytics_pack_validates():
 
 def test_specialist_packs_flag_stayed_deleted():
     """Hardwired by flag endgame Wave 2 (2026-08-06); a re-registration would be drift."""
-    from aughor.kernel.flags import FLAG_ENV, FLAG_META
+    from pramanyx.kernel.flags import FLAG_ENV, FLAG_META
     assert "specialist_packs" not in FLAG_ENV
     assert "specialist_packs" not in FLAG_META

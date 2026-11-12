@@ -14,23 +14,23 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from aughor.db.connection import open_connection
-from aughor.demo.setup import _seed_ecommerce
-from aughor.ontology import overrides as OV
-from aughor.ontology.backing import apply_backing_measurements
-from aughor.ontology.bindings import binding_problem
-from aughor.ontology.models import OntologyGraph
-from aughor.ontology.timeseries import (
+from pramanyx.db.connection import open_connection
+from pramanyx.demo.setup import _seed_ecommerce
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.backing import apply_backing_measurements
+from pramanyx.ontology.bindings import binding_problem
+from pramanyx.ontology.models import OntologyGraph
+from pramanyx.ontology.timeseries import (
     HISTORY_ROWS,
     history_sql,
     latest_columns,
     latest_declaration,
     latest_from,
 )
-from aughor.ontology.window_measures import compile_measure, from_declaration
-from aughor.semantic.object_instances import get_object
-from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query
-from aughor.semantic.object_types import describe_object_type
+from pramanyx.ontology.window_measures import compile_measure, from_declaration
+from pramanyx.semantic.object_instances import get_object
+from pramanyx.semantic.object_query import ObjectQueryRefused, compile_object_query
+from pramanyx.semantic.object_types import describe_object_type
 
 from tests.unit.test_object_bindings import GRAPH, bind, ints, rows
 
@@ -455,7 +455,7 @@ def test_what_a_frame_says_it_is_reaches_the_page_and_the_type(db, graph):
 
 
 def test_a_frame_that_cannot_mean_anything_is_refused_before_it_is_written(db, graph):
-    from aughor.ontology.bindings import bind_binding, describe_with
+    from pramanyx.ontology.bindings import bind_binding, describe_with
 
     def refuse(frames: dict) -> str:
         return bind_binding(graph.entities["Order"], "events", {**EVENTS, "frames": frames},

@@ -3,7 +3,7 @@
 /**
  * VA-14 · give an agent a Slack door, at the moment it is created.
  *
- * The last hop of "post the daily numbers into #aughor-canvas" was not code — it was that
+ * The last hop of "post the daily numbers into #pramanyx-canvas" was not code — it was that
  * creating a Slack bot required an API call. `POST /slack-bots` and the manifest renderer
  * shipped with RC-5 and no surface ever reached them, so the one step a person cannot
  * automate (making an app in someone else's product) was also the one step the product

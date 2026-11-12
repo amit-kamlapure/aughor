@@ -535,7 +535,7 @@ function FlagRow({ name, f, chip, busy, onToggle }: {
 /* The PerformanceProfile control (Group E as one Conservative/Balanced/Fast picker)
  * left with its four flags — flag endgame Wave 6, 2026-08-06: parallelism is now a
  * transport-derived decision in the backend's ModelProfile ("as parallel as the bound
- * transport's declared rate budget allows"; AUGHOR_LLM_RPM still overrides in both
+ * transport's declared rate budget allows"; PRAMANYX_LLM_RPM still overrides in both
  * directions), so there is no user-facing switch to render. */
 
 /** The switch used by the Feature flags list. */

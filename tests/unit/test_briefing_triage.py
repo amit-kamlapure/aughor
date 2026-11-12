@@ -7,10 +7,10 @@ and tells the narrator to write in the business's currency.
 """
 import pytest
 
-import aughor.llm.provider as provider_mod
-from aughor.knowledge.briefing import BriefingNarrative, generate_narrative
-from aughor.orgsettings import store as _orgstore
-from aughor.orgsettings.models import OrgSettings
+import pramanyx.llm.provider as provider_mod
+from pramanyx.knowledge.briefing import BriefingNarrative, generate_narrative
+from pramanyx.orgsettings import store as _orgstore
+from pramanyx.orgsettings.models import OrgSettings
 
 
 @pytest.fixture(autouse=True)
@@ -109,7 +109,7 @@ def test_lead_flips_off_the_noise_level_roas_split(monkeypatch):
 
 def _confirmed(monkeypatch, code: str) -> None:
     """A person confirmed ``code`` for the dataset (2026-10-23: only that labels a figure)."""
-    monkeypatch.setattr("aughor.orgsettings.figure_currency", lambda conn_id, schema=None: code)
+    monkeypatch.setattr("pramanyx.orgsettings.figure_currency", lambda conn_id, schema=None: code)
 
 
 def test_a_confirmed_currency_is_in_prompt(monkeypatch):

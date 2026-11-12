@@ -1,0 +1,281 @@
+"""Agent-proposed context — the conversation writes back what it learned, governed.
+
+An enrich-context frame (2026-08-14), applied to OUR sinks: an agent
+that has just SEEN something in the data (a value domain, a unit, a grain, a definition
+the user stated) may write it back so the next session inherits it — but what it may
+apply directly and what must wait for a human is decided by the BLAST RADIUS of the
+artifact, not by how confident the model feels.
+
+  * A COLUMN NOTE is column-local and additive: it rides one column line into the
+    prompt as ``[note: …]``, a human can edit or delete it in place, and it cannot
+    change a number. With high confidence AND stated evidence it APPLIES DIRECTLY
+    (source="agent" — refresh-safe, provenance visible). The human is the reviewer,
+    not the gatekeeper.
+  * A TABLE-level claim (grain, description) is a public artifact every future
+    session reads before writing SQL — a false grain claim just made every
+    returned-orders count wrong (800 vs 296). It is STAGED as an
+    ``OntologyRecommendation(kind="table_note")`` and waits for accept().
+  * Anything at med/low confidence is staged, never applied.
+  * A column note that names a GOVERNED METRIC is staged: how a metric is computed is the metric
+    catalogue's to say, and a note on one column rides into every prompt that reads it.
+  * APPEND-ONLY: an existing HUMAN note is never overwritten by the agent — the
+    proposal is staged with the conflict named, so the person decides.
+
+Evidence is REQUIRED. A note without the observation that produced it is a guess,
+and a guess written into shared context is the failure this whole frame exists to
+prevent. Everything the agent writes carries its provenance (evidence, confidence,
+session) so a reviewer sees WHY, not just WHAT.
+"""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Optional
+
+CONFIDENCE = ("high", "med", "low")
+# HB-5 — "object": a note on a securable thing (promise:… process:… entity instance),
+# the arrival path's target. It ALWAYS stages — an object note is read by everyone who
+# opens the object, which is exactly the blast radius that waits for a person.
+TARGETS = ("column", "table", "object")
+
+#: Blast-radius rule, as data: which (target, confidence) pairs may apply directly.
+#: Everything else stages. Kept tiny and explicit so a reviewer can read the policy
+#: in one line and a test can enumerate it.
+DIRECT_APPLY: frozenset[tuple[str, str]] = frozenset({("column", "high")})
+
+MAX_NOTE_CHARS = 280
+MAX_EVIDENCE_CHARS = 600
+
+
+@dataclass
+class NoteOutcome:
+    ok: bool
+    action: str                     # "applied" | "staged" | "rejected"
+    reason: str
+    target: str = ""
+    table: str = ""
+    column: str = ""
+    recommendation_id: str = ""
+    detail: dict = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        return {"ok": self.ok, "action": self.action, "reason": self.reason,
+                "target": self.target, "table": self.table, "column": self.column,
+                "recommendation_id": self.recommendation_id, **self.detail}
+
+
+def _clean(s: str, cap: int) -> str:
+    return " ".join((s or "").split())[:cap]
+
+
+def propose_note(connection_id: str, schema: str, *, target: str, table: str,
+                 column: str = "", note: str, evidence: str, confidence: str,
+                 session_id: str = "", provenance: Optional[dict] = None) -> NoteOutcome:
+    """Route one agent proposal: apply, stage, or reject. Never raises.
+
+    ``target="object"`` (HB-5): ``table`` carries the SECURABLE the note is about
+    (``promise:order_to_delivery.dispatch``); the note always stages. ``provenance``
+    is HB-4's envelope as a dict (source_kind · author · where · observed_at ·
+    verification…), stored verbatim on the staged recommendation so the reader sees
+    the stamp, not a bare sentence."""
+    target = (target or "").strip().lower()
+    confidence = (confidence or "").strip().lower()
+    table = (table or "").strip()
+    column = (column or "").strip()
+    note = _clean(note, MAX_NOTE_CHARS)
+    evidence = _clean(evidence, MAX_EVIDENCE_CHARS)
+
+    if target not in TARGETS:
+        return NoteOutcome(False, "rejected", f"target must be one of {TARGETS}")
+    if confidence not in CONFIDENCE:
+        return NoteOutcome(False, "rejected", f"confidence must be one of {CONFIDENCE}")
+    if not table or not note:
+        return NoteOutcome(False, "rejected", "table and note are required")
+    if target == "column" and not column:
+        return NoteOutcome(False, "rejected", "a column note needs the column")
+    if not evidence:
+        return NoteOutcome(False, "rejected",
+                           "evidence is required — say what you observed (a query result, "
+                           "the user's own words) that makes this note true; a note without "
+                           "evidence is a guess and does not enter shared context")
+
+    try:
+        if target == "column":
+            return _route_column(connection_id, schema, table, column, note, evidence,
+                                 confidence, session_id)
+        if target == "object":
+            return _stage(connection_id, schema, "object", table, "", note, evidence,
+                          confidence, session_id, provenance=provenance,
+                          why="an object note is read by everyone who opens the object — "
+                              "it waits for a person to accept it")
+        return _stage(connection_id, schema, "table", table, "", note, evidence,
+                      confidence, session_id, provenance=provenance,
+                      why="a table-level claim is read by every future session before it "
+                          "writes SQL — it waits for a person to accept it")
+    except Exception as exc:  # the answer path must never fail on a note
+        from pramanyx.kernel.errors import tolerate
+        tolerate(exc, "agent note routing is best-effort; the proposal is dropped, not the turn",
+                 counter="ontology.agent_notes")
+        return NoteOutcome(False, "rejected", f"could not record the note: {type(exc).__name__}")
+
+
+def _governed_metric_named(conn: str, note: str) -> str:
+    """The governed metric a note names — by its name or its label, plurals included — or "".
+
+    "revenue and units_sold are calculated excluding 'Cancelled' orders" applied directly to
+    theLook's `order_items.status` (2026-10-02): high confidence, with evidence, and false for units
+    sold, which the catalogue declares on inventory items, cancelled lines included. It rode into
+    every later prompt that read the column. Matched as text, not whole words: "revenues" names
+    revenue, and a note held for a person by mistake costs a review where one applied by mistake cost
+    every later answer. A catalogue that cannot be read names nothing."""
+    def words(text: str) -> str:
+        return re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).strip()
+    said = words(note)
+    try:
+        from pramanyx.semantic.metrics import list_metrics
+        metrics = list_metrics(connection_id=conn) or []
+    except Exception as exc:  # noqa: BLE001 — a note is routed without the catalogue, as before
+        from pramanyx.kernel.errors import tolerate
+        tolerate(exc, "the metric catalogue could not be read to route an agent note",
+                 counter="ontology.agent_notes.catalogue")
+        return ""
+    for m in metrics:
+        label = str(getattr(m, "label", "") or "")
+        for phrase in (getattr(m, "name", ""), label, re.sub(r"\(.*?\)", " ", label)):
+            if words(phrase) and words(phrase) in said:
+                return str(getattr(m, "name", "") or words(phrase))
+    return ""
+
+
+def _route_column(conn: str, schema: str, table: str, column: str, note: str,
+                  evidence: str, confidence: str, session_id: str) -> NoteOutcome:
+    from pramanyx.ontology.column_config import load_table_config, set_column_flags
+    existing = load_table_config(conn, schema, table).get(column)
+    if existing is not None and existing.source == "human" and (existing.note or "").strip():
+        # Append-only: a person wrote this. Stage the disagreement, never overwrite it.
+        return _stage(conn, schema, "column", table, column, note, evidence, confidence,
+                      session_id,
+                      why=f"the column already carries a HUMAN note ({existing.note[:80]!r}); "
+                          "an agent never overwrites a person — staged for review instead")
+    cleared = next((h for h in reversed(existing.note_history if existing is not None else [])
+                    if h.get("superseded_by") == "human"), None)
+    if cleared and not (existing.note or "").strip():
+        # A person removed this column's note: their "not this" is durable, and an agent does
+        # not quietly write a note back over it.
+        return _stage(conn, schema, "column", table, column, note, evidence, confidence, session_id,
+                      why=f"a person cleared this column's note on {str(cleared.get('superseded_at'))[:10]}; "
+                          "an agent's note waits for their review")
+    if ("column", confidence) not in DIRECT_APPLY:
+        return _stage(conn, schema, "column", table, column, note, evidence, confidence,
+                      session_id, why=f"confidence {confidence!r} is not high enough to apply directly")
+    metric = _governed_metric_named(conn, note)
+    if metric:
+        return _stage(conn, schema, "column", table, column, note, evidence, confidence, session_id,
+                      why=f"it names the governed metric {metric!r} — how a metric is computed is the "
+                          "metric catalogue's to say, so a person accepts it first")
+    stamped = f"{note} (agent-observed: {evidence[:120]})"
+    flags = set_column_flags(conn, schema, table, column, note=stamped, source="agent")
+    return NoteOutcome(True, "applied",
+                       "applied directly: a column note is column-local and additive, and you "
+                       "gave high confidence with evidence — a person can edit or remove it",
+                       target="column", table=table, column=column,
+                       detail={"note": flags.note, "source": flags.source})
+
+
+def _stage(conn: str, schema: str, target: str, table: str, column: str, note: str,
+           evidence: str, confidence: str, session_id: str, *, why: str,
+           provenance: Optional[dict] = None) -> NoteOutcome:
+    from pramanyx.ontology.recommendations import (
+        OntologyRecommendation, get_recommendation, save_recommendation,
+    )
+    key = f"{table}.{column}" if column else table
+    rec_id = f"note_{target}_{_slug(key)}"
+    rec = get_recommendation(conn, schema, rec_id)
+    now = datetime.now(timezone.utc).isoformat()
+    ev = {"note": note, "evidence": evidence, "confidence": confidence,
+          "session_id": session_id, "at": now}
+    if rec is None:
+        fields = {"note": note, "column": column, "confidence": confidence}
+        if provenance:
+            fields["provenance"] = dict(provenance)
+        rec = OntologyRecommendation(
+            id=rec_id, kind=f"{target}_note", target_id=key, entity=table,
+            proposed_fields=fields,
+            reason=f"proposed by the conversation with evidence: {evidence[:160]}",
+            support=1, evidence=[ev])
+    else:
+        rec.support += 1
+        rec.last_seen = now
+        rec.evidence = (rec.evidence + [ev])[-5:]
+        fields = {"note": note, "column": column, "confidence": confidence}
+        if provenance:
+            fields["provenance"] = dict(provenance)
+        rec.proposed_fields = fields
+    save_recommendation(conn, schema, rec)
+    return NoteOutcome(True, "staged", f"staged for human review: {why}",
+                       target=target, table=table, column=column, recommendation_id=rec_id,
+                       detail={"support": rec.support})
+
+
+def _slug(s: str) -> str:
+    import re
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", s)[:80]
+
+
+def accept_note(conn: str, schema: str, rec_id: str) -> Optional[dict]:
+    """A human accepts a staged note: a column note becomes a human-sourced column note;
+    a table note becomes the table's glossary grain/description via the glossary's
+    own writer. Returns what was written, or None when the id is unknown or not a note."""
+    from pramanyx.ontology.recommendations import get_recommendation, save_recommendation
+    rec = get_recommendation(conn, schema, rec_id)
+    if rec is None or not rec.kind.endswith("_note"):
+        return None
+    note = str(rec.proposed_fields.get("note") or "")
+    if rec.kind == "column_note":
+        from pramanyx.ontology.column_config import set_column_flags
+        flags = set_column_flags(conn, schema, rec.entity, str(rec.proposed_fields.get("column")),
+                                 note=note, source="human")
+        written = {"column_note": flags.note}
+    elif rec.kind == "object_note":
+        # HB-5 — the recommendations store IS the sink: an accepted object note stays
+        # here, readable with verification "accepted" (stored and shown; injection into
+        # a prompt is HB-4's gate and needs a measured lift first).
+        written = {"object_note": note, "object_ref": rec.target_id}
+    else:
+        from pramanyx.semantic.glossary import update_table
+        update_table(rec.entity, grain=note)
+        written = {"table_grain": note}
+    rec.status = "accepted"
+    save_recommendation(conn, schema, rec)
+    return {"accepted": rec_id, **written}
+
+
+def object_notes_for(connection_id: str, object_ref: str,
+                     include_pending: bool = True) -> list[dict]:
+    """HB-4/5 — the notes filed on one securable, newest last: pending (staged,
+    awaiting a person) and accepted, each with its provenance dict. A read of the
+    recommendations tree only; scans the connection's schema folders."""
+    from pramanyx.ontology.recommendations import load_recommendations
+    out: list[dict] = []
+    for schema in _schemas_of(connection_id):
+        for rec in load_recommendations(connection_id, schema):
+            if rec.kind != "object_note" or rec.target_id != object_ref:
+                continue
+            if rec.status == "dismissed":
+                continue
+            if rec.status == "pending" and not include_pending:
+                continue
+            out.append({"id": rec.id, "schema": schema,
+                        "note": str(rec.proposed_fields.get("note") or ""),
+                        "status": rec.status,
+                        "provenance": dict(rec.proposed_fields.get("provenance") or {}),
+                        "check": dict(rec.proposed_fields.get("check") or {}),   # CB-8: said vs measured
+                        "first_seen": rec.first_seen, "last_seen": rec.last_seen})
+    out.sort(key=lambda r: r["last_seen"])
+    return out
+
+
+def _schemas_of(connection_id: str) -> list[str]:
+    from pramanyx.ontology.recommendations import recommendation_schemas
+    return recommendation_schemas(connection_id)

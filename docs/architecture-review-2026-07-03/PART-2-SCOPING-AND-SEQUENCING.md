@@ -168,7 +168,7 @@ summary, key numbers, High confidence, baseline section) with **zero console err
 
 ### ✅ Wave 3 — U10: one SemanticContract (2026-07-05)
 
-**✅ REC-U10 — `aughor/semantic/contracts.py:SemanticContract` + two adapters.** A governed
+**✅ REC-U10 — `pramanyx/semantic/contracts.py:SemanticContract` + two adapters.** A governed
 metric lived as *two* pydantic shapes built twice — `semantic.metrics.MetricDefinition` (the
 curated catalog / approve-version governance surface) and `ontology.models.OntologyMetric` (the
 builder-derived + self-verified metric) — same identifier/label/canonical-SQL/tables/unit and a
@@ -189,7 +189,7 @@ guardrail).*
 
 ### ✅ Wave 3 — NOM-11: one ExecutionScope value object (2026-07-05)
 
-**✅ NOM-11 — `aughor/canvas/scope.py:ExecutionScope` + `resolve_execution_scope`.** The
+**✅ NOM-11 — `pramanyx/canvas/scope.py:ExecutionScope` + `resolve_execution_scope`.** The
 canvas-scope precedence (declared `scopes[0].schema_name` → the single owning schema derived
 from a schema-qualified table list `missimi.orders`→`missimi` → a non-canvas `schema_scope`)
 was hand-rolled at **four** call sites in `routers/investigations.py` (`_stream_chat`,
@@ -201,7 +201,7 @@ the precedence: `eff_schema` is derived (not stored), `.open()` pins `search_pat
 resolves, `resolve_execution_scope` is fail-open. All four blocks migrated (**−62 lines** in the
 router); salvage + resume now pin like the live paths (bug fixed). **14 unit tests +
 124 investigation/canvas tests + ratchet + ruff green.** *(The `_stub_agent` test patches
-`aughor.db.connection.open_connection_for` — the source `.open()` imports — not the router
+`pramanyx.db.connection.open_connection_for` — the source `.open()` imports — not the router
 re-export.)*
 
 **⏸ NOM-07 (shared `Safeguard` base for Monitor/Brief/Playbook) — deferred with reason.**
@@ -217,19 +217,19 @@ genuinely-scheduled safeguard appears.
 **◑ AL live-path migrations — all three planes now run ON a live answer path, flag-gated (2026-07-04).**
 With all three planes built + conformance-tested, wired each onto a live answer path,
 **default-off → byte-identical** until enabled:
-- **AL-01 live** (`trust.verify_live` / `AUGHOR_TRUST_VERIFY_LIVE`): `agent/investigate.py:_execute_safe`
+- **AL-01 live** (`trust.verify_live` / `PRAMANYX_TRUST_VERIFY_LIVE`): `agent/investigate.py:_execute_safe`
   routes every generated SQL through `trust.verify` (conn-less Scope → only the pure readonly + E1
   checks, no double-work with the preflight/join/grain guards already inline) right before
   `conn.execute`; a readonly BLOCK **returns a blocked `QueryResult`** (handled downstream like any
   failed query, never raises) — the mutation gate the generation path never ran.
-- **AL-05 live** (`semantic.resolve_live` / `AUGHOR_SEMANTIC_RESOLVE_LIVE`): a deep investigation
+- **AL-05 live** (`semantic.resolve_live` / `PRAMANYX_SEMANTIC_RESOLVE_LIVE`): a deep investigation
   resolves the Semantic plane once at seed (`routers/investigations.py` `initial_state`) via
   `semantic.context.resolve_if_enabled` (flag-gated + fail-open) and carries it on a new
   `AgentState.semantic_context` field, so every node reads one consistent context — the "every route
   carries SemanticContext" goal, additively (the ad-hoc consultations still work; they migrate onto
   the state incrementally).
 
-**AL-02 live** (`capability.pipeline_live` / `AUGHOR_CAPABILITY_PIPELINE_LIVE`): `SqlCapability` is now
+**AL-02 live** (`capability.pipeline_live` / `PRAMANYX_CAPABILITY_PIPELINE_LIVE`): `SqlCapability` is now
 a **complete** capability — `generate` translates a question to SQL via a new standalone
 `capability/sql_generate.py` (reusing the answer path's `WRITE_SQL_PROMPT` + `coder` provider — a
 shared prompt, not a fork), so the Data domain runs **end-to-end through the one template**
@@ -263,7 +263,7 @@ all with a stubbed provider (no live LLM)**. Full-suite collect 2406 clean; 45 p
 **◑ AL-05 — the Semantic plane, resolved once (2026-07-04).** The review's "single biggest
 architectural gap": the crown-jewel semantic material (governed metrics, ontology, business profile,
 KB) is consulted **ad-hoc** — ~9 inline calls scattered across `agent/nodes.py` +
-`routers/investigations.py` — not a plane in the request path. Built `aughor/semantic/context.py`:
+`routers/investigations.py` — not a plane in the request path. Built `pramanyx/semantic/context.py`:
 a `SemanticContext` dataclass + `resolve(question, connection_id, scope_schema) -> SemanticContext`
 that **composes the existing consultations** (delegation, not rewrite) — `metrics.list_metrics`
 (+ optional schema filter), `ontology.store.load_latest_ontology`, `profile.store.load_raw` (cached,
@@ -282,7 +282,7 @@ into `SqlCapability.generate` (metric-aware SQL) — the "not a big bang" migrat
 **◑ AL-02 — the Capability plane template + one real instance (2026-07-04).** The three answer
 pipelines are the *same shape* built three times (Data: SQL-gen → validate → execute → interpret;
 Code: same but unimplemented; Metadata: handler → interpret). Modeled that shape once in a new
-`aughor/pipeline` plane: a `CapabilityPipeline` Protocol (`generate/validate/execute/interpret`
+`pramanyx/pipeline` plane: a `CapabilityPipeline` Protocol (`generate/validate/execute/interpret`
 + `domain`/`kind`), a `run()` template that sequences the four phases — **`validate` routes through
 the Trust plane** (`trust.verify`, so AL-02 consumes AL-01) and a BLOCK **short-circuits before
 execute** (a mutating statement never reaches the DB) while a repair from `validate` is adopted as
@@ -304,7 +304,7 @@ and migrating the live investigate/explore orchestration onto the template behin
 The ~9 validation modules were diffused across the three answer paths, each grown a *different
 subset* (grep-confirmed: `check_join_value_domains` in 6 paths, `run_trust_checks` in only the
 query router, `readonly.is_mutating` in *none* of the generation paths — only the execution
-gate). Hoisted them behind one `aughor/trust` plane: `verify(artifact, scope) -> Verdict`
+gate). Hoisted them behind one `pramanyx/trust` plane: `verify(artifact, scope) -> Verdict`
 (`trust/verdict.py` = `Scope`/`Check`/`Verdict`; `trust/__init__.py` = the façade). It
 **delegates** (composition, not rewrite) — for `kind="sql"`: `readonly` → **BLOCK** (mutation /
 destruction / disallowed-function; the decisive gate, never swallowed — this is the guard the
@@ -312,7 +312,7 @@ generation paths were missing, so it closes Part 1 **SEC-02** at the plane), `tr
 **WARN** (E1 footguns, pure), and conn-gated `preflight_repair` (repair, folds its receipt +
 returns repaired SQL as `Verdict.artifact`) / `join_guard` / `grain_guard` → repair/WARN. `ok`
 is derived: false iff a BLOCK check failed; WARNs are advisory and never flip it. Flag-gated
-(`trust.verify_facade` / `AUGHOR_TRUST_FACADE`, default off). **First consumer wired**:
+(`trust.verify_facade` / `PRAMANYX_TRUST_FACADE`, default off). **First consumer wired**:
 `/query/validate` gains a flag-gated `mutation_blockers` field (additive — existing keys
 untouched), closing the SEC-02 read-only gap on that surface. **Verified (pytest — the whole
 reason Wave 4 was sequenced before the remaining UI slices): 13 plane-conformance tests** (BLOCK
@@ -485,12 +485,12 @@ rules), and browser screenshots of two views (Briefing empty-state + Query Build
 **Two discoveries that reshape later waves — read before U2/U3/U4:**
 
 1. **The app runs a *v2* theme, not `styles/tokens.css`.** `app/globals.css` imports
-   `aughor-v2/theme/tokens-v2.css` *after* the legacy `styles/tokens.css`, and v2
+   `pramanyx-v2/theme/tokens-v2.css` *after* the legacy `styles/tokens.css`, and v2
    **redefines the same token names with different values** (e.g. `--r3` is 6px in the
    legacy file but **10px** in v2 — v2 wins). So there are **two live token systems**,
    the legacy one shadowed. This IS the "color-model triplication / parallel-system"
    smell (UX-04, exec summary) made concrete. **REC-U4 (one palette source) and REC-U2
-   (rebuild primitives) must target `aughor-v2/theme/` as canonical and retire/reconcile
+   (rebuild primitives) must target `pramanyx-v2/theme/` as canonical and retire/reconcile
    the legacy `styles/tokens.css`** — not the other way round. (`aug-fs-*` was added to
    `type.css`, which v2 does *not* shadow, so type is unaffected.)
 

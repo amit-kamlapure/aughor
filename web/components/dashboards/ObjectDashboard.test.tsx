@@ -120,13 +120,13 @@ describe("a dashboard started from an object", () => {
   it("remembers a reader's filters in their browser, under the dashboard, and clears them", async () => {
     const first = draw();
     fireEvent.click(await screen.findByRole("checkbox", { name: "Status: Shipped" }));
-    await waitFor(() => expect(localStorage.getItem("aughor:cockpit-filters:thelook:orders-1a2b")).toBe('{"order":{"status":["Shipped"]}}'));
+    await waitFor(() => expect(localStorage.getItem("pramanyx:cockpit-filters:thelook:orders-1a2b")).toBe('{"order":{"status":["Shipped"]}}'));
     first.unmount();
     draw();
     await waitFor(() => expect(screen.getByTestId("object-filter-count").textContent).toBe("37,838 of 125,080 orders"));
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     await waitFor(() => expect(screen.getByTestId("object-filter-count").textContent).toBe("125,080 orders"));
-    expect(localStorage.getItem("aughor:cockpit-filters:thelook:orders-1a2b")).toBe("{}");
+    expect(localStorage.getItem("pramanyx:cockpit-filters:thelook:orders-1a2b")).toBe("{}");
   });
 
   it("does not draw a section's heading that only repeats the dashboard's name", async () => {

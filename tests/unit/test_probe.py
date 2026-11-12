@@ -6,7 +6,7 @@ can't express returns None (caller falls back to free-form). These tests pin the
 single-table and star-join cases + the validation gate.
 """
 import sqlglot
-from aughor.explorer.probe import (
+from pramanyx.explorer.probe import (
     Probe, ProbeFilter, ProbeHaving, validate_probe, probe_to_sql,
 )
 

@@ -14,10 +14,10 @@ and takes its history back when it returns; and the store carries all of it acro
 """
 from __future__ import annotations
 
-from aughor.ontology import context_graph_store as store
-from aughor.ontology.context_graph import (FACT_FIELDS, HISTORY_CAP, RETIRED_CAP, GraphNode, Provenance,
+from pramanyx.ontology import context_graph_store as store
+from pramanyx.ontology.context_graph import (FACT_FIELDS, HISTORY_CAP, RETIRED_CAP, GraphNode, Provenance,
                                            carry_history, fact_view, project_graph, stamp_observed)
-from aughor.ontology.models import OntologyEntity, OntologyGraph, OntologyMetric, OntologyRelationship
+from pramanyx.ontology.models import OntologyEntity, OntologyGraph, OntologyMetric, OntologyRelationship
 
 OLD_FINDING_DATE = "2026-07-01T00:00:00+00:00"
 
@@ -155,7 +155,7 @@ class TestWhatItReplacedIsKept:
             c.nodes["table:Customer"].first_seen == a.nodes["table:Customer"].provenance.observed_at
 
     def test_retired_is_capped_newest_kept(self):
-        from aughor.ontology.context_graph import RetiredNode
+        from pramanyx.ontology.context_graph import RetiredNode
         a = _build()
         for i in range(RETIRED_CAP + 5):          # 205 distinct, increasing retirement times
             node = GraphNode(id=f"finding:old{i}", kind="finding", label="x",
@@ -187,7 +187,7 @@ class TestTheStoreCarriesIt:
 
 class TestASupersededFindingKeepsItsText:
     def test_consolidation_keeps_what_the_survivor_replaced(self):
-        from aughor.ontology.finding_consolidation import consolidate
+        from pramanyx.ontology.finding_consolidation import consolidate
         older = {"id": "f_old", "text": "Revenue fell 12% in July", "sql": "SELECT a FROM t", "tables": ["t"],
                  "generated_at": "2026-07-01T00:00:00+00:00", "subject": "revenue july"}
         newer = {"id": "f_new", "text": "Revenue fell 12% in July (restated)", "sql": "SELECT a FROM t",
@@ -198,5 +198,5 @@ class TestASupersededFindingKeepsItsText:
             return
         s = survivors[0]
         assert s["superseded"][0]["id"] == "f_old" and "12%" in s["superseded"][0]["text"]
-        from aughor.ontology.context_graph import finding_node_data
+        from pramanyx.ontology.context_graph import finding_node_data
         assert finding_node_data(s)["superseded"][0]["text"] == "Revenue fell 12% in July"

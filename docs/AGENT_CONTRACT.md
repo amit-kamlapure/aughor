@@ -1,6 +1,6 @@
 # The agent contract (v2027.1)
 
-> Rendered from `aughor/kernel/contract.py`; `tests/unit/test_agent_contract.py` holds this file equal to the code. Edit the module, then regenerate with `uv run python -m aughor.kernel.contract`.
+> Rendered from `pramanyx/kernel/contract.py`; `tests/unit/test_agent_contract.py` holds this file equal to the code. Edit the module, then regenerate with `uv run python -m pramanyx.kernel.contract`.
 
 An agent is defined by the kind of entry it is licensed to book in the ledger, not by the name it is given. An outside agent takes the same duties through the MCP server and the ledger API, under a service principal, held to the same contract as the platform's own agents — which are held to it first.
 
@@ -46,7 +46,7 @@ Principal kinds: person (user:<id>); agent (agent:<id>, the platform's own); ser
 A **service principal** is:
 
 - minted by: a person, at POST /ledger/v1/principals/service — the key is returned once, stored hashed
-- presented as: `X-Aughor-Service`: the service name, `X-Aughor-Service-Key`: the key
+- presented as: `X-Pramanyx-Service`: the service name, `X-Pramanyx-Service-Key`: the key
 - held to: the organisation's agent policy (read · run · act, connection and tool allowlists), audited as an agent
 - author: every entry it books carries `service:<name>` as author with author_kind `agent`
 - scored: like every author: by what became of its entries (GET /ledger/v1/principals/{principal}/record)
@@ -73,7 +73,7 @@ The ledger API, under `/ledger/v1`:
 - GET /methods · POST /methods — the method interface
 - GET /aggregates · POST /aggregates/export
 
-The MCP server (`aughor.mcp.server`) adds `read_contract`, `post_claim`, `read_claims`, `read_restatements`; the same policy and audit as every other tool; no raw query tool, by design.
+The MCP server (`pramanyx.mcp.server`) adds `read_contract`, `post_claim`, `read_claims`, `read_restatements`; the same policy and audit as every other tool; no raw query tool, by design.
 
 What no door offers: a write path around the warrant; anything that runs inside the platform's process; anything that grades itself.
 

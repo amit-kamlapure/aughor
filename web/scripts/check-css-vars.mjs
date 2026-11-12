@@ -5,8 +5,8 @@
  * A `var(--panel)` referencing a token that no sheet defines silently falls through
  * to the fallback (or to nothing) — the component quietly drifts off the design
  * system. This gate cross-checks every `var(--name)` reference in components/, app/,
- * lib/ and aughor-v2/ against the tokens actually DEFINED in the CSS sheets
- * (styles/*.css, app/globals.css, aughor-v2/theme/*.css), `@theme` blocks, and
+ * lib/ and pramanyx-v2/ against the tokens actually DEFINED in the CSS sheets
+ * (styles/*.css, app/globals.css, pramanyx-v2/theme/*.css), `@theme` blocks, and
  * inline `--name:` declarations in TSX style objects.
  *
  * Tailwind v4's own theme namespace (--color-*, --radius-*, --spacing*, --text-*,
@@ -24,8 +24,8 @@ import { fileURLToPath } from "node:url";
 import { radixNames, radixValues } from "./radix-tokens.mjs";
 
 const WEB = join(fileURLToPath(new URL(".", import.meta.url)), "..");
-const SRC_ROOTS = ["components", "app", "lib", "aughor-v2"];
-const CSS_ROOTS = ["styles", "app", "aughor-v2"];
+const SRC_ROOTS = ["components", "app", "lib", "pramanyx-v2"];
+const CSS_ROOTS = ["styles", "app", "pramanyx-v2"];
 
 // Vars provided by Tailwind v4's default @theme or set at runtime, not by our sheets.
 const ALLOW_PREFIXES = [
@@ -208,7 +208,7 @@ if (orphans.length === 0 && miscategorized.length === 0) {
 if (orphans.length > 0) {
   console.error(`✗ css-var gate: ${orphans.length} reference(s) to undefined custom properties\n`);
   for (const o of orphans) console.error(`  ${o.file}:${o.line}  var(${o.name})`);
-  console.error("\nDefine the token in styles/tokens.css | aughor-v2/theme/tokens-v2.css, or re-point the reference at an existing token");
+  console.error("\nDefine the token in styles/tokens.css | pramanyx-v2/theme/tokens-v2.css, or re-point the reference at an existing token");
   console.error("(a Radix step must be one @radix-ui/themes/styles.css declares).");
 }
 if (miscategorized.length > 0) {

@@ -12,8 +12,8 @@ is `design-mockups/dashboard-questions.html`. Nothing is built.
 
 ## 1. What exists
 
-**A Data Canvas answer** is one `investigations` row (data/history.db, `aughor/db/history.py:166-186`), keyed by an
-8-hex id, with its canvas, connection and a `report_json` (`aughor/agent/state.py:430-489`): a headline, an
+**A Data Canvas answer** is one `investigations` row (data/history.db, `pramanyx/db/history.py:166-186`), keyed by an
+8-hex id, with its canvas, connection and a `report_json` (`pramanyx/agent/state.py:430-489`): a headline, an
 executive summary, labelled `figures`, the why (`phases` — the decomposition and cross-sections — plus
 `attribution_waterfall` and `causal_checks`), `gaps` (what it could not see), recommendations, a confidence, the
 `spec` it measured (metric, table, date column, window length) and `period_as_measured`. Every finding inside keeps
@@ -27,9 +27,9 @@ its SQL, rows and chart. An `envelope` with provenance and receipts rides on top
   that exist all start from SQL, not from an answer: the chat re-check (chat rows only, and it skips SQL that reads
   the clock), a card's run cut to a range, `measure_spec`, the Briefing's re-ask.
 
-**A cockpit card** (`aughor/dashboard/models.py:52-70`, table `dashboard_cards`) is SQL: a `kpi`, `chart`, `watch` or
+**A cockpit card** (`pramanyx/dashboard/models.py:52-70`, table `dashboard_cards`) is SQL: a `kpi`, `chart`, `watch` or
 `note`, made from a metric, a trusted query or a finding. On open every card re-runs its SQL (`POST /cards/{id}/run`)
-— **no model is ever called to fill a cockpit**, by law (`aughor/routers/cockpit.py:4-7`). No card kind holds a
+— **no model is ever called to fill a cockpit**, by law (`pramanyx/routers/cockpit.py:4-7`). No card kind holds a
 question, a summary or a why. The card's `refresh.cadence` field is read by nothing.
 
 - The Data Canvas already has **"Pin to dashboard"** (`ChatMessage.tsx:1001-1066`): it pins the turn's SQL and
@@ -42,7 +42,7 @@ asks the agent a revenue question every day at 09:00 UTC through an `investigate
 of 8 days … The previous run reported: …"*. It has answered 17 times since 3 October. Its answers are not tied to a
 canvas, a cockpit or an inquiry.
 
-**The Inquiry** (`aughor/record/inquiry.py`; GLOSSARY: *"the durable object a deep analysis runs inside"*) already
+**The Inquiry** (`pramanyx/record/inquiry.py`; GLOSSARY: *"the durable object a deep analysis runs inside"*) already
 holds a question, who opened it, its runs with their typed verdicts, what it established and could not settle, a
 date it wakes, and `run_cost_estimate` — the median tokens and minutes of this install's own runs, a dollar floor
 from priced runs, and the charter's ceiling. Today a waking inquiry only wakes: *"nothing here spends a model"*.
@@ -74,15 +74,15 @@ A dashboard gets one new piece, **Question**. It holds a question and a rhythm; 
 
 ## 3. The rename, measured
 
-"cockpit" appears **6,268 times in 284 files**: web 3,814 (2,286 outside tests), aughor 1,028, tests 680, docs 327,
+"cockpit" appears **6,268 times in 284 files**: web 3,814 (2,286 outside tests), pramanyx 1,028, tests 680, docs 327,
 ROADMAP 206, PENDING 174. Reader copy is about 564 lines; 21 API routes (`/cockpits…`); 9 flags; 144 web
-identifiers; 54 files under `web/components/cockpit/`, 33 under `web/lib/cockpit/`, 22 under `aughor/cockpit/`.
+identifiers; 54 files under `web/components/cockpit/`, 33 under `web/lib/cockpit/`, 22 under `pramanyx/cockpit/`.
 
 Three things the rename has to get past:
 
-1. **"Dashboard" is already taken internally.** `aughor/dashboard/` is the CARD store (`dashboard_cards`,
-   `AUGHOR_DASHBOARD_DB`, the `/cards` routes, `DashboardCard` in `web/lib/api.ts`), and the ontology uses
-   `source_kind: "dashboard"` for an outside BI asset. Moving `aughor/cockpit` onto `aughor/dashboard` collides.
+1. **"Dashboard" is already taken internally.** `pramanyx/dashboard/` is the CARD store (`dashboard_cards`,
+   `PRAMANYX_DASHBOARD_DB`, the `/cards` routes, `DashboardCard` in `web/lib/api.ts`), and the ontology uses
+   `source_kind: "dashboard"` for an outside BI asset. Moving `pramanyx/cockpit` onto `pramanyx/dashboard` collides.
 2. **The glossary forbids the word today.** `docs/GLOSSARY.md:90` — Cockpit, *Don't use: "dashboard, board (in
    anything a reader sees)"*; `:141` App likewise. The rename reverses that entry; the glossary is the authority and
    changes first.
@@ -90,7 +90,7 @@ Three things the rename has to get past:
    `cockpit:person:{conn}:{owner}:{id}` (+ the legacy `cockpit:{canvas}`); the spec root `"cockpit"` / element
    `Cockpit`; proposal kinds `cockpit_draft` / `cockpit_publish` and their inbox rows; audit and approval action
    names `cockpit.draft` / `cockpit.publish`; the `cockpit-images` file volume; the user pref section id `cockpit`;
-   browser keys `aughor:cockpit:*`; deep links `?tab=cockpit` / `?layer=cockpit`; metering sites `cockpit.draft` /
+   browser keys `pramanyx:cockpit:*`; deep links `?tab=cockpit` / `?layer=cockpit`; metering sites `cockpit.draft` /
    `cockpit.edit`; flag override rows.
 
 **The plan proposed — staged, each stage green on its own:**
@@ -99,12 +99,12 @@ Three things the rename has to get past:
   then every label, empty state, tooltip, toast, Settings flag label, chat redirect and model prompt. Deep links
   accept `?layer=dashboards` and keep reading the old ones. *Pin to dashboard* and *Pinned to the dashboard* already
   say it; they stay.
-- **R2 · Free the name.** The card store moves to `aughor/cards/` (it is the card store); its table, env var and
+- **R2 · Free the name.** The card store moves to `pramanyx/cards/` (it is the card store); its table, env var and
   routes stay as they are — frozen names.
-- **R3 · The code.** `aughor/cockpit/` → `aughor/dashboards/`, the router, `web/components|lib/cockpit/` →
+- **R3 · The code.** `pramanyx/cockpit/` → `pramanyx/dashboards/`, the router, `web/components|lib/cockpit/` →
   `dashboards/`, identifiers, `data-testid`s, tests, the validator bundle and its CI drift check, the SQL-door and
   icon registries. Routes become `/dashboards…` with `/cockpits…` kept answering. The nine flags move through
-  `RENAMED` / `RETIRED_ENV` (`aughor/kernel/flags.py:256-313`), so every operator `.env`, override row and the
+  `RENAMED` / `RETIRED_ENV` (`pramanyx/kernel/flags.py:256-313`), so every operator `.env`, override row and the
   restart script keep working.
 - **R4 · Lock it.** "cockpit" joins the vocabulary ratchet as a retired term, its baseline the frozen stored names
   above (exempt with a reason each).

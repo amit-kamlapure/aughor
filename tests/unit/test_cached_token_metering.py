@@ -20,8 +20,8 @@ distinction `_record_llm_call` already draws for `prompt_tokens`.
 """
 import pytest
 
-from aughor.llm.provider import _extract_cached_tokens
-from aughor.obs.usage import rollup
+from pramanyx.llm.provider import _extract_cached_tokens
+from pramanyx.obs.usage import rollup
 
 
 class _Obj:

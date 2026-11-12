@@ -7,23 +7,23 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.memory import skills as S
-from aughor.memory.skills import (
+from pramanyx.memory import skills as S
+from pramanyx.memory.skills import (
     _parameterize_sql, _materialize, _is_read_only, _primary_sql, _primary_table,
     _infer_action_type, propose_skill_from_investigation, auto_crystallize,
 )
-from aughor.ontology.models import QueryTemplate
+from pramanyx.ontology.models import QueryTemplate
 
 
 @pytest.fixture
 def _store(tmp_path, monkeypatch):
-    from aughor.util.json_store import KeyedJsonStore
+    from pramanyx.util.json_store import KeyedJsonStore
     monkeypatch.setattr(S, "_STORE", KeyedJsonStore(str(tmp_path / "skills.json")))
 
 
 def _action(aid="learned_top_region", sql="SELECT region, SUM(rev) AS r FROM orders WHERE region = {region} GROUP BY region",
             params=None):
-    from aughor.ontology.models import ActionParameter
+    from pramanyx.ontology.models import ActionParameter
     return QueryTemplate(
         id=aid, display_name="Top by region", description="d", entity="Order",
         action_type="aggregate", sql_template=sql,
@@ -127,7 +127,7 @@ def test_propose_builds_a_parameterized_learned_action(monkeypatch):
         "report": {"sql": "SELECT region, SUM(order_value) AS rev FROM missimi.orders WHERE region = 'EU' GROUP BY region",
                    "headline": "EU leads at €1.2M"},
     }
-    monkeypatch.setattr("aughor.db.history.get_investigation", lambda _id: inv)
+    monkeypatch.setattr("pramanyx.db.history.get_investigation", lambda _id: inv)
     cand = propose_skill_from_investigation("inv-1", table_to_entity={"orders": "Order"})
     assert cand is not None and cand.origin == "learned"
     assert cand.entity == "Order" and cand.source_table == "orders"
@@ -137,10 +137,10 @@ def test_propose_builds_a_parameterized_learned_action(monkeypatch):
 
 
 def test_propose_rejects_a_non_read_only_or_missing_query(monkeypatch):
-    monkeypatch.setattr("aughor.db.history.get_investigation",
+    monkeypatch.setattr("pramanyx.db.history.get_investigation",
                         lambda _id: {"question": "q", "report": {"sql": "DELETE FROM orders"}})
     assert propose_skill_from_investigation("inv-x") is None
-    monkeypatch.setattr("aughor.db.history.get_investigation", lambda _id: None)
+    monkeypatch.setattr("pramanyx.db.history.get_investigation", lambda _id: None)
     assert propose_skill_from_investigation("missing") is None
 
 

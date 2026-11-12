@@ -16,8 +16,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.control_plane import vending
-from aughor.routers import connections
+from pramanyx.control_plane import vending
+from pramanyx.routers import connections
 
 
 @pytest.fixture

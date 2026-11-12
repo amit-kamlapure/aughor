@@ -17,14 +17,14 @@ import re
 
 import pytest
 
-from aughor.ontology.column_config import ColumnFlags, save_table_config
-from aughor.tools.data_catalog import (
+from pramanyx.ontology.column_config import ColumnFlags, save_table_config
+from pramanyx.tools.data_catalog import (
     _MAX_CELL_CHARS,
     build_data_catalog,
     clear_cache,
     enforce_context_cap,
 )
-from aughor.tools.schema_linker import rank_tables_for_context
+from pramanyx.tools.schema_linker import rank_tables_for_context
 
 
 class _Res:

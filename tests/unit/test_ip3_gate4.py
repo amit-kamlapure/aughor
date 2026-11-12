@@ -18,9 +18,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from aughor.packs import gate4
-from aughor.packs.gate3 import run_gate3
-from aughor.packs.loader import load_pack
+from pramanyx.packs import gate4
+from pramanyx.packs.gate3 import run_gate3
+from pramanyx.packs.loader import load_pack
 
 AIRLINE = Path(__file__).resolve().parents[2] / "packs" / "airline"
 DATASET_ID = "bts-marketing-ontime-2019-01"
@@ -158,12 +158,12 @@ def copy_goldens() -> list[dict]:
 
 def test_the_airline_receipt_still_describes_the_package():
     """A change to a formula, a band, a golden, a play, the ontology or the dataset makes this fail until
-    `aughor packs measure airline --write` is run again on the real file."""
+    `pramanyx packs measure airline --write` is run again on the real file."""
     pack = load_pack(AIRLINE)
     receipt = gate4.read_receipt(pack, DATASET_ID)
-    assert receipt is not None, "no receipt: run `aughor packs measure airline --download --write`"
+    assert receipt is not None, "no receipt: run `pramanyx packs measure airline --download --write`"
     assert receipt["package_fingerprint"] == gate4.package_fingerprint(AIRLINE), \
-        "the package changed since it was measured: run `aughor packs measure airline --write`"
+        "the package changed since it was measured: run `pramanyx packs measure airline --write`"
     dataset = next(d for d in pack.datasets if d.id == DATASET_ID)
     assert receipt["dataset_sha256"] == dataset.sha256
 
@@ -189,6 +189,6 @@ def test_every_anatomy_package_has_a_current_passing_receipt_for_each_dataset(pa
     fingerprint = gate4.package_fingerprint(package)
     for dataset in pack.datasets:
         receipt = gate4.read_receipt(pack, dataset.id)
-        assert receipt is not None, f"{pack.id}: no receipt for {dataset.id} — run `aughor packs measure {pack.id} --write`"
+        assert receipt is not None, f"{pack.id}: no receipt for {dataset.id} — run `pramanyx packs measure {pack.id} --write`"
         assert receipt["package_fingerprint"] == fingerprint, f"{pack.id}: {dataset.id} receipt is stale"
         assert receipt["dataset_sha256"] == dataset.sha256 and receipt["ok"], receipt["findings"]

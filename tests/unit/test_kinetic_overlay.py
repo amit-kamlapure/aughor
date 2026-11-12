@@ -3,14 +3,14 @@
 Human annotations/corrections merged onto query results at READ time — never mutating source,
 surviving refreshes (the store is independent of the connection cache), with a machine edit never
 overriding a human one. Hermetic: the overlay ledger DB is the conftest temp path
-(AUGHOR_OVERLAY_LEDGER_DB), so the suite never touches live data/.
+(PRAMANYX_OVERLAY_LEDGER_DB), so the suite never touches live data/.
 """
 from __future__ import annotations
 
 import pytest
 
-from aughor.actions import overlay as OV
-from aughor.actions.overlay import OverlayEdit
+from pramanyx.actions import overlay as OV
+from pramanyx.actions.overlay import OverlayEdit
 
 
 class _Result:
@@ -155,8 +155,8 @@ def test_end_to_end_through_execute_guarded(monkeypatch):
     # second half asserts the other side of the data gate: no edits ⇒ no annotations.
     import duckdb
     from pathlib import Path
-    from aughor.db.connection import DuckDBConnection
-    from aughor.sql.executor import execute_guarded
+    from pramanyx.db.connection import DuckDBConnection
+    from pramanyx.sql.executor import execute_guarded
 
     conn = DuckDBConnection.__new__(DuckDBConnection)
     conn._path = Path(":memory:")
@@ -178,9 +178,9 @@ def test_end_to_end_through_execute_guarded(monkeypatch):
 # ── the K2 → K3 seam: an annotate action writes an overlay edit ──────────────────
 
 def test_annotate_action_writes_an_edit(monkeypatch):
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")   # the gate is on by default since 2026-10-04
-    from aughor.actions.executor import execute_kinetic_action
-    from aughor.ontology.models import ActionParameter, KineticAction
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "0")   # the gate is on by default since 2026-10-04
+    from pramanyx.actions.executor import execute_kinetic_action
+    from pramanyx.ontology.models import ActionParameter, KineticAction
 
     action = KineticAction(
         id="flag_outlier", kind="annotate", risk="low",

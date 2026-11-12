@@ -16,23 +16,23 @@ import duckdb
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.automations.models import Automation, Effect
-from aughor.automations.engine import _dispatch_slack_post
-from aughor.automations.store import get_automation, set_probation, upsert_automation
-from aughor.govern import departure_store as ds
-from aughor.semantic.metrics import MetricDefinition, save_metric
+from pramanyx.automations.models import Automation, Effect
+from pramanyx.automations.engine import _dispatch_slack_post
+from pramanyx.automations.store import get_automation, set_probation, upsert_automation
+from pramanyx.govern import departure_store as ds
+from pramanyx.semantic.metrics import MetricDefinition, save_metric
 
 
 @pytest.fixture(autouse=True)
 def _own_metrics(tmp_path, monkeypatch):
     """This file SAVES governed metrics; the session-shared registry file must not
     carry them into other tests' expectations (the dedup suite counts raw rows)."""
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.json"))
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.json"))
 
 
 @pytest.fixture()
 def client():
-    from aughor.api import app
+    from pramanyx.api import app
     return TestClient(app)
 
 
@@ -40,7 +40,7 @@ _COND = [{"kind": "schedule", "config": {"cron": "0 9 * * *"}}]
 
 
 def _register_conn(tmp_path, *, with_null: bool):
-    from aughor.db import registry
+    from pramanyx.db import registry
     p = tmp_path / "hb2.duckdb"
     con = duckdb.connect(str(p))
     con.execute("CREATE TABLE orders (order_id INT, total_amount DOUBLE, status TEXT)")
@@ -141,7 +141,7 @@ def test_five_accepted_marks_graduate_and_the_next_send_reaches_the_transport(
 # ── probation lifecycle at the store and the doors ────────────────────────────────
 
 def test_create_door_declares_and_probates(client, tmp_path, monkeypatch):
-    from aughor.org.context import set_user_id
+    from pramanyx.org.context import set_user_id
     token = set_user_id("ana")
     try:
         resp = client.post("/automations", json={
@@ -152,7 +152,7 @@ def test_create_door_declares_and_probates(client, tmp_path, monkeypatch):
         body = resp.json()
         assert body["probation"] is True and body["declared_by"] == "user:ana"
     finally:
-        from aughor.org.context import reset_user_id
+        from pramanyx.org.context import reset_user_id
         reset_user_id(token)
 
 

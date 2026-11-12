@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.evals import frozen as F
+from pramanyx.evals import frozen as F
 
 
 def test_writes_are_suppressed_only_inside_the_pin():
@@ -74,8 +74,8 @@ def test_the_fingerprint_covers_the_context_graph():
 def test_graph_writes_no_op_while_frozen(tmp_path, monkeypatch):
     """The end-to-end property: a measured answer cannot grow the artifact whose
     effect is being measured."""
-    from aughor.ontology import context_graph_store as store
-    from aughor.ontology import context_graph_build as build_mod
+    from pramanyx.ontology import context_graph_store as store
+    from pramanyx.ontology import context_graph_build as build_mod
     from tests.unit.test_context_graph import _build, _L1_FINDING
 
     monkeypatch.setattr(store, "_ROOT", tmp_path / "context_graph")

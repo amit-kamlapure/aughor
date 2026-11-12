@@ -1,5 +1,5 @@
 {
-  "name": "aughor-slack-bot",
+  "name": "pramanyx-slack-bot",
   "version": "0.1.0",
   "private": true,
   "description": "RC-1/RC-2 \u2014 Pramanyx in Slack: a thin Chat SDK transport over the Python API. The loop, guards, tenancy and metering all stay in Python; this process only carries questions in and streams answers, progress cards, charts and tables out.",

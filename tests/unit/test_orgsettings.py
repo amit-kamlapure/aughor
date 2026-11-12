@@ -8,9 +8,9 @@ stores are path-isolated per test so the real data/ dir is never touched.
 """
 import pytest
 
-from aughor.orgsettings import store as S
-from aughor.orgsettings.models import OrgSettings
-from aughor.workspace import store as WS
+from pramanyx.orgsettings import store as S
+from pramanyx.orgsettings.models import OrgSettings
+from pramanyx.workspace import store as WS
 
 
 @pytest.fixture(autouse=True)

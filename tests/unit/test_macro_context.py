@@ -1,9 +1,9 @@
 """Temporal Tier 2 — full-span macro context (long-arc rollup).
 
 Builds the cheap coarse rollup the briefing juxtaposes against the recent regime.
-See aughor/explorer/temporal.py + docs/ADAPTIVE_TEMPORAL_SCOPE.md §5.
+See pramanyx/explorer/temporal.py + docs/ADAPTIVE_TEMPORAL_SCOPE.md §5.
 """
-from aughor.explorer.temporal import build_macro_context, render_macro_context, _fmt, _growth
+from pramanyx.explorer.temporal import build_macro_context, render_macro_context, _fmt, _growth
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────

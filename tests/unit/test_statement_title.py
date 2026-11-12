@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.agent.analyst import statement_title
+from pramanyx.agent.analyst import statement_title
 
 LIVE = [
     ('SELECT * FROM (SELECT * FROM ( SELECT u.country, ROUND(SUM(oi.sale_price), 2) AS sales FROM thelook.orders o JOIN thelook.users u ON u.id = o.user_id JOIN thelook.order_items oi ON oi.order_id = o.order_id WHERE o.created_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL :v_window DAY) GROUP BY 1 ORDER BY sales DESC LIMIT 5 ) AS q ORDER BY `q`.`sales` DESC LIMIT 201) __q LIMIT 202',
@@ -48,8 +48,8 @@ def test_the_door_reads_the_connections_own_dialect_so_a_bigquery_statement_gets
     """The tests above hand the dialect in; the door looks it up (`trust.lineage_edges.dialect_for_connection`). That
     lookup read the registry's `type`, which no row carries — the column is `conn_type` — so every connection parsed
     generically, BigQuery's backticks failed, and all seven of theLook's recent runs got no words (2026-10-13)."""
-    from aughor.db import registry
-    from aughor.trust.lineage_edges import dialect_for_connection
+    from pramanyx.db import registry
+    from pramanyx.trust.lineage_edges import dialect_for_connection
     monkeypatch.setattr(registry, "list_connections", lambda *a, **k: [
         {"id": "bq", "name": "theLook", "conn_type": "bigquery"},
         {"id": "pg", "name": "Lux", "conn_type": "postgres"},

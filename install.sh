@@ -1,7 +1,7 @@
 #!/bin/sh
 # Pramanyx installer for macOS and Linux.
 #
-# On a computer without Pramanyx, one line does everything: downloads Pramanyx into ~/aughor,
+# On a computer without Pramanyx, one line does everything: downloads Pramanyx into ~/pramanyx,
 # installs what it needs, starts it and opens it in the browser. Nothing has to be installed
 # first, not even Git:
 #   curl -LsSf https://raw.githubusercontent.com/amit-kamlapure/pramanyx/main/install.sh | sh
@@ -14,7 +14,7 @@
 # Run it again whenever you like: it only redoes what changed.
 #
 # This script does just what a shell has to: find the checkout (or download one) and get uv.
-# It then hands over to `python -m aughor.installer`, which runs the same steps on every OS
+# It then hands over to `python -m pramanyx.installer`, which runs the same steps on every OS
 # (install.ps1 is this file's Windows twin). Kept ASCII so no locale can garble it.
 #
 # Everything runs inside main(), called on the very last line: through `curl | sh`, `sh` runs
@@ -22,13 +22,13 @@
 set -eu
 
 main() {
-  # AUGHOR_REPO_URL and AUGHOR_ARCHIVE_URL install from a fork (or a local copy) instead.
-  REPO_URL="${AUGHOR_REPO_URL:-https://github.com/amit-kamlapure/pramanyx.git}"
-  ARCHIVE_URL="${AUGHOR_ARCHIVE_URL:-https://github.com/amit-kamlapure/pramanyx/archive/refs/heads/main.tar.gz}"
-  PYTHON_VERSION="3.11" # aughor/installer.py PYTHON_VERSION
+  # PRAMANYX_REPO_URL and PRAMANYX_ARCHIVE_URL install from a fork (or a local copy) instead.
+  REPO_URL="${PRAMANYX_REPO_URL:-https://github.com/amit-kamlapure/pramanyx.git}"
+  ARCHIVE_URL="${PRAMANYX_ARCHIVE_URL:-https://github.com/amit-kamlapure/pramanyx/archive/refs/heads/main.tar.gz}"
+  PYTHON_VERSION="3.11" # pramanyx/installer.py PYTHON_VERSION
 
   setup_output
-  printf '\n  %sAughor installer%s\n\n' "$bold" "$reset"
+  printf '\n  %sPramanyx installer%s\n\n' "$bold" "$reset"
   blank=1 # the header ends with a blank line
 
   # Before the first slow step, not after three retries into it.
@@ -36,9 +36,9 @@ main() {
   find_checkout
   # The hint for next time has to name the checkout when this terminal is not in it.
   if [ "$ROOT" != "$(pwd -P)" ]; then
-    export AUGHOR_CHECKOUT_DIR="$ROOT"
+    export PRAMANYX_CHECKOUT_DIR="$ROOT"
   fi
-  LOGS="$ROOT/.aughor/logs"
+  LOGS="$ROOT/.pramanyx/logs"
   mkdir -p "$LOGS"
 
   preflight astral.sh
@@ -49,8 +49,8 @@ main() {
 
   # Hand over: every remaining step is the same on every OS. --isolated --no-project: a
   # throwaway environment, never the project's .venv, which the first step may rebuild.
-  export AUGHOR_BOOTSTRAP=1
-  exec "$UV" run --quiet --no-project --isolated --python "$PYTHON_VERSION" python -m aughor.installer "$@"
+  export PRAMANYX_BOOTSTRAP=1
+  exec "$UV" run --quiet --no-project --isolated --python "$PYTHON_VERSION" python -m pramanyx.installer "$@"
 }
 
 setup_output() {
@@ -84,11 +84,11 @@ fail() {
 
 is_checkout() {
   [ -f "$1/pyproject.toml" ] && [ -f "$1/web/package.json" ] &&
-    grep -q '^name = "aughor"' "$1/pyproject.toml"
+    grep -q '^name = "pramanyx"' "$1/pyproject.toml"
 }
 
 # The folder this script sits in, the current folder, or — when neither is a checkout, as under
-# `curl | sh` — a fresh download into ~/aughor (or AUGHOR_DIR), wherever the terminal happens to be.
+# `curl | sh` — a fresh download into ~/pramanyx (or PRAMANYX_DIR), wherever the terminal happens to be.
 find_checkout() {
   script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" 2>/dev/null && pwd -P) || script_dir=""
   if [ -n "$script_dir" ] && is_checkout "$script_dir"; then
@@ -96,19 +96,19 @@ find_checkout() {
   elif is_checkout "$(pwd -P)"; then
     ROOT=$(pwd -P)
   else
-    ROOT=${AUGHOR_DIR:-$HOME/aughor}
+    ROOT=${PRAMANYX_DIR:-$HOME/pramanyx}
     if ! is_checkout "$ROOT"; then
       # Never write into a folder that holds anything else: a failed download is cleaned up
       # with `rm -rf`, and that must only ever meet what the download itself put there.
       if [ -e "$ROOT" ] && [ -n "$(ls -A "$ROOT" 2>/dev/null)" ]; then
         fail "$ROOT already exists, and it isn't Pramanyx." \
-          "Move it out of the way, or pick another folder with AUGHOR_DIR=/some/folder, then run this again."
+          "Move it out of the way, or pick another folder with PRAMANYX_DIR=/some/folder, then run this again."
       fi
       say "Downloading Pramanyx into $ROOT..."
       DOWNLOAD_LOG="${TMPDIR:-/tmp}"
-      DOWNLOAD_LOG="${DOWNLOAD_LOG%/}/aughor-download.log" # macOS's TMPDIR ends in a slash
+      DOWNLOAD_LOG="${DOWNLOAD_LOG%/}/pramanyx-download.log" # macOS's TMPDIR ends in a slash
       : >"$DOWNLOAD_LOG"
-      download_aughor "$ROOT" ||
+      download_pramanyx "$ROOT" ||
         {
           proxy_hint_if_certificate "$DOWNLOAD_LOG"
           fail "Could not download Pramanyx." "Check your internet connection, then run this again. Log: $DOWNLOAD_LOG"
@@ -121,7 +121,7 @@ find_checkout() {
 
 # A clone when this computer has a working Git, so the checkout can `git pull` later;
 # otherwise the same code as a snapshot, so a fresh computer needs nothing installed first.
-download_aughor() {
+download_pramanyx() {
   if have_git; then
     if git clone --quiet "$REPO_URL" "$1" >>"$DOWNLOAD_LOG" 2>&1 </dev/null; then
       return 0
@@ -137,9 +137,9 @@ download_aughor() {
   fi
   rm -rf "$1" # a failed clone's leftovers: find_checkout refused a folder with anything else in it
   mkdir -p "$(dirname "$1")" || return 1
-  staging=$(mktemp -d "$(dirname "$1")/.aughor-download.XXXXXX") || return 1
-  if fetch "$ARCHIVE_URL" "$staging/aughor.tar.gz" &&
-    tar -xzf "$staging/aughor.tar.gz" -C "$staging" 2>>"$DOWNLOAD_LOG"; then
+  staging=$(mktemp -d "$(dirname "$1")/.pramanyx-download.XXXXXX") || return 1
+  if fetch "$ARCHIVE_URL" "$staging/pramanyx.tar.gz" &&
+    tar -xzf "$staging/pramanyx.tar.gz" -C "$staging" 2>>"$DOWNLOAD_LOG"; then
     for unpacked in "$staging"/*/; do
       if [ -f "${unpacked}pyproject.toml" ]; then
         mv "${unpacked%/}" "$1" && rm -rf "$staging" && return 0
@@ -254,7 +254,7 @@ ensure_uv() {
   UV=$(find_uv) ||
     fail "Could not install uv." "Check your internet connection, then run this again. Log: $LOGS/uv-install.log"
   ok "uv installed"
-  export AUGHOR_UV_INSTALLED=1
+  export PRAMANYX_UV_INSTALLED=1
 }
 
 check_uv_version() {

@@ -22,8 +22,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.identity import UNATTRIBUTED, Identity, attribution_key, parse_ref, resolve
-from aughor.identity import store as ident_store
+from pramanyx.identity import UNATTRIBUTED, Identity, attribution_key, parse_ref, resolve
+from pramanyx.identity import store as ident_store
 
 
 # ── the defect ───────────────────────────────────────────────────────────────────
@@ -32,8 +32,8 @@ def test_an_absent_actor_is_unattributed_never_the_org():
     """THE regression test for this wave. `actor or current_org_id()` put the tenant in
     the actor field, and an audit trail that answers 'who approved this refund?' with the
     org name reads as attributed while carrying no information at all."""
-    from aughor.govern import actions as govern
-    from aughor.org.context import current_org_id
+    from pramanyx.govern import actions as govern
+    from pramanyx.org.context import current_org_id
 
     govern.audit("connection.delete", "conn-a", "approved")
     row = govern.recent_audit(5)[0]
@@ -46,7 +46,7 @@ def test_an_absent_actor_is_unattributed_never_the_org():
 def test_a_supplied_actor_survives_unchanged():
     """The fix must not eat information. `automation:<id>` is weak but real, and it is
     what the caller meant."""
-    from aughor.govern import actions as govern
+    from pramanyx.govern import actions as govern
     govern.audit("connection.delete", "conn-b", "auto", actor="automation:abc-123")
     assert govern.recent_audit(5)[0]["actor"] == "automation:abc-123"
 
@@ -124,7 +124,7 @@ def test_links_for_user_answers_the_continuity_question():
 def test_resolve_survives_a_broken_link_store(monkeypatch):
     """Attribution must never be the reason a governed action fails — `slack:U…` is still
     an honest answer when the table cannot be read."""
-    monkeypatch.setattr("aughor.identity.store.get_link",
+    monkeypatch.setattr("pramanyx.identity.store.get_link",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("db gone")))
     ident = resolve("slack:U1")
     assert ident is not None and ident.attribution_key == "slack:U1"
@@ -148,8 +148,8 @@ def test_ask_pins_the_asker_so_telemetry_attributes_it():
     fine. This drives the real wrapper and asserts the contextvar is live mid-stream.
     """
     import asyncio
-    from aughor.org.context import current_user_id
-    from aughor.routers.investigations import _stream_with_session
+    from pramanyx.org.context import current_user_id
+    from pramanyx.routers.investigations import _stream_with_session
 
     seen: list[str] = []
 
@@ -169,8 +169,8 @@ def test_a_body_principal_never_overrides_an_authenticated_one():
     say who it IS. With a verified identity already in scope, the body field is ignored.
     """
     import asyncio
-    from aughor.org.context import current_user_id, reset_user_id, set_user_id
-    from aughor.routers.investigations import _stream_with_session
+    from pramanyx.org.context import current_user_id, reset_user_id, set_user_id
+    from pramanyx.routers.investigations import _stream_with_session
 
     seen: list[str] = []
 
@@ -190,8 +190,8 @@ def test_a_body_principal_never_overrides_an_authenticated_one():
 def test_no_principal_leaves_the_asker_unset():
     """Absent identity stays absent — the wrapper invents nothing."""
     import asyncio
-    from aughor.org.context import current_user_id
-    from aughor.routers.investigations import _stream_with_session
+    from pramanyx.org.context import current_user_id
+    from pramanyx.routers.investigations import _stream_with_session
 
     seen: list[str] = []
 

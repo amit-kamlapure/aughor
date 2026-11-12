@@ -7,7 +7,7 @@ recoverable from history nobody had to annotate.
 """
 from __future__ import annotations
 
-from aughor.sql.query_log_miner import (
+from pramanyx.sql.query_log_miner import (
     ROLE_AVG,
     ROLE_FILTER_BINARY,
     ROLE_GROUP_BY,
@@ -15,8 +15,8 @@ from aughor.sql.query_log_miner import (
     ROLE_SUM,
     mine_query_log,
 )
-from aughor.tools.concept import CONFIDENT, LAYER_USAGE, resolve_concept
-from aughor.tools.usage import MIN_SUPPORT, roles_by_column, usage_witnesses, witnesses_for_table
+from pramanyx.tools.concept import CONFIDENT, LAYER_USAGE, resolve_concept
+from pramanyx.tools.usage import MIN_SUPPORT, roles_by_column, usage_witnesses, witnesses_for_table
 
 SQL_GROUPED = "SELECT state, SUM(total) FROM orders GROUP BY state"
 SQL_JOINED = "SELECT * FROM orders o JOIN customers c ON o.customer_id = c.id"
@@ -85,7 +85,7 @@ def test_usage_alone_can_never_type_a_column():
 def test_usage_supplies_the_SECOND_witness_a_name_pattern_cannot():
     """The point of the layer: a name says `state` is a dimension, and being grouped by
     500 times agrees from a different kind of evidence. Two layers → a concept."""
-    from aughor.tools.concept import LAYER_NAME, Witness
+    from pramanyx.tools.concept import LAYER_NAME, Witness
 
     name = Witness(layer=LAYER_NAME, concept="dimension.categorical",
                    confidence=0.5, evidence="named like a place")

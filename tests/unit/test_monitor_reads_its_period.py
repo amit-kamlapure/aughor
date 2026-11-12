@@ -15,11 +15,11 @@ from types import SimpleNamespace
 import duckdb
 import pytest
 
-from aughor.briefing import ranges as R
-from aughor.monitors import runner
-from aughor.monitors.models import Monitor
-from aughor.semantic import metric_time as mt
-from aughor.semantic.metrics import MetricDefinition
+from pramanyx.briefing import ranges as R
+from pramanyx.monitors import runner
+from pramanyx.monitors.models import Monitor
+from pramanyx.semantic import metric_time as mt
+from pramanyx.semantic.metrics import MetricDefinition
 
 #: Olist's GMV as it is approved live: a statement over items joined to their orders, dated by the purchase.
 GMV = ("SELECT SUM(oi.price) AS gmv_brl FROM olist.olist_order_items_dataset oi JOIN olist.olist_orders_dataset o "
@@ -101,7 +101,7 @@ def test_a_monthly_floor_reads_the_month_and_warns_where_all_history_never_could
 def test_a_native_engine_runs_the_period_reading_through_the_door(warehouse, asked):
     """The period SQL is compiled in the connection's dialect, so it reaches the engine as written. It declared that
     dialect to the door, which accepts only platform SQL, and every dated-metric check raised on BigQuery."""
-    from aughor.db.dialects import sql_for_engine
+    from pramanyx.db.dialects import sql_for_engine
 
     sent: list[str] = []
 

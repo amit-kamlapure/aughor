@@ -10,10 +10,10 @@ import inspect
 import json
 from pathlib import Path
 
-from aughor.db import door_count
-from aughor.db.connection import DatabaseConnection
-from aughor.govern import gate_map
-from aughor.security.audit import DoorCounter
+from pramanyx.db import door_count
+from pramanyx.db.connection import DatabaseConnection
+from pramanyx.govern import gate_map
+from pramanyx.security.audit import DoorCounter
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -50,7 +50,7 @@ def test_every_door_the_census_names_is_counted():
 
 
 def _connection_classes() -> list[type]:
-    import aughor.connectors.base  # noqa: F401 — the connectors' own base, so its subclasses are in the walk
+    import pramanyx.connectors.base  # noqa: F401 — the connectors' own base, so its subclasses are in the walk
     found, queue = [], [DatabaseConnection]
     while queue:
         cls = queue.pop()
@@ -81,7 +81,7 @@ def test_a_use_is_counted_once_at_the_method_the_caller_used():
 
 
 def test_the_guarded_door_is_the_tenth_and_what_runs_beneath_it_is_the_same_use():
-    from aughor.sql import executor
+    from pramanyx.sql import executor
     assert getattr(executor.execute_guarded, "__counted_door__", None) == door_count.GUARDED
     conn = _Conn()
 

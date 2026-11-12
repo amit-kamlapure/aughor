@@ -11,10 +11,10 @@ import pytest
 
 from datetime import datetime, timedelta, timezone
 
-from aughor.ontology.context_graph import (
+from pramanyx.ontology.context_graph import (
     ContextGraph, GraphEdge, GraphNode, Provenance,
 )
-from aughor.ontology.graph_trust import (
+from pramanyx.ontology.graph_trust import (
     CORROBORATION_MIN, VERDICT_HALF_LIFE_DAYS, build_trust,
 )
 
@@ -197,8 +197,8 @@ def test_an_unmatched_verdict_is_reported_as_unmatched_not_as_human_signal():
 def test_the_projection_carries_the_investigation_id_onto_the_finding_node():
     """The rot guard for the join above: if the build stops emitting it, the human channel
     goes quiet again and nothing else would notice."""
-    from aughor.ontology.context_graph import finding_node_data
-    from aughor.ontology.context_graph_build import _investigation_of
+    from pramanyx.ontology.context_graph import finding_node_data
+    from pramanyx.ontology.context_graph_build import _investigation_of
 
     assert _investigation_of({"natural_key": "ada:conn-1:inv-42"}) == "inv-42"
     assert _investigation_of({"natural_key": "chat:conn-1:turn-9"}) == "turn-9"
@@ -230,7 +230,7 @@ def test_an_undated_verdict_carries_less_weight_than_a_fresh_one():
     """`created_at` unreadable meant age 0 meant FULL weight — a row with a null timestamp
     could single-handedly flip a standing. Fail-open in the wrong direction for the signal
     this module treats as ground truth."""
-    from aughor.ontology.graph_trust import UNDATED_WEIGHT
+    from pramanyx.ontology.graph_trust import UNDATED_WEIGHT
 
     cg = _graph_with_investigation("inv-42")
     undated = build_trust(cg, verdicts=[{"investigation_id": "inv-42", "verdict": "accept",

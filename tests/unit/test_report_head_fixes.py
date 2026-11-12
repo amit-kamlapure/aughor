@@ -10,7 +10,7 @@ Plus: the export dedups a phase summary the executive summary already contains.
 """
 from __future__ import annotations
 
-from aughor.agent.investigate import (
+from pramanyx.agent.investigate import (
     _fallback_headline,
     _fix_xsec_extreme_key_numbers,
     _fmt_compact_num,
@@ -20,12 +20,12 @@ import pytest
 import shutil as _shutil
 from pathlib import Path as _Path
 
-from aughor.export.echarts import render_chart_svg
+from pramanyx.export.echarts import render_chart_svg
 
-_SSR_BUNDLE = _Path(__file__).resolve().parents[2] / "aughor" / "export" / "chart_ssr.bundle.mjs"
+_SSR_BUNDLE = _Path(__file__).resolve().parents[2] / "pramanyx" / "export" / "chart_ssr.bundle.mjs"
 _ssr = pytest.mark.skipif(not _shutil.which("node") or not _SSR_BUNDLE.exists(),
                           reason="chart SSR needs node + chart_ssr.bundle.mjs")
-from aughor.export.document import build_export_doc
+from pramanyx.export.document import build_export_doc
 
 
 # ── 1 · source-currency tagging ──────────────────────────────────────────────

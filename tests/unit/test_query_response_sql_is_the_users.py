@@ -24,8 +24,8 @@ import duckdb
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.db import registry
+from pramanyx.api import app
+from pramanyx.db import registry
 
 client = TestClient(app)
 

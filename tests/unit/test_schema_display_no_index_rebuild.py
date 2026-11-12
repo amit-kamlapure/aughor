@@ -25,8 +25,8 @@ from __future__ import annotations
 
 import inspect
 
-from aughor.agent import schema_annotators
-from aughor.tools import schema as schema_tools
+from pramanyx.agent import schema_annotators
+from pramanyx.tools import schema as schema_tools
 
 
 def test_the_display_path_does_not_build_the_index():
@@ -57,7 +57,7 @@ def test_the_refresh_cannot_break_the_intelligence_build():
 
 def test_retrieval_still_builds_on_first_use():
     """The safety net that makes removal safe rather than merely faster."""
-    from aughor.semantic import retriever
+    from pramanyx.semantic import retriever
 
     src = inspect.getsource(retriever._retrieve)
     assert "build_schema_index()" in src and "collection_count" in src, (

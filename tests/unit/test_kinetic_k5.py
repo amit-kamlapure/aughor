@@ -9,16 +9,16 @@ from __future__ import annotations
 import pytest
 from fastapi import HTTPException
 
-from aughor.ontology import overrides as OV
-from aughor.routers import kinetic as K
-from aughor.routers import ontology as ONT
+from pramanyx.ontology import overrides as OV
+from pramanyx.routers import kinetic as K
+from pramanyx.routers import ontology as ONT
 
 
 @pytest.fixture(autouse=True)
 def _iso(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_ROOT", tmp_path / "ov")
     monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ov_draft")
-    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "0")   # the gate is on by default since 2026-10-04
+    monkeypatch.setenv("PRAMANYX_ACTION_APPROVAL", "0")   # the gate is on by default since 2026-10-04
 
 
 def _valid_body() -> "ONT._DeclaredActionBody":
@@ -37,8 +37,8 @@ def _valid_body() -> "ONT._DeclaredActionBody":
 # ── author a declared action ──────────────────────────────────────────────────────
 
 def test_author_valid_action_persists_and_reads_back_whole():
-    from aughor.actions.authority import declaration_problem
-    from aughor.ontology.models import OntologyGraph
+    from pramanyx.actions.authority import declaration_problem
+    from pramanyx.ontology.models import OntologyGraph
     out = ONT.author_kinetic_action("refund", _valid_body(), connection_id="c", schema_name=None)
     assert out["override"]["target_kind"] == "action" and out["override"]["target_id"] == "refund"
     assert out["override"]["fields"]["kind"] == "side_effect"
@@ -48,7 +48,7 @@ def test_author_valid_action_persists_and_reads_back_whole():
     # door persisted the phase-4 fields and the overlay dropped them, so a stored side-effect action read back
     # undeclarable: it never graduated and its undo was refused.
     schema = ONT._served_scope("c", None)          # where the door writes: the schema of the graph it serves
-    from aughor.ontology import release as R
+    from pramanyx.ontology import release as R
     R.publish("c", schema, by="person:ana")
     assert list(OV._ROOT.rglob("*.yaml"))
     graph, _ = OV.apply_overrides(OntologyGraph(connection_id="c", schema_name=schema, schema_fingerprint="x"),
@@ -79,8 +79,8 @@ def test_author_missing_kind_is_400():
 # ── annotate + list ────────────────────────────────────────────────────────────────
 
 def test_annotate_writes_and_lists(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda n: n == "kinetic.overlay")
-    from aughor.actions import overlay as OVL
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled", lambda n: n == "kinetic.overlay")
+    from pramanyx.actions import overlay as OVL
     OVL.purge_connections(["c-k5"])
     try:
         out = K.annotate(K.AnnotateRequest(table="orders", column="status", key_column="order_id",
@@ -94,7 +94,7 @@ def test_annotate_writes_and_lists(monkeypatch):
 
 
 def test_annotate_missing_fields_is_400(monkeypatch):
-    monkeypatch.setattr("aughor.kernel.flags.flag_enabled", lambda n: n == "kinetic.overlay")
+    monkeypatch.setattr("pramanyx.kernel.flags.flag_enabled", lambda n: n == "kinetic.overlay")
     with pytest.raises(HTTPException) as e:
         K.annotate(K.AnnotateRequest(table="", body="x"), connection_id="c")
     assert e.value.status_code == 400

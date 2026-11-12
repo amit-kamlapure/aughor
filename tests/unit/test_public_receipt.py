@@ -7,8 +7,8 @@ id AND (fail-closed, no existence leak) on a receipt outside the caller's org.
 """
 from __future__ import annotations
 
-from aughor.kernel.ledger import Ledger
-from aughor.trust.receipt import build_public_receipt, verify
+from pramanyx.kernel.ledger import Ledger
+from pramanyx.trust.receipt import build_public_receipt, verify
 
 
 def _write(led: Ledger, natural_key: str, *, conn_id: str = "c1", **payload) -> str:
@@ -84,10 +84,10 @@ def test_receipt_route_404_on_foreign_org(client, monkeypatch):
     led = Ledger.default()
     rid = _write(led, "chat:secretconn:x", conn_id="secretconn")
     # Simulate identity-on with a visible set that excludes this receipt's connection.
-    monkeypatch.setattr("aughor.security.authz.org_visible_conn_ids", lambda: {"other_conn"})
+    monkeypatch.setattr("pramanyx.security.authz.org_visible_conn_ids", lambda: {"other_conn"})
     assert client.get(f"/receipt/{rid}").status_code == 404
     # Same call with the connection visible → 200 (proves it's the org gate, not a bad id).
-    monkeypatch.setattr("aughor.security.authz.org_visible_conn_ids", lambda: {"secretconn"})
+    monkeypatch.setattr("pramanyx.security.authz.org_visible_conn_ids", lambda: {"secretconn"})
     assert client.get(f"/receipt/{rid}").status_code == 200
 
 
@@ -127,9 +127,9 @@ def test_trace_route_inherits_the_receipts_fail_closed_rbac(client, monkeypatch)
     around the receipt's org gate."""
     led = Ledger.default()
     rid = _write(led, "chat:secretconn:trace", conn_id="secretconn")
-    monkeypatch.setattr("aughor.security.authz.org_visible_conn_ids", lambda: {"other_conn"})
+    monkeypatch.setattr("pramanyx.security.authz.org_visible_conn_ids", lambda: {"other_conn"})
     assert client.get(f"/receipt/{rid}/trace").status_code == 404
-    monkeypatch.setattr("aughor.security.authz.org_visible_conn_ids", lambda: {"secretconn"})
+    monkeypatch.setattr("pramanyx.security.authz.org_visible_conn_ids", lambda: {"secretconn"})
     assert client.get(f"/receipt/{rid}/trace").status_code == 200
 
 

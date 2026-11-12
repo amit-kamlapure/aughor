@@ -13,8 +13,8 @@ import threading
 
 import pytest
 
-from aughor.control_plane.contracts.execution import QueryResult
-from aughor.db import matcache as M
+from pramanyx.control_plane.contracts.execution import QueryResult
+from pramanyx.db import matcache as M
 
 
 def _res(i: int) -> QueryResult:

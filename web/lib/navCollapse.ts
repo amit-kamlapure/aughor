@@ -7,7 +7,7 @@
  * on it draws the collapsed rail, and useNavCollapsed() follows it for aria and hover labels.
  * Per browser, not per user: how wide a rail should be depends on the screen it is on.
  */
-export const NAV_COLLAPSED_KEY = "aughor_nav_collapsed";
+export const NAV_COLLAPSED_KEY = "pramanyx_nav_collapsed";
 
 /** Inline and pre-paint: set data-nav from storage. Blocked storage leaves the rail open. */
 export const NAV_COLLAPSE_BOOT =

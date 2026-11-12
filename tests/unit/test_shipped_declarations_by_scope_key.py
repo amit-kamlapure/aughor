@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from aughor.ontology import overrides as OV
-from aughor.ontology.models import OntologyGraph
+from pramanyx.ontology import overrides as OV
+from pramanyx.ontology.models import OntologyGraph
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -49,7 +49,7 @@ def fresh_install(tmp_path, monkeypatch):
     monkeypatch.setattr(OV, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     monkeypatch.setattr(OV, "_SEED_ROOT", REPO / "data" / "shipped" / "ontology_overrides")
     keys: dict[str, str] = {}
-    import aughor.db.registry as registry
+    import pramanyx.db.registry as registry
     monkeypatch.setattr(registry, "scope_key_of", lambda conn: keys.get(conn, ""))
     return keys
 
@@ -94,7 +94,7 @@ def test_the_frame_matcher_scores_the_rebuilt_graphs_as_it_scores_the_snapshots(
     import sys
     sys.path.insert(0, str(REPO))
     from evals.framing_matcher_eval import DATASET, GRAPHS, score
-    from aughor.ontology.framing import frame_question
+    from pramanyx.ontology.framing import frame_question
     rebuilt, original = {}, {}
     for key, (path, schema) in HOSTS.items():
         snapshot = json.loads((REPO / path).read_text())
@@ -144,9 +144,9 @@ def _clone(snapshot: dict) -> OntologyGraph:
 def _problems(graph: OntologyGraph) -> list[str]:
     """Each declaration through its OWN door's resolver — the check that runs before a person's declaration is
     written, so a shipped one is held to exactly the same law."""
-    from aughor.ontology.business_rules import resolve_rule
-    from aughor.ontology.processes import resolve_process
-    from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query, find_object_type
+    from pramanyx.ontology.business_rules import resolve_rule
+    from pramanyx.ontology.processes import resolve_process
+    from pramanyx.semantic.object_query import ObjectQueryRefused, compile_object_query, find_object_type
     out = []
     for pid, p in graph.processes.items():
         fields = json.loads(json.dumps({"entity": p.entity, "stages": [s.model_dump(exclude_none=True) for s in p.stages]}))

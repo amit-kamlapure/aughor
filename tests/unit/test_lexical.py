@@ -1,7 +1,7 @@
 """R7 — hybrid lexical⊕vector reranking. Pure + hermetic (no Qdrant, no embeddings)."""
 from __future__ import annotations
 
-from aughor.semantic.lexical import (
+from pramanyx.semantic.lexical import (
     _alpha_blend_order,
     bm25_scores,
     hybrid_rerank,

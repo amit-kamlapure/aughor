@@ -7,7 +7,7 @@
  * SE-8B — a statement pager («Results N of M» — "Run all" keeps EVERY statement's rows, not just the last) and a tab
  * strip (Table, one tab per chart).
  *
- * Redone to `aughor-v2/CLARITY.md` (2026-10-12). The panel opens on its FIGURES — rows · time · the cut said plainly ·
+ * Redone to `pramanyx-v2/CLARITY.md` (2026-10-12). The panel opens on its FIGURES — rows · time · the cut said plainly ·
  * cached — with the two things a cut result can ask for next on the same line, and the result's Copy and CSV beside
  * them (every table a reader is shown leaves the page as a table). The ways out that sat in a footer row of buttons —
  * other formats, a chart, Pin, Schedule — are one Tools ▾. The pager and the chart tabs show only when there is more

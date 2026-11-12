@@ -6,8 +6,8 @@ now asks first, at most hourly, as the obs summary does; an unreachable catalogu
 """
 from __future__ import annotations
 
-from aughor.obs import usage
-from aughor.routers import governance
+from pramanyx.obs import usage
+from pramanyx.routers import governance
 
 
 def test_the_catalogue_is_asked_before_the_calls_are_priced(monkeypatch):

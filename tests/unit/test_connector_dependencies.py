@@ -25,7 +25,7 @@ from pathlib import Path
 
 import pytest
 
-from aughor.connectors.registry import DRIVERS, PROVIDED_BY
+from pramanyx.connectors.registry import DRIVERS, PROVIDED_BY
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -67,7 +67,7 @@ def test_a_connector_extra_declares_nothing_the_code_ignores(extra):
     """The other direction. A dependency nothing imports is not free: it is weight on
     every install of that extra, and it reads as support the code does not have."""
     sources = "\n".join(p.read_text(errors="ignore")
-                        for p in (REPO / "aughor").rglob("*.py"))
+                        for p in (REPO / "pramanyx").rglob("*.py"))
     by_dist = {d: m for m, d in PROVIDED_BY.items()}
     unused = []
     for dist in _extra_entries(extra):
@@ -89,7 +89,7 @@ def test_the_rest_connectors_http_client_is_declared_not_inherited():
     level, and the extra that exists for them declared three SDKs they do not use. It
     resolved anyway, transitively — which is why nothing noticed."""
     for name in ("stripe", "hubspot", "salesforce"):
-        src = (REPO / "aughor" / "connectors" / "api" / f"{name}.py").read_text()
+        src = (REPO / "pramanyx" / "connectors" / "api" / f"{name}.py").read_text()
         assert re.search(r"^import requests$", src, re.MULTILINE), (
             f"{name}.py no longer imports requests at module level — if the HTTP client "
             f"changed, [crm] has to change with it")

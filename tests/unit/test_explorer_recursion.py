@@ -19,7 +19,7 @@ import inspect
 
 def test_save_state_does_not_call_itself() -> None:
     """_save_state must not contain a recursive self._save_state() call."""
-    from aughor.explorer.agent import SchemaExplorer
+    from pramanyx.explorer.agent import SchemaExplorer
     source = inspect.getsource(SchemaExplorer._save_state)
     assert "self._save_state()" not in source, (
         "SchemaExplorer._save_state() still contains a recursive call — "
@@ -29,7 +29,7 @@ def test_save_state_does_not_call_itself() -> None:
 
 def test_save_state_calls_store_save_for_connection() -> None:
     """Without canvas_id, _save_state must delegate to _store.save()."""
-    from aughor.explorer.agent import SchemaExplorer
+    from pramanyx.explorer.agent import SchemaExplorer
     source = inspect.getsource(SchemaExplorer._save_state)
     assert "_store.save(" in source, (
         "Expected _store.save(connection_id, ...) in the else branch of _save_state."

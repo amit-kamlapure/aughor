@@ -1,11 +1,11 @@
 """Premise validation for cross-sectional investigations (questioning the question).
 
 A "why is X so high/low" question ASSERTS the metric is at an extreme; the scan should
-validate that premise before explaining it. Behind AUGHOR_PREMISE_CHECK.
+validate that premise before explaining it. Behind PRAMANYX_PREMISE_CHECK.
 """
 from __future__ import annotations
 
-from aughor.agent.investigate import _premise_direction
+from pramanyx.agent.investigate import _premise_direction
 
 
 def test_detects_high_assertion():

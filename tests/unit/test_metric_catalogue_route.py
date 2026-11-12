@@ -8,8 +8,8 @@ pass it.
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.api import app
-from aughor.semantic import metric_catalogue as MC
+from pramanyx.api import app
+from pramanyx.semantic import metric_catalogue as MC
 
 
 @pytest.fixture
@@ -24,7 +24,7 @@ class TestTheListNarrows:
         def _fake(path=None, connection_id=None):
             seen["connection_id"] = connection_id
             return []
-        monkeypatch.setattr("aughor.routers.metrics.list_metrics", _fake)
+        monkeypatch.setattr("pramanyx.routers.metrics.list_metrics", _fake)
         assert client.get("/metrics?connection_id=abc123").status_code == 200
         assert seen["connection_id"] == "abc123", "the connection never reached list_metrics"
 
@@ -34,7 +34,7 @@ class TestTheListNarrows:
         def _fake(path=None, connection_id=None):
             seen["connection_id"] = connection_id
             return []
-        monkeypatch.setattr("aughor.routers.metrics.list_metrics", _fake)
+        monkeypatch.setattr("pramanyx.routers.metrics.list_metrics", _fake)
         assert client.get("/metrics").status_code == 200
         assert seen["connection_id"] is None, "an existing caller must be byte-identical"
 
@@ -49,7 +49,7 @@ class TestTheCatalogueDoor:
             MC.CatalogueEntry(name="return_rate", label="Return Rate",
                               source=MC.SOURCE_EXPLORER, state=MC.STATE_PROPOSED),
         ]
-        monkeypatch.setattr("aughor.semantic.metric_catalogue.catalogue_for",
+        monkeypatch.setattr("pramanyx.semantic.metric_catalogue.catalogue_for",
                             lambda c, s=None: rows)
         body = client.get("/metrics/catalogue/conn1").json()
         assert body["connection_id"] == "conn1"
@@ -67,16 +67,16 @@ class TestTheCatalogueDoor:
     def test_an_unbindable_row_is_refused_with_its_roles(self, client, monkeypatch):
         def _boom(conn, name, schema=None, actor=""):
             raise MC.MaterialiseError("'Net interest margin' needs financial_period bound")
-        monkeypatch.setattr("aughor.semantic.metric_catalogue.materialise", _boom)
+        monkeypatch.setattr("pramanyx.semantic.metric_catalogue.materialise", _boom)
         res = client.post("/metrics/catalogue/conn1/net_interest_margin/materialise")
         assert res.status_code == 409, "a refusal must not read as a server error"
         assert "financial_period" in res.json()["detail"]
 
     def test_materialising_returns_the_new_definition(self, client, monkeypatch):
-        from aughor.semantic.metrics import MetricDefinition
+        from pramanyx.semantic.metrics import MetricDefinition
         made = MetricDefinition(name="gmv", connection="conn1", label="GMV",
                                 sql="SUM(sale_price)", status="draft")
-        monkeypatch.setattr("aughor.semantic.metric_catalogue.materialise",
+        monkeypatch.setattr("pramanyx.semantic.metric_catalogue.materialise",
                             lambda c, n, s=None, actor="": made)
         res = client.post("/metrics/catalogue/conn1/gmv/materialise")
         assert res.status_code == 201
@@ -112,8 +112,8 @@ class _StubConn:
 def _binds(sql, conn=None, existing=None, connection="8233e4fd"):
     """Call the door's check with a stub warehouse; returns the HTTPException or None."""
     from fastapi import HTTPException
-    from aughor.routers import metrics as mod
-    import aughor.db.connection as dbmod
+    from pramanyx.routers import metrics as mod
+    import pramanyx.db.connection as dbmod
     real = dbmod.open_connection_for
     dbmod.open_connection_for = lambda c: (conn if conn is not None else _StubConn())
     try:
@@ -151,7 +151,7 @@ def test_a_definition_the_warehouse_accepts_saves():
 def test_an_unreachable_warehouse_does_not_block_the_author():
     """Fail OPEN on infrastructure: an author must not be blocked by something they
     cannot see. It is counted, so 'checked and fine' never reads like 'never checked'."""
-    from aughor.stats import stats
+    from pramanyx.stats import stats
 
     class _Dead:
         def dry_run(self, sql):
@@ -178,10 +178,10 @@ def test_approving_a_metric_drops_its_connection_cached_briefings(monkeypatch):
     measured twelve while the Day measured five — and the Day's five said "no approved
     definition; approve one in the Semantic Layer", about metrics approved minutes earlier.
     Only the period someone happened to regenerate told the truth."""
-    from aughor.routers import metrics as mod
+    from pramanyx.routers import metrics as mod
 
     dropped: list[str] = []
-    monkeypatch.setattr("aughor.knowledge.briefing.invalidate",
+    monkeypatch.setattr("pramanyx.knowledge.briefing.invalidate",
                         lambda conn, schema=None: dropped.append(conn) or 1)
 
     mod._restate_briefings("8233e4fd")
@@ -191,27 +191,27 @@ def test_approving_a_metric_drops_its_connection_cached_briefings(monkeypatch):
 def test_a_global_definition_drops_nothing():
     """`*` is not a connection; there is no per-connection cache to restate, and passing it
     through would ask the store to drop every Briefing on the install."""
-    from aughor.routers import metrics as mod
+    from pramanyx.routers import metrics as mod
 
     mod._restate_briefings("*")      # must not raise, must not fan out
 
 
 def test_an_invalidation_that_fails_does_not_lose_the_metric_change(monkeypatch):
     """The edit is already saved by this point; a cache that will not drop must not undo it."""
-    from aughor.routers import metrics as mod
+    from pramanyx.routers import metrics as mod
 
     def _boom(conn, schema=None):
         raise RuntimeError("store unreadable")
 
-    monkeypatch.setattr("aughor.knowledge.briefing.invalidate", _boom)
+    monkeypatch.setattr("pramanyx.knowledge.briefing.invalidate", _boom)
     mod._restate_briefings("8233e4fd")     # tolerated and counted, never raised
 
 
 def test_the_edit_door_itself_restates_the_briefings(monkeypatch):
     """The three tests above exercise the helper, and a mutant that deletes its CALL SITE
     survives them — which is a guard that cannot fail. This drives `update_metric` itself."""
-    from aughor.routers import metrics as mod
-    from aughor.semantic.metrics import MetricDefinition
+    from pramanyx.routers import metrics as mod
+    from pramanyx.semantic.metrics import MetricDefinition
 
     # The store is NOT written: an earlier cut called `save_metric` and left a row behind that
     # broke `test_metric_dedup`'s file-order assertion — a test that mutates shared state is a
@@ -219,7 +219,7 @@ def test_the_edit_door_itself_restates_the_briefings(monkeypatch):
     existing = MetricDefinition(name="restate_me", connection="c9", label="Restate Me",
                                 sql="SELECT (SUM(x)) AS restate_me FROM t", tables=["t"])
     dropped: list[str] = []
-    monkeypatch.setattr("aughor.knowledge.briefing.invalidate",
+    monkeypatch.setattr("pramanyx.knowledge.briefing.invalidate",
                         lambda conn, schema=None: dropped.append(conn) or 1)
     monkeypatch.setattr(mod, "_require_binds", lambda *a, **k: None)   # no warehouse in a unit test
     monkeypatch.setattr(mod, "get_metric", lambda name, connection_id=None: existing)

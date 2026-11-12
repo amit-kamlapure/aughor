@@ -18,8 +18,8 @@ import duckdb
 import pytest
 import sqlglot
 
-import aughor.db.connection as connection
-from aughor.db.connection import DuckDBConnection, rewrite_julianday
+import pramanyx.db.connection as connection
+from pramanyx.db.connection import DuckDBConnection, rewrite_julianday
 
 #: Valid DuckDB with a clause written after the query-level sample. Every one failed through the connection.
 _AFTER_THE_SAMPLE = {
@@ -168,11 +168,11 @@ def test_the_row_policy_is_handed_the_statement_as_written_and_its_rewrite_runs(
     """The row policy runs BEFORE the round trip, so it still sees the statement as written. Its own rewrite is written
     by sqlglot's stock DuckDB writer, which moves the sample after LIMIT again; the round trip that follows puts it
     back."""
-    import aughor.licensing as licensing
-    import aughor.rbac.resolver as resolver
-    import aughor.rbac.row_policy as row_policy
-    import aughor.security.authz as authz
-    from aughor.org.context import reset_org_id, reset_user_id, set_org_id, set_user_id
+    import pramanyx.licensing as licensing
+    import pramanyx.rbac.resolver as resolver
+    import pramanyx.rbac.row_policy as row_policy
+    import pramanyx.security.authz as authz
+    from pramanyx.org.context import reset_org_id, reset_user_id, set_org_id, set_user_id
 
     monkeypatch.setattr(authz, "require_identity_enabled", lambda: True)
     monkeypatch.setattr(licensing, "has_capability", lambda *a, **k: True)
@@ -227,8 +227,8 @@ def test_the_heal_is_handed_the_statement_that_ran_and_heals_it(flights, monkeyp
 def test_the_workspace_connection_heals_a_sampled_julianday_too(tmp_path, monkeypatch):
     """`LocalUploadConnection` never makes the round trip, so its statements run as written. The heal's rewrite is
     the one sqlglot writes, though."""
-    from aughor.connectors.file.local_upload import LocalUploadConnection
-    from aughor.control_plane import vending
+    from pramanyx.connectors.file.local_upload import LocalUploadConnection
+    from pramanyx.control_plane import vending
 
     monkeypatch.setattr(vending, "STORAGE_ROOT", tmp_path / "uploads")
     conn = LocalUploadConnection(connection_id="ws")

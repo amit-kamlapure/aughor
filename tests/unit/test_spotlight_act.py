@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import aughor.agent.spotlight_act as act
-from aughor.actions.inbox import (
+import pramanyx.agent.spotlight_act as act
+from pramanyx.actions.inbox import (
     StagedProposal,
     accept_proposal,
     get_proposal,
@@ -22,25 +22,25 @@ from aughor.actions.inbox import (
 # ── set_preference — the cosmetic class ─────────────────────────────────────────────
 
 def test_preference_applies_instantly_and_persists(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_USER_PREFS_DB", str(tmp_path / "prefs.db"))
+    monkeypatch.setenv("PRAMANYX_USER_PREFS_DB", str(tmp_path / "prefs.db"))
     out = act.set_preference({"key": "theme", "value": "Light"})
     assert out["applied"] is True
     assert out["preferences"]["theme"] == "light"          # normalized
     assert "theme" in out["summary"]
 
-    from aughor.db.user_prefs import get_preferences
+    from pramanyx.db.user_prefs import get_preferences
     assert get_preferences()["preferences"]["theme"] == "light"
 
 
 def test_unknown_preference_key_is_refused_naming_the_known_ones(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_USER_PREFS_DB", str(tmp_path / "prefs.db"))
+    monkeypatch.setenv("PRAMANYX_USER_PREFS_DB", str(tmp_path / "prefs.db"))
     out = act.set_preference({"key": "font", "value": "comic sans"})
     assert out["applied"] is False
     assert "theme" in out["error"]                          # the registry is named
 
 
 def test_preference_value_outside_the_registry_is_refused(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_USER_PREFS_DB", str(tmp_path / "prefs.db"))
+    monkeypatch.setenv("PRAMANYX_USER_PREFS_DB", str(tmp_path / "prefs.db"))
     out = act.set_preference({"key": "theme", "value": "hotdog"})
     assert out["applied"] is False and "must be one of" in out["error"]
 
@@ -48,10 +48,10 @@ def test_preference_value_outside_the_registry_is_refused(tmp_path, monkeypatch)
 def test_prefs_store_resolves_env_per_call(tmp_path, monkeypatch):
     """The third import-time-freeze was paid for a week before this store was born —
     two different env values in one process must reach two different files."""
-    monkeypatch.setenv("AUGHOR_USER_PREFS_DB", str(tmp_path / "a.db"))
+    monkeypatch.setenv("PRAMANYX_USER_PREFS_DB", str(tmp_path / "a.db"))
     act.set_preference({"key": "theme", "value": "dark"})
-    monkeypatch.setenv("AUGHOR_USER_PREFS_DB", str(tmp_path / "b.db"))
-    from aughor.db.user_prefs import get_preferences
+    monkeypatch.setenv("PRAMANYX_USER_PREFS_DB", str(tmp_path / "b.db"))
+    from pramanyx.db.user_prefs import get_preferences
     assert "theme" not in get_preferences()["preferences"]  # b.db is fresh
 
 
@@ -65,7 +65,7 @@ def test_agent_draft_refused_before_staging_when_incomplete():
 
 
 def test_agent_draft_stages_with_the_empty_docs_disclosure(monkeypatch):
-    monkeypatch.setattr("aughor.custom_agents.store.validate_agent_draft",
+    monkeypatch.setattr("pramanyx.custom_agents.store.validate_agent_draft",
                         lambda **kw: [])
     out = act.draft_agent("conn-x", {"name": "refund-watch",
                                      "instructions": "Watch refund rate in DE."})
@@ -77,9 +77,9 @@ def test_agent_draft_stages_with_the_empty_docs_disclosure(monkeypatch):
 
 
 def test_agent_draft_accept_creates_and_reject_leaves_nothing(monkeypatch):
-    monkeypatch.setattr("aughor.custom_agents.store.validate_agent_draft",
+    monkeypatch.setattr("pramanyx.custom_agents.store.validate_agent_draft",
                         lambda **kw: [])
-    from aughor.custom_agents.store import get_agent, list_agents
+    from pramanyx.custom_agents.store import get_agent, list_agents
     before = {a.id for a in list_agents()}
 
     staged = act.draft_agent("conn-x", {"name": "approved-one",
@@ -123,7 +123,7 @@ def _proposal(verdict="proposed", draft=None, dry_run=None, reason="", notes=Non
 
 
 def test_automation_refusal_is_relayed_not_errored(monkeypatch):
-    monkeypatch.setattr("aughor.automations.propose.propose_chain",
+    monkeypatch.setattr("pramanyx.automations.propose.propose_chain",
                         lambda outcome, conn_id, provider=None: _proposal(
                             verdict="unbuildable", reason="no matching trigger"))
     out = act.draft_automation("conn-x", {"outcome": "teleport the warehouse"})
@@ -132,14 +132,14 @@ def test_automation_refusal_is_relayed_not_errored(monkeypatch):
 
 
 def test_automation_draft_stages_then_accept_saves(monkeypatch):
-    from aughor.automations.models import Automation, Condition, Effect
-    from aughor.automations.store import get_automation
+    from pramanyx.automations.models import Automation, Condition, Effect
+    from pramanyx.automations.store import get_automation
     draft = Automation(
         conn_id="conn-x", name="weekly refund brief",
         conditions=[Condition(kind="schedule", config={"cron": "0 7 * * 1"})],
         effects=[Effect(kind="notify", config={"trigger_id": "trig-1"})],
     ).model_dump()
-    monkeypatch.setattr("aughor.automations.propose.propose_chain",
+    monkeypatch.setattr("pramanyx.automations.propose.propose_chain",
                         lambda outcome, conn_id, provider=None: _proposal(
                             draft=draft, dry_run={"ok": True}))
 
@@ -165,8 +165,8 @@ def test_automation_draft_accept_refuses_a_draft_that_no_longer_validates():
 # ── pause/resume — structural, staged, applied only on accept ──────────────────────
 
 def _seed_automation(name="pausable", conn_id="conn-x"):
-    from aughor.automations.models import Automation, Condition, Effect
-    from aughor.automations.store import upsert_automation
+    from pramanyx.automations.models import Automation, Condition, Effect
+    from pramanyx.automations.store import upsert_automation
     return upsert_automation(Automation(
         conn_id=conn_id, name=name,
         conditions=[Condition(kind="schedule", config={"cron": "0 7 * * 1"})],
@@ -181,7 +181,7 @@ def test_pause_without_an_end_is_refused_before_staging():
 
 
 def test_pause_stages_then_accept_applies_and_resume_clears():
-    from aughor.automations.store import get_automation
+    from pramanyx.automations.store import get_automation
     a = _seed_automation("weekly-brief")
 
     staged = act.pause_or_resume_automation("conn-x", {
@@ -204,7 +204,7 @@ def test_pause_stages_then_accept_applies_and_resume_clears():
 def test_pause_evidence_chain_reaches_the_approvers_reasoning():
     """SP-6 — a proactive proposal cites its evidence rows: the premortem offer's
     evidence string lands VERBATIM (clipped) on the staged record."""
-    from aughor.actions.inbox import get_proposal
+    from pramanyx.actions.inbox import get_proposal
     a = _seed_automation("evidence-carrier")
     out = act.pause_or_resume_automation("conn-x", {
         "automation": a.id, "action": "pause", "until": "2027-01-01T00:00:00Z",
@@ -216,7 +216,7 @@ def test_pause_evidence_chain_reaches_the_approvers_reasoning():
 
 
 def test_pause_reject_is_byte_identical_and_stale_accept_refused():
-    from aughor.automations.store import delete_automation, get_automation
+    from pramanyx.automations.store import delete_automation, get_automation
     a = _seed_automation("reject-me")
 
     rejected = act.pause_or_resume_automation("conn-x", {
@@ -243,9 +243,9 @@ def test_pause_refuses_a_chain_on_another_connection():
 # ── agent grants — permission to PROPOSE, staged like everything structural ────────
 
 def test_grant_stages_then_accept_appends_and_wildcard_refused(monkeypatch):
-    monkeypatch.setattr("aughor.custom_agents.store.validate_agent_draft",
+    monkeypatch.setattr("pramanyx.custom_agents.store.validate_agent_draft",
                         lambda **kw: [])
-    from aughor.custom_agents.store import create_agent, get_agent
+    from pramanyx.custom_agents.store import create_agent, get_agent
     agent = create_agent("grantee", instructions="A scope and a stance.")
 
     wild = act.propose_agent_grant("conn-x", {"agent": agent.id, "action_id": "*"})
@@ -268,11 +268,11 @@ def test_grant_stages_then_accept_appends_and_wildcard_refused(monkeypatch):
 
 
 def test_grant_accept_revalidates_a_moved_world(monkeypatch):
-    from aughor.custom_agents.store import create_agent
+    from pramanyx.custom_agents.store import create_agent
     agent = create_agent("moved-world", instructions="A scope and a stance.")
     staged = act.propose_agent_grant("conn-x", {"agent": agent.id,
                                                 "action_id": "send_refund"})
-    monkeypatch.setattr("aughor.custom_agents.store.validate_agent_grants",
+    monkeypatch.setattr("pramanyx.custom_agents.store.validate_agent_grants",
                         lambda *a, **k: ["unknown action id(s) for this connection: send_refund. Declared: none"])
     result, _ = accept_proposal(staged["proposal_id"], actor="tester")
     assert not result.ok and result.status == "dispatch_error"
@@ -287,7 +287,7 @@ def test_act_roster_names_and_conversation_wiring():
                      "edit_automation", "draft_monitor", "draft_brief",
                      "pause_or_resume_automation", "set_agent_limit",
                      "propose_agent_grant"]
-    from aughor.agent.converse_tools import converse_tools
+    from pramanyx.agent.converse_tools import converse_tools
     got = {t.name for t in converse_tools("c1")}
     assert {"set_preference", "draft_agent", "draft_automation",
             "pause_or_resume_automation", "propose_agent_grant"} <= got
@@ -307,10 +307,10 @@ def _slack_draft(channel=""):
 
 
 def test_automation_draft_runs_as_a_named_existing_agent(monkeypatch):
-    from aughor.automations.store import get_automation
-    from aughor.custom_agents.store import create_agent
+    from pramanyx.automations.store import get_automation
+    from pramanyx.custom_agents.store import create_agent
     agent = create_agent("runsas-anomaly-watch", instructions="watch", connection_id="conn-x")
-    monkeypatch.setattr("aughor.automations.propose.propose_chain",
+    monkeypatch.setattr("pramanyx.automations.propose.propose_chain",
                         lambda outcome, conn_id, provider=None: _proposal(
                             draft=_slack_draft(channel="#ops"), dry_run={"ok": True}))
 
@@ -329,8 +329,8 @@ def test_automation_draft_runs_as_a_named_existing_agent(monkeypatch):
 
 
 def test_run_as_agent_refuses_unknown_and_foreign(monkeypatch):
-    from aughor.custom_agents.store import create_agent
-    monkeypatch.setattr("aughor.automations.propose.propose_chain",
+    from pramanyx.custom_agents.store import create_agent
+    monkeypatch.setattr("pramanyx.automations.propose.propose_chain",
                         lambda outcome, conn_id, provider=None: _proposal(
                             draft=_slack_draft(channel="#ops")))
 
@@ -345,11 +345,11 @@ def test_run_as_agent_refuses_unknown_and_foreign(monkeypatch):
 
 
 def test_bundle_stages_one_proposal_and_accept_creates_both(monkeypatch):
-    from aughor.actions.inbox import list_proposals
-    from aughor.automations.store import get_automation
-    from aughor.custom_agents.store import get_agent
-    monkeypatch.setattr("aughor.custom_agents.store.validate_agent_draft", lambda **kw: [])
-    monkeypatch.setattr("aughor.automations.propose.propose_chain",
+    from pramanyx.actions.inbox import list_proposals
+    from pramanyx.automations.store import get_automation
+    from pramanyx.custom_agents.store import get_agent
+    monkeypatch.setattr("pramanyx.custom_agents.store.validate_agent_draft", lambda **kw: [])
+    monkeypatch.setattr("pramanyx.automations.propose.propose_chain",
                         lambda outcome, conn_id, provider=None: _proposal(
                             draft=_slack_draft(channel="#ops"), dry_run={"ok": True},
                             first_run="2026-09-16T09:00:00Z"))
@@ -376,9 +376,9 @@ def test_bundle_stages_one_proposal_and_accept_creates_both(monkeypatch):
 
 
 def test_bundle_accept_rolls_back_the_agent_when_the_chain_save_fails(monkeypatch):
-    from aughor.custom_agents.store import list_agents
-    monkeypatch.setattr("aughor.custom_agents.store.validate_agent_draft", lambda **kw: [])
-    monkeypatch.setattr("aughor.automations.propose.propose_chain",
+    from pramanyx.custom_agents.store import list_agents
+    monkeypatch.setattr("pramanyx.custom_agents.store.validate_agent_draft", lambda **kw: [])
+    monkeypatch.setattr("pramanyx.automations.propose.propose_chain",
                         lambda outcome, conn_id, provider=None: _proposal(
                             draft=_slack_draft(channel="#ops")))
     out = act.draft_agent("conn-x", {"name": "bundle-halfway",
@@ -387,7 +387,7 @@ def test_bundle_accept_rolls_back_the_agent_when_the_chain_save_fails(monkeypatc
     assert out["staged"] is True
     before = {a.id for a in list_agents()}
 
-    monkeypatch.setattr("aughor.runners.automation_save._SAVE",
+    monkeypatch.setattr("pramanyx.runners.automation_save._SAVE",
                         lambda params: (False, "the store said no"))
     result, _ = accept_proposal(out["proposal_id"], actor="tester")
     assert not result.ok and result.status == "dispatch_error"
@@ -397,9 +397,9 @@ def test_bundle_accept_rolls_back_the_agent_when_the_chain_save_fails(monkeypatc
 
 
 def test_bundle_refusal_stages_nothing_at_all(monkeypatch):
-    from aughor.actions.inbox import list_proposals
-    monkeypatch.setattr("aughor.custom_agents.store.validate_agent_draft", lambda **kw: [])
-    monkeypatch.setattr("aughor.automations.propose.propose_chain",
+    from pramanyx.actions.inbox import list_proposals
+    monkeypatch.setattr("pramanyx.custom_agents.store.validate_agent_draft", lambda **kw: [])
+    monkeypatch.setattr("pramanyx.automations.propose.propose_chain",
                         lambda outcome, conn_id, provider=None: _proposal(
                             verdict="unbuildable", reason="no matching trigger"))
     before = {p.id for p in list_proposals("conn-x")}
@@ -414,10 +414,10 @@ def test_bundle_refusal_stages_nothing_at_all(monkeypatch):
 # ── SP-9 — the approver fills an OPEN choice at accept, and only an open choice ────
 
 def test_bundle_open_choice_blocks_accept_until_filled(monkeypatch):
-    import aughor.automations.store  # noqa: F401 — registers the save + holes doors
-    from aughor.automations.store import get_automation
-    monkeypatch.setattr("aughor.custom_agents.store.validate_agent_draft", lambda **kw: [])
-    monkeypatch.setattr("aughor.automations.propose.propose_chain",
+    import pramanyx.automations.store  # noqa: F401 — registers the save + holes doors
+    from pramanyx.automations.store import get_automation
+    monkeypatch.setattr("pramanyx.custom_agents.store.validate_agent_draft", lambda **kw: [])
+    monkeypatch.setattr("pramanyx.automations.propose.propose_chain",
                         lambda outcome, conn_id, provider=None: _proposal(
                             draft=_slack_draft(channel=""),
                             to_fill=["Action 1 needs a Slack channel — the request names no Slack channel"]))
@@ -441,7 +441,7 @@ def test_bundle_open_choice_blocks_accept_until_filled(monkeypatch):
 
 
 def test_accept_fill_may_only_close_an_open_choice(monkeypatch):
-    import aughor.automations.store  # noqa: F401 — registers the holes door
+    import pramanyx.automations.store  # noqa: F401 — registers the holes door
     p = stage_proposal(StagedProposal(
         kind="automation_draft", connection_id="conn-x", action_id="automation:fills",
         params=_slack_draft(channel="")))
@@ -459,8 +459,8 @@ def test_hole_sentence_round_trips_through_the_shared_parser():
     """The writer (`fill_required_holes`) and the reader (`parse_hole`) are one format —
     pinned as a ROUND TRIP so a rewording on either end fails here, not silently in a
     card that stops offering its fields."""
-    from aughor.automations.models import fill_required_holes
-    from aughor.runners.automation_save import parse_hole
+    from pramanyx.automations.models import fill_required_holes
+    from pramanyx.runners.automation_save import parse_hole
     _, holes = fill_required_holes([{"kind": "slack_post", "config": {"bot_id": "b"}}])
     assert holes and parse_hole(holes[0]) == (1, "channel")
     assert parse_hole("Anything else at all") is None
@@ -470,8 +470,8 @@ def test_hole_sentence_round_trips_through_the_shared_parser():
 
 def test_three_follow_ups_leave_one_pending_proposal(monkeypatch):
     """The wave's own receipt sentence, as a test."""
-    from aughor.actions.inbox import list_proposals
-    monkeypatch.setattr("aughor.automations.propose.propose_chain",
+    from pramanyx.actions.inbox import list_proposals
+    monkeypatch.setattr("pramanyx.automations.propose.propose_chain",
                         lambda outcome, conn_id, provider=None: _proposal(
                             draft=_slack_draft(channel="#ops")))
     before = {p.id for p in list_proposals("conn-x")}
@@ -492,7 +492,7 @@ def test_three_follow_ups_leave_one_pending_proposal(monkeypatch):
 
 
 def test_supersede_cannot_retire_another_connections_or_settled_work(monkeypatch):
-    monkeypatch.setattr("aughor.automations.propose.propose_chain",
+    monkeypatch.setattr("pramanyx.automations.propose.propose_chain",
                         lambda outcome, conn_id, provider=None: _proposal(
                             draft=_slack_draft(channel="#ops")))
     # Another connection's pending draft: named, NOT superseded, both records stand.
@@ -515,7 +515,7 @@ def test_supersede_cannot_retire_another_connections_or_settled_work(monkeypatch
 def test_finishing_in_the_editor_resolves_the_draft():
     """SP-11's second half at the inbox seam: the editor's save supersedes with the
     saved record named, and a second call is a harmless no-op."""
-    from aughor.actions.inbox import supersede_proposal
+    from pramanyx.actions.inbox import supersede_proposal
     p = stage_proposal(StagedProposal(
         kind="automation_draft", connection_id="conn-x",
         action_id="automation:editor", params=_slack_draft(channel="#ops")))
@@ -529,8 +529,8 @@ def test_finishing_in_the_editor_resolves_the_draft():
 # ── SP-12 — edit, monitor, brief: change what exists, alert on motion, deliver ─────
 
 def _seed_monday_brief():
-    from aughor.automations.models import Automation, Condition, Effect
-    from aughor.automations.store import upsert_automation
+    from pramanyx.automations.models import Automation, Condition, Effect
+    from pramanyx.automations.store import upsert_automation
     return upsert_automation(Automation(
         conn_id="conn-x", name="The Monday brief",
         conditions=[Condition(kind="schedule", config={"cron": "0 9 * * 1"})],
@@ -539,7 +539,7 @@ def _seed_monday_brief():
 
 def test_move_the_monday_brief_to_8am_is_a_one_field_diff():
     """The wave's receipt sentence, verbatim, as a test."""
-    from aughor.automations.store import get_automation
+    from pramanyx.automations.store import get_automation
     a = _seed_monday_brief()
 
     out = act.edit_automation("conn-x", {"automation": a.id,
@@ -570,7 +570,7 @@ def test_edit_refuses_no_ops_unknown_fields_and_mixed_delete():
 
 
 def test_delete_by_sentence_is_staged_and_applied_on_accept():
-    from aughor.automations.store import get_automation
+    from pramanyx.automations.store import get_automation
     a = _seed_monday_brief()
     out = act.edit_automation("conn-x", {"automation": a.id, "delete": True})
     assert out["staged"] is True and "cannot be undone" in out["summary"]
@@ -582,12 +582,12 @@ def test_delete_by_sentence_is_staged_and_applied_on_accept():
 def test_alert_when_refund_rate_breaks_3_sigma_stages_monitor_and_chain(monkeypatch, tmp_path):
     """The wave's other receipt sentence: ONE proposal, monitor + the chain its
     breach fires, married at accept — and rolled back together."""
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.json"))
-    from aughor.semantic.metrics import MetricDefinition, save_metric
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.json"))
+    from pramanyx.semantic.metrics import MetricDefinition, save_metric
     save_metric(MetricDefinition(name="refund_rate", label="Refund rate",
                                  sql="SUM(refunds)/COUNT(*)", connection="conn-x"))
-    from aughor.automations.store import get_automation
-    from aughor.monitors.store import get_monitor
+    from pramanyx.automations.store import get_automation
+    from pramanyx.monitors.store import get_monitor
 
     out = act.draft_monitor("conn-x", {"metric": "refund_rate", "sigma": 3,
                                        "channel": "#ops", "bot_id": "b1"})
@@ -606,8 +606,8 @@ def test_alert_when_refund_rate_breaks_3_sigma_stages_monitor_and_chain(monkeypa
 
 
 def test_monitor_bundle_rolls_back_and_gates_on_open_channel(monkeypatch, tmp_path):
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.json"))
-    from aughor.semantic.metrics import MetricDefinition, save_metric
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(tmp_path / "metrics.json"))
+    from pramanyx.semantic.metrics import MetricDefinition, save_metric
     save_metric(MetricDefinition(name="aov", label="AOV", sql="AVG(total)",
                                  connection="conn-x"))
 
@@ -623,21 +623,21 @@ def test_monitor_bundle_rolls_back_and_gates_on_open_channel(monkeypatch, tmp_pa
     assert get_proposal(out["proposal_id"]).pending
 
     # All or nothing: a chain save that fails deletes the monitor it just made.
-    monkeypatch.setattr("aughor.runners.automation_save._SAVE",
+    monkeypatch.setattr("pramanyx.runners.automation_save._SAVE",
                         lambda params: (False, "the store said no"))
     result, _ = accept_proposal(out["proposal_id"], actor="tester",
                                 fills={"2.channel": "#ops", "2.bot_id": "b1"})
     assert not result.ok and "rolled back" in result.message
     assert result.status == "dispatch_error"
     # nothing chainless left behind
-    import aughor.monitors.store as ms
+    import pramanyx.monitors.store as ms
     assert all(m.name != "aov anomaly watch" for m in ms.list_monitors("conn-x"))
 
 
 def test_brief_draft_names_known_triggers_and_accept_saves(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_TRIGGERS_FILE", str(tmp_path / "triggers.json"))
-    from aughor.notifications.models import ActionTrigger
-    from aughor.notifications.store import save_trigger
+    monkeypatch.setenv("PRAMANYX_TRIGGERS_FILE", str(tmp_path / "triggers.json"))
+    from pramanyx.notifications.models import ActionTrigger
+    from pramanyx.notifications.store import save_trigger
     save_trigger(ActionTrigger(id="trig-slack", name="Ops Slack", type="slack",
                                url="https://hooks.example/x", channel="#ops"))
 
@@ -649,7 +649,7 @@ def test_brief_draft_names_known_triggers_and_accept_saves(tmp_path, monkeypatch
     assert out["staged"] is True and "08:00 UTC" in out["summary"]
     result, _ = accept_proposal(out["proposal_id"], actor="tester")
     assert result.ok, result.message
-    from aughor.briefing.store import get_subscription
+    from pramanyx.briefing.store import get_subscription
     sub = get_subscription(result.detail["subscription_id"])
     assert sub is not None and sub.send_cron == "0 8 * * *" and sub.trigger_id == "trig-slack"
 

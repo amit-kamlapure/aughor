@@ -1,4 +1,4 @@
-"""Hermetic unit tests for the overview fact builder (``aughor.overview.build``).
+"""Hermetic unit tests for the overview fact builder (``pramanyx.overview.build``).
 
 No real DB and no LLM: a fake connection returns canned, STRINGIFIED query results
 (exactly as DuckDB/Postgres emit them) keyed by SQL substring. The fixture is a small
@@ -11,7 +11,7 @@ import re
 
 import pytest
 
-from aughor.overview.build import OverviewFact, _select, build_overview
+from pramanyx.overview.build import OverviewFact, _select, build_overview
 
 # The exact key set every OverviewFact.to_dict() must expose (frontend contract).
 FACT_KEYS = {
@@ -288,7 +288,7 @@ def test_select_narrow_schema_still_fills_via_relaxed_source_cap():
 # ── learned per-connection prior: a bounded nudge from drill history ───────────
 
 def test_prior_boost_is_bounded_and_saturating():
-    from aughor.overview.build import _PRIOR_CAP, _prior_boost
+    from pramanyx.overview.build import _PRIOR_CAP, _prior_boost
     assert _prior_boost(0, 0) == 0.0                       # no drills → no nudge
     assert 0 < _prior_boost(1, 0) < _prior_boost(5, 0)     # monotonic in drill count
     assert _prior_boost(10_000, 10_000) <= _PRIOR_CAP      # capped, never runaway
@@ -296,7 +296,7 @@ def test_prior_boost_is_bounded_and_saturating():
 
 
 def test_priors_reorder_the_tour_toward_the_drilled_lens():
-    from aughor.overview.build import _apply_priors, _select
+    from pramanyx.overview.build import _apply_priors, _select
     # b (0.55) out-ranks a (0.50) with no prior…
     assert _select([_mk("concentration", "s.t1", 0.50, "d1"),
                     _mk("outlier", "s.t2", 0.55, "d2")], limit=1)[0].lens == "outlier"
@@ -307,7 +307,7 @@ def test_priors_reorder_the_tour_toward_the_drilled_lens():
 
 
 def test_priors_are_a_no_op_when_absent_or_empty():
-    from aughor.overview.build import _apply_priors
+    from pramanyx.overview.build import _apply_priors
     facts = [_mk("coverage", "s.t", 0.4)]
     _apply_priors(facts, None)
     _apply_priors(facts, {"lens": {}, "table": {}})
@@ -332,7 +332,7 @@ def test_the_tour_reads_through_the_real_door(tmp_path):
     green. A real DuckDB, a real door: the tour has facts, and nothing it ran was refused."""
     import duckdb
 
-    from aughor.db.connection import DuckDBConnection
+    from pramanyx.db.connection import DuckDBConnection
 
     path = tmp_path / "shop.duckdb"
     raw = duckdb.connect(str(path))

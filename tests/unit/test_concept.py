@@ -14,7 +14,7 @@ import re
 
 import pytest
 
-from aughor.tools.concept import (
+from pramanyx.tools.concept import (
     CONFIDENT,
     LAYER_DECLARED,
     LAYER_NAME,
@@ -135,7 +135,7 @@ def test_concept_of_is_the_single_honest_read():
 # ── the contract on ColumnProfile ─────────────────────────────────────────────
 
 def test_column_profile_carries_the_concept_and_roundtrips():
-    from aughor.tools.profiler import ColumnProfile
+    from pramanyx.tools.profiler import ColumnProfile
 
     cp = ColumnProfile(
         table="t", column="Latitude", dtype="VARCHAR", semantic_type="key",
@@ -149,7 +149,7 @@ def test_column_profile_carries_the_concept_and_roundtrips():
 def test_a_cache_written_before_AT4_loads_as_no_concept_not_as_None():
     """The v4 cache on disk has no concept keys. `.concept_evidence` arriving as None
     where every reader expects a list is the sort of thing that only fails in production."""
-    from aughor.tools.profiler import ColumnProfile
+    from pramanyx.tools.profiler import ColumnProfile
 
     old = {"table": "t", "column": "c", "dtype": "BIGINT", "semantic_type": "measure",
            "null_rate": 0.0, "distinct_count": 3}
@@ -168,8 +168,8 @@ _ROOT = pathlib.Path(__file__).resolve().parents[2]
 #: assign the field: the resolver itself, and the profiler seam that stamps its verdict
 #: onto the profile. Everything else must READ.
 _WRITERS = {
-    "aughor/tools/concept.py",
-    "aughor/tools/profiler.py",
+    "pramanyx/tools/concept.py",
+    "pramanyx/tools/profiler.py",
 }
 
 _ASSIGNS_CONCEPT = re.compile(r"\.concept\s*=(?!=)")
@@ -180,7 +180,7 @@ def test_resolve_concept_is_the_only_writer():
     finds a witness it likes and writes `cp.concept = "geo.latitude"` directly, and the
     two-witness rule is silently gone for that column."""
     offenders: list[str] = []
-    for path in sorted((_ROOT / "aughor").rglob("*.py")):
+    for path in sorted((_ROOT / "pramanyx").rglob("*.py")):
         rel = path.relative_to(_ROOT).as_posix()
         if rel in _WRITERS:
             continue
@@ -199,9 +199,9 @@ def test_every_consumer_reads_the_confidence():
     system believed it' at the consumer. `concept_of()` is the one honest read; a module
     that mentions `.concept` must go through it (or read the confidence itself)."""
     offenders: list[str] = []
-    for path in sorted((_ROOT / "aughor").rglob("*.py")):
+    for path in sorted((_ROOT / "pramanyx").rglob("*.py")):
         rel = path.relative_to(_ROOT).as_posix()
-        if rel == "aughor/tools/concept.py":
+        if rel == "pramanyx/tools/concept.py":
             continue
         text = path.read_text(errors="ignore")
         mentions = re.findall(r"(?<![\w.])(?:cp|profile|prof|col)\.concept(?![_\w])", text)
@@ -212,7 +212,7 @@ def test_every_consumer_reads_the_confidence():
         offenders.append(rel)
     assert not offenders, (
         "these read a concept without asking whether it is confident: " + ", ".join(offenders)
-        + "\n\nUse aughor.tools.concept.concept_of(cp.concept, cp.concept_confidence)."
+        + "\n\nUse pramanyx.tools.concept.concept_of(cp.concept, cp.concept_confidence)."
     )
 
 

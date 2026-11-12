@@ -142,7 +142,7 @@ still get caught by machinery that doesn't depend on disagreement.
 **The structural difference:** SOMA re-pays its full pipeline every time any user asks an
 ambiguous question; the resolution evaporates after the answer. Pramanyx has what a paper
 harness cannot: a **persistent per-connection substrate** — `SemanticContract`
-(`aughor/semantic/contracts.py`), ontology overrides, `trusted_queries`, the verdicts
+(`pramanyx/semantic/contracts.py`), ontology overrides, `trusted_queries`, the verdicts
 store, the evidence ledger.
 
 **Design:** when a disagreement is resolved — by probe (B1), by user (I4), or by human
@@ -159,7 +159,7 @@ AmbiguityResolution {
 }
 ```
 
-Storage: a new org-scoped store following the house pattern (`AUGHOR_*_DB` override,
+Storage: a new org-scoped store following the house pattern (`PRAMANYX_*_DB` override,
 migrations framework), OR folded into `SemanticContract` where the resolution *is* a metric
 definition (a resolved "revenue means…" IS a contract — reuse before invent; decide at
 build time by whichever the first ten real resolutions actually look like).
@@ -205,7 +205,7 @@ deterministic probes + ≤3 planned ones, and every probe result is journal-read
 Their Proposition 1 formalizes human clarification as the **ceiling** probing
 approximates. Pramanyx already shipped the surface the ceiling needs: the clarify gate
 (`agent/clarify.py`), the SOMA candidate-disagreement seam (`agent/soma.py`,
-`AUGHOR_SOMA_CLARIFY`, currently dark), and grounded option chips in `/ask` (PR #89).
+`PRAMANYX_SOMA_CLARIFY`, currently dark), and grounded option chips in `/ask` (PR #89).
 
 **One detection engine, two policies:**
 - **Autonomous mode** (benchmark, monitors, background agents): resolve via B1 probes.
@@ -259,7 +259,7 @@ eventually graduate INTO the shared executor as the repair contract for all path
 | B1 | Probe-and-repair stage (I2+I3+I7 inside) | `evals/spider2_probes.py` + candidates hook | 1–2 days | controlled miss-subset run: monotonic or it dies |
 | B3 | Escalation ladder | `spider2_candidates.py` | ½ day | cost/instance vs fixed K=4, same accuracy |
 | B2 | Self-ICL from verified runs | harness + `kb_retriever` seam | 1 day | same controlled protocol |
-| I1 | Ambiguity Ledger (store + read path) | `aughor/` (contracts-or-new-store decision) | 2–3 days | ledger-hit rate on repeat question classes |
+| I1 | Ambiguity Ledger (store + read path) | `pramanyx/` (contracts-or-new-store decision) | 2–3 days | ledger-hit rate on repeat question classes |
 | I4 | Clarify fusion (product) | `agent/soma.py` wiring + `/ask` chips | 1–2 days | ambiguity_eval structural recall > 0 + ask-rate budget |
 | I6 | Receipt surfacing | receipts + one panel | ½ day | — |
 

@@ -13,7 +13,7 @@ import uuid
 
 import pytest
 
-from aughor.ontology.visibility import (
+from pramanyx.ontology.visibility import (
     SCHEMA_WIDE, declare_exclusion, findings_left_out, left_out_said, off_read, refusal_for, withdraw_exclusion,
 )
 
@@ -97,7 +97,7 @@ def test_what_the_briefing_says_about_what_it_left_out():
 
 @pytest.fixture
 def lux_store(tmp_path, monkeypatch):
-    from aughor.explorer import store
+    from pramanyx.explorer import store
     monkeypatch.setattr(store, "_DATA_DIR", tmp_path)
     conn = _conn()
     store.save(f"{conn}__luxexperience", {**store._empty(), store.FINDINGS: [dict(ORDERS), dict(ARCHIVE)]})
@@ -105,7 +105,7 @@ def lux_store(tmp_path, monkeypatch):
 
 
 def test_every_briefing_read_leaves_the_finding_out(lux_store):
-    from aughor.routers import exploration as ex
+    from pramanyx.routers import exploration as ex
     conn = lux_store
     words = lambda: sorted(f["finding"] for items in ex.domain_findings_for(conn, "luxexperience").values()
                            for f in items)
@@ -114,23 +114,23 @@ def test_every_briefing_read_leaves_the_finding_out(lux_store):
     assert words() == ["AOV fell to €581."]
     kept, out = ex.findings_and_left_out(conn, "luxexperience")
     assert [r["id"] for r in out] == [ARCHIVE["id"]]
-    from aughor.knowledge.period_brief import connection_inputs
+    from pramanyx.knowledge.period_brief import connection_inputs
     assert [f["finding"] for items in connection_inputs(conn)[0].values() for f in items] == ["AOV fell to €581."]
 
 
 def test_the_briefing_says_what_it_left_out(lux_store, monkeypatch):
-    from aughor.routers import exploration as ex
+    from pramanyx.routers import exploration as ex
     conn = lux_store
     declare_exclusion(conn, "luxexperience", "orders_archive", "out_of_domain")
-    monkeypatch.setattr("aughor.routers._shared.canonical_schema", lambda c, s: s)
+    monkeypatch.setattr("pramanyx.routers._shared.canonical_schema", lambda c, s: s)
     seen: dict = {}
 
     def fake_briefing(**kw):
         seen["findings"] = [f["finding"] for items in kw["domain_data"].values() for f in items]
         return {"narrative": "AOV fell [1].", "citations": [], "generated_at": None}
 
-    monkeypatch.setattr("aughor.knowledge.briefing.get_briefing", fake_briefing)
-    monkeypatch.setattr("aughor.knowledge.patterns.get_patterns", lambda *a, **k: [])
+    monkeypatch.setattr("pramanyx.knowledge.briefing.get_briefing", fake_briefing)
+    monkeypatch.setattr("pramanyx.knowledge.patterns.get_patterns", lambda *a, **k: [])
     for name in ("_load_business_profile", "_connection_col_types", "_metric_moves_provider", "_promise_chains_provider"):
         monkeypatch.setattr(ex, name, lambda *a, **k: None)
     out = ex.generate_briefing(conn, schema="luxexperience")
@@ -146,7 +146,7 @@ ENTRY = {"narrative": "Archived orders peaked [1].", "generated_at": "2026-10-12
 
 
 def test_a_cached_story_citing_a_table_turned_off_since_is_rewritten(monkeypatch):
-    from aughor.knowledge import briefing as B
+    from pramanyx.knowledge import briefing as B
     conn = _conn()
 
     class Cache:
@@ -180,8 +180,8 @@ def test_a_cached_story_citing_a_table_turned_off_since_is_rewritten(monkeypatch
 # ── the re-check before a Briefing ────────────────────────────────────────────
 
 def test_the_recheck_passes_a_turned_off_finding_by_and_never_marks_it_invalid(lux_store, monkeypatch):
-    from aughor.explorer import revalidate_live as R
-    from aughor.explorer import store
+    from pramanyx.explorer import revalidate_live as R
+    from pramanyx.explorer import store
     conn = lux_store
     declare_exclusion(conn, "luxexperience", "orders_archive", "out_of_domain")
     ran: list[str] = []
@@ -191,7 +191,7 @@ def test_the_recheck_passes_a_turned_off_finding_by_and_never_marks_it_invalid(l
             ran.append(sql)
             return type("Res", (), {"error": "boom", "rows": []})()
 
-    monkeypatch.setattr("aughor.db.connection.open_connection_for_with_schema", lambda *a, **k: Db())
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for_with_schema", lambda *a, **k: Db())
     R._revalidate_one_run(conn, f"{conn}__luxexperience", "luxexperience", 10)
     assert ran == [ORDERS["sql"]]
     held = {f["id"]: f for f in store.get_findings(f"{conn}__luxexperience", include_invalid=True)}
@@ -202,8 +202,8 @@ def test_the_recheck_passes_a_turned_off_finding_by_and_never_marks_it_invalid(l
 # ── the desk ──────────────────────────────────────────────────────────────────
 
 def test_the_desk_drops_a_claim_that_stands_on_a_table_turned_off(monkeypatch):
-    from aughor.briefing import desk as D
-    from aughor.record.claims import About, Claim, Statement
+    from pramanyx.briefing import desk as D
+    from pramanyx.record.claims import About, Claim, Statement
     conn = _conn()
     now = _dt.datetime(2026, 10, 12, 12, 0, tzinfo=_dt.timezone.utc)
 
@@ -218,9 +218,9 @@ def test_the_desk_drops_a_claim_that_stands_on_a_table_turned_off(monkeypatch):
               claim("Order Value Trend: AOV slipped.", writer="explorer", finding_id=ORDERS["id"], schema="luxexperience"),
               claim("Archived revenue rose 4% in September 2026", kind="observation", investigation_id="inv1",
                     question="Why did archived revenue rise?", sql=ARCHIVE["sql"])]
-    from aughor.record import claims as C
-    from aughor.record import inquiry as I
-    from aughor.semantic import metrics as SM
+    from pramanyx.record import claims as C
+    from pramanyx.record import inquiry as I
+    from pramanyx.semantic import metrics as SM
     monkeypatch.setattr(C, "list_claims", lambda **_: claims)
     monkeypatch.setattr(I, "list_inquiries", lambda **_: [])
     monkeypatch.setattr(SM, "list_metrics", lambda **_: [])

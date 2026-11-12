@@ -15,7 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.mcp.knowledge_tools import (
+from pramanyx.mcp.knowledge_tools import (
     describe_entity,
     get_table_health,
     list_trusted_queries,
@@ -25,7 +25,7 @@ from aughor.mcp.knowledge_tools import (
 
 @pytest.fixture(autouse=True)
 def quality_db(tmp_path, monkeypatch):
-    import aughor.quality.results as R
+    import pramanyx.quality.results as R
 
     monkeypatch.setattr(R, "_DB_PATH", tmp_path / "quality.db")
 
@@ -34,7 +34,7 @@ def quality_db(tmp_path, monkeypatch):
 def no_ontology(monkeypatch):
     """These tests pin the knowledge graph's fallback: no ontology is served, so `describe_entity` reads the
     table node. The object-type path is `test_describe_entity_object_type.py`'s."""
-    import aughor.mcp.knowledge_tools as KT
+    import pramanyx.mcp.knowledge_tools as KT
 
     monkeypatch.setattr(KT, "_served_ontology", lambda *a, **k: None)
 
@@ -50,7 +50,7 @@ def _graph(nodes, edges=()):
 
 
 def _patch_graph(monkeypatch, graph):
-    import aughor.mcp.knowledge_tools as KT
+    import pramanyx.mcp.knowledge_tools as KT
 
     monkeypatch.setattr(KT, "_load_graph", lambda *a, **k: graph)
 
@@ -98,8 +98,8 @@ def test_a_qualified_name_is_normalised(monkeypatch):
 
 class TestClearanceOnTheExternalSurface:
     def _block_salaries(self, monkeypatch):
-        from aughor.govern import tags as T
-        from aughor.govern.tags import ClearanceDecision, Requirement
+        from pramanyx.govern import tags as T
+        from pramanyx.govern.tags import ClearanceDecision, Requirement
 
         req = Requirement(key="tier", value="restricted",
                           clearance="clearance.restricted")
@@ -114,14 +114,14 @@ class TestClearanceOnTheExternalSurface:
     def test_search_withholds_a_restricted_table(self, monkeypatch):
         """The hole this test exists to prevent: an external agent asking the graph for
         everything and receiving what a clearance was protecting."""
-        import aughor.mcp.knowledge_tools as KT
+        import pramanyx.mcp.knowledge_tools as KT
 
         self._block_salaries(monkeypatch)
         nodes = [_node("table:orders", label="orders"),
                  _node("table:salaries", label="salaries")]
         _patch_graph(monkeypatch, _graph(nodes))
         monkeypatch.setattr(KT, "_search_hits", None, raising=False)
-        monkeypatch.setattr("aughor.ontology.context_graph_search.search_graph",
+        monkeypatch.setattr("pramanyx.ontology.context_graph_search.search_graph",
                             lambda g, q, top_k=10: [(n, 1.0) for n in nodes])
 
         out = search_graph("c1", "anything")
@@ -145,7 +145,7 @@ class TestClearanceOnTheExternalSurface:
     def _over_salaries(self, monkeypatch):
         """A graph where three kinds of node rest on the restricted table: a metric whose formula reads it, a
         finding whose SQL reads it, and a brief citing that finding — beside an ordinary table."""
-        from aughor.ontology.context_graph import ContextGraph, GraphEdge, GraphNode, Provenance
+        from pramanyx.ontology.context_graph import ContextGraph, GraphEdge, GraphNode, Provenance
 
         self._block_salaries(monkeypatch)
         cg = ContextGraph(org_id="o", connection_id="c1", schema_name="hr")
@@ -170,7 +170,7 @@ class TestClearanceOnTheExternalSurface:
         """The defect this door had: it trimmed table nodes only, so a metric, a finding and a brief over the
         restricted table reached an outside agent with their text. Each is withheld, and the count is said."""
         cg = self._over_salaries(monkeypatch)
-        monkeypatch.setattr("aughor.ontology.context_graph_search.search_graph",
+        monkeypatch.setattr("pramanyx.ontology.context_graph_search.search_graph",
                             lambda g, q, top_k=10: [(n, 1.0) for n in cg.nodes.values()])
         out = search_graph("c1", "pay")
         assert [n["id"] for n in out["nodes"]] == ["table:orders"]
@@ -182,10 +182,10 @@ class TestClearanceOnTheExternalSurface:
         looked up a securable with an empty schema and never matched a tag."""
         cg = self._over_salaries(monkeypatch)
         asked: list[str] = []
-        from aughor.govern import tags as T
+        from pramanyx.govern import tags as T
         blocked = T.check
         monkeypatch.setattr(T, "check", lambda s, held, bypass=False: (asked.append(s), blocked(s, held))[1])
-        monkeypatch.setattr("aughor.ontology.context_graph_search.search_graph",
+        monkeypatch.setattr("pramanyx.ontology.context_graph_search.search_graph",
                             lambda g, q, top_k=10: [(cg.nodes["table:salaries"], 1.0)])
         assert search_graph("c1", "salaries")["nodes"] == []
         assert asked == ["table:c1.hr.salaries"]
@@ -202,10 +202,10 @@ class TestClearanceOnTheExternalSurface:
 
     def test_nothing_tagged_trims_nothing(self, monkeypatch):
         cg = self._over_salaries(monkeypatch)
-        from aughor.govern import tags as T
-        from aughor.govern.tags import ClearanceDecision
+        from pramanyx.govern import tags as T
+        from pramanyx.govern.tags import ClearanceDecision
         monkeypatch.setattr(T, "check", lambda s, held, bypass=False: ClearanceDecision(securable=s, allowed=True))
-        monkeypatch.setattr("aughor.ontology.context_graph_search.search_graph",
+        monkeypatch.setattr("pramanyx.ontology.context_graph_search.search_graph",
                             lambda g, q, top_k=10: [(n, 1.0) for n in cg.nodes.values()])
         out = search_graph("c1", "pay")
         assert len(out["nodes"]) == 5 and out["notice"] == ""
@@ -222,7 +222,7 @@ def test_no_checks_run_is_not_the_same_as_healthy():
 
 
 def test_failing_checks_are_counted_and_summarised():
-    from aughor.quality.results import Result, record
+    from pramanyx.quality.results import Result, record
 
     record(Result(connection_id="c1", table_name="orders", rule_name="not_null",
                   passed=False, violations=4, criticality="error"))
@@ -235,7 +235,7 @@ def test_failing_checks_are_counted_and_summarised():
 def test_each_verdict_carries_its_staleness():
     """A verdict computed against yesterday's data is not authoritative today, and an
     agent has no way to know unless told."""
-    from aughor.quality.results import Result, record
+    from pramanyx.quality.results import Result, record
 
     record(Result(connection_id="c1", table_name="orders", rule_name="r", passed=True))
     out = get_table_health("c1", "orders")
@@ -250,7 +250,7 @@ def test_an_unavailable_health_store_degrades(monkeypatch):
     def _boom(*a, **k):
         raise RuntimeError("down")
 
-    monkeypatch.setattr("aughor.quality.results.latest_for_tables", _boom)
+    monkeypatch.setattr("pramanyx.quality.results.latest_for_tables", _boom)
     assert get_table_health("c1", "orders")["available"] is False
 
 
@@ -263,7 +263,7 @@ def test_the_warrant_is_returned_not_a_flat_trusted_flag(monkeypatch):
     rows = [SimpleNamespace(question="q1", sql="SELECT 1", tags=["human_pinned"]),
             SimpleNamespace(question="q2", sql="SELECT 2", tags=["eval"]),
             SimpleNamespace(question="q3", sql="SELECT 3", tags=[])]
-    monkeypatch.setattr("aughor.semantic.trusted_queries.list_trusted", lambda c: rows)
+    monkeypatch.setattr("pramanyx.semantic.trusted_queries.list_trusted", lambda c: rows)
     out = list_trusted_queries("c1")
     assert [q["warrant"] for q in out["queries"]] == [
         "human_pinned", "eval_promoted", "recorded"]
@@ -273,7 +273,7 @@ def test_trusted_queries_degrade_rather_than_raise(monkeypatch):
     def _boom(_c):
         raise RuntimeError("store down")
 
-    monkeypatch.setattr("aughor.semantic.trusted_queries.list_trusted", _boom)
+    monkeypatch.setattr("pramanyx.semantic.trusted_queries.list_trusted", _boom)
     assert list_trusted_queries("c1")["available"] is False
 
 
@@ -282,7 +282,7 @@ def test_trusted_queries_degrade_rather_than_raise(monkeypatch):
 def test_all_four_tools_are_registered_on_the_server():
     import inspect
 
-    from aughor.mcp import server
+    from pramanyx.mcp import server
 
     src = inspect.getsource(server)
     for tool in ("search_graph", "describe_entity", "get_table_health",
@@ -295,7 +295,7 @@ def test_every_table_deriving_tool_goes_through_the_trim():
     hole in the wall G5 built."""
     import inspect
 
-    import aughor.mcp.knowledge_tools as KT
+    import pramanyx.mcp.knowledge_tools as KT
 
     for fn in (KT.search_graph, KT.describe_entity):
         assert "_trim_nodes" in inspect.getsource(fn)

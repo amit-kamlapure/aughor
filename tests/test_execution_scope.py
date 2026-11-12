@@ -1,4 +1,4 @@
-"""Unit tests for the one execution-scope value object (NOM-11) — `aughor/canvas/scope.py`.
+"""Unit tests for the one execution-scope value object (NOM-11) — `pramanyx/canvas/scope.py`.
 
 The four hand-rolled canvas-scope blocks in `routers/investigations.py` collapse onto
 `resolve_execution_scope` / `ExecutionScope`. These pin the precedence the router code
@@ -7,8 +7,8 @@ leak this consolidation closes).
 """
 from __future__ import annotations
 
-from aughor.canvas.models import Canvas, CanvasScope
-from aughor.canvas.scope import ExecutionScope, resolve_execution_scope
+from pramanyx.canvas.models import Canvas, CanvasScope
+from pramanyx.canvas.scope import ExecutionScope, resolve_execution_scope
 
 
 # ── eff_schema derivation — the precedence in one place ──────────────────────────────────
@@ -67,7 +67,7 @@ def test_canvas_scope_keeps_explicit_schema_even_over_mixed_tables():
 # ── resolve_execution_scope: canvas precedence ───────────────────────────────────────────
 
 def _canvas(monkeypatch, canvas):
-    monkeypatch.setattr("aughor.canvas.store.get_canvas", lambda _id: canvas)
+    monkeypatch.setattr("pramanyx.canvas.store.get_canvas", lambda _id: canvas)
 
 
 def test_resolve_pins_canvas_connection_schema_and_tables(monkeypatch):
@@ -121,7 +121,7 @@ def test_canvas_wins_over_schema_scope(monkeypatch):
 def test_resolve_fail_open_when_canvas_lookup_raises(monkeypatch):
     def boom(_id):
         raise RuntimeError("store down")
-    monkeypatch.setattr("aughor.canvas.store.get_canvas", boom)
+    monkeypatch.setattr("pramanyx.canvas.store.get_canvas", boom)
     s = resolve_execution_scope("conn", "cv_bad")   # must not raise
     assert s.connection_id == "conn"
     assert s.eff_schema is None
@@ -142,9 +142,9 @@ def test_resolve_builds_schema_context_via_injected_builder(monkeypatch):
 
 def test_open_pins_schema_when_resolvable(monkeypatch):
     calls = {}
-    monkeypatch.setattr("aughor.db.connection.open_connection_for_with_schema",
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for_with_schema",
                         lambda cid, schema_name=None: calls.setdefault("pinned", (cid, schema_name)) or "DB")
-    monkeypatch.setattr("aughor.db.connection.open_connection_for",
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for",
                         lambda cid: calls.setdefault("plain", cid) or "DB")
     ExecutionScope(connection_id="conn", declared_schema="sales").open()
     assert calls == {"pinned": ("conn", "sales")}
@@ -152,9 +152,9 @@ def test_open_pins_schema_when_resolvable(monkeypatch):
 
 def test_open_plain_when_no_eff_schema(monkeypatch):
     calls = {}
-    monkeypatch.setattr("aughor.db.connection.open_connection_for_with_schema",
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for_with_schema",
                         lambda cid, schema_name=None: calls.setdefault("pinned", True) or "DB")
-    monkeypatch.setattr("aughor.db.connection.open_connection_for",
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for",
                         lambda cid: calls.setdefault("plain", cid) or "DB")
     ExecutionScope(connection_id="conn").open()
     assert calls == {"plain": "conn"}

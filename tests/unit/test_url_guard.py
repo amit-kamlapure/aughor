@@ -10,8 +10,8 @@ import socket
 
 import pytest
 
-from aughor.util import url_guard
-from aughor.util.url_guard import is_safe_webhook_url
+from pramanyx.util import url_guard
+from pramanyx.util.url_guard import is_safe_webhook_url
 
 
 @pytest.fixture
@@ -62,7 +62,7 @@ def test_fails_closed_on_resolution_error(monkeypatch):
 
 
 def test_on_prem_override_allows_private(monkeypatch):
-    monkeypatch.setenv("AUGHOR_ALLOW_PRIVATE_WEBHOOKS", "1")
+    monkeypatch.setenv("PRAMANYX_ALLOW_PRIVATE_WEBHOOKS", "1")
     # No resolution needed under the override, but scheme + host are still required.
     assert is_safe_webhook_url("http://10.0.0.1/internal-hook") is True
     assert is_safe_webhook_url("file:///etc/passwd") is False
@@ -70,8 +70,8 @@ def test_on_prem_override_allows_private(monkeypatch):
 
 def test_executor_blocks_unsafe_url_at_send_time(monkeypatch):
     """fire_action must NOT POST to an unsafe URL — it records a failed log instead."""
-    from aughor.notifications import executor
-    from aughor.notifications.models import ActionTrigger, ActionPayload
+    from pramanyx.notifications import executor
+    from pramanyx.notifications.models import ActionTrigger, ActionPayload
 
     posted = {}
     monkeypatch.setattr(executor, "_post",

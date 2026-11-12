@@ -10,7 +10,7 @@ rather than from documentation, and this file re-runs every one of them. If Duck
 edits a claim into something untrue, this fails and the pack gets corrected — which is the
 only reason the pack is worth putting in front of a model at all.
 
-Deliberately imports `duckdb` and nothing from `aughor` in the behaviour tests: what is
+Deliberately imports `duckdb` and nothing from `pramanyx` in the behaviour tests: what is
 under test is the ENGINE, and reaching it through a connector would be asserting our
 wrapper's behaviour instead.
 """
@@ -168,8 +168,8 @@ def test_the_type_claims(db):
 # ── the pack itself ──────────────────────────────────────────────────────────────
 
 def test_the_pack_is_loadable_and_scoped_to_duckdb_engines():
-    from aughor.packs import load_pack
-    from aughor.packs import scope as pack_scope
+    from pramanyx.packs import load_pack
+    from pramanyx.packs import scope as pack_scope
 
     pack = load_pack(PACK)
     entries = pack_scope.entries(pack.manifest.scope)
@@ -190,7 +190,7 @@ def test_the_prose_names_no_function_duckdb_lacks(db):
     docstring for a reason — prose is where an unreal function survives longest."""
     import re
 
-    from aughor.packs.loader import PROSE_FILE
+    from pramanyx.packs.loader import PROSE_FILE
 
     text = (PACK / PROSE_FILE).read_text()
     known_absent = {"timestampdiff", "julianday", "to_char", "epoch_days"}

@@ -15,11 +15,11 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from aughor.db.history import complete_investigation, create_investigation
-from aughor.playbook import outcomes as O
-from aughor.record import claims as C
-from aughor.record import decisions as D
-from aughor.routers import investigations as inv
+from pramanyx.db.history import complete_investigation, create_investigation
+from pramanyx.playbook import outcomes as O
+from pramanyx.record import claims as C
+from pramanyx.record import decisions as D
+from pramanyx.routers import investigations as inv
 
 SPEC = {"metric_label": "total sales", "metric_sql": "SUM(sale_price)", "metric_table": "thelook.order_items",
         "date_column": "thelook.order_items.created_at", "window_days": 7, "window_basis": "observation"}
@@ -29,7 +29,7 @@ ACCEPTED = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
 @pytest.fixture(autouse=True)
 def _hermetic(tmp_path, monkeypatch):
     monkeypatch.setattr(O, "_DEFAULT_PATH", tmp_path / "recommendation_outcomes.json")
-    import aughor.settling.store as settling
+    import pramanyx.settling.store as settling
     monkeypatch.setattr(settling, "learned_lag_days", lambda conn_id: None)
 
 
@@ -53,7 +53,7 @@ def _accept(conn: str, monkeypatch, *, expectation=None, metric_before=None, run
     complete_investigation(inv_id, report={"headline": "Sales fell on fewer first orders", "spec": SPEC},
                            hypotheses=[], query_history=[], question="why did sales fall?", connection_id=conn,
                            skip_index=True, cache=False)
-    import aughor.db.measure as M
+    import pramanyx.db.measure as M
     monkeypatch.setattr(M, "run_sql_for", run_sql_for)      # the acceptance measures its baseline through this door
     inv.log_recommendation_outcome(inv_id, 0, inv.OutcomeRequest(
         rec_text="Raise the free-shipping threshold", status="accepted", review_days=30,
@@ -102,7 +102,7 @@ def test_the_review_measures_history_books_the_outcome_with_both_verdicts_and_sc
 
 
 def test_inside_historys_own_noise_is_cannot_tell_and_the_wrong_way_is_worse():
-    from aughor.record.byproducts import verdict_against_baseline
+    from pramanyx.record.byproducts import verdict_against_baseline
     v, why, e = verdict_against_baseline(actual=1005, baseline=1000, low=980, high=1030, direction="up",
                                          against="inside", history_note="")
     assert v == "cannot_tell" and "inside the baseline's own noise" in why and e.method == "history"
@@ -155,13 +155,13 @@ def test_the_answer_before_any_review_books_the_outcome_against_the_expectation_
 
 
 def test_the_heartbeat_scores_predictions_hourly(monkeypatch):
-    from aughor.automations import scheduler as Sch
-    from aughor.record import scenario as S
+    from pramanyx.automations import scheduler as Sch
+    from pramanyx.record import scenario as S
     calls: list[int] = []
     briefing: list[int] = []
     monkeypatch.setattr(S, "score_due_predictions", lambda *, run_sql_for, now=None: calls.append(1) or [])
     # the same tick scores a Briefing's own predictions, which carry no one-table spec (§6 item 42c)
-    monkeypatch.setattr("aughor.briefing.expected.score_due", lambda **kw: briefing.append(1) or ["a-briefing-prediction"])
+    monkeypatch.setattr("pramanyx.briefing.expected.score_due", lambda **kw: briefing.append(1) or ["a-briefing-prediction"])
     monkeypatch.setattr(Sch, "_last_prediction_check", 0.0)
     assert Sch.score_due_predictions_hourly(now=10_000.0) == 1 and len(calls) == len(briefing) == 1
     assert Sch.score_due_predictions_hourly(now=10_000.0 + 60) == 0 and len(calls) == len(briefing) == 1
@@ -169,20 +169,20 @@ def test_the_heartbeat_scores_predictions_hourly(monkeypatch):
 
 
 def test_the_delivery_reaches_a_group_channel_through_the_gate_and_cites_the_departure(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_DEPARTURES_DB", str(tmp_path / "departures.db"))
+    monkeypatch.setenv("PRAMANYX_DEPARTURES_DB", str(tmp_path / "departures.db"))
     from types import SimpleNamespace
-    from aughor.playbook import review_delivery as RD
-    from aughor.playbook.outcomes import RecOutcome
+    from pramanyx.playbook import review_delivery as RD
+    from pramanyx.playbook.outcomes import RecOutcome
     o = RecOutcome(id="inv9_rec_0", inv_id="inv9", rec_index=0, rec_text="Raise the threshold", connection_id="c1",
                    spec=SPEC, baseline_value=1000.0, review_value=1400.0, reviewed_at="2026-10-05T10:00:00+00:00",
                    review_question="You accepted \"Raise the threshold\" on 2026-09-01. total sales was 1,000 then "
                                    "(…); it is 1,400 now (…). Did it work?", review_asked_to="group:finance")
-    monkeypatch.setattr("aughor.rbac.routing.route", lambda securable, *, org_id, owner="", parents=(), tags=None:
+    monkeypatch.setattr("pramanyx.rbac.routing.route", lambda securable, *, org_id, owner="", parents=(), tags=None:
                         [SimpleNamespace(principal=owner, channel_trigger_id="trig-1", group_id="finance", why=("owner",))])
     trigger = SimpleNamespace(id="trig-1", name="finance channel", enabled=True)
-    monkeypatch.setattr("aughor.notifications.store.get_trigger", lambda tid: trigger if tid == "trig-1" else None)
+    monkeypatch.setattr("pramanyx.notifications.store.get_trigger", lambda tid: trigger if tid == "trig-1" else None)
     sent: list = []
-    monkeypatch.setattr("aughor.notifications.executor.fire_action",
+    monkeypatch.setattr("pramanyx.notifications.executor.fire_action",
                         lambda trig, payload: sent.append(payload) or SimpleNamespace(status="ok", error=""))
     out = RD.deliver_review_question(o, now=datetime(2026, 10, 5, 10, tzinfo=timezone.utc))
     if out["status"] == "sent":

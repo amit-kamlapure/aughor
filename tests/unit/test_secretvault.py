@@ -4,7 +4,7 @@ Pins: encrypt/decrypt round-trip, legacy-plaintext back-compat (round-trips unch
 idempotent re-encrypt, masking, and that a saved trigger's URL is ciphertext on disk
 but plaintext when loaded for the executor.
 """
-from aughor.secretvault import (
+from pramanyx.secretvault import (
     encrypt_secret, decrypt_secret, is_encrypted, is_masked, mask_secret,
 )
 
@@ -49,9 +49,9 @@ class TestVault:
 
 class TestActionTriggerStore:
     def test_url_encrypted_at_rest_plaintext_on_load(self, tmp_path, monkeypatch):
-        from aughor.util.json_store import JsonListStore
-        import aughor.notifications.store as store
-        from aughor.notifications.models import ActionTrigger
+        from pramanyx.util.json_store import JsonListStore
+        import pramanyx.notifications.store as store
+        from pramanyx.notifications.models import ActionTrigger
         # isolate the store to a temp file
         monkeypatch.setattr(store, "_triggers", JsonListStore(tmp_path / "triggers.json"))
 
@@ -65,8 +65,8 @@ class TestActionTriggerStore:
         assert store.get_trigger(saved.id).url == url
 
     def test_legacy_plaintext_trigger_still_loads(self, tmp_path, monkeypatch):
-        from aughor.util.json_store import JsonListStore
-        import aughor.notifications.store as store
+        from pramanyx.util.json_store import JsonListStore
+        import pramanyx.notifications.store as store
         s = JsonListStore(tmp_path / "triggers.json")
         s.upsert({"id": "leg", "name": "old", "type": "webhook",
                   "url": "https://old.example.com/hook", "headers": {}, "enabled": True})
@@ -74,9 +74,9 @@ class TestActionTriggerStore:
         assert store.get_trigger("leg").url == "https://old.example.com/hook"
 
     def test_auth_headers_encrypted_non_secret_headers_plaintext(self, tmp_path, monkeypatch):
-        from aughor.util.json_store import JsonListStore
-        import aughor.notifications.store as store
-        from aughor.notifications.models import ActionTrigger
+        from pramanyx.util.json_store import JsonListStore
+        import pramanyx.notifications.store as store
+        from pramanyx.notifications.models import ActionTrigger
         monkeypatch.setattr(store, "_triggers", JsonListStore(tmp_path / "t.json"))
         saved = store.save_trigger(ActionTrigger(
             id="", name="t", type="webhook", url="https://x.io/h",
@@ -88,7 +88,7 @@ class TestActionTriggerStore:
         assert store.get_trigger(saved.id).headers["Authorization"] == "Bearer sk-secret"
 
     def test_to_safe_dict_masks_only_secret_headers(self):
-        from aughor.notifications.models import ActionTrigger
+        from pramanyx.notifications.models import ActionTrigger
         safe = ActionTrigger(id="1", name="t", type="webhook", url="https://x.io/abc/secret",
                              headers={"Authorization": "Bearer sk-secret",
                                       "Content-Type": "application/json"}).to_safe_dict()
@@ -98,13 +98,13 @@ class TestActionTriggerStore:
 
 class TestConnectorMetaSecrets:
     def test_secret_field_keys_excludes_dsn(self):
-        from aughor.connectors.registry import secret_field_keys
+        from pramanyx.connectors.registry import secret_field_keys
         assert secret_field_keys("stripe") == {"secret_key"}
         assert secret_field_keys("snowflake") == {"password"}
         assert "dsn" not in secret_field_keys("postgres")   # dsn lives in the encrypted column
 
     def test_meta_secret_round_trip(self):
-        from aughor.db.registry import _encrypt_meta, _decrypt_meta
+        from pramanyx.db.registry import _encrypt_meta, _decrypt_meta
         meta = {"secret_key": "sk_live_supersecret", "schema_name": "public"}
         enc = _encrypt_meta("stripe", meta)
         assert is_encrypted(enc["secret_key"]) and "supersecret" not in enc["secret_key"]
@@ -112,7 +112,7 @@ class TestConnectorMetaSecrets:
         assert _decrypt_meta(enc) == meta                   # exact round-trip
 
     def test_legacy_plaintext_meta_round_trips(self):
-        from aughor.db.registry import _decrypt_meta
+        from pramanyx.db.registry import _decrypt_meta
         # a pre-encryption meta (plaintext secret) must still read back unchanged
         assert _decrypt_meta({"secret_key": "sk_live_old", "x": 1}) == {"secret_key": "sk_live_old", "x": 1}
 
@@ -124,8 +124,8 @@ def test_an_undecryptable_value_is_never_handed_back_and_is_counted(monkeypatch)
     and the one model door that sent the stored key unasked now refuses it by name."""
     from cryptography.fernet import Fernet
 
-    from aughor import secretvault as V
-    from aughor.llm import models, provider
+    from pramanyx import secretvault as V
+    from pramanyx.llm import models, provider
 
     foreign = "enc:v1:" + Fernet(Fernet.generate_key()).encrypt(b"xoxb-real-token").decode()
     before = V.unreadable_count()
@@ -136,4 +136,4 @@ def test_an_undecryptable_value_is_never_handed_back_and_is_counted(monkeypatch)
 
     monkeypatch.setattr(provider, "_active_key", lambda _b: foreign)
     listed, error = models.fetch_live_models("gemini")
-    assert listed == [] and "AUGHOR_SECRET_KEY" in error and "nothing was sent" in error
+    assert listed == [] and "PRAMANYX_SECRET_KEY" in error and "nothing was sent" in error

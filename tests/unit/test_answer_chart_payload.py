@@ -7,7 +7,7 @@ reaches the browser, and was then dropped at the write — so the chart a reader
 shown could not be reconstructed from the ledger afterwards.
 """
 
-from aughor.agent.chart_vocab import answer_chart_payload
+from pramanyx.agent.chart_vocab import answer_chart_payload
 
 
 def test_chart_config_survives_the_write():

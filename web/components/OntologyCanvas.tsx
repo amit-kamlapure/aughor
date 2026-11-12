@@ -539,7 +539,7 @@ interface EdgeData {
   x2: number; y2: number;
 }
 
-/** A link between two cards: straight runs that turn only at a right angle, never a curve (aughor-v2/CLARITY.md §3,
+/** A link between two cards: straight runs that turn only at a right angle, never a curve (pramanyx-v2/CLARITY.md §3,
  *  the user 2026-10-10). It leaves its card level, turns upright halfway across the gap, and arrives level, so the
  *  arrow lands square on the card's side; its label sits at the middle of the upright run. */
 export function stepLink(x1: number, y1: number, x2: number, y2: number): { d: string; mx: number; my: number } {

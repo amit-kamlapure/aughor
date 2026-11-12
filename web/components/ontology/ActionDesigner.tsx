@@ -304,7 +304,7 @@ export function ActionDesigner({ connectionId, schema, types, entity, within = "
   };
 
   const openDashboard = (dashboardId: string) => {
-    try { localStorage.setItem(`aughor:cockpit:${connectionId}`, dashboardId); } catch { /* the cockpit opens on its own tab */ }
+    try { localStorage.setItem(`pramanyx:cockpit:${connectionId}`, dashboardId); } catch { /* the cockpit opens on its own tab */ }
     requestTab("dashboards", { conn: connectionId });
   };
 

@@ -16,7 +16,7 @@ import importlib.util
 
 from fastapi.testclient import TestClient
 
-from aughor.connectors.registry import DRIVERS, missing_drivers
+from pramanyx.connectors.registry import DRIVERS, missing_drivers
 
 # What `pyproject.toml` lists under [project.dependencies]. Everything else a
 # connector imports lives in an extra — declared there, and asserted to be, by
@@ -41,7 +41,7 @@ def _simulate_install(monkeypatch, present: set[str]) -> None:
 def test_every_registered_type_declares_its_drivers() -> None:
     """A type with no DRIVERS entry reports no gap, so a missing entry reads as
     'available' forever — the exact failure this module exists to prevent."""
-    from aughor.connectors.registry import REGISTRY
+    from pramanyx.connectors.registry import REGISTRY
 
     advertised = {"duckdb", "postgres", *REGISTRY.supported_types()}
     undeclared = advertised - set(DRIVERS)

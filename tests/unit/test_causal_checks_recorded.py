@@ -10,8 +10,8 @@ typed record — saying, on a passed causal claim, whether it was ever challenge
 """
 from __future__ import annotations
 
-from aughor.agent.investigate import _attach_causal_checks
-from aughor.govern import departure
+from pramanyx.agent.investigate import _attach_causal_checks
+from pramanyx.govern import departure
 
 CAUSAL = "Revenue fell because the March price rise drove customers away."
 
@@ -51,7 +51,7 @@ def test_a_descriptive_report_records_no_claim_and_says_nothing():
 
 def test_the_gate_reads_the_typed_record(monkeypatch):
     stored: dict = {}
-    monkeypatch.setattr("aughor.govern.departure_basis._analysis_record",
+    monkeypatch.setattr("pramanyx.govern.departure_basis._analysis_record",
                         lambda inv: {"report": stored} if inv == "inv1" else {})
 
     stored.update(intake_notes="CLAIM LICENCE: causal — an intervention in the data.",

@@ -24,23 +24,23 @@ from pathlib import Path
 import duckdb
 import pytest
 
-import aughor.connectors
-import aughor.db.connection as dbc
-from aughor.db import doors as D
-from aughor.db.connection import DatabaseConnection, DuckDBConnection, _validate
-from aughor.security.safety import SafetyChecker, SafetyVerdict
-from aughor.sql.readonly import hidden_statement, is_mutating
+import pramanyx.connectors
+import pramanyx.db.connection as dbc
+from pramanyx.db import doors as D
+from pramanyx.db.connection import DatabaseConnection, DuckDBConnection, _validate
+from pramanyx.security.safety import SafetyChecker, SafetyVerdict
+from pramanyx.sql.readonly import hidden_statement, is_mutating
 
 
 def _all_connection_classes() -> list[type]:
-    for mod in pkgutil.walk_packages(aughor.connectors.__path__, "aughor.connectors."):
+    for mod in pkgutil.walk_packages(pramanyx.connectors.__path__, "pramanyx.connectors."):
         importlib.import_module(mod.name)
 
     def walk(cls):
         for sub in cls.__subclasses__():
             yield sub
             yield from walk(sub)
-    return sorted({c for c in walk(DatabaseConnection) if c.__module__.startswith("aughor.")
+    return sorted({c for c in walk(DatabaseConnection) if c.__module__.startswith("pramanyx.")
                    and not inspect.isabstract(c)}, key=lambda c: c.__qualname__)
 
 
@@ -116,8 +116,8 @@ def test_every_door_says_it_parsed_the_statement_in_its_own_dialect(cls):
 def test_the_door_parses_in_the_engines_dialect_not_the_platforms():
     """`col:field::STRING` is Snowflake's path syntax and parses nowhere else; `` `p.d.t` `` is BigQuery's quoting
     and fails on Postgres. Parsed as DuckDB, the first would be refused on the engine that runs it."""
-    from aughor.connectors.warehouse.bigquery import BigQueryConnection
-    from aughor.connectors.warehouse.snowflake import SnowflakeConnection
+    from pramanyx.connectors.warehouse.bigquery import BigQueryConnection
+    from pramanyx.connectors.warehouse.snowflake import SnowflakeConnection
 
     path = "SELECT col:field::STRING AS f FROM t"
     assert "validated:snowflake" in _bare(SnowflakeConnection).execute("de1", path).doors
@@ -149,7 +149,7 @@ def test_a_bound_statement_goes_through_the_door_too(tmp_path: Path):
 def test_outside_a_door_the_step_waits_for_the_door():
     """`gate_user_sql` runs at an endpoint, before the connection is known: it checks safety, and the statement is
     then parsed at the door it goes through. Nothing is parsed in a dialect nobody declared."""
-    from aughor.db.connection import gate_user_sql
+    from pramanyx.db.connection import gate_user_sql
     assert D.door_dialect() is None
     assert gate_user_sql("c", "query_builder", "SELECT a FROM t EXCEPT SELECT a FROM u") is None
     blocked = gate_user_sql("c", "query_builder", "SELECT * FROM users LOCK IN SHARE MODE")
@@ -263,16 +263,16 @@ def test_mysql_opens_its_session_read_only(monkeypatch):
     fake.connect = connect
     monkeypatch.setitem(sys.modules, "pymysql", fake)
 
-    from aughor.connectors.warehouse.mysql import MySQLConnection
+    from pramanyx.connectors.warehouse.mysql import MySQLConnection
     conn = MySQLConnection("mysql://u:p@h:3306/shop", connection_id="de1")
     assert captured["init_command"] == "SET SESSION TRANSACTION READ ONLY"
     assert conn.engine_read_only is True
 
 
 def test_the_doors_say_when_the_engine_is_not_read_only(tmp_path: Path):
-    from aughor.connectors.warehouse.bigquery import BigQueryConnection
-    from aughor.connectors.warehouse.snowflake import SnowflakeConnection
-    from aughor.connectors.file.local_upload import LocalUploadConnection
+    from pramanyx.connectors.warehouse.bigquery import BigQueryConnection
+    from pramanyx.connectors.warehouse.snowflake import SnowflakeConnection
+    from pramanyx.connectors.file.local_upload import LocalUploadConnection
 
     for cls in (BigQueryConnection, SnowflakeConnection, LocalUploadConnection):
         assert cls.engine_read_only is False, cls.__name__
@@ -293,7 +293,7 @@ def test_the_doors_say_when_the_engine_is_not_read_only(tmp_path: Path):
         dialect = "duckdb"
 
         def execute(self, hypothesis_id, sql, *, sql_dialect=None, internal=False):
-            from aughor.control_plane.contracts.execution import QueryResult
+            from pramanyx.control_plane.contracts.execution import QueryResult
             return D.through_door(self, sql, sql_dialect, lambda s: QueryResult(
                 hypothesis_id=hypothesis_id, sql=s, columns=[], rows=[], row_count=0), internal=internal)
 
@@ -312,7 +312,7 @@ def test_the_doors_say_when_the_engine_is_not_read_only(tmp_path: Path):
 def test_sqlite_says_what_it_opened(tmp_path: Path):
     import sqlite3
 
-    from aughor.connectors.file.sqlite import SQLiteConnection
+    from pramanyx.connectors.file.sqlite import SQLiteConnection
     p = tmp_path / "f.sqlite"
     sqlite3.connect(str(p)).close()
     assert SQLiteConnection(str(p), connection_id="de1").engine_read_only is True
@@ -324,8 +324,8 @@ def test_sqlite_says_what_it_opened(tmp_path: Path):
 def test_alter_column_reads_the_doors_answer(tmp_path: Path, monkeypatch, client):
     """The route reported `applied: true` whatever the engine said — every door refuses an ALTER, as a result with an
     error, and the route read only a raise (§3.49's leftover, the census row for this site)."""
-    import aughor.routers.connections as R
-    import aughor.db.type_overrides as overrides
+    import pramanyx.routers.connections as R
+    import pramanyx.db.type_overrides as overrides
 
     path = tmp_path / "shop.duckdb"
     raw = duckdb.connect(str(path))
@@ -348,8 +348,8 @@ def test_alter_column_reads_the_doors_answer(tmp_path: Path, monkeypatch, client
 def test_schema_samples_reach_the_model_fenced_as_data():
     """A value worded as an instruction is in the schema as data, inside the fence; a value cannot close the fence;
     a control character does not reach the prompt; every parser of the schema text still reads it."""
-    from aughor.db.schema_render import render_raw_schema, strip_value_samples, parse_schema_tables, schema_block
-    from aughor.semantic.answer_resolution import _parse_schema
+    from pramanyx.db.schema_render import render_raw_schema, strip_value_samples, parse_schema_tables, schema_block
+    from pramanyx.semantic.answer_resolution import _parse_schema
 
     con = duckdb.connect()
     con.execute("CREATE TABLE notes AS SELECT * FROM (VALUES "
@@ -379,7 +379,7 @@ def test_schema_samples_reach_the_model_fenced_as_data():
 def test_the_catalogs_sample_rows_are_fenced_too(tmp_path: Path):
     """The Data Catalog replaces the schema text on the quick and deep paths, so its sample rows are where most
     samples reach the model."""
-    from aughor.tools import data_catalog as DC
+    from pramanyx.tools import data_catalog as DC
 
     path = tmp_path / "cat.duckdb"
     raw = duckdb.connect(str(path))

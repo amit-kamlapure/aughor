@@ -4,8 +4,8 @@ get_provider() consults. Hermetic: provider construction needs no network; the g
 store uses the test Ledger."""
 from __future__ import annotations
 
-import aughor.llm.provider as provider
-from aughor.kernel.agents import effective_governance, set_governance
+import pramanyx.llm.provider as provider
+from pramanyx.kernel.agents import effective_governance, set_governance
 
 
 # ── provider: explicit pin + contextvar pin ──────────────────────────────────────
@@ -23,8 +23,8 @@ def test_run_model_contextvar_is_honored_by_get_provider(monkeypatch):
     # A configured role binding, because nothing ships one: after the pin is reset the
     # role must fall back to ITS OWN model, and with no binding at all it would raise
     # NoModelConfigured instead — a different assertion than the one this test makes.
-    monkeypatch.setenv("AUGHOR_CODER_MODEL", "configured/coder")
-    monkeypatch.setenv("AUGHOR_NARRATOR_MODEL", "configured/narrator")
+    monkeypatch.setenv("PRAMANYX_CODER_MODEL", "configured/coder")
+    monkeypatch.setenv("PRAMANYX_NARRATOR_MODEL", "configured/narrator")
     token = provider.set_run_model("run-scoped-model")
     try:
         assert provider.get_provider("coder")._model == "run-scoped-model"
@@ -48,7 +48,7 @@ def test_run_model_pin_skips_the_fast_tier(monkeypatch):
     operator a cheap pin they wanted; the alternative costs them a 550B on every
     throwaway interpret call."""
     HEAVY = "vendor/heavy-reasoner"
-    monkeypatch.setenv("AUGHOR_FAST_NARRATOR_MODEL", "configured/fast")
+    monkeypatch.setenv("PRAMANYX_FAST_NARRATOR_MODEL", "configured/fast")
     token = provider.set_run_model(HEAVY)
     try:
         assert provider.get_provider("coder")._model == HEAVY
@@ -77,9 +77,9 @@ def test_explicit_model_pins_fast_too():
 
 
 def test_pin_all_roles_escape_hatch_restores_total_pin(monkeypatch):
-    """AUGHOR_PIN_ALL_ROLES=1 is the opt-back-in for an operator who really wants every
+    """PRAMANYX_PIN_ALL_ROLES=1 is the opt-back-in for an operator who really wants every
     call, cheap ones included, on the pinned model."""
-    monkeypatch.setenv("AUGHOR_PIN_ALL_ROLES", "1")
+    monkeypatch.setenv("PRAMANYX_PIN_ALL_ROLES", "1")
     token = provider.set_run_model("nvidia/nemotron-3-ultra-550b-a55b:free")
     try:
         assert provider.get_provider("fast")._model == "nvidia/nemotron-3-ultra-550b-a55b:free"

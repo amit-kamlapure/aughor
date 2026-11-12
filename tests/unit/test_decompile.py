@@ -3,7 +3,7 @@ mapping (columns/grains → dimensions, aggregates → measures, predicates → 
 resolved to real tables) and the honest bails. Pure SQLGlot; hermetic."""
 from __future__ import annotations
 
-from aughor.sql.decompile import decompile_sql
+from pramanyx.sql.decompile import decompile_sql
 
 
 def test_full_query_maps_to_chips():

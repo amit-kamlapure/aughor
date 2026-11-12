@@ -15,11 +15,11 @@ import duckdb
 import pytest
 import sqlglot
 
-from aughor.briefing import ranges
-from aughor.semantic import metric_time as mt
-from aughor.semantic.metric_time import Window
-from aughor.settling import parts as P
-from aughor.settling import store
+from pramanyx.briefing import ranges
+from pramanyx.semantic import metric_time as mt
+from pramanyx.semantic.metric_time import Window
+from pramanyx.settling import parts as P
+from pramanyx.settling import store
 
 TODAY = date(2026, 11, 9)
 
@@ -199,10 +199,10 @@ def test_a_live_source_is_never_read_into_stored_readings(monkeypatch):
 def test_the_daily_reading_reads_the_parts_of_a_connection_with_no_time_table(monkeypatch):
     from datetime import datetime, timezone
 
-    from aughor.settling import sampler
+    from pramanyx.settling import sampler
     seen: list[str] = []
     monkeypatch.setattr(sampler, "_last_sample_day", "")
-    monkeypatch.setattr("aughor.db.registry.list_connections", lambda: [{"id": "c1"}])
+    monkeypatch.setattr("pramanyx.db.registry.list_connections", lambda: [{"id": "c1"}])
     monkeypatch.setattr(sampler, "time_tables", lambda cid: [])
     monkeypatch.setattr(P, "read_connection", lambda cid, today=None: seen.append(cid) or {"metrics": [], "statements": 0})
     sampler.run_settling_samples_daily(now=datetime(2026, 11, 9, 9, 0, tzinfo=timezone.utc))
@@ -238,10 +238,10 @@ def test_a_day_is_read_as_it_stood_on_a_past_day_and_a_missing_reading_is_said(h
 
 def test_a_reader_whose_rows_are_filtered_never_reads_stored_parts(home, monkeypatch):
     _readings(home, {date(2026, 11, 3): {date(2026, 11, 1): 10.0}})
-    monkeypatch.setattr("aughor.db.connection.result_cache_tenancy", lambda: "rp:someone")
+    monkeypatch.setattr("pramanyx.db.connection.result_cache_tenancy", lambda: "rp:someone")
     value, why = P.range_value("c1", METRICS[0], date(2026, 11, 1), date(2026, 11, 2), dialect="duckdb")
     assert value is None and "read when asked" in why
-    monkeypatch.setattr("aughor.db.connection.result_cache_tenancy", lambda: (_ for _ in ()).throw(RuntimeError()))
+    monkeypatch.setattr("pramanyx.db.connection.result_cache_tenancy", lambda: (_ for _ in ()).throw(RuntimeError()))
     assert P.range_value("c1", METRICS[0], date(2026, 11, 1), date(2026, 11, 2), dialect="duckdb")[0] is None
 
 
@@ -299,7 +299,7 @@ def test_without_the_days_reading_the_caveat_stands(con, home):
 def test_a_restricted_reader_reads_the_caveat_not_the_stored_parts(con, home, monkeypatch):
     spec = _young_spec()
     _readings(home, {date(2026, 11, 1): {date(2026, 10, 24) + timedelta(days=i): 1000.0 for i in range(8)}})
-    monkeypatch.setattr("aughor.db.connection.result_cache_tenancy", lambda: "rp:restricted")
+    monkeypatch.setattr("pramanyx.db.connection.result_cache_tenancy", lambda: "rp:restricted")
     row = _row(con, spec)
     assert "previous" not in row["equal_age"] and row["previous"] != 8000.0
 
@@ -325,7 +325,7 @@ def test_the_send_re_reads_the_range_before_from_the_readings(con, home, monkeyp
     spec = _young_spec()
     _readings(home, {date(2026, 11, 1): {date(2026, 10, 24) + timedelta(days=i): 1000.0 for i in range(8)}})
     row = _row(con, spec)
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda connection_id=None, **kw: [METRICS[0]])
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda connection_id=None, **kw: [METRICS[0]])
 
     @contextlib.contextmanager
     def runner():

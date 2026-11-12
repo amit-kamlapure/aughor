@@ -16,7 +16,7 @@ Pramanyx has not cut a tagged release yet. The sections below describe the state
   e-commerce, SaaS — or Enter for all of them, with each connection's industry detected from its
   data. A choice narrows everything that reads an industry (metric recipes, playbook plays, the
   rule-outs on deep reports) to the chosen packages. `--industries retail,saas` or
-  `AUGHOR_INDUSTRIES` answers without asking; Settings → Organization and `aughor industries` change
+  `PRAMANYX_INDUSTRIES` answers without asking; Settings → Organization and `pramanyx industries` change
   it later, and a change rebuilds only the business profiles whose industry now resolves differently.
 - **Deep reports list what to rule out first.** When a deep analysis reports a metric rising or
   falling, it lists the known ways that metric reads high (or low), each with its fix, marked as not
@@ -28,9 +28,9 @@ Pramanyx has not cut a tagged release yet. The sections below describe the state
   Node.js 20.9 or newer, an official Node.js build verified against nodejs.org's checksums;
   builds the web app; starts Pramanyx and opens it in the browser. Inside a checkout,
   `./install.sh` (or `install.cmd`) does the same. One line per step: what the tools print goes
-  to `.aughor/logs/`, and only a failed step shows its log's tail, with what to do next. Running
-  it again redoes only what changed, and the installer leaves an `aughor` command behind, so
-  starting Pramanyx later is one word in any terminal. `aughor up` now serves a production build
+  to `.pramanyx/logs/`, and only a failed step shows its log's tail, with what to do next. Running
+  it again redoes only what changed, and the installer leaves an `pramanyx` command behind, so
+  starting Pramanyx later is one word in any terminal. `pramanyx up` now serves a production build
   (rebuilt when its inputs change), keeps server logs in files (`--dev` and `--verbose` show
   them), opens the browser (`--no-browser` to skip), carries a moved API or web port through to
   CORS and the chat proxy, and says when Pramanyx is already running. A new CI workflow runs the
@@ -39,9 +39,9 @@ Pramanyx has not cut a tagged release yet. The sections below describe the state
 - **An automation can act as a connected account (DS-11, first half).** A new
   `integration_call` step spends a vault `Connection` — the OAuth grants VA-11 has been
   minting, refreshing and revoking with nothing able to use them. What a grant may do is
-  declared as data in `aughor/integrations/operations.py` (six operations across Google,
+  declared as data in `pramanyx/integrations/operations.py` (six operations across Google,
   Slack and Microsoft, each covered by that provider's default scopes), and every call
-  goes through one door, `aughor/integrations/call.py`: the grant's own verdicts first,
+  goes through one door, `pramanyx/integrations/call.py`: the grant's own verdicts first,
   then a scope check against what the provider said was GRANTED, then the params built by
   the roster, then the graduated approval gate for a write, then the call itself inside
   `govern.outbound` — capped before the work, spanned, and recorded as an `EXTERNAL_CALL`
@@ -233,7 +233,7 @@ Pramanyx has not cut a tagged release yet. The sections below describe the state
   charts that aren't cards (findings rows, digest tiles, KPI trends).
 - **"Numbers that moved" tiles expand in place**, showing the finding's untruncated
   statement, its grounded chart or table, and Evidence / Investigate.
-- A single number-format authority (`aughor/util/format.py`, mirrored in
+- A single number-format authority (`pramanyx/util/format.py`, mirrored in
   `web/lib/format.ts`) applied both to what the model is shown and to what is stored.
 
 ### Changed

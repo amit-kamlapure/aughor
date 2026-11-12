@@ -11,8 +11,8 @@ from __future__ import annotations
 import duckdb
 import pytest
 
-from aughor.db import registry
-from aughor.routers._shared import canonical_schema, schemas_of_connection
+from pramanyx.db import registry
+from pramanyx.routers._shared import canonical_schema, schemas_of_connection
 
 
 @pytest.fixture()

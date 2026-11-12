@@ -13,13 +13,13 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.ontology.overrides import (
+from pramanyx.ontology.overrides import (
     OntologyOverride,
     bind_overrides,
     preferred_table,
     publish_override,
 )
-from aughor.ontology.routing import RoutingRule, preferred_for, routing_rules
+from pramanyx.ontology.routing import RoutingRule, preferred_for, routing_rules
 
 CONN = "routing-test"
 SCHEMA = "main"
@@ -42,7 +42,7 @@ def store(tmp_path, monkeypatch):
     """Point the override store at a throwaway tree (data/ is never test-isolated by
     default — the registry incident's lesson). Each rule here is set up in force —
     written by the release's own door (`publish_override`), as a published one is."""
-    from aughor.ontology import overrides as O
+    from pramanyx.ontology import overrides as O
     monkeypatch.setattr(O, "_ROOT", tmp_path / "ontology_overrides")
     monkeypatch.setattr(O, "_DRAFT_ROOT", tmp_path / "ontology_overrides_draft")
     return tmp_path
@@ -71,7 +71,7 @@ def test_no_overrides_leaves_the_linker_byte_identical(store):
     """The off-switch is the DATA, so the comparison must vary only the data — the
     same connection id on both sides. (Comparing with/without a connection id would
     compare something else entirely: connection hints already change the ranking.)"""
-    from aughor.tools.schema_linker import link_schema
+    from pramanyx.tools.schema_linker import link_schema
     before = link_schema("total sales by customer", _SCHEMA_TEXT, connection_id=CONN)
     publish_override(CONN, SCHEMA, _bound_override(scope="nothing in this question"))
     after = link_schema("total sales by customer", _SCHEMA_TEXT, connection_id=CONN)
@@ -79,7 +79,7 @@ def test_no_overrides_leaves_the_linker_byte_identical(store):
 
 
 def test_no_overrides_leaves_the_annotator_byte_identical(store):
-    from aughor.agent.schema_annotators import _routing
+    from pramanyx.agent.schema_annotators import _routing
 
     class _Conn:
         _connection_id = CONN
@@ -204,7 +204,7 @@ def test_preferred_is_not_added_twice(store):
 def test_the_linker_keeps_the_preferred_twin(store):
     """The A3 linker is the SECOND door: enforcing at the retriever while the packer
     drops the view is the both-ends-exist-feature-doesn't trap."""
-    from aughor.tools.schema_linker import link_schema
+    from pramanyx.tools.schema_linker import link_schema
     publish_override(CONN, SCHEMA, _bound_override(scope=""))
     out = link_schema("orders", _SCHEMA_TEXT, top_k_tables=1, connection_id=CONN)
     assert "TABLE: v_fact_sales" in out
@@ -212,7 +212,7 @@ def test_the_linker_keeps_the_preferred_twin(store):
 
 
 def test_the_retriever_keeps_the_preferred_twin(store, monkeypatch):
-    import aughor.semantic.retriever as R
+    import pramanyx.semantic.retriever as R
     publish_override(CONN, SCHEMA, _bound_override(scope=""))
     monkeypatch.setattr(R, "_filter_schema", lambda schema, keep: "|".join(sorted(keep)))
     monkeypatch.setattr(R, "collection_count", lambda *a, **k: 1, raising=False)
@@ -226,8 +226,8 @@ def test_the_retriever_keeps_the_preferred_twin(store, monkeypatch):
 
 def test_guidance_failure_never_breaks_retrieval(store, monkeypatch):
     """Guidance is advisory; a store that raises must cost the retrieval nothing."""
-    import aughor.semantic.retriever as R
-    import aughor.ontology.routing as RT
+    import pramanyx.semantic.retriever as R
+    import pramanyx.ontology.routing as RT
 
     def _boom(*a, **k):
         raise RuntimeError("store on fire")
@@ -239,7 +239,7 @@ def test_guidance_failure_never_breaks_retrieval(store, monkeypatch):
 # ── the annotation ───────────────────────────────────────────────────────────
 
 def test_annotation_marks_both_sides(store):
-    from aughor.agent.schema_annotators import _routing
+    from pramanyx.agent.schema_annotators import _routing
 
     class _Conn:
         _connection_id = CONN
@@ -254,7 +254,7 @@ def test_annotation_marks_both_sides(store):
 
 
 def test_annotation_does_not_disturb_column_lines(store):
-    from aughor.agent.schema_annotators import _routing
+    from pramanyx.agent.schema_annotators import _routing
 
     class _Conn:
         _connection_id = CONN

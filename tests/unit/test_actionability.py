@@ -4,17 +4,17 @@ Covers the backend half of backlog #4 (#20): finding-level Promote-to-Org for
 connection-scoped Briefing/Hub findings, and the generic 'Share' path that fires
 an arbitrary finding to a configured Action Hub trigger.
 
-See aughor/explorer/store.py::promote_insight_conn and
-aughor/routers/{exploration,actions}.py.
+See pramanyx/explorer/store.py::promote_insight_conn and
+pramanyx/routers/{exploration,actions}.py.
 """
 from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
 
-import aughor.explorer.store as store
-from aughor.routers.exploration import promote_connection_insight
-from aughor.routers.actions import send_finding_to_trigger, _SendFindingBody
+import pramanyx.explorer.store as store
+from pramanyx.routers.exploration import promote_connection_insight
+from pramanyx.routers.actions import send_finding_to_trigger, _SendFindingBody
 
 
 @pytest.fixture(autouse=True)
@@ -88,7 +88,7 @@ def test_dismiss_finds_per_schema_insight(tmp_path):
 def test_promote_endpoint_found(tmp_path, monkeypatch):
     # the finding is found, Org stores it, then it is flagged → promoted. (Org's push is no longer best-effort: a write
     # Org could not store refuses the promotion — test_org_intelligence_scope pins that, 2026-10-13.)
-    from aughor.knowledge import org_intelligence
+    from pramanyx.knowledge import org_intelligence
     found = {"finding": "f", "domain": "d", "novelty": 5, "angle": "a"}
     monkeypatch.setattr(store, "find_connection_finding", lambda c, i: found)
     monkeypatch.setattr(store, "promote_insight_conn", lambda c, i: found)
@@ -119,7 +119,7 @@ def test_send_finding_empty_text_400():
 
 
 def test_send_finding_unknown_trigger_404(monkeypatch):
-    import aughor.notifications.store as astore
+    import pramanyx.notifications.store as astore
     monkeypatch.setattr(astore, "get_trigger", lambda tid: None)
     with pytest.raises(HTTPException) as ei:
         send_finding_to_trigger("ghost", _SendFindingBody(text="hello"))
@@ -127,8 +127,8 @@ def test_send_finding_unknown_trigger_404(monkeypatch):
 
 
 def test_send_finding_maps_payload(monkeypatch):
-    import aughor.notifications.store as astore
-    import aughor.notifications.executor as execu
+    import pramanyx.notifications.store as astore
+    import pramanyx.notifications.executor as execu
     captured = {}
 
     def _capture(trigger, payload):
@@ -157,7 +157,7 @@ def test_send_finding_disabled_trigger_reports_skipped(monkeypatch, tmp_path):
     # before any network call, so we exercise the wiring without external deps.
     # `skipped`, not `failed` (2026-09-22): nothing was attempted, and calling it a
     # failure made 332 refusals read as 332 lost deliveries on the live install.
-    import aughor.notifications.store as astore
+    import pramanyx.notifications.store as astore
     monkeypatch.setattr(astore, "get_trigger", lambda tid: _fake_trigger(enabled=False))
     monkeypatch.setattr(astore, "_LOG_PATH", tmp_path / "logs.json", raising=False)
     monkeypatch.setattr(astore, "log_action", lambda log: None)

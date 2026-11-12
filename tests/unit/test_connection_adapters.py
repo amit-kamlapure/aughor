@@ -1,6 +1,6 @@
 """Connection convenience adapters db.rows() / db.scalar() — see DatabaseConnection (C3).
 Replace the ad-hoc execute→check-error→pull-rows wrappers; best-effort ([]/None on error)."""
-from aughor.db.connection import DatabaseConnection
+from pramanyx.db.connection import DatabaseConnection
 
 
 class _Res:

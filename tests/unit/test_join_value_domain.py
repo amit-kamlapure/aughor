@@ -9,12 +9,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from aughor.sql.join_guard import (
+from pramanyx.sql.join_guard import (
     JoinDomainWarning,
     _extract_join_conditions,
     check_join_value_domains,
 )
-from aughor.agent.state import QueryResult
+from pramanyx.agent.state import QueryResult
 
 
 def _qr(matched: int, total: int) -> QueryResult:
@@ -163,7 +163,7 @@ def test_every_join_condition_is_probed(monkeypatch):
     """
     assert len(check_join_value_domains(conn, sql)) == 5, "a join past the fourth went unprobed"
     assert conn.execute.call_count == 60
-    from aughor.sql.join_guard import _KEY_TRANSFORMS
+    from pramanyx.sql.join_guard import _KEY_TRANSFORMS
     assert len(_KEY_TRANSFORMS) == 5, "the transforms moved — re-derive the 60 above: 5 × 2 × (1 + transforms)"
 
 
@@ -175,7 +175,7 @@ def test_every_join_condition_is_probed(monkeypatch):
 def _real_conn():
     import duckdb
     from pathlib import Path
-    from aughor.db.connection import DuckDBConnection
+    from pramanyx.db.connection import DuckDBConnection
 
     conn = DuckDBConnection.__new__(DuckDBConnection)
     conn._path = Path(":memory:")
@@ -239,7 +239,7 @@ def test_fabricated_join_flagged_both_directions_low():
 
 # ── Ill-formatted join-key reconciliation (Rec 3 / DAB GAP-3) ─────────────────
 
-from aughor.sql.join_guard import reconcile_join_keys  # noqa: E402
+from pramanyx.sql.join_guard import reconcile_join_keys  # noqa: E402
 
 
 def _real_conn_skew():
@@ -247,7 +247,7 @@ def _real_conn_skew():
     books.bid = 'bid_1' vs reviews.book_ref = 'bref_1' — 0% raw overlap, 100% on digits."""
     import duckdb
     from pathlib import Path
-    from aughor.db.connection import DuckDBConnection
+    from pramanyx.db.connection import DuckDBConnection
 
     conn = DuckDBConnection.__new__(DuckDBConnection)
     conn._path = Path(":memory:")

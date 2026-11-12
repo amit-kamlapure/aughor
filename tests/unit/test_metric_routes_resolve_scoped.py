@@ -29,19 +29,19 @@ from __future__ import annotations
 import duckdb
 import pytest
 
-from aughor.db.connection import DuckDBConnection
-from aughor.semantic.metrics import GLOBAL_CONNECTION, MetricDefinition, save_metric
+from pramanyx.db.connection import DuckDBConnection
+from pramanyx.semantic.metrics import GLOBAL_CONNECTION, MetricDefinition, save_metric
 
 ALPHA, BETA, DEAD = "alpha", "beta", "a_connection_that_no_longer_exists"
 
 
 @pytest.fixture(autouse=True)
 def isolated_metrics(tmp_path, monkeypatch):
-    """Own registry per test — `conftest`'s `AUGHOR_METRICS_PATH` is a session-scoped copy that
+    """Own registry per test — `conftest`'s `PRAMANYX_METRICS_PATH` is a session-scoped copy that
     every test file shares, so writes here would otherwise be visible to unrelated files."""
     path = tmp_path / "metrics.json"
     path.write_text("[]")
-    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(path))
+    monkeypatch.setenv("PRAMANYX_METRICS_PATH", str(path))
     return path
 
 
@@ -68,7 +68,7 @@ def warehouse(tmp_path, monkeypatch):
         opened.append(db)
         return db
 
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", _open, raising=False)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", _open, raising=False)
     yield path
     for db in opened:
         try:
@@ -122,7 +122,7 @@ def test_the_delete_trail_describes_the_metric_that_was_deleted(client):
     """`delete_metric` was already scoped; only the row read to DESCRIBE it was not, so the
     audit entry could name a different connection's owner than the definition that went. A
     trail that misdescribes what it recorded is worse than no trail — it is believed."""
-    from aughor.kernel.ledger import Ledger
+    from pramanyx.kernel.ledger import Ledger
 
     r = client.delete(f"/metrics/revenue?connection={BETA}")
     assert r.status_code == 200, r.text
@@ -152,8 +152,8 @@ def test_a_monitor_evaluates_its_own_connections_formula():
     is worse than the read routes it shares the bug with: a monitor ALERTS on the number it
     computes, unattended, to people who never see which definition produced it.
     """
-    from aughor.monitors.models import Monitor
-    from aughor.monitors.runner import _resolve_sql
+    from pramanyx.monitors.models import Monitor
+    from pramanyx.monitors.runner import _resolve_sql
 
     beta = Monitor(conn_id=BETA, name="Beta revenue watch", metric_name="revenue")
     # The governed value query, not the bare expression (ROADMAP §3.26: a bare aggregate is no statement).

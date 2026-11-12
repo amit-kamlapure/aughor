@@ -2,8 +2,8 @@
   "pack_id": "banking",
   "dataset_id": "fdic-financials-2025-q2",
   "dataset_sha256": "2e7f670703044711b3ebd31d92fb2c3ab0827eeafb7679257c0fb7b81fea564c",
-  "package_fingerprint": "24f6ccfd7365561f7802f7769df99b20857e97cdd0d343f959cad0c9bf79e5d1",
-  "measured_at": "2026-09-17T17:53:56+00:00",
+  "package_fingerprint": "b6327a5f3939570f4b6fa33b0a801c2c6d278907de10fca4381de3d7ed64d7c8",
+  "measured_at": "2026-11-12T05:40:16+00:00",
   "rows": {
     "call_reports": 4421,
     "institutions": 4421

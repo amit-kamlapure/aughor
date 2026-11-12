@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.semantic.object_query import (ObjectListing, ObjectQueryRefused, compile_object_listing, object_links)
+from pramanyx.semantic.object_query import (ObjectListing, ObjectQueryRefused, compile_object_listing, object_links)
 from tests.unit.test_object_actions import db  # noqa: F401 — fixtures by name
 from tests.unit.test_object_query import _compile, _graph, _rows, warehouse  # noqa: F401 — the fixture, by name
 from tests.unit.test_ontology_security import graph, secured  # noqa: F401 — fixtures by name
@@ -163,7 +163,7 @@ def test_a_link_that_reaches_another_entity_is_refused_and_so_is_reading_sets_wi
 def test_a_set_never_tells_a_reader_of_objects_a_row_policy_keeps_from_them(secured, db, monkeypatch):  # noqa: F811
     """Ana sees shipped and delivered orders only: the customers who placed a cancelled order are none, for her — a set
     is no window onto the orders she may not see — and she is told why. Ben, in support, sees them, as many as there are."""
-    from aughor.semantic.object_query import compile_object_query
+    from pramanyx.semantic.object_query import compile_object_query
     from tests.unit.test_ontology_security import _as
     via = _link("Order", "Customer")
     query = {"object_type": "customer", "measures": [{"agg": "count"}],

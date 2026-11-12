@@ -5,8 +5,8 @@ monkeypatched schema provider.
 """
 from __future__ import annotations
 
-import aughor.db.connection as conn_mod
-from aughor.agent.connection_selector import _greedy_select, _terms, select_connections
+import pramanyx.db.connection as conn_mod
+from pramanyx.agent.connection_selector import _greedy_select, _terms, select_connections
 
 
 # ── tokenizer ────────────────────────────────────────────────────────────────

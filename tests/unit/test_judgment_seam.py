@@ -11,11 +11,11 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.judgment.seam import (
+from pramanyx.judgment.seam import (
     CHOICE, NOUL, SCORE, Answer, Choice, Noul, Score, agreement, judge,
 )
-from aughor.llm.faux import set_responses
-from aughor.llm.provider import LLMProvider
+from pramanyx.llm.faux import set_responses
+from pramanyx.llm.provider import LLMProvider
 
 
 @pytest.fixture

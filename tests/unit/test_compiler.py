@@ -1,11 +1,11 @@
 """Semantic Compiler — deterministic SQL synthesis for the 4 safe intents.
 
 Every reference must ground against the ontology or synthesize_sql returns None (the
-caller falls back to LLM SQL). See aughor/semantic/compiler.py.
+caller falls back to LLM SQL). See pramanyx/semantic/compiler.py.
 """
 from types import SimpleNamespace as NS
 
-from aughor.semantic.compiler import QueryIntent, synthesize_sql
+from pramanyx.semantic.compiler import QueryIntent, synthesize_sql
 
 
 def _p(name, st):
@@ -178,7 +178,7 @@ def test_timeseries_no_time_col_gated():
 # ── NL→intent prelude: catalog + clean structured-output schema ───────────────
 
 def test_catalog_lists_only_grounded_names():
-    from aughor.semantic.compiler import _catalog
+    from pramanyx.semantic.compiler import _catalog
     cat = _catalog(ONTO, [_metric("revenue", "SUM(amount)", ["orders"])])
     assert "entity Order (table orders)" in cat
     assert "measures=[amount]" in cat and "region" in cat
@@ -198,17 +198,17 @@ def test_named_metric_binding_is_identical_under_contract_live_flag(monkeypatch)
     """REC-U10 tail: the compiler resolves metrics internally (metrics=None) via
     resolve_planning_metrics. Flipping semantic.contract_live must synthesize byte-identical SQL —
     the flag swaps the source type (CanonicalMetric -> SemanticContract) but not the bound formula."""
-    from aughor.semantic.metrics import MetricDefinition
+    from pramanyx.semantic.metrics import MetricDefinition
 
     md = MetricDefinition(name="revenue", label="Revenue", sql="SUM(amount)", tables=["orders"])
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda *a, **k: [md])
-    monkeypatch.setattr("aughor.semantic.metrics.filter_metrics_to_schema", lambda m, s: list(m))
-    monkeypatch.setattr("aughor.business_profile.store.load", lambda c, s=None: None)
+    monkeypatch.setattr("pramanyx.semantic.metrics.list_metrics", lambda *a, **k: [md])
+    monkeypatch.setattr("pramanyx.semantic.metrics.filter_metrics_to_schema", lambda m, s: list(m))
+    monkeypatch.setattr("pramanyx.business_profile.store.load", lambda c, s=None: None)
 
     intent = QueryIntent(intent_type="scalar", table="orders", metric="revenue")
-    monkeypatch.delenv("AUGHOR_SEMANTIC_CONTRACT_LIVE", raising=False)
+    monkeypatch.delenv("PRAMANYX_SEMANTIC_CONTRACT_LIVE", raising=False)
     off = synthesize_sql(intent, ONTO, metrics=None)
-    monkeypatch.setenv("AUGHOR_SEMANTIC_CONTRACT_LIVE", "1")
+    monkeypatch.setenv("PRAMANYX_SEMANTIC_CONTRACT_LIVE", "1")
     on = synthesize_sql(intent, ONTO, metrics=None)
 
     assert off is not None and "sum(amount)" in _l(off)   # the named metric actually bound

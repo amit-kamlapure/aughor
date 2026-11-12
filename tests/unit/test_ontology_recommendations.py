@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.ontology.models import EntityProperty, OntologyEntity, OntologyGraph, OntologyMetric
-from aughor.ontology import recommendations as REC
-from aughor.ontology import overrides as OV
+from pramanyx.ontology.models import EntityProperty, OntologyEntity, OntologyGraph, OntologyMetric
+from pramanyx.ontology import recommendations as REC
+from pramanyx.ontology import overrides as OV
 
 
 def _measure(name, grain=""):

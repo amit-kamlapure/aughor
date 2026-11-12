@@ -5,7 +5,7 @@ Markdown OUT into six. Together that is twenty seams rather than the eighty-four
 format-pair matrix would need, and it is the whole reason "any document to any format"
 is a small amount of code.
 
-Almost none of the rendering is new: `aughor/export/` has produced PDFs and PowerPoint
+Almost none of the rendering is new: `pramanyx/export/` has produced PDFs and PowerPoint
 from an `ExportDoc` for a long time and was simply wired to one producer, an
 investigation's `report_json`. The new part is a Markdown parser that builds the same
 `ExportDoc`, which is what these tests concentrate on — a renderer fed the wrong blocks
@@ -21,7 +21,7 @@ import pytest
 
 anydoc = pytest.importorskip("anydoc", reason="the 'docs' extra is not installed")
 
-from aughor.knowledge.render import (  # noqa: E402
+from pramanyx.knowledge.render import (  # noqa: E402
     FORMATS, RenderError, available_formats, parse_markdown, render, strip_inline,
 )
 
@@ -58,9 +58,9 @@ def _offline_embedder(monkeypatch):
     module-level cache that outlives monkeypatch, so a narrower fake would be compared
     against an earlier test's 768 and every write refused.
     """
-    monkeypatch.setattr("aughor.semantic.embedder.embed",
+    monkeypatch.setattr("pramanyx.semantic.embedder.embed",
                         lambda texts: [[0.0] * 768 for _ in texts])
-    monkeypatch.setattr("aughor.semantic.embedder.embedding_dim", lambda: 768)
+    monkeypatch.setattr("pramanyx.semantic.embedder.embedding_dim", lambda: 768)
 
 
 # ── Parsing to blocks ─────────────────────────────────────────────────────────
@@ -253,7 +253,7 @@ def test_a_hostile_filename_cannot_forge_a_download_header():
     ours. The connectors reaching `index_text` do not go through a multipart encoder
     at all, which is precisely why this must hold on its own.
     """
-    from aughor.routers.knowledge import _safe_download_name
+    from pramanyx.routers.knowledge import _safe_download_name
 
     hostile = _safe_download_name('evil" \r\nX-Injected: yes')
     assert '"' not in hostile

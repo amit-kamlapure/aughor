@@ -54,7 +54,7 @@ def test_agui_run_deep_clarify_pause_then_resume(client: TestClient, monkeypatch
             "question": "Which reading of refund rate?", "options": ["Governed", "As asked"]}) + "\n\n"
         yield 'data: {"type": "done"}\n\n'   # AT the gate the translator returns — never reached
 
-    monkeypatch.setattr("aughor.routers.agui.build_ask_stream",
+    monkeypatch.setattr("pramanyx.routers.agui.build_ask_stream",
                         lambda req, request: fake_ask(req, request))
 
     r = client.post("/agui/run", json=_fresh_input())
@@ -65,7 +65,7 @@ def test_agui_run_deep_clarify_pause_then_resume(client: TestClient, monkeypatch
     # The question came from the AG-UI user message; deep + connection rode in forwardedProps.
     assert captured == {"question": "why is the refund rate high?", "deep": True, "connection_id": "c"}
     # The gate surfaced BOTH as a lossless Custom AND a protocol-native interrupt outcome…
-    assert any(e["type"] == "CUSTOM" and e["name"] == "aughor.clarify_pending" for e in ev)
+    assert any(e["type"] == "CUSTOM" and e["name"] == "pramanyx.clarify_pending" for e in ev)
     finished = [e for e in ev if e["type"] == "RUN_FINISHED"]
     assert len(finished) == 1
     assert finished[0]["outcome"]["type"] == "interrupt"
@@ -86,7 +86,7 @@ def test_agui_run_deep_clarify_pause_then_resume(client: TestClient, monkeypatch
         yield 'data: {"type": "insight", "narrative": "Resolved to the governed reading.", "confidence": "high"}\n\n'
         yield 'data: {"type": "done", "inv_id": "invZ"}\n\n'
 
-    monkeypatch.setattr("aughor.routers.agui.build_resume_stream",
+    monkeypatch.setattr("pramanyx.routers.agui.build_resume_stream",
                         lambda inv_id, request, **kw: fake_resume(inv_id, request, **kw))
 
     r2 = client.post("/agui/run", json={
@@ -114,7 +114,7 @@ def test_agui_run_carries_starter_mode_and_purpose(client: TestClient, monkeypat
         captured["purpose"] = req.purpose
         yield 'data: {"type": "done"}\n\n'
 
-    monkeypatch.setattr("aughor.routers.agui.build_ask_stream",
+    monkeypatch.setattr("pramanyx.routers.agui.build_ask_stream",
                         lambda req, request: fake_ask(req, request))
 
     r = client.post("/agui/run", json=_fresh_input(forwardedProps={

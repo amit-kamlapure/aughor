@@ -3,7 +3,7 @@
 No DB, no LLM: ``_is_overview_question`` is pure regex + the pure measure/entity/grain
 helpers, and ``_overview_eligible`` reads a fake request plus the ``ask.overview`` flag
 (resolved against the hermetic temp ledger from conftest). We drive the flag with the
-``AUGHOR_ASK_OVERVIEW`` env var, including the explicit kill switch.
+``PRAMANYX_ASK_OVERVIEW`` env var, including the explicit kill switch.
 """
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.routers.investigations import _is_overview_question, _overview_eligible
+from pramanyx.routers.investigations import _is_overview_question, _overview_eligible
 
 
 # ── _is_overview_question ─────────────────────────────────────────────────────

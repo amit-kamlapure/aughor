@@ -18,13 +18,13 @@ from typing import Optional
 import pytest
 from pydantic import BaseModel
 
-from aughor.llm.provider import LLMProvider, _json_shape
+from pramanyx.llm.provider import LLMProvider, _json_shape
 
 
 def _streamed_models():
     """Every response model the codebase hands to `complete_streaming`."""
-    from aughor.agent.prompts_investigate import ADASynthesisModel, SynthesisAsk
-    from aughor.routers.investigations import _ChatAnswer, _PostAnswer
+    from pramanyx.agent.prompts_investigate import ADASynthesisModel, SynthesisAsk
+    from pramanyx.routers.investigations import _ChatAnswer, _PostAnswer
     return [ADASynthesisModel, SynthesisAsk, _ChatAnswer, _PostAnswer]
 
 
@@ -36,7 +36,7 @@ _BOUND_PER_CALL = {"_ask_model": {"ADASynthesisModel", "SynthesisAsk"}}
 def test_the_models_checked_here_are_every_streamed_call_site():
     """The population is read from the source, so a new streamed call cannot slip past."""
     names: set[str] = set()
-    for path in (Path(__file__).resolve().parents[2] / "aughor").rglob("*.py"):
+    for path in (Path(__file__).resolve().parents[2] / "pramanyx").rglob("*.py"):
         for node in ast.walk(ast.parse(path.read_text())):
             if isinstance(node, ast.Call) and getattr(node.func, "attr", "") == "complete_streaming":
                 names |= {kw.value.id for kw in node.keywords
@@ -74,7 +74,7 @@ def test_every_field_at_every_depth_is_named(model):
 
 
 def test_the_synthesis_shape_spells_out_its_objects_and_choices():
-    from aughor.agent.prompts_investigate import ADASynthesisModel
+    from pramanyx.agent.prompts_investigate import ADASynthesisModel
     text = LLMProvider._json_stream_instruction(ADASynthesisModel)
     assert ('"recommendations": [{"action": string, "expected_impact": string, '
             '"owner": string, "timeline": string}]') in text
@@ -109,7 +109,7 @@ def test_a_recursive_model_is_named_not_expanded_forever():
 def test_an_object_shaped_synthesis_needs_no_blocking_redo(monkeypatch):
     """What the instruction buys: the model writes the shape, the terminal validation
     passes, and the blocking fallback is never paid for."""
-    from aughor.agent.prompts_investigate import ADASynthesisModel
+    from pramanyx.agent.prompts_investigate import ADASynthesisModel
 
     body = ('{"headline": "Orders fell 9%", "executive_summary": "Orders fell **9%**.", '
             '"total_change_label": "-9%", "attribution_waterfall": [{"cause": "fewer visits", '

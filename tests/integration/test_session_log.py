@@ -15,16 +15,16 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from aughor.kernel.ledger import Ledger
-from aughor.obs import session_log
+from pramanyx.kernel.ledger import Ledger
+from pramanyx.obs import session_log
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _stub_providers(monkeypatch):
     """Deterministic coder/narrator so a turn completes without a live model."""
-    import aughor.llm.provider as prov
-    from aughor.routers.investigations import _ChatAnswer, _PostAnswer
+    import pramanyx.llm.provider as prov
+    from pramanyx.routers.investigations import _ChatAnswer, _PostAnswer
 
     class FakeCoder:
         def complete(self, system=None, user=None, response_model=None, temperature=0.1, **kw):
@@ -94,9 +94,9 @@ def _own_the_log(monkeypatch):
     using. Pinned to the fast path explicitly — a binding that cannot call tools, the turn the
     conversation never serves — and `route_mix` above is precisely the reader that counts BOTH
     shapes, and it sets its own events rather than driving a live turn."""
-    from aughor.obs import prompt_window
+    from pramanyx.obs import prompt_window
 
-    monkeypatch.setattr("aughor.agent.converse_tools.binding_calls_tools", lambda: False)
+    monkeypatch.setattr("pramanyx.agent.converse_tools.binding_calls_tools", lambda: False)
     Ledger.default().session_events_clear()
     prompt_window.close_window()
     yield
@@ -157,8 +157,8 @@ def test_the_quick_turns_streamed_model_calls_run_under_its_trace(
     context, so both model calls ran with no trace — every quick turn's two streamed rows were dropped (2026-11-09)."""
     from types import SimpleNamespace
 
-    import aughor.llm.provider as prov
-    from aughor import telemetry
+    import pramanyx.llm.provider as prov
+    from pramanyx import telemetry
     _stub_providers(monkeypatch)
     stub = prov.get_provider
     seen: dict[str, str] = {}
@@ -204,7 +204,7 @@ def test_chat_door_is_also_covered(client: TestClient, builtin_conn_id: str, mon
 def test_tool_call_is_written_on_entry(monkeypatch):
     """The reason this is an event log and not a span table: work that never
     returns still leaves a call. A span row only appears after the body does."""
-    from aughor import telemetry
+    from pramanyx import telemetry
 
     with telemetry.bind_trace("t-hang"):
         cm = telemetry.mlflow_tool_span("sql.execute", {"sql": "SELECT 1"})
@@ -219,7 +219,7 @@ def test_tool_call_is_written_on_entry(monkeypatch):
 def test_span_ids_join_to_task_history(monkeypatch):
     """Both local sinks share one span id, so the two tables describe the same
     work under the same identifier and can be joined."""
-    from aughor import telemetry
+    from pramanyx import telemetry
 
     with telemetry.bind_trace("t-join"):
         with telemetry.mlflow_tool_span("sql.execute", {"sql": "SELECT 1"}):
@@ -232,7 +232,7 @@ def test_span_ids_join_to_task_history(monkeypatch):
 
 
 def test_failure_records_ok_false_and_error_class(monkeypatch):
-    from aughor import telemetry
+    from pramanyx import telemetry
 
     with telemetry.bind_trace("t-err"):
         with pytest.raises(ValueError):
@@ -252,7 +252,7 @@ def test_bind_trace_is_independent_of_obs_flags(monkeypatch):
     downstream could correlate — that coupling was the bug."""
     # Forced OFF explicitly: since CR0 the session log defaults on, and this
     # test's claim is precisely that binding works with the sinks off.
-    from aughor import telemetry
+    from pramanyx import telemetry
 
     assert telemetry.current_trace_id() == ""
     with telemetry.bind_trace("t-bound"):
@@ -269,7 +269,7 @@ def test_a_model_call_without_a_trace_is_written_under_what_made_it(monkeypatch)
     import threading
     from datetime import datetime, timezone
 
-    from aughor import telemetry
+    from pramanyx import telemetry
     assert telemetry.current_trace_id() == ""
     session_log.emit(session_log.LLM_CALL, name="orphan")
     row = [e for e in _all_events() if e["name"] == "orphan"]
@@ -290,7 +290,7 @@ def test_a_model_call_without_a_trace_is_written_under_what_made_it(monkeypatch)
 def test_any_other_event_without_a_trace_is_not_written_but_counted(monkeypatch):
     """A step or a span is a piece of a run; pieces of unrelated work under one day's trace would read as one run.
     Not written — and counted, never dropped silently."""
-    from aughor.stats import stats
+    from pramanyx.stats import stats
     key = "obs.session_log.untraced_not_written.user_request"
     before = stats.snapshot()["counters"].get(key, 0)
     session_log.emit(session_log.USER_REQUEST, name="orphan")
@@ -299,8 +299,8 @@ def test_any_other_event_without_a_trace_is_not_written_but_counted(monkeypatch)
 
 
 def test_identity_rides_the_ambient_contextvars(monkeypatch):
-    from aughor import telemetry
-    from aughor.org.context import reset_session_id, set_session_id
+    from pramanyx import telemetry
+    from pramanyx.org.context import reset_session_id, set_session_id
 
     token = set_session_id("sess-42")
     try:
@@ -314,7 +314,7 @@ def test_identity_rides_the_ambient_contextvars(monkeypatch):
 
 
 def test_folded_views_summarise_a_run(monkeypatch):
-    from aughor import telemetry
+    from pramanyx import telemetry
 
     with telemetry.bind_trace("t-fold"):
         session_log.emit(session_log.USER_REQUEST, name="ask",
@@ -351,7 +351,7 @@ def test_retention_prunes_by_age_and_row_cap(tmp_path):
 
 
 def test_prune_disabled_when_both_limits_are_zero(monkeypatch):
-    from aughor import telemetry
+    from pramanyx import telemetry
 
     with telemetry.bind_trace("t-keep"):
         session_log.emit(session_log.TOOL_CALL, name="x")
@@ -365,8 +365,8 @@ def test_llm_calls_are_recorded_per_call(monkeypatch):
     (telemetry.log_generation existed with zero call sites)."""
     from types import SimpleNamespace
 
-    from aughor import telemetry
-    from aughor.llm.provider import LLMProvider
+    from pramanyx import telemetry
+    from pramanyx.llm.provider import LLMProvider
     from pydantic import BaseModel
 
     class _Out(BaseModel):
@@ -400,8 +400,8 @@ def test_fallback_model_swap_is_visible(monkeypatch):
     quietly invalidate any measurement attributing the result to the primary."""
     from types import SimpleNamespace
 
-    from aughor import telemetry
-    from aughor.llm.provider import LLMProvider
+    from pramanyx import telemetry
+    from pramanyx.llm.provider import LLMProvider
     from pydantic import BaseModel
 
     class _Out(BaseModel):
@@ -428,11 +428,11 @@ def test_failed_llm_call_is_recorded(monkeypatch):
     """The record used to be written only after the call returned, so a model
     that failed past its retries left NO row — making "which model fails"
     unanswerable exactly when it matters."""
-    monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "0")
+    monkeypatch.setenv("PRAMANYX_LLM_MAX_RETRIES", "0")
     from types import SimpleNamespace
 
-    from aughor import telemetry
-    from aughor.llm.provider import LLMProvider
+    from pramanyx import telemetry
+    from pramanyx.llm.provider import LLMProvider
     from pydantic import BaseModel
 
     class _Out(BaseModel):
@@ -468,8 +468,8 @@ def test_unreported_usage_is_null_not_zero(monkeypatch):
     every cost aggregate quietly wrong, so it stays NULL and says so."""
     from types import SimpleNamespace
 
-    from aughor import telemetry
-    from aughor.llm.provider import LLMProvider
+    from pramanyx import telemetry
+    from pramanyx.llm.provider import LLMProvider
     from pydantic import BaseModel
 
     class _Out(BaseModel):
@@ -495,11 +495,11 @@ def test_unreported_usage_is_null_not_zero(monkeypatch):
 def test_retries_are_counted(monkeypatch):
     """A model that only ever succeeds on its second attempt used to look
     identical to one that never struggles — the count was local and discarded."""
-    monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "3")
+    monkeypatch.setenv("PRAMANYX_LLM_MAX_RETRIES", "3")
     from types import SimpleNamespace
 
-    from aughor import telemetry
-    from aughor.llm import provider as prov
+    from pramanyx import telemetry
+    from pramanyx.llm import provider as prov
     from pydantic import BaseModel
 
     class _Out(BaseModel):
@@ -531,7 +531,7 @@ def test_retries_are_counted(monkeypatch):
 def test_tool_results_carry_row_count(monkeypatch):
     """"The query ran" and "the query returned nothing" are different facts, and
     the zero-row case is usually the interesting one."""
-    from aughor import telemetry
+    from pramanyx import telemetry
 
     with telemetry.bind_trace("t-rows"):
         attrs = {"sql": "SELECT 1", "query_id": "chat"}
@@ -562,8 +562,8 @@ def _one_llm_call(trace: str, *, system="SYS", user="USER"):
     """Drive one successful model call and return its recorded event."""
     from types import SimpleNamespace
 
-    from aughor import telemetry
-    from aughor.llm.provider import LLMProvider
+    from pramanyx import telemetry
+    from pramanyx.llm.provider import LLMProvider
     from pydantic import BaseModel
 
     class _Out(BaseModel):
@@ -582,7 +582,7 @@ def _one_llm_call(trace: str, *, system="SYS", user="USER"):
 
 def _open_capture(calls: int = 20):
     """Open a prompt-capture window for the test and guarantee it is closed after."""
-    from aughor.obs import prompt_window
+    from pramanyx.obs import prompt_window
     prompt_window.open_window(calls=calls, minutes=5, opened_by="test")
     return prompt_window
 
@@ -590,7 +590,7 @@ def _open_capture(calls: int = 20):
 def test_prompt_capture_off_by_default(monkeypatch):
     """The session log is metadata by default. Content is a separate decision
     with a different blast radius, so it needs its own deliberate window."""
-    from aughor.obs import prompt_window
+    from pramanyx.obs import prompt_window
     prompt_window.close_window()
 
     payload = _one_llm_call("t-nocapture")["payload"]
@@ -629,7 +629,7 @@ def test_a_window_closes_itself_once_its_budget_is_spent(monkeypatch):
 def test_truncated_prompts_say_so(monkeypatch):
     """A silently shortened prompt reproduces a different call than the one that
     ran — worse than not capturing it, because it looks authoritative."""
-    monkeypatch.setenv("AUGHOR_OBS_PROMPT_MAX_CHARS", "10")
+    monkeypatch.setenv("PRAMANYX_OBS_PROMPT_MAX_CHARS", "10")
     pw = _open_capture()
     try:
         payload = _one_llm_call("t-trunc", system="x" * 500, user="short")["payload"]
@@ -642,12 +642,12 @@ def test_truncated_prompts_say_so(monkeypatch):
 
 def test_failed_call_still_captures_the_prompt(monkeypatch):
     """The failing call is precisely the one you want to reproduce."""
-    monkeypatch.setenv("AUGHOR_LLM_MAX_RETRIES", "0")
+    monkeypatch.setenv("PRAMANYX_LLM_MAX_RETRIES", "0")
     _open_capture()
     from types import SimpleNamespace
 
-    from aughor import telemetry
-    from aughor.llm.provider import LLMProvider
+    from pramanyx import telemetry
+    from pramanyx.llm.provider import LLMProvider
     from pydantic import BaseModel
 
     class _Out(BaseModel):
@@ -673,7 +673,7 @@ def test_journal_events_carry_the_ambient_trace(monkeypatch):
     """All ~29 event kinds correlate at once because emit() defaults trace_id
     from the ambient run — no call site was touched. Before this, `node.span`
     smuggled the trace into job_id and nothing else in the journal correlated."""
-    from aughor import telemetry
+    from pramanyx import telemetry
 
     led = Ledger.default()
     with telemetry.bind_trace("t-journal"):
@@ -689,8 +689,8 @@ def test_audited_sql_carries_the_ambient_trace(monkeypatch, tmp_path):
     """audit_log sees EVERY execution, including the quick path that bypasses the
     span-emitting executor — so it is where "which run ran this SQL" becomes
     answerable for all paths at once."""
-    from aughor import telemetry
-    from aughor.security import audit as audit_mod
+    from pramanyx import telemetry
+    from pramanyx.security import audit as audit_mod
     # Not a reload: that leaves the rest of the run with second copies of the module's classes (a counter
     # holding its batch in one, read through the other) and this test's path in place of the suite's.
     monkeypatch.setattr(audit_mod, "_DB_PATH", tmp_path / "audit.db")
@@ -707,8 +707,8 @@ def test_background_jobs_get_a_trace(monkeypatch):
     binds the job id as their trace — otherwise their spans land uncorrelated."""
     import asyncio
 
-    from aughor import telemetry
-    from aughor.kernel.jobs import JobKernel
+    from pramanyx import telemetry
+    from pramanyx.kernel.jobs import JobKernel
 
     seen: dict[str, str] = {}
 
@@ -733,8 +733,8 @@ def test_ask_trace_wins_over_the_job_id(monkeypatch):
     run's trace through the context copy — the job id must not override it."""
     import asyncio
 
-    from aughor import telemetry
-    from aughor.kernel.jobs import JobKernel
+    from pramanyx import telemetry
+    from pramanyx.kernel.jobs import JobKernel
 
     seen: dict[str, str] = {}
 
@@ -755,8 +755,8 @@ def test_ask_trace_wins_over_the_job_id(monkeypatch):
 
 
 def test_session_events_is_queryable_as_an_ops_table():
-    """The table joins the curated aughor_ops surface, so Deep Analysis can
+    """The table joins the curated pramanyx_ops surface, so Deep Analysis can
     investigate the agent's own behaviour with NL2SQL — the same one-line move
     task_history already proved."""
-    from aughor.db.connection import AughorOpsConnection
-    assert "session_events" in AughorOpsConnection._OPS_TABLES
+    from pramanyx.db.connection import PramanyxOpsConnection
+    assert "session_events" in PramanyxOpsConnection._OPS_TABLES

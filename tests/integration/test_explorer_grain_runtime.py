@@ -57,14 +57,14 @@ def _schema_text(table_cols: dict) -> str:
 def _run_phase8_with_forced_sql(monkeypatch, forced_sql: str) -> list[str]:
     """Drive the REAL `_pass_questions` loop with the coder forced to
     emit `forced_sql` (and a fake interpreter, reached only if the guard fails to
-    drop). Returns the captured `aughor.explorer.agent` log messages. Only the LLM
+    drop). Returns the captured `pramanyx.explorer.agent` log messages. Only the LLM
     is forced — the question→execute→lint→drop path is the real one."""
-    import aughor.llm.provider as prov
-    import aughor.ontology.store as ostore
-    import aughor.business_profile.infer as pinfer
-    import aughor.sql.writer as wmod
-    from aughor.db.connection import open_connection_for
-    from aughor.explorer.agent import SchemaExplorer
+    import pramanyx.llm.provider as prov
+    import pramanyx.ontology.store as ostore
+    import pramanyx.business_profile.infer as pinfer
+    import pramanyx.sql.writer as wmod
+    from pramanyx.db.connection import open_connection_for
+    from pramanyx.explorer.agent import SchemaExplorer
 
     # Business-profile inference is a LIVE LLM call, degrade-to-None on failure. Pin it to None
     # so the loop takes the generic (no-profile) path and makes zero attempts — the grain guard
@@ -72,7 +72,7 @@ def _run_phase8_with_forced_sql(monkeypatch, forced_sql: str) -> list[str]:
     # this removes the attempt, the fake catches anything else that tries to reach the network.
     monkeypatch.setattr(pinfer, "get_or_infer", lambda cid, schema_name=None: None)
     # `_ENABLED` is read at import, so setenv is a no-op here — patch the attribute (E4c).
-    monkeypatch.setattr("aughor.semantic.autoseed._ENABLED", False)
+    monkeypatch.setattr("pramanyx.semantic.autoseed._ENABLED", False)
 
     # SqlWriter that reports the chasm schema (the guard reads sql_writer.table_cols);
     # fix() is unused because the fake query "succeeds".
@@ -104,7 +104,7 @@ def _run_phase8_with_forced_sql(monkeypatch, forced_sql: str) -> list[str]:
                 pass
 
     handler = _Cap()
-    lg = logging.getLogger("aughor.explorer.agent")
+    lg = logging.getLogger("pramanyx.explorer.agent")
     lg.addHandler(handler)
     lg.setLevel(logging.INFO)
     try:
@@ -140,8 +140,8 @@ def _run_phase8_with_forced_sql(monkeypatch, forced_sql: str) -> list[str]:
         monkeypatch.setattr(prov, "get_provider", lambda role="coder": FakeLLM())
         # the run's question budget and pace are not what this test is about: a few slots, no pause — a run now asks
         # up to `explorer.budget.COVERAGE_QUERIES` questions, which this 120 s deadlock guard was never sized for
-        monkeypatch.setattr("aughor.explorer.budget.domain_cap", lambda n: 4)
-        monkeypatch.setattr("aughor.explorer.agent._RATE_SECONDS_INTEL", 0.0)
+        monkeypatch.setattr("pramanyx.explorer.budget.domain_cap", lambda n: 4)
+        monkeypatch.setattr("pramanyx.explorer.agent._RATE_SECONDS_INTEL", 0.0)
         asyncio.run(asyncio.wait_for(ex._pass_questions(), timeout=120))
     finally:
         lg.removeHandler(handler)
@@ -173,9 +173,9 @@ def test_explorer_phase7_emits_cross_table_insight(monkeypatch) -> None:
     findings never surfaced live. Drives the REAL `_pass_patterns` method — only
     the DB query (`_run`) and rate-gate are stubbed; the insight creation + the
     `_emit_insight` call site are the real ones."""
-    import aughor.kernel.ledger as ledger_mod
-    from aughor.db.connection import open_connection_for
-    from aughor.explorer.agent import SchemaExplorer
+    import pramanyx.kernel.ledger as ledger_mod
+    from pramanyx.db.connection import open_connection_for
+    from pramanyx.explorer.agent import SchemaExplorer
 
     monkeypatch.setattr(ledger_mod.Ledger, "default",
                         classmethod(lambda cls: SimpleNamespace(artifact_write=lambda *a, **k: None)))

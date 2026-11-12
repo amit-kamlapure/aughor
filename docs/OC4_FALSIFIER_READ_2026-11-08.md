@@ -1,7 +1,7 @@
 # Arc OC-4's falsifier, read (2026-11-08)
 
 The falsifier for OC-4 was pre-registered on 2026-10-10 (ROADMAP §3.56, `PENDING.md` "OC-4 · the falsifier"). It
-became readable on 2026-11-07. The scheduled task written to read it (`aughor-oc4-falsifier-read`) ran on 2026-11-07 at
+became readable on 2026-11-07. The scheduled task written to read it (`pramanyx-oc4-falsifier-read`) ran on 2026-11-07 at
 21:28 UTC but was interrupted at its first command and left no report. This reading was taken by hand on 2026-11-08, at
 the user's *"Yes, do both"*. It is read-only: one `GET /ontology/census` on the live install, and one
 `GET /ledger/v1/claims` to see who made the claims it counts. No model call, and no setting changed.

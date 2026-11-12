@@ -18,8 +18,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.knowledge import health
-from aughor.semantic import embedder
+from pramanyx.knowledge import health
+from pramanyx.semantic import embedder
 
 
 @pytest.fixture()
@@ -27,14 +27,14 @@ def plane(monkeypatch):
     """Compose a knowledge plane out of its three failure points."""
     def _set(*, embed_ok=True, store_ok=True, chunks=10, docs=2, points=None):
         if embed_ok:
-            monkeypatch.setattr("aughor.semantic.embedder.embed_one", lambda _t: [0.0] * 768)
+            monkeypatch.setattr("pramanyx.semantic.embedder.embed_one", lambda _t: [0.0] * 768)
         else:
             def _boom(_t):
                 raise ConnectionError("connection refused")
-            monkeypatch.setattr("aughor.semantic.embedder.embed_one", _boom)
-        monkeypatch.setattr("aughor.semantic.vector_store.backend", lambda: "qdrant")
-        monkeypatch.setattr("aughor.semantic.vector_store.available", lambda: store_ok)
-        monkeypatch.setattr("aughor.semantic.vector_store.collection_count",
+            monkeypatch.setattr("pramanyx.semantic.embedder.embed_one", _boom)
+        monkeypatch.setattr("pramanyx.semantic.vector_store.backend", lambda: "qdrant")
+        monkeypatch.setattr("pramanyx.semantic.vector_store.available", lambda: store_ok)
+        monkeypatch.setattr("pramanyx.semantic.vector_store.collection_count",
                             lambda _c: chunks)
         # The width the store holds, matching this fixture's fake embedder. Without it
         # `embedder_status` reads a REAL Qdrant for the live collection's width and
@@ -42,10 +42,10 @@ def plane(monkeypatch):
         # real collection happened to be 768 too, and the day the corpus was re-embedded
         # at another width these tests failed on a laptop and stayed green in CI, which
         # runs no Qdrant at all. A test that passes for want of a server is not passing.
-        monkeypatch.setattr("aughor.semantic.vector_store.collection_dim", lambda _c: 768)
-        monkeypatch.setattr("aughor.semantic.vector_store.scroll_payloads",
+        monkeypatch.setattr("pramanyx.semantic.vector_store.collection_dim", lambda _c: 768)
+        monkeypatch.setattr("pramanyx.semantic.vector_store.scroll_payloads",
                             lambda _c, limit=0: list(points or []))
-        monkeypatch.setattr("aughor.knowledge.indexer.list_documents",
+        monkeypatch.setattr("pramanyx.knowledge.indexer.list_documents",
                             lambda: [{"doc_id": f"d{i}", "chunk_count": 1}
                                      for i in range(docs)])
     return _set
@@ -86,8 +86,8 @@ def test_a_width_mismatch_is_not_reported_as_an_outage(plane, monkeypatch):
     unreachable". That sends a person to check a service that is fine, and away from the
     re-embed that is actually needed."""
     plane()
-    monkeypatch.setattr("aughor.semantic.vector_store.collection_dim", lambda _c: 768)
-    monkeypatch.setattr("aughor.semantic.embedder.embed_one", lambda _t: [0.0] * 3072)
+    monkeypatch.setattr("pramanyx.semantic.vector_store.collection_dim", lambda _c: 768)
+    monkeypatch.setattr("pramanyx.semantic.embedder.embed_one", lambda _t: [0.0] * 3072)
 
     status = health.knowledge_status()
 
@@ -139,7 +139,7 @@ def test_chunks_in_the_store_that_no_document_lists_are_orphans(plane):
 def test_a_document_shorter_in_the_store_than_it_claims_is_reported(plane, monkeypatch):
     """The corpus looks complete and answers as if the missing part were irrelevant."""
     plane(docs=0, points=[])
-    monkeypatch.setattr("aughor.knowledge.indexer.list_documents",
+    monkeypatch.setattr("pramanyx.knowledge.indexer.list_documents",
                         lambda: [{"doc_id": "big", "chunk_count": 59}])
 
     drift = health.consistency_status()

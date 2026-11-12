@@ -1,4 +1,4 @@
-"""Plane-conformance tests for the Trust plane (AL-01) — `aughor/trust`.
+"""Plane-conformance tests for the Trust plane (AL-01) — `pramanyx/trust`.
 
 "Is the Trust plane correct?" as a runnable question, independent of any capability: the façade
 must (1) BLOCK mutating / destructive / disallowed-function SQL decisively, (2) surface E1
@@ -8,9 +8,9 @@ consumer — `/query/validate` — calls the plane behind the `trust.verify_faca
 """
 from __future__ import annotations
 
-from aughor.trust import verify, Scope, Verdict
-from aughor.sql import readonly
-from aughor.sql.trust_checks import run_trust_checks
+from pramanyx.trust import verify, Scope, Verdict
+from pramanyx.sql import readonly
+from pramanyx.sql.trust_checks import run_trust_checks
 
 
 # ── BLOCK: read-only / mutation is the decisive gate (the SEC-02 dimension) ──────────────

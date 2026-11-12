@@ -1,12 +1,12 @@
 """IN-4 — the Fernet key has one resolver, and an existing key is never abandoned.
 
-This file is the sharpest hazard in the data-home wave. `data/.aughor_key` is gitignored, so
+This file is the sharpest hazard in the data-home wave. `data/.pramanyx_key` is gitignored, so
 it is generated state and must travel with the rest of it — and it decrypts every stored DSN.
 Before this, its path was computed twice, in two modules, from anchors a different number of
 `.parent` hops apart, with no override on either:
 
-    aughor/secretvault.py:20   Path(__file__).parent.parent        / "data" / ".aughor_key"
-    aughor/db/registry.py:29   Path(__file__).parent.parent.parent / "data" / ".aughor_key"
+    pramanyx/secretvault.py:20   Path(__file__).parent.parent        / "data" / ".pramanyx_key"
+    pramanyx/db/registry.py:29   Path(__file__).parent.parent.parent / "data" / ".pramanyx_key"
 
 The failure mode is silent. Resolving to a path where no key exists does not raise — it
 GENERATES one, and every connection's DSN becomes undecryptable with no error until somebody
@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.db import keyfile
+from pramanyx.db import keyfile
 
 
 @pytest.fixture
@@ -26,9 +26,9 @@ def isolated(monkeypatch, tmp_path):
     what made the first hand-probe of this resolver misleading."""
     state = tmp_path / "state"
     state.mkdir()
-    legacy = tmp_path / "checkout-data" / ".aughor_key"
+    legacy = tmp_path / "checkout-data" / ".pramanyx_key"
     legacy.parent.mkdir()
-    monkeypatch.setenv("AUGHOR_STATE_DIR", str(state))
+    monkeypatch.setenv("PRAMANYX_STATE_DIR", str(state))
     monkeypatch.delenv(keyfile.KEY_FILE_ENV, raising=False)
     monkeypatch.setattr(keyfile, "LEGACY_KEY_FILE", legacy)
     return state, legacy
@@ -97,8 +97,8 @@ class TestBothModulesShareIt:
     def test_secretvault_encrypts_what_the_registry_can_decrypt(self, isolated):
         """The integration guarantee. Two modules computed this path separately; if they ever
         resolve differently, a DSN written by one is unreadable by the other."""
-        from aughor import secretvault
-        from aughor.db import registry
+        from pramanyx import secretvault
+        from pramanyx.db import registry
 
         token = secretvault.encrypt_secret("postgres://u:p@h/db")
         assert token and token.startswith("enc:v1:")
@@ -110,5 +110,5 @@ class TestBothModulesShareIt:
         kept it: bound at import, it snapshotted an anchor the resolver re-decides per call, so
         it disagreed with `keyfile.key_file()` as soon as a test moved the anchor — a name that
         lies is worse than no name. Nothing read it once `_get_fernet` moved to the resolver."""
-        from aughor.db import registry
+        from pramanyx.db import registry
         assert not hasattr(registry, "KEY_FILE")

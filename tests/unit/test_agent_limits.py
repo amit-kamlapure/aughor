@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.kernel.agents import (
+from pramanyx.kernel.agents import (
     Knob,
     effective_governance,
     effective_limit,
@@ -60,12 +60,12 @@ def test_curator_declares_the_two_warehouse_sized_knobs():
 
 def test_autoseed_default_mirrors_the_profilers_table_cap():
     """The tables that get words are the tables the explorer can see — one number, pinned."""
-    from aughor.tools.profiler import MAX_PROFILED_TABLES
+    from pramanyx.tools.profiler import MAX_PROFILED_TABLES
     assert get_knob(CURATOR, AUTOSEED).default == MAX_PROFILED_TABLES
 
 
 def test_no_other_charter_declares_knobs_yet():
-    from aughor.kernel.agents import list_charters
+    from pramanyx.kernel.agents import list_charters
     assert [c.id for c in list_charters() if c.knobs] == [CURATOR]
 
 
@@ -105,7 +105,7 @@ def test_out_of_range_or_non_integer_is_refused_naming_the_range(value):
 def test_a_stored_value_outside_todays_range_is_clamped_on_read():
     """The store is history, the registry is the law: a value written under a wider
     range yesterday reads as today's bound, never as a silent unbounded."""
-    from aughor.kernel.agents import _APP_SCOPE, _GOV_STORE, _ledger
+    from pramanyx.kernel.agents import _APP_SCOPE, _GOV_STORE, _ledger
     _ledger().kv_put(_GOV_STORE, f"{_APP_SCOPE}:{CURATOR}", {"limits": {AUTOSEED: 999_999,
                                                                           "gone_knob": 3}})
     assert effective_limit(CURATOR, AUTOSEED) == 10_000
@@ -115,7 +115,7 @@ def test_a_stored_value_outside_todays_range_is_clamped_on_read():
 def test_effective_limit_fails_safe_to_the_default_never_to_unbounded(monkeypatch):
     def boom(*a, **k):
         raise RuntimeError("ledger down")
-    monkeypatch.setattr("aughor.kernel.agents.effective_governance", boom)
+    monkeypatch.setattr("pramanyx.kernel.agents.effective_governance", boom)
     assert effective_limit(CURATOR, AUTOSEED) == 60
     with pytest.raises(KeyError):
         effective_limit(CURATOR, "not_a_knob")
@@ -132,7 +132,7 @@ def _blocks(n: int) -> str:
 
 
 def test_eligible_tables_are_the_largest_by_rows_ties_and_unknowns_by_name():
-    from aughor.semantic.autoseed import _parse_table_blocks, eligible_tables
+    from pramanyx.semantic.autoseed import _parse_table_blocks, eligible_tables
     tb = _parse_table_blocks("TABLE: a  (10 rows)\n  x INT\n\nTABLE: b (1,200 rows) [x]\n  x INT\n\n"
                              "TABLE: c\n  x INT\n\nTABLE: d  (500 rows)\n  x INT\n\n"
                              "TABLE: e  (500 rows)\n  x INT\n")
@@ -146,7 +146,7 @@ class _Provider:
         self.seen: list[str] = []
 
     def complete(self, *, system, user, response_model, temperature):
-        from aughor.semantic.autoseed import TableAnnotation
+        from pramanyx.semantic.autoseed import TableAnnotation
         self.seen.append(user.splitlines()[2].split()[1])       # "TABLE: tN  (…)"
         return TableAnnotation(description="d", grain="one row per id", columns=[])
 
@@ -155,16 +155,16 @@ class _Provider:
 def seed_env(monkeypatch, tmp_path):
     """Drive `_seed` for real: a counting provider, an isolated glossary, no data probes."""
     prov = _Provider()
-    monkeypatch.setattr("aughor.llm.provider.get_provider", lambda *a, **k: prov)
-    monkeypatch.setattr("aughor.semantic.autoseed.verify_grain_claim",
+    monkeypatch.setattr("pramanyx.llm.provider.get_provider", lambda *a, **k: prov)
+    monkeypatch.setattr("pramanyx.semantic.autoseed.verify_grain_claim",
                         lambda grain, *a, **k: grain)
-    monkeypatch.setenv("AUGHOR_GLOSSARY_PATH", str(tmp_path / "glossary.yaml"))
-    monkeypatch.setenv("AUGHOR_GLOSSARY_SEED_PATH", str(tmp_path / "seed.yaml"))
+    monkeypatch.setenv("PRAMANYX_GLOSSARY_PATH", str(tmp_path / "glossary.yaml"))
+    monkeypatch.setenv("PRAMANYX_GLOSSARY_SEED_PATH", str(tmp_path / "seed.yaml"))
     return prov
 
 
 def test_autoseed_spends_one_call_per_table_only_up_to_the_cap(seed_env):
-    from aughor.semantic import autoseed
+    from pramanyx.semantic import autoseed
     set_governance(CURATOR, limits={AUTOSEED: 2})
     wrote = autoseed._seed(_blocks(7), schema=None, connection_id="conn-cap", conn=None)
     assert wrote is True
@@ -174,14 +174,14 @@ def test_autoseed_spends_one_call_per_table_only_up_to_the_cap(seed_env):
 def test_autoseed_cap_mutation_check_the_cap_is_what_bounds_the_calls(seed_env):
     """Same warehouse, cap raised past the table count → every table is a call. Proves
     the previous test passed BECAUSE of the cap, not because the loop happened to stop."""
-    from aughor.semantic import autoseed
+    from pramanyx.semantic import autoseed
     set_governance(CURATOR, limits={AUTOSEED: 100})
     autoseed._seed(_blocks(7), schema=None, connection_id="conn-nocap", conn=None)
     assert len(seed_env.seen) == 7
 
 
 def test_autoseed_cap_zero_makes_no_model_call_and_writes_nothing(seed_env):
-    from aughor.semantic import autoseed
+    from pramanyx.semantic import autoseed
     set_governance(CURATOR, limits={AUTOSEED: 0})
     wrote = autoseed._seed(_blocks(3), schema=None, connection_id="conn-off", conn=None)
     assert wrote is False and seed_env.seen == []
@@ -190,7 +190,7 @@ def test_autoseed_cap_zero_makes_no_model_call_and_writes_nothing(seed_env):
 def test_autoseed_cap_is_on_the_connection_not_a_per_run_allowance(seed_env):
     """A second build under the same cap re-selects the SAME largest tables (now already
     seeded) and spends nothing — the cap cannot creep to every table over rebuilds."""
-    from aughor.semantic import autoseed
+    from pramanyx.semantic import autoseed
     set_governance(CURATOR, limits={AUTOSEED: 2})
     autoseed._seed(_blocks(7), schema=None, connection_id="conn-creep", conn=None)
     first = list(seed_env.seen)
@@ -206,13 +206,13 @@ def _schema(n: int) -> str:
 
 
 def test_cap_schema_is_byte_identical_under_the_limit():
-    from aughor.business_profile.infer import cap_schema
+    from pramanyx.business_profile.infer import cap_schema
     s = _schema(8)
     assert cap_schema(s, len(s)) == s and cap_schema(s, 0) == s
 
 
 def test_cap_schema_keeps_the_largest_tables_in_render_order_and_says_the_cut():
-    from aughor.business_profile.infer import cap_schema
+    from pramanyx.business_profile.infer import cap_schema
     s = _schema(20)
     assert len(s) > 700
     out = cap_schema(s, 600)
@@ -226,7 +226,7 @@ def test_cap_schema_keeps_the_largest_tables_in_render_order_and_says_the_cut():
 
 
 def test_cap_schema_never_returns_a_schema_with_no_table():
-    from aughor.business_profile.infer import cap_schema
+    from pramanyx.business_profile.infer import cap_schema
     one = "TABLE: wide  (5 rows)\n" + "\n".join(f"  c{i}  INT" for i in range(300))
     out = cap_schema(one, 500)
     assert len(out) <= 500 and out.startswith("TABLE: wide") and "truncated" in out
@@ -234,14 +234,14 @@ def test_cap_schema_never_returns_a_schema_with_no_table():
 
 def test_profile_context_reads_the_curator_knob(monkeypatch):
     """The knob is what `_gather_context` applies — a mutation of the knob moves the text."""
-    from aughor.business_profile import infer
+    from pramanyx.business_profile import infer
 
     class _Db:
         def get_schema(self):
             return _schema(12)
-    monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: _Db())
-    monkeypatch.setattr("aughor.semantic.glossary.apply_glossary", lambda s, **k: s)
-    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", lambda *a, **k: None)
+    monkeypatch.setattr("pramanyx.db.connection.open_connection_for", lambda cid: _Db())
+    monkeypatch.setattr("pramanyx.semantic.glossary.apply_glossary", lambda s, **k: s)
+    monkeypatch.setattr("pramanyx.ontology.store.load_latest_ontology", lambda *a, **k: None)
     full, _ = infer._gather_context("conn-p", None)
     assert full == _schema(12)                                    # under the 60k default
     set_governance(CURATOR, limits={PROFILE: 2_000})              # the knob's floor
@@ -271,7 +271,7 @@ def test_route_lists_knobs_and_patches_limits(client):
 # ── door: Spotlight Know / Act / Guide + the inbox ──────────────────────────────────
 
 def test_platform_limits_reports_values_where_they_bite_and_the_act():
-    from aughor.agent.spotlight_tools import platform_limits
+    from pramanyx.agent.spotlight_tools import platform_limits
     set_governance(CURATOR, limits={AUTOSEED: 12})
     out = platform_limits({})
     cur = next(a for a in out["agents"] if a["agent_id"] == CURATOR)
@@ -285,7 +285,7 @@ def test_platform_limits_reports_values_where_they_bite_and_the_act():
 
 
 def test_set_agent_limit_refuses_in_the_registrys_words():
-    import aughor.agent.spotlight_act as act
+    import pramanyx.agent.spotlight_act as act
     assert "Explorer (scout)" in act.set_agent_limit("c", {"agent": "hal", "limit": AUTOSEED,
                                                             "value": 1})["summary"]
     out = act.set_agent_limit("c", {"limit": "vibes", "value": 1})
@@ -297,8 +297,8 @@ def test_set_agent_limit_refuses_in_the_registrys_words():
 
 
 def test_set_agent_limit_stages_then_accept_applies_and_reject_is_byte_identical():
-    import aughor.agent.spotlight_act as act
-    from aughor.actions.inbox import accept_proposal, get_proposal, reject_proposal
+    import pramanyx.agent.spotlight_act as act
+    from pramanyx.actions.inbox import accept_proposal, get_proposal, reject_proposal
 
     out = act.set_agent_limit("conn-l", {"limit": "profile schema chars", "value": 30_000,
                                           "reasoning": "500 GB warehouse"})
@@ -318,7 +318,7 @@ def test_set_agent_limit_stages_then_accept_applies_and_reject_is_byte_identical
 
 
 def test_accept_revalidates_a_tampered_or_stale_limit_proposal():
-    from aughor.actions.inbox import StagedProposal, accept_proposal, stage_proposal
+    from pramanyx.actions.inbox import StagedProposal, accept_proposal, stage_proposal
     p = stage_proposal(StagedProposal(
         kind="agent_limit", org_id="", connection_id="conn-t", action_id="agent-limit:x",
         params={"agent_id": CURATOR, "limit": "vibes", "value": 3},
@@ -329,7 +329,7 @@ def test_accept_revalidates_a_tampered_or_stale_limit_proposal():
 
 
 def test_guide_limits_topic_resolves_from_plain_words_and_offers_the_act():
-    from aughor.agent.spotlight_guide import platform_guide
+    from pramanyx.agent.spotlight_guide import platform_guide
     for word in ("cap", "budget", "spend", "autoseed", "limits"):
         assert platform_guide({"topic": word})["topic"] == "limits", word
     out = platform_guide({"topic": "limits"})
@@ -339,7 +339,7 @@ def test_guide_limits_topic_resolves_from_plain_words_and_offers_the_act():
 
 
 def test_the_new_tools_ride_every_transport_through_the_one_roster():
-    from aughor.agent.spotlight_roster import spotlight_roster
+    from pramanyx.agent.spotlight_roster import spotlight_roster
     names = {t.name for t in spotlight_roster("conn-r")}
     assert {"platform_limits", "set_agent_limit"} <= names
 
@@ -350,9 +350,9 @@ def test_autoseed_keeps_what_it_wrote_when_the_budget_fires_mid_loop(seed_env):
     """`BudgetExceeded` is a BaseException so the loop's fail-open branch cannot swallow
     it — but the glossary was only saved AFTER the loop, so an abort lost every table
     annotated before it. Now the loop stops, saves, then re-raises."""
-    from aughor.kernel.metering import BudgetExceeded
-    from aughor.semantic import autoseed
-    from aughor.semantic.glossary import CONNECTIONS_KEY, load_glossary
+    from pramanyx.kernel.metering import BudgetExceeded
+    from pramanyx.semantic import autoseed
+    from pramanyx.semantic.glossary import CONNECTIONS_KEY, load_glossary
 
     real = seed_env.complete
     def complete(**kw):

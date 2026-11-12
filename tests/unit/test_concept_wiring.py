@@ -12,10 +12,10 @@ from pathlib import Path
 
 import duckdb
 
-from aughor.agent.relationship import plan_relationship
-from aughor.db.connection import DuckDBConnection
-from aughor.tools.concept import concept_of
-from aughor.tools.profiler import (
+from pramanyx.agent.relationship import plan_relationship
+from pramanyx.db.connection import DuckDBConnection
+from pramanyx.tools.concept import concept_of
+from pramanyx.tools.profiler import (
     _name_witnesses,
     _semantic_type,
     build_column_profiles,
@@ -194,7 +194,7 @@ def test_an_image_is_not_a_duration():
 def test_two_name_patterns_agreeing_is_still_one_witness():
     """`Customer Zipcode` is named like a place AND like an identifier. Both are the name
     layer, and a layer speaks once — so neither concept is acted on."""
-    from aughor.tools.concept import resolve_concept
+    from pramanyx.tools.concept import resolve_concept
     verdict = resolve_concept(_name_witnesses("Customer Zip Code", "VARCHAR"))
     assert concept_of(verdict.concept, verdict.confidence) == ""
 
@@ -250,9 +250,9 @@ def test_a_coordinate_is_still_allowed_on_a_side():
 # ── the declared layer ───────────────────────────────────────────────────────
 
 def test_a_human_declaration_wins_over_every_computed_layer(tmp_path, monkeypatch):
-    from aughor.ontology.column_config import ColumnFlags, save_table_config
+    from pramanyx.ontology.column_config import ColumnFlags, save_table_config
 
-    monkeypatch.setenv("AUGHOR_COLUMN_CONFIG_ROOT", str(tmp_path))
+    monkeypatch.setenv("PRAMANYX_COLUMN_CONFIG_ROOT", str(tmp_path))
     save_table_config("workspace", "default", "places", {
         "latitude": ColumnFlags(concept="money.amount", source="human"),
     })
@@ -267,9 +267,9 @@ def test_a_human_declaration_wins_over_every_computed_layer(tmp_path, monkeypatc
 
 
 def test_a_declaration_survives_a_yaml_round_trip(tmp_path, monkeypatch):
-    from aughor.ontology.column_config import ColumnFlags, load_table_config, save_table_config
+    from pramanyx.ontology.column_config import ColumnFlags, load_table_config, save_table_config
 
-    monkeypatch.setenv("AUGHOR_COLUMN_CONFIG_ROOT", str(tmp_path))
+    monkeypatch.setenv("PRAMANYX_COLUMN_CONFIG_ROOT", str(tmp_path))
     save_table_config("c", "s", "t", {"col": ColumnFlags(concept="geo.latitude", source="human")})
     assert load_table_config("c", "s", "t")["col"].concept == "geo.latitude"
     # and a config written before AT-4 reads back as "no declaration", not as a crash
@@ -325,12 +325,12 @@ def test_a_measure_semantic_type_changes_nothing():
 
 def test_semantic_types_are_read_back_from_the_cache_for_the_deep_path():
     """The accessor the relationship scan actually calls — query-free, like load_concepts."""
-    from aughor.tools.profile_cache import load_semantic_types
+    from pramanyx.tools.profile_cache import load_semantic_types
 
     conn = _conn(_GEO_DDL, _geo_rows())
     conn._connection_id = "sem-type-probe"
     profile_connection(conn, ["places"], {})
-    from aughor.tools.profile_cache import save_profiles
+    from pramanyx.tools.profile_cache import save_profiles
     tps, cps = profile_connection(conn, ["places"], {})
     save_profiles("sem-type-probe", "fp", tps, cps)
     got = load_semantic_types("sem-type-probe")
@@ -343,7 +343,7 @@ def test_the_newest_cached_fingerprint_wins():
     keeps them newest-LAST. Reading with `setdefault` served whichever came first, so a
     profile rebuilt seconds ago was shadowed by one from a schema version that no longer
     exists. The postal fix landed and read as not working because of exactly this."""
-    from aughor.tools.profile_cache import _store, load_concepts, load_semantic_types
+    from pramanyx.tools.profile_cache import _store, load_concepts, load_semantic_types
 
     old = {"columns": {"t.zip": {"table": "t", "column": "zip", "semantic_type": "dimension",
                                  "concept": "geo.region", "concept_confidence": 0.9}},
@@ -393,7 +393,7 @@ def test_a_rate_that_is_not_a_percentage_gets_no_whole_scale():
     """The narrowness that makes the 0–100 branch safe: only `percent` and `pct` assert a
     scale. `heart_rate` 40–100 is a rate and is not a percentage, and multiplying it by a
     hundred would be this fix causing the error it exists to prevent."""
-    from aughor.tools.profiler import _value_interpretation
+    from pramanyx.tools.profiler import _value_interpretation
 
     for loose in ("heart_rate", "exchange_rate", "win_ratio", "market_share"):
         assert _value_interpretation(loose, (40.0, 100.0))[1] != "percent_whole", loose
@@ -415,7 +415,7 @@ def test_the_0_to_100_branch_never_fires_without_a_confirmed_concept():
 
 
 def test_a_percent_column_outside_both_bands_gets_no_scale():
-    from aughor.tools.profiler import _value_interpretation
+    from pramanyx.tools.profiler import _value_interpretation
 
     assert _value_interpretation("x_pct", (0.0, 5000.0), concept="percent.proportion") == (None, None)
     # a confident concept is accepted as the same evidence as the narrow name token
@@ -426,8 +426,8 @@ def test_a_percent_column_outside_both_bands_gets_no_scale():
 def test_an_ip_column_can_now_reach_a_second_witness():
     """`net.ip_address` was the one grammar concept with no name rule, so it could only
     ever be a hint however clearly the values read as addresses."""
-    from aughor.tools.concept import resolve_concept
-    from aughor.tools.shape import value_witnesses
+    from pramanyx.tools.concept import resolve_concept
+    from pramanyx.tools.shape import value_witnesses
 
     assert any(w.concept == "net.ip_address" for w in _name_witnesses("client_ip", "VARCHAR"))
     values = [f"10.0.{i // 256}.{i % 256}" for i in range(120)]
@@ -478,7 +478,7 @@ def test_two_tables_sharing_a_bare_name_profile_separately():
 def test_quirk_detection_survives_a_qualified_table_name():
     """`detect_schema_quirks` read the table out of the KEY with `split(".", 1)`, which on
     `schema.table.column` returns the SCHEMA — a lookup that silently matches nothing."""
-    from aughor.tools.profiler import detect_schema_quirks
+    from pramanyx.tools.profiler import detect_schema_quirks
 
     c = DuckDBConnection.__new__(DuckDBConnection)
     c._path = Path(":memory:")

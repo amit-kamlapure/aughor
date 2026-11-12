@@ -2,7 +2,7 @@
 """PENDING item 12 — would near-matches find what a missed question meant? Measured with no model.
 
 For every item of `framing_matcher_set.jsonl` whose EXACT frame defines nothing, the near-match
-candidates (`aughor/ontology/near_match.py`) are computed and scored:
+candidates (`pramanyx/ontology/near_match.py`) are computed and scored:
   * a paraphrase item is RECOVERABLE when its gold definition is among the candidates — the most
     the chooser could then pick right;
   * an item whose gold is "no definition" (the controls) is a FALSE CANDIDATE when any candidate
@@ -41,10 +41,10 @@ def heldout(output: str = "") -> int:
     the dev split fitted: what the finder would frame by itself, what it would hand the chooser,
     and what stays quiet — for reworded questions and for controls that mean nothing declared.
     Each question is read as `agent.framing.resolve_frame` reads it: the ask alone."""
-    from aughor.automations.temporal import ask_of
-    from aughor.ontology.framing import frame_question
-    from aughor.ontology.models import OntologyGraph
-    from aughor.ontology.near_match import near_candidates
+    from pramanyx.automations.temporal import ask_of
+    from pramanyx.ontology.framing import frame_question
+    from pramanyx.ontology.models import OntologyGraph
+    from pramanyx.ontology.near_match import near_candidates
     graphs = {h: OntologyGraph.model_validate(json.loads((REPO / path).read_text()))
               for h, path in HELDOUT_GRAPHS.items()}
     tally: dict[str, int] = {}
@@ -85,8 +85,8 @@ def main() -> int:
     args = ap.parse_args()
     if args.heldout:
         return heldout(args.output)
-    from aughor.ontology.framing import frame_question
-    from aughor.ontology.near_match import near_candidates
+    from pramanyx.ontology.framing import frame_question
+    from pramanyx.ontology.near_match import near_candidates
     graphs = load_graphs()
     items = [json.loads(line) for line in DATASET.read_text().splitlines() if line.strip()]
     rows, tally = [], {}

@@ -3,7 +3,7 @@ before SQL generation. Fully hermetic: schema strings + a fake db, no LLM.
 """
 from __future__ import annotations
 
-from aughor.semantic import answer_resolution as R
+from pramanyx.semantic import answer_resolution as R
 
 # luxexperience: Mytheresa IS an annotated `platform` value; net sales are annual.
 # brand_collaborations is a DECOY — it ALSO has platform=Mytheresa and a daily
@@ -335,7 +335,7 @@ def test_inherited_entity_absent_in_scope_never_dead_ends():
 # answerable question: the exact false abstain the module's contract forbids.
 
 def test_compute_vocabulary_is_never_an_entity_candidate():
-    from aughor.semantic.answer_resolution import _entity_candidates
+    from pramanyx.semantic.answer_resolution import _entity_candidates
     for q in [
         "What is the average number of days between order date and ship date?",
         "Show total sales for orders that were NOT returned, by segment.",
@@ -347,7 +347,7 @@ def test_compute_vocabulary_is_never_an_entity_candidate():
 
 
 def test_real_entities_still_bind_after_the_compute_filter():
-    from aughor.semantic.answer_resolution import _entity_candidates
+    from pramanyx.semantic.answer_resolution import _entity_candidates
     assert _entity_candidates("What is the total quantity sold in the Technology category?") == ["Technology"]
     assert _entity_candidates("monthly sales for Mytheresa") == ["Mytheresa"]
     assert _entity_candidates("sales in France last month") == ["France"]
@@ -357,7 +357,7 @@ def test_real_entities_still_bind_after_the_compute_filter():
 def test_derived_quantity_question_is_answerable_even_with_a_db_that_finds_nothing():
     # A db whose probe says "absent" for everything must not turn a derived-quantity
     # question into an abstain: there is no entity to be absent.
-    from aughor.semantic.answer_resolution import resolve
+    from pramanyx.semantic.answer_resolution import resolve
 
     class _AbsentDB:
         dialect = "duckdb"
@@ -378,7 +378,7 @@ def test_typed_multiword_names_bind_whole():
     # "First Class" / "Same Day" / "New York" are one value each. The old per-token rule
     # yielded "Class" from "First Class" and the probe found no such value ⇒ a false
     # "'Class' is not present in this data" on a question about a real ship_mode.
-    from aughor.semantic.answer_resolution import _entity_candidates
+    from pramanyx.semantic.answer_resolution import _entity_candidates
     assert _entity_candidates("What is the total sales for orders shipped via First Class?") == ["First Class"]
     assert _entity_candidates("What share of orders ship Same Day?") == ["Same Day"]
     assert _entity_candidates("revenue for New York last month") == ["New York"]
@@ -386,7 +386,7 @@ def test_typed_multiword_names_bind_whole():
 
 def test_trailing_glue_is_trimmed_from_a_lowercase_window():
     # "Texas by" / "Nike in" — the two-word window swept a preposition into the value.
-    from aughor.semantic.answer_resolution import _entity_candidates
+    from pramanyx.semantic.answer_resolution import _entity_candidates
     assert _entity_candidates("Show the top 3 cities in Texas by sales") == ["Texas"]
     assert _entity_candidates("gmv of Nike in 2024") == ["Nike"]
 
@@ -397,7 +397,7 @@ def test_parse_schema_reads_the_renderers_own_values_line():
     # inline form, so `domains` was always empty on real schemas and annotation-based
     # binding (this module's purpose) was dead; every entity fell through to the DB
     # probe and its "absent" produced false abstains (2026-08-15).
-    from aughor.semantic.answer_resolution import _parse_schema, resolve
+    from pramanyx.semantic.answer_resolution import _parse_schema, resolve
     schema = (
         "TABLE: orders  (9,994 rows)\n"
         "  order_id  VARCHAR  ~ e.g. 'CA-2017-152156'\n"
@@ -418,7 +418,7 @@ def test_parse_schema_reads_the_renderers_own_values_line():
 
 
 def test_parse_schema_still_reads_the_inline_form():
-    from aughor.semantic.answer_resolution import _parse_schema
+    from pramanyx.semantic.answer_resolution import _parse_schema
     _t, domains = _parse_schema("TABLE: t\n  brand  VARCHAR  -- [Nike, Adidas]\n")
     assert domains == [("t", "brand", ["Nike", "Adidas"])]
 
@@ -577,6 +577,6 @@ def test_the_presence_signal_still_counts_a_month():
     # "tell me about October" must not become an all-time overview of the dataset.
     assert R.entity_candidates("tell me about October") == ["October"]
     assert R._entity_candidates("tell me about October") == []          # the resolver's own view
-    from aughor.routers.investigations import _is_overview_question
+    from pramanyx.routers.investigations import _is_overview_question
     assert _is_overview_question("tell me about October") is False
     assert _is_overview_question("what's notable in this dataset") is True

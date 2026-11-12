@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.llm.provider import ensure_free_or_allowed, set_config
-from aughor.control_plane.inference import _cost, _privacy_class
+from pramanyx.llm.provider import ensure_free_or_allowed, set_config
+from pramanyx.control_plane.inference import _cost, _privacy_class
 
 
 # ── the guard itself ────────────────────────────────────────────────────────────
@@ -42,7 +42,7 @@ def test_empty_model_is_a_clear_not_a_bind():
 @pytest.fixture()
 def _isolated_config(monkeypatch):
     """set_config reads/writes the on-disk config — capture it in memory."""
-    import aughor.llm.provider as provider
+    import pramanyx.llm.provider as provider
 
     store: dict = {"backend": "openrouter"}
     monkeypatch.setattr(provider, "_read_config", lambda: dict(store))
@@ -69,7 +69,7 @@ def test_set_config_binds_free_without_ceremony(_isolated_config):
 # ── the per-agent pin takes the same gate ───────────────────────────────────────
 
 def test_agent_model_pin_takes_the_same_gate(client, monkeypatch):
-    import aughor.llm.provider as provider
+    import pramanyx.llm.provider as provider
     monkeypatch.setattr(provider, "_active_backend", lambda: "openrouter")
 
     r = client.patch("/agents/analyst", json={"model": "moonshotai/kimi-k3"})

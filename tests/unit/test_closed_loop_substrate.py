@@ -1,5 +1,5 @@
-"""Tests for the reusable closed-loop substrate (aughor/sql/closed_loop.py) and the
-dialect-aware repair diagnosis (aughor/sql/writer._make_diagnosis).
+"""Tests for the reusable closed-loop substrate (pramanyx/sql/closed_loop.py) and the
+dialect-aware repair diagnosis (pramanyx/sql/writer._make_diagnosis).
 
 This is the substrate lifted from the Spider2 eval harness into the product: a backend-agnostic
 execute→observe→repair loop, evaluator-faithful CSV materialization, and a repair catalog that no
@@ -10,8 +10,8 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from aughor.sql.closed_loop import execute_with_repair, rows_to_csv, LoopResult
-from aughor.sql.writer import _make_diagnosis
+from pramanyx.sql.closed_loop import execute_with_repair, rows_to_csv, LoopResult
+from pramanyx.sql.writer import _make_diagnosis
 
 
 # ── execute_with_repair ───────────────────────────────────────────────────────

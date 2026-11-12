@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import inspect
 
-from aughor.canvas.scope import resolve_execution_scope
-from aughor.routers.investigations import _answer_core, _stream_chat
+from pramanyx.canvas.scope import resolve_execution_scope
+from pramanyx.routers.investigations import _answer_core, _stream_chat
 
 
 def test_stream_chat_accepts_a_schema_scope():

@@ -22,18 +22,18 @@ a4591c26,503740e9,shipped,2018-09-04 21:57:05,2018-09-26 00:00:00,147.90,yes
 
 @pytest.fixture
 def env(tmp_path, monkeypatch):
-    monkeypatch.setenv("AUGHOR_STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setenv("AUGHOR_SYSTEM_DB", str(tmp_path / "system.db"))
-    from aughor.actions import overlay
+    monkeypatch.setenv("PRAMANYX_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("PRAMANYX_SYSTEM_DB", str(tmp_path / "system.db"))
+    from pramanyx.actions import overlay
     monkeypatch.setattr(overlay, "_DB_PATH", tmp_path / "overlay.db")
-    from aughor.sheets import projection
+    from pramanyx.sheets import projection
     projection.reset()
     yield tmp_path
     projection.reset()
 
 
 def _orders(env):
-    from aughor.sheets import files, service
+    from pramanyx.sheets import files, service
     path = env / "orders.csv"
     path.write_text(ORDERS)
     return service.create_from_file(files.stage(path, path.name), name="Olist orders", by="user:ana",
@@ -43,21 +43,21 @@ def _orders(env):
 
 def _grid(sheet, *conditions):
     """The grid's own count of the rows meeting these conditions, and its totals over them."""
-    from aughor.sheets import projection
-    from aughor.sheets.model import Condition
+    from pramanyx.sheets import projection
+    from pramanyx.sheets.model import Condition
     page = projection.read_rows(sheet, conditions=[Condition(**c) for c in conditions], limit=1)
     return page["total"], page["totals"]
 
 
 def _fresh(sheet):
-    from aughor.sheets import model
+    from pramanyx.sheets import model
     return model.get(sheet.id)
 
 
 # ── groups ───────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 def test_each_group_holds_and_totals_the_rows_the_grid_shows_for_its_value(env):
-    from aughor.sheets import views
+    from pramanyx.sheets import views
     sheet = _orders(env)
     status, price = sheet.column("order_status").id, sheet.column("price").id
     got = views.groups(sheet, conditions=[], group=status)
@@ -76,7 +76,7 @@ def test_each_group_holds_and_totals_the_rows_the_grid_shows_for_its_value(env):
 
 
 def test_a_grouping_says_how_many_groups_it_did_not_list(env, monkeypatch):
-    from aughor.sheets import views
+    from pramanyx.sheets import views
     monkeypatch.setattr(views, "MAX_GROUPS", 2)
     sheet = _orders(env)
     got = views.groups(sheet, conditions=[], group=sheet.column("order_id").id)
@@ -86,11 +86,11 @@ def test_a_grouping_says_how_many_groups_it_did_not_list(env, monkeypatch):
 # ── a board ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 def test_a_lane_holds_the_rows_the_grid_shows_for_its_value_and_what_the_filter_left_out_is_said(env):
-    from aughor.sheets import views
+    from pramanyx.sheets import views
     sheet = _orders(env)
     status = sheet.column("order_status").id
     still_open = [{"column": status, "op": "not_in", "value": ["delivered", "canceled"]}]
-    from aughor.sheets.model import Condition
+    from pramanyx.sheets.model import Condition
     got = views.board(sheet, conditions=[Condition(**c) for c in still_open], column=status)
     lanes = {lane["value"]: lane["rows"] for lane in got["lanes"]}
     assert lanes == {"shipped": 3}
@@ -101,7 +101,7 @@ def test_a_lane_holds_the_rows_the_grid_shows_for_its_value_and_what_the_filter_
 
 
 def test_a_card_moved_to_another_lane_is_an_edit_kept_with_who_and_when(env):
-    from aughor.sheets import service, views
+    from pramanyx.sheets import service, views
     sheet = _orders(env)
     status = sheet.column("order_status").id
     service.set_cells(sheet, [{"row": 3, "column": status, "value": "delivered", "version": 0}], by="user:bo")
@@ -113,7 +113,7 @@ def test_a_card_moved_to_another_lane_is_an_edit_kept_with_who_and_when(env):
 
 
 def test_a_choice_no_row_holds_is_an_empty_lane_a_card_can_be_moved_into(env):
-    from aughor.sheets import views
+    from pramanyx.sheets import views
     sheet = _orders(env)
     c = sheet.column("order_status")
     c.choices = [*c.choices, "approved"]
@@ -122,7 +122,7 @@ def test_a_choice_no_row_holds_is_an_empty_lane_a_card_can_be_moved_into(env):
 
 
 def test_a_board_reads_a_yes_no_column_as_two_lanes(env):
-    from aughor.sheets import views
+    from pramanyx.sheets import views
     sheet = _orders(env)
     got = views.board(sheet, conditions=[], column=sheet.column("paid").id)
     assert [(lane["value"], lane["rows"]) for lane in got["lanes"]] == [(True, 4), (False, 3)]
@@ -131,7 +131,7 @@ def test_a_board_reads_a_yes_no_column_as_two_lanes(env):
 # ── a calendar ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
 def test_a_day_holds_the_rows_the_grid_shows_on_that_day_and_rows_with_no_date_are_counted(env):
-    from aughor.sheets import views
+    from pramanyx.sheets import views
     sheet = _orders(env)
     est = sheet.column("order_estimated_delivery_date").id
     got = views.calendar(sheet, conditions=[], column=est)
@@ -143,7 +143,7 @@ def test_a_day_holds_the_rows_the_grid_shows_on_that_day_and_rows_with_no_date_a
 
 
 def test_a_calendar_by_a_date_and_time_places_each_row_on_its_day(env):
-    from aughor.sheets import views
+    from pramanyx.sheets import views
     sheet = _orders(env)
     bought = sheet.column("order_purchase_timestamp").id
     got = views.calendar(sheet, conditions=[], column=bought, month="2018-09")
@@ -154,8 +154,8 @@ def test_a_calendar_by_a_date_and_time_places_each_row_on_its_day(env):
 # ── rules ────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 def test_a_rule_marks_exactly_the_rows_a_view_with_its_conditions_shows(env):
-    from aughor.sheets import service, views
-    from aughor.sheets.model import Condition, Rule
+    from pramanyx.sheets import service, views
+    from pramanyx.sheets.model import Condition, Rule
     sheet = _orders(env)
     price, status = sheet.column("price").id, sheet.column("order_status").id
     conditions = [{"column": price, "op": "gt", "value": "100"}, {"column": status, "op": "is_not", "value": "delivered"}]
@@ -171,8 +171,8 @@ def test_a_rule_marks_exactly_the_rows_a_view_with_its_conditions_shows(env):
 
 
 def test_a_rule_is_refused_when_it_reads_no_column_or_another_rule(env):
-    from aughor.sheets import service
-    from aughor.sheets.model import Condition, Rule
+    from pramanyx.sheets import service
+    from pramanyx.sheets.model import Condition, Rule
     sheet = _orders(env)
     with pytest.raises(service.Refused, match="not a column"):
         service.save_rule(sheet, Rule(id="", name="x", conditions=[Condition(column="nope", op="is", value="a")]),
@@ -187,8 +187,8 @@ def test_a_rule_is_refused_when_it_reads_no_column_or_another_rule(env):
 # ── views: kinds and who sees them ───────────────────────────────────────────────────────────────────────────────────
 
 def test_a_board_needs_a_choice_column_and_a_calendar_a_date(env):
-    from aughor.sheets import service
-    from aughor.sheets.model import View
+    from pramanyx.sheets import service
+    from pramanyx.sheets.model import View
     sheet = _orders(env)
     with pytest.raises(service.Refused, match="choice or a yes/no"):
         service.save_view(sheet, View(id="", name="b", kind="board", group=sheet.column("price").id), by="user:ana")
@@ -200,8 +200,8 @@ def test_a_board_needs_a_choice_column_and_a_calendar_a_date(env):
 
 
 def test_a_view_kept_to_its_maker_is_seen_and_changed_by_them_only_and_its_name_stays_out_of_the_history(env):
-    from aughor.sheets import service
-    from aughor.sheets.model import View
+    from pramanyx.sheets import service
+    from pramanyx.sheets.model import View
     sheet = _orders(env)
     sheet = service.save_view(sheet, View(id="", name="My late ones", shared=False), by="user:ana")
     mine = sheet.views[-1]
@@ -216,8 +216,8 @@ def test_a_view_kept_to_its_maker_is_seen_and_changed_by_them_only_and_its_name_
 
 
 def test_only_its_maker_keeps_a_shared_view_to_themselves_and_one_shared_view_always_stands(env):
-    from aughor.sheets import service
-    from aughor.sheets.model import View
+    from pramanyx.sheets import service
+    from pramanyx.sheets.model import View
     sheet = _orders(env)
     sheet = service.save_view(sheet, View(id="", name="Open"), by="user:ana")
     shared = sheet.views[-1]
@@ -231,8 +231,8 @@ def test_only_its_maker_keeps_a_shared_view_to_themselves_and_one_shared_view_al
 
 
 def test_taking_a_column_off_takes_it_out_of_every_view_and_rule(env):
-    from aughor.sheets import service
-    from aughor.sheets.model import Condition, Rule, View
+    from pramanyx.sheets import service
+    from pramanyx.sheets.model import Condition, Rule, View
     sheet = _orders(env)
     status, price = sheet.column("order_status").id, sheet.column("price").id
     sheet = service.save_view(sheet, View(id="", name="Board", kind="board", group=status, card=[price]), by="user:ana")
@@ -247,8 +247,8 @@ def test_taking_a_column_off_takes_it_out_of_every_view_and_rule(env):
 
 
 def test_a_view_shows_its_count_in_the_definition(env):
-    from aughor.sheets import service, views
-    from aughor.sheets.model import Condition, View
+    from pramanyx.sheets import service, views
+    from pramanyx.sheets.model import Condition, View
     sheet = _orders(env)
     status = sheet.column("order_status").id
     sheet = service.save_view(sheet, View(id="", name="Shipped",
@@ -262,7 +262,7 @@ def test_a_new_view_is_kept_through_the_route_without_an_id(env):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from aughor.routers import sheets as sheets_router
+    from pramanyx.routers import sheets as sheets_router
     sheet = _orders(env)
     app = FastAPI()
     app.include_router(sheets_router.router)
@@ -275,7 +275,7 @@ def test_a_new_view_is_kept_through_the_route_without_an_id(env):
 
 def test_a_calendar_opens_where_the_rows_end_not_on_a_straggler(env):
     """Olist: 2,001 orders estimated for September 2018 and one for November — the calendar opens on September."""
-    from aughor.sheets import files, service, views
+    from pramanyx.sheets import files, service, views
     lines = ["order_id,due"] + [f"o{i},2018-09-{1 + i % 28:02d}" for i in range(120)] + ["late,2018-11-12"]
     path = env / "due.csv"
     path.write_text("\n".join(lines) + "\n")
@@ -290,8 +290,8 @@ def test_a_calendar_opens_where_the_rows_end_not_on_a_straggler(env):
 def test_a_row_a_rules_condition_cannot_read_is_not_marked_and_is_counted_as_not_marked(env):
     """A row with no estimated date cannot be "before" anything: it is not marked, so it is among the not-marked —
     never dropped from both."""
-    from aughor.sheets import service
-    from aughor.sheets.model import Condition, Rule
+    from pramanyx.sheets import service
+    from pramanyx.sheets.model import Condition, Rule
     sheet = _orders(env)
     est = sheet.column("order_estimated_delivery_date").id
     sheet = service.save_rule(sheet, Rule(name="Due before September",
@@ -304,8 +304,8 @@ def test_a_row_a_rules_condition_cannot_read_is_not_marked_and_is_counted_as_not
 
 
 def test_groups_under_a_filter_hold_only_the_rows_the_filter_shows(env):
-    from aughor.sheets import views
-    from aughor.sheets.model import Condition
+    from pramanyx.sheets import views
+    from pramanyx.sheets.model import Condition
     sheet = _orders(env)
     status, price = sheet.column("order_status").id, sheet.column("price").id
     dear = {"column": price, "op": "gt", "value": "50"}

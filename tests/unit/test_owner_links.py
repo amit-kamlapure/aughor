@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.rbac import owners as OW
-from aughor.rbac.routing import owner_principal, route
+from pramanyx.rbac import owners as OW
+from pramanyx.rbac.routing import owner_principal, route
 
 ORG = "default"
 
@@ -83,9 +83,9 @@ class TestALinkMakesAnOwnerReachable:
 class TestTheInventory:
     def test_every_owner_in_use_is_named_with_its_resolution(self, monkeypatch):
         from types import SimpleNamespace
-        import aughor.semantic.metrics as M
-        import aughor.semantic.glossary as G
-        import aughor.agent.framing as F
+        import pramanyx.semantic.metrics as M
+        import pramanyx.semantic.glossary as G
+        import pramanyx.agent.framing as F
         monkeypatch.setattr(M, "list_metrics", lambda path=None, connection_id=None: [
             SimpleNamespace(name="revenue", owner="Ana (logistics)", connection_id=""),
             SimpleNamespace(name="margin", owner="group:finance", connection_id=""),
@@ -106,9 +106,9 @@ class TestTheInventory:
         assert [e["resolved"] for e in inv][:2] == [False, False]          # the unresolved come first
 
     def test_a_source_that_fails_hides_nothing_else(self, monkeypatch):
-        import aughor.semantic.metrics as M
+        import pramanyx.semantic.metrics as M
         monkeypatch.setattr(M, "list_metrics", lambda path=None, connection_id=None: (_ for _ in ()).throw(RuntimeError("boom")))
-        import aughor.agent.framing as F
+        import pramanyx.agent.framing as F
         monkeypatch.setattr(F, "served_graph", lambda cid, schema=None: None)
         OW.link_owner(ORG, "Ana (logistics)", "user:ana@corp")
         inv = OW.owner_inventory(ORG, connection_ids=[])
@@ -119,8 +119,8 @@ class TestAReviewReachesTheOwner:
     def test_the_linked_owner_is_asked_and_an_unlinked_one_is_said_so(self, tmp_path, monkeypatch):
         from datetime import datetime, timedelta, timezone
         from types import SimpleNamespace
-        from aughor.playbook import outcomes as O
-        import aughor.semantic.metrics as M
+        from pramanyx.playbook import outcomes as O
+        import pramanyx.semantic.metrics as M
         monkeypatch.setattr(M, "get_metric", lambda name, path=None, connection_id=None: SimpleNamespace(owner="Ana (logistics)"))
         path = tmp_path / "o.json"; now = datetime(2026, 9, 22, tzinfo=timezone.utc)
         spec = {"metric_label": "late dispatch", "metric_sql": "COUNT(*)", "metric_table": "t", "date_column": "t.d", "window_days": 7}
@@ -147,7 +147,7 @@ class TestTheDoors:
         assert client.delete("/owners/links", params={"owner_text": "ana (logistics)"}).status_code == 404
 
     def test_the_glossary_takes_an_owner(self, client, tmp_path, monkeypatch):
-        import aughor.semantic.glossary as G
+        import pramanyx.semantic.glossary as G
         p = tmp_path / "glossary.yaml"
         monkeypatch.setattr(G, "_default_path", lambda: p, raising=False)
         G.update_table("orders", owner="Ana (logistics)", path=p)

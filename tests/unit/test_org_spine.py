@@ -11,9 +11,9 @@ import sqlite3
 
 import pytest
 
-from aughor.db.backend import is_postgres
+from pramanyx.db.backend import is_postgres
 
-from aughor.org import (
+from pramanyx.org import (
     DEFAULT_ORG_ID,
     current_org_id,
     using_org,
@@ -42,7 +42,7 @@ class TestOrgContext:
 
 @pytest.fixture()
 def org_store(tmp_path, monkeypatch):
-    import aughor.org.store as store
+    import pramanyx.org.store as store
     monkeypatch.setattr(store, "_DB_PATH", tmp_path / "orgs.db")
     return store
 
@@ -74,7 +74,7 @@ _LEGACY_FILE_SKIP = pytest.mark.skipif(
 @_LEGACY_FILE_SKIP
 class TestWorkspaceMigration:
     def test_legacy_db_gets_org_id_backfilled(self, tmp_path, monkeypatch):
-        import aughor.workspace.store as store
+        import pramanyx.workspace.store as store
         db = tmp_path / "workspaces.db"
         monkeypatch.setattr(store, "_DB_PATH", db)
         # Simulate an OLD database that predates org_id (and settings_override).
@@ -93,7 +93,7 @@ class TestWorkspaceMigration:
         assert store.get_workspace("w1").org_id == "default"
 
     def test_create_stamps_current_org(self, tmp_path, monkeypatch):
-        import aughor.workspace.store as store
+        import pramanyx.workspace.store as store
         monkeypatch.setattr(store, "_DB_PATH", tmp_path / "workspaces.db")
         default_ws = store.create_workspace(name="A", workspace_id="a")
         assert default_ws.org_id == "default"
@@ -107,7 +107,7 @@ class TestWorkspaceMigration:
 @_LEGACY_FILE_SKIP
 class TestConnectionMigration:
     def test_legacy_registry_gets_org_id(self, tmp_path, monkeypatch):
-        import aughor.db.registry as registry
+        import pramanyx.db.registry as registry
         db = tmp_path / "connections.db"
         monkeypatch.setattr(registry, "REGISTRY_DB", db)
         c = sqlite3.connect(str(db))
@@ -126,7 +126,7 @@ class TestConnectionMigration:
         conn.close()
 
     def test_add_connection_stamps_org(self, tmp_path, monkeypatch):
-        import aughor.db.registry as registry
+        import pramanyx.db.registry as registry
         db = tmp_path / "connections.db"
         monkeypatch.setattr(registry, "REGISTRY_DB", db)
         with using_org("acme"):
@@ -139,14 +139,14 @@ class TestConnectionMigration:
 
 class TestLedgerMigrationAndStamping:
     def test_fresh_ledger_has_org_id_columns(self, tmp_path):
-        from aughor.kernel.ledger import Ledger
+        from pramanyx.kernel.ledger import Ledger
         led = Ledger(tmp_path / "system.db")
         for table in ("jobs", "artifacts", "lineage"):
             cols = {r[1] for r in led._conn.execute(f"PRAGMA table_info({table})").fetchall()}
             assert "org_id" in cols, f"{table} missing org_id"
 
     def test_reopen_is_idempotent(self, tmp_path):
-        from aughor.kernel.ledger import Ledger
+        from pramanyx.kernel.ledger import Ledger
         path = tmp_path / "system.db"
         Ledger(path)
         # A second instance on the same file must not raise (migration re-runs clean).
@@ -156,7 +156,7 @@ class TestLedgerMigrationAndStamping:
         assert "org_id" in cols
 
     def test_artifact_and_lineage_stamp_org(self, tmp_path):
-        from aughor.kernel.ledger import Ledger
+        from pramanyx.kernel.ledger import Ledger
         led = Ledger(tmp_path / "system.db")
         with using_org("acme"):
             led.artifact_write(
@@ -168,7 +168,7 @@ class TestLedgerMigrationAndStamping:
         assert art[0] == "acme" and lin[0] == "acme"
 
     def test_job_insert_stamps_org(self, tmp_path):
-        from aughor.kernel.ledger import Ledger
+        from pramanyx.kernel.ledger import Ledger
         led = Ledger(tmp_path / "system.db")
         with using_org("acme"):
             led.job_insert({"id": "j1", "kind": "exploration", "state": "PENDING",
@@ -180,7 +180,7 @@ class TestLedgerMigrationAndStamping:
 @_LEGACY_FILE_SKIP
 class TestAuditMigrationAndStamping:
     def test_legacy_audit_gets_org_id_and_log_stamps(self, tmp_path, monkeypatch):
-        import aughor.security.audit as audit
+        import pramanyx.security.audit as audit
         db = tmp_path / "audit.db"
         monkeypatch.setattr(audit, "_DB_PATH", db)
         # Legacy audit_log without org_id.
@@ -207,7 +207,7 @@ class TestAuditMigrationAndStamping:
 
 class TestMeteringStamping:
     def test_register_job_stamps_org(self):
-        from aughor.kernel import metering
+        from pramanyx.kernel import metering
         token = metering.start()
         try:
             with using_org("acme"):

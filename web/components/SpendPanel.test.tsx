@@ -60,7 +60,7 @@ beforeEach(() => {
   ]));
   getUsageSummary.mockImplementation(async (p?: { range?: string }) => ({
     calls: p?.range === "7d" ? 614 : 3, tokens: 9000, calls_without_usage: 0,
-    sites: [{ caller: "aughor.sql.writer:fix", calls: 2, total_tokens: 6000, prompt_tokens: 0, calls_without_usage: 0 }],
+    sites: [{ caller: "pramanyx.sql.writer:fix", calls: 2, total_tokens: 6000, prompt_tokens: 0, calls_without_usage: 0 }],
   }));
   getRouteMix.mockResolvedValue({ converse_share: null });
   getAuditFeed.mockResolvedValue({ categories: ["governance_change"], category: null, count: 0, events: [] });

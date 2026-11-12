@@ -5,7 +5,7 @@ when the data runs 2023→2024, and the clamp only CLIPPED (2023 is in range) so
 analysing the OLDER year and forfeiting the 2024-vs-2023 YoY the data supports. The clamp now
 RE-ANCHORS a relative window to end at the data's max date, leaving SPECIFIC periods literal.
 These pin every use case (the fix is fully deterministic, so it's exhaustively testable)."""
-from aughor.agent.investigate import _clamp_intake_to_coverage, _question_pins_period
+from pramanyx.agent.investigate import _clamp_intake_to_coverage, _question_pins_period
 
 
 class FakeIntake:

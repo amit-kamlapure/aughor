@@ -5,7 +5,7 @@ Two-source, deterministic: under-specification (the complexity ambiguous flag) +
 """
 from __future__ import annotations
 
-from aughor.agent.clarify import assess_clarification
+from pramanyx.agent.clarify import assess_clarification
 
 
 # ── Source A — under-specification ────────────────────────────────────────────

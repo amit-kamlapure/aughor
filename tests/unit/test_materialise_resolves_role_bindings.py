@@ -21,7 +21,7 @@ import re
 
 import pytest
 
-from aughor.semantic import metric_catalogue as mc
+from pramanyx.semantic import metric_catalogue as mc
 
 BINDING = {"bindings": {"order_item": {"table": "order_items",
                                        "columns": {"returned_at": "returned_at",
@@ -30,7 +30,7 @@ BINDING = {"bindings": {"order_item": {"table": "order_items",
 
 @pytest.fixture()
 def bound(monkeypatch):
-    from aughor.packs import bindings
+    from pramanyx.packs import bindings
     monkeypatch.setattr(bindings, "load_binding", lambda *a, **k: BINDING)
     return BINDING
 
@@ -65,7 +65,7 @@ def test_the_bigquery_string_literal_trap_cannot_come_back(bound):
 
 def test_an_identifier_that_needs_quoting_gets_the_dialect_s_own(bound, monkeypatch):
     """A column with a space cannot go bare — and must not get the wrong character."""
-    from aughor.db import registry, connection as dbconn
+    from pramanyx.db import registry, connection as dbconn
     monkeypatch.setattr(registry, "get_dsn", lambda c: ("bigquery", ""))
     monkeypatch.setattr(dbconn, "connection_traits", lambda t: {"dialect": "bigquery"})
     sql, _ = mc.resolve_roles("{{role.order_item.sale_price}}", "retail", "conn", "s")
@@ -82,7 +82,7 @@ def test_an_unbound_ATTRIBUTE_is_reported_even_though_its_role_is_bound(bound):
 
 
 def test_a_connection_with_no_binding_at_all_reports_every_attribute(monkeypatch):
-    from aughor.packs import bindings
+    from pramanyx.packs import bindings
     monkeypatch.setattr(bindings, "load_binding", lambda *a, **k: None)
     _, unresolved = mc.resolve_roles(
         "{{role.order_item.returned_at}} / {{role.order_item.sale_price}}",

@@ -8,11 +8,11 @@ field; receipts are a provenance field a door drops).
 """
 from __future__ import annotations
 
-from aughor.answer import AnswerEnvelope, Grid, lift_tables
-from aughor.answer.doors import (
+from pramanyx.answer import AnswerEnvelope, Grid, lift_tables
+from pramanyx.answer.doors import (
     render_grid_markdown, select_for_slack, slack_message,
 )
-from aughor.answer.envelope import first_line, fold_frames
+from pramanyx.answer.envelope import first_line, fold_frames
 
 # ── the 2026-09-23 shape, as frames ─────────────────────────────────────────────
 
@@ -219,7 +219,7 @@ def test_slack_reads_the_figures_the_claim_and_the_gaps_of_a_concluded_answer():
 
 
 def test_the_export_prints_the_figures_each_exhibit_under_its_claim_and_the_gaps():
-    from aughor.export.document import build_export_doc
+    from pramanyx.export.document import build_export_doc
     env = fold_frames([{"type": "answer_report", "answer_report": CONCLUDED}], question="why?").model_dump()
     inv = {"id": "inv-p6", "kind": "chat", "question": "why?", "connection_id": "c1",
            "completed_at": "2026-10-15T00:00:00", "report": {"headline": "old", "envelope": env}}
@@ -241,7 +241,7 @@ def test_the_export_prints_the_figures_each_exhibit_under_its_claim_and_the_gaps
 def test_a_stored_version_one_envelope_is_brought_up_to_its_concluded_report_on_read():
     """A run before P6 stored a prose-only fold under a report that carries figures, exhibits and
     gaps; a reader gets the projection the report supports, with the stream's provenance kept."""
-    from aughor.answer.envelope import envelope_of_report
+    from pramanyx.answer.envelope import envelope_of_report
     v1 = fold_frames([{"type": "sql", "sql": "SELECT 1"}, {"type": "receipt_id", "receipt_id": "r-1"},
                       {"type": "answer_report", "answer_report": {k: v for k, v in CONCLUDED.items() if k not in ("figures", "exhibits", "gaps")}}],
                      question="why?").model_dump()
@@ -268,7 +268,7 @@ def test_a_stored_version_one_envelope_is_brought_up_to_its_concluded_report_on_
 
 
 def test_the_export_of_a_run_stored_before_p6_reads_in_the_canvas_order():
-    from aughor.export.document import build_export_doc
+    from pramanyx.export.document import build_export_doc
     v1 = fold_frames([{"type": "answer_report", "answer_report": {k: v for k, v in CONCLUDED.items() if k not in ("figures", "exhibits", "gaps")}}]).model_dump()
     v1["version"] = 1
     inv = {"id": "inv-old", "kind": "investigation", "question": "why?", "connection_id": "c1",
@@ -281,7 +281,7 @@ def test_the_export_of_a_run_stored_before_p6_reads_in_the_canvas_order():
 def test_a_concluded_deep_run_is_exported_as_the_canvas_draws_it_with_what_comes_next():
     """The phase-by-phase builder is for a run the phase script wrote; a concluded answer (P1)
     exports in its own order — and keeps the report's recommendations as "Next"."""
-    from aughor.export.document import build_export_doc
+    from pramanyx.export.document import build_export_doc
     rep = {**CONCLUDED, "_report_type": "investigate",
            "recommendations": [{"action": "Split the 179 extra orders by customer type.", "expected_impact": "", "owner": "", "timeline": ""}]}
     env = fold_frames([{"type": "answer_report", "answer_report": rep}], question="why?").model_dump()
@@ -405,10 +405,10 @@ def test_the_ask_stream_ends_with_the_envelope_and_files_it(monkeypatch):
     import asyncio
     import json
 
-    from aughor.routers.investigations import stream_with_envelope
+    from pramanyx.routers.investigations import stream_with_envelope
 
     filed: list[tuple[str, dict]] = []
-    monkeypatch.setattr("aughor.db.history.attach_envelope",
+    monkeypatch.setattr("pramanyx.db.history.attach_envelope",
                         lambda inv_id, env: filed.append((inv_id, env)) or True)
 
     async def body():
@@ -431,9 +431,9 @@ def test_the_ask_stream_ends_with_the_envelope_and_files_it(monkeypatch):
 def test_a_stream_with_nothing_to_say_emits_no_envelope(monkeypatch):
     import asyncio
 
-    from aughor.routers.investigations import stream_with_envelope
+    from pramanyx.routers.investigations import stream_with_envelope
 
-    monkeypatch.setattr("aughor.db.history.attach_envelope",
+    monkeypatch.setattr("pramanyx.db.history.attach_envelope",
                         lambda *_a: (_ for _ in ()).throw(AssertionError("must not file")))
 
     async def body():
@@ -446,7 +446,7 @@ def test_a_stream_with_nothing_to_say_emits_no_envelope(monkeypatch):
 
 
 def test_the_envelope_round_trips_through_the_history_row():
-    from aughor.db.history import attach_envelope, get_investigation, save_chat_turn
+    from pramanyx.db.history import attach_envelope, get_investigation, save_chat_turn
 
     inv_id = save_chat_turn(question="q", connection_id="conn-env", headline="h", sql="SELECT 1")
     env = fold_frames(converse_frames()).model_dump()
@@ -459,7 +459,7 @@ def test_the_envelope_round_trips_through_the_history_row():
 def test_a_turn_with_no_row_gets_one_from_the_envelope_under_the_receipts_own_id():
     # Measured live 2026-09-23: a converse turn that ran `run_sql` carried the 12-character id
     # its receipt minted and NO history row, so the export and the reload had nothing.
-    from aughor.db.history import attach_envelope, get_investigation
+    from pramanyx.db.history import attach_envelope, get_investigation
 
     env = fold_frames(converse_frames(), question="top categories", connection_id="conn-env",
                       session_id="slack:C1:1712.9").model_dump()
@@ -480,10 +480,10 @@ def test_a_turn_with_no_row_gets_one_from_the_envelope_under_the_receipts_own_id
 
 
 def test_the_runner_publishes_the_envelope_whole(monkeypatch):
-    from aughor.runners import InvestigationRequest, run_investigation
+    from pramanyx.runners import InvestigationRequest, run_investigation
 
     env = fold_frames(converse_frames()).model_dump()
-    monkeypatch.setattr("aughor.kernel.jobs.submit_background_tick", lambda *a, **kw: None)
+    monkeypatch.setattr("pramanyx.kernel.jobs.submit_background_tick", lambda *a, **kw: None)
 
     def fake_stream(req, request):
         async def _gen():
@@ -492,7 +492,7 @@ def test_the_runner_publishes_the_envelope_whole(monkeypatch):
                 yield _sse(frame)
         return _gen()
 
-    monkeypatch.setattr("aughor.routers.investigations.build_ask_stream", fake_stream)
+    monkeypatch.setattr("pramanyx.routers.investigations.build_ask_stream", fake_stream)
     run = run_investigation(InvestigationRequest(question="q", connection_id="conn-x"),
                             idempotency_key="k")
     assert run.status == "executed"
@@ -501,8 +501,8 @@ def test_the_runner_publishes_the_envelope_whole(monkeypatch):
 
 
 def test_the_send_reads_the_envelope_grid_and_the_chart_decision():
-    from aughor.automations.engine import chart_grid
-    from aughor.automations.models import Effect
+    from pramanyx.automations.engine import chart_grid
+    from pramanyx.automations.models import Effect
 
     env = fold_frames(converse_frames()).model_dump()
     effect = Effect(kind="slack_post", config={"bot_id": "b1", "channel": "#c",
@@ -515,8 +515,8 @@ def test_the_send_reads_the_envelope_grid_and_the_chart_decision():
 
 
 def test_a_bound_envelope_posts_its_slack_selection_and_the_gate_judges_that_text(monkeypatch):
-    from aughor.automations import engine
-    from aughor.automations.models import Effect
+    from pramanyx.automations import engine
+    from pramanyx.automations.models import Effect
 
     env = fold_frames(converse_frames()).model_dump()
     gated: list[str] = []
@@ -532,8 +532,8 @@ def test_a_bound_envelope_posts_its_slack_selection_and_the_gate_judges_that_tex
                         lambda effect, automation, **kw: gated.append(kw["text"]))
     monkeypatch.setattr(engine, "_attach_chart", lambda *a, **kw: None)
     monkeypatch.setattr(engine, "_file_departure_link", lambda *a, **kw: "")
-    monkeypatch.setattr("aughor.slackbots.store.get_bot_decrypted", lambda bot_id: _Bot())
-    monkeypatch.setattr("aughor.slackbots.post.post_as_bot",
+    monkeypatch.setattr("pramanyx.slackbots.store.get_bot_decrypted", lambda bot_id: _Bot())
+    monkeypatch.setattr("pramanyx.slackbots.post.post_as_bot",
                         lambda token, channel, text, thread_ts=None, delivery_key="", departure_id="":
                         posted.append(text) or (True, {"ts": "1.2", "channel": "C1"}))
 
@@ -553,8 +553,8 @@ def test_a_bound_envelope_posts_its_slack_selection_and_the_gate_judges_that_tex
 
 
 def test_the_export_takes_every_field_of_the_envelope(monkeypatch):
-    from aughor.export import document
-    from aughor.export.document import build_export_doc
+    from pramanyx.export import document
+    from pramanyx.export.document import build_export_doc
 
     env = fold_frames(converse_frames(), question="top categories").model_dump()
     env["caveats"] = ["revenue is not the governed definition"]
@@ -583,7 +583,7 @@ def test_the_export_takes_every_field_of_the_envelope(monkeypatch):
 
 
 def test_the_converse_prompt_records_receipts_instead_of_narrating_them():
-    from aughor.agent.converse_tools import converse_system_prompt
+    from pramanyx.agent.converse_tools import converse_system_prompt
 
     prompt = converse_system_prompt("conn-x")
     assert "never report that none fired" in prompt

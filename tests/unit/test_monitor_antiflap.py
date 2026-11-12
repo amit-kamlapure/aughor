@@ -1,11 +1,11 @@
 """Monitor anti-flap (debounce) — a sustained breach must alert once, then at most
 once per grace window, not every cron tick; escalations fire immediately; the
-manual "test now" path bypasses suppression. See aughor/monitors/runner.py.
+manual "test now" path bypasses suppression. See pramanyx/monitors/runner.py.
 """
 from datetime import datetime, timedelta, timezone
 
-import aughor.monitors.runner as runner
-from aughor.monitors.models import Monitor, MonitorAlert
+import pramanyx.monitors.runner as runner
+from pramanyx.monitors.models import Monitor, MonitorAlert
 
 
 def _iso(hours_ago: float) -> str:

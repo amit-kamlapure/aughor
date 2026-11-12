@@ -17,7 +17,7 @@
  * long after they abandoned the idea.
  */
 
-const KEY = "aughor.monitorDraft.v1";
+const KEY = "pramanyx.monitorDraft.v1";
 
 export interface MonitorDraft {
   connId: string;
