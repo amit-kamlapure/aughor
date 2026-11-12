@@ -8,8 +8,8 @@
  * Two things the shell does not offer, and this file works around rather than through. Its product name in the
  * browser tab is a literal in its layout, so the tab title is corrected as it is written. And a dictionary cannot
  * be added to: a second registration of a namespace and language is refused, and the refusal takes the shell's
- * own conversation plugin down with it (seen: the page would not load). So the three phrases are written into the
- * shell's dictionary after it has registered it. Both fail quietly back to the shell's wording.
+ * own conversation plugin down with it (seen: the page would not load). So our phrases are written into the
+ * shell's dictionaries after it has registered them. Both fail quietly back to the shell's wording.
  */
 import { createElement as h } from "react";
 import mark from "../assets/mark.png";
@@ -151,30 +151,107 @@ function markTheTab() {
   return () => dark.removeEventListener("change", paint);
 }
 
-/** The words of the first screen, which the shell writes for someone about to build software. */
+/**
+ * Our words, by the shell's dictionary. The shell writes for someone about to build software, in sessions; a
+ * person here asks about a business, in conversations.
+ */
 const WORDS = {
-  en: {
+  conversation: {
     "hero.headline": "Ask your data anything",
     "hero.preview": "Coworker",
-    "placeholder.hero": "Ask anything about your data, / for commands, @ for sessions",
+    "placeholder.hero": "Ask anything about your data, / for commands, @ for conversations",
+  },
+  sidebar: {
+    "session.new": "New conversation",
+    "session.new.label": "New conversation",
+  },
+  workspace: {
+    "section.sessions": "Conversations",
+    "search.placeholder": "Search conversations",
   },
 };
 
 /**
- * Put our phrases in the shell's `conversation` dictionary. It reaches into the locale service's own table, which
- * is not a promise the shell makes — so every step is allowed to find nothing, and then nothing changes.
+ * Dictionaries reworded by rule rather than key by key: the shell calls a scheduled run an "automation task" in
+ * some forty phrases, and here it is a schedule. The article goes first, so "an automation task" does not become
+ * "an schedule".
+ */
+const REWORDED = {
+  "schedule.catalog": automationToSchedule,
+  "schedule.manager": automationToSchedule,
+};
+
+function automationToSchedule(phrase) {
+  return phrase
+    .replace(/\ban automation task\b/g, "a schedule").replace(/\bAn automation task\b/g, "A schedule")
+    .replace(/automation tasks/g, "schedules").replace(/Automation tasks/g, "Schedules")
+    .replace(/automation task/g, "schedule").replace(/Automation task/g, "Schedule");
+}
+
+/**
+ * Put our phrases in the shell's English dictionaries. It reaches into the locale service's own table, which is
+ * not a promise the shell makes — so every step is allowed to find nothing, and then nothing changes. A phrase is
+ * only ever written to what it should say, so running this again changes nothing more.
  */
 function sayOurWords(locale) {
   try {
-    const languages = locale?.dicts?.get?.("conversation");
-    if (!languages) return;
-    for (const [language, words] of Object.entries(WORDS)) {
-      const entries = languages.get(language);
-      if (entries) Object.assign(entries, words);
+    let changed = false;
+    const english = (namespace) => locale?.dicts?.get?.(namespace)?.get?.("en");
+    for (const [namespace, words] of Object.entries(WORDS)) {
+      const entries = english(namespace);
+      if (!entries) continue;
+      for (const [key, phrase] of Object.entries(words)) {
+        if (entries[key] !== phrase) { entries[key] = phrase; changed = true; }
+      }
     }
-    locale.publish?.(locale.snapshot?.active, false);
+    for (const [namespace, reword] of Object.entries(REWORDED)) {
+      const entries = english(namespace);
+      if (!entries) continue;
+      for (const [key, phrase] of Object.entries(entries)) {
+        if (typeof phrase !== "string") continue;
+        const ours = reword(phrase);
+        if (ours !== phrase) { entries[key] = ours; changed = true; }
+      }
+    }
+    if (changed) locale.publish?.(locale.snapshot?.active, false);
   } catch {
     // The shell's wording stands.
+  }
+}
+
+/**
+ * Other plugins register their dictionaries when they start, in an order this one is not told. The words are
+ * said now and a few times more as the page settles; each pass after the first finds nothing left to change.
+ */
+function keepSayingOurWords(locale) {
+  sayOurWords(locale);
+  const timers = [300, 1200, 4000].map((wait) => setTimeout(() => sayOurWords(locale), wait));
+  return () => timers.forEach(clearTimeout);
+}
+
+const VIEW = "dsh.workspace.view.v5";
+const VIEW_SET = "pramanyx.coworker.view-set";
+
+/**
+ * Conversations in one list, newest first, the first time this page is opened in a browser. The shell's own
+ * default files them under the folder each was started in, which means something to someone working in folders
+ * and nothing to someone asking about a business. It is the shell's own view option, set once: a person who
+ * picks another view afterwards keeps it.
+ *
+ * The shell reads its view before any plugin starts and keeps it in memory, so writing the stored copy changes
+ * nothing on the page that is open (a first version did only that, and the first visit still showed folders).
+ * The stored copy is written and the page is loaded once more, which a first visit shows as a brief flicker.
+ */
+function listConversationsNewestFirst() {
+  try {
+    if (localStorage.getItem(VIEW_SET)) return;
+    localStorage.setItem(VIEW_SET, "1");
+    const view = JSON.parse(localStorage.getItem(VIEW) || "{}");
+    if (view.groupBy === "flat") return;
+    localStorage.setItem(VIEW, JSON.stringify({ ...view, groupBy: "flat", orderBy: "updated" }));
+    window.location.reload();
+  } catch {
+    // A browser that keeps nothing: the shell's default view stands.
   }
 }
 
@@ -188,7 +265,7 @@ export function apply(ctx) {
   }));
   ctx.slots.inject("conversation.hero.brand.mark", () =>
     ctx.slots.register({ name: "conversation.hero.brand.mark" }, Mark));
-  sayOurWords(ctx.locale);
-  const undo = [wearLook(), nameTheTab(), markTheTab()];
+  listConversationsNewestFirst();
+  const undo = [wearLook(), nameTheTab(), markTheTab(), keepSayingOurWords(ctx.locale)];
   ctx.on?.("dispose", () => undo.forEach((off) => off()));
 }

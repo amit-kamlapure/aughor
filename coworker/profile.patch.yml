@@ -186,6 +186,8 @@
   disabled: true
 - id: ui-plugin-manager
   disabled: true
+- id: entry-customization          # "Create your plugin": a person writing a plugin in the page is the same way back
+  disabled: true
 
 # ── off: everything that reports to the shell's maker, and the feedback buttons that would feed it.
 - id: session-telemetry-otel
@@ -197,6 +199,21 @@
 - id: ui-message-feedback
   disabled: true
 - id: command-feedback
+  disabled: true
+
+# ── off: the shell's own account. A person here is who Pramanyx says they are; signing in to the shell's maker is
+#    a second identity, and its "Sign in" and "Feedback" entries lead away from the app this page belongs to.
+- id: deepseek-account
+  disabled: true
+- id: llm-deepseek-account
+  disabled: true
+- id: ui-settings-account
+  disabled: true
+- id: account-controller
+  disabled: true
+- id: session-log-download
+  disabled: true
+- id: ui-settings-session-log
   disabled: true
 
 # ── off: the shell's own name and mark. Ours take their places (plugins/brand).

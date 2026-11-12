@@ -27,6 +27,8 @@ tools taken out, under the shell's MIT licence.
 - **The person's terminal, the embedded browser, and installing plugins from the page.** Each is a way back to
   the above.
 - **Everything that reports to the shell's maker**, and the feedback buttons that would feed it.
+- **The shell's own account**: its sign-in, its account settings, its session-log export and "Feedback" entry.
+  A person here is who Pramanyx says they are.
 
 The overlay is passed on the command line, so it outranks the Settings page: a row turned off here cannot be
 turned back on from the interface.
@@ -42,6 +44,9 @@ turned back on from the interface.
 - **Pramanyx's identity.** The mark and name in the sidebar and over a new conversation, the tab's title and icon,
   the first screen's wording, the app's dark palette, small corners, and a plain ring where the shell draws its
   animal while an answer is worked on.
+- **The sidebar.** New conversation, Agents, Schedules, and conversations in one newest-first list. Agents opens a
+  page of a person's own agents; asking one begins a new conversation. Schedules is the shell's own scheduled
+  runs, reworded. The one-list view is the shell's own option, chosen once on a first visit.
 - **The first screen.** Under the question box: questions worth asking of a chosen connection, the questions asked
   lately, and a person's own agents. Each row writes a question into the box; nothing is asked until it is sent.
 - **A read-only relay**, `/pramanyx/…` on the shell's own server, so the page can read Pramanyx without the API's
@@ -76,10 +81,15 @@ later layer owns that row.
 - Reading the suggested questions is a cached read in Pramanyx; the first read for a connection costs a model call.
 - The light theme takes only the accent, the corners and the type. The app's light palette was not measured.
 - Source Sans 3 is used when it is installed; it is not bundled.
-- Still the shell's wording: "Standard mode", "Workspace Write", "Automation tasks", "Deep diving", and its
-  preview notice on first open.
-- Not built from the target layout: sidebar entries for agents, discovery, a person's own things and schedules;
-  chat history grouped by day; pinned items.
+- Still the shell's wording: "Standard mode", "Workspace Write", "Deep diving", "New Session" on an untitled
+  conversation, and its preview notice on first open.
+- Not built from the target layout: sidebar entries for discovery and a person's own things; day headings in the
+  conversation list (the shell's list has no place for them, and replacing its list would drop its per-row
+  rename, archive and delete); pinned items.
+- **A schedule made here spends Pramanyx model calls unattended**, and Pramanyx's own setting for scheduled model
+  work does not see it: the run arrives as an ordinary question over MCP.
+- **The coworker does not yet take its details from the app.** It has its own model key, every person is the one
+  MCP principal, and the connection is chosen again here. Nothing in the app leads to it.
 - The custom agents' card is untested live: asked for an agent by name, the model used `ask`.
 - The person's file panel is still on.
 - No test covers the card or the tool removal. The card was checked by eye on three real answers, one of them

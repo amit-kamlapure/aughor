@@ -1,5 +1,5 @@
 /**
- * The coworker's first screen, under the question box: questions worth asking of one connection, the questions
+ * The coworker's first screen and its Agents page. Under the question box: questions worth asking of one connection, the questions
  * asked lately, and a person's own agents. Everything on it is read from Pramanyx through this plugin's relay
  * (`lib/index.js`), and every item does one thing: it writes a question into the box. Nothing here asks anything
  * by itself — a person reads the question and sends it.
@@ -151,9 +151,77 @@ function Home(props) {
   return h("span", { ref: here }, below ? createPortal(block, below) : inRow ? block : null);
 }
 
-export const inject = ["slots"];
+const AGENTS = "pramanyx-agents";
+
+/** The sidebar's drawing for Agents: a plain head-and-two-eyes, in the colour of the text beside it. */
+function AgentsIcon({ size = 16 }) {
+  return h("svg", { width: size, height: size, viewBox: "0 0 16 16", fill: "none", stroke: "currentColor", strokeWidth: 1.3, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true" },
+    h("rect", { x: 2.5, y: 4.5, width: 11, height: 8.5, rx: 2 }),
+    h("path", { d: "M8 4.5V2.5" }),
+    h("path", { d: "M6 8.5v1M10 8.5v1" }));
+}
+
+/** The first sentence or so of what an agent was told it is for. */
+function purpose(agent) {
+  const text = String(agent.instructions || "").replace(/\s+/g, " ").trim();
+  if (text.length <= 220) return text;
+  const cut = text.slice(0, 220);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), 120))}…`;
+}
+
+/**
+ * The Agents page: a person's own agents, as Pramanyx keeps them. An agent is made and changed in Pramanyx; here
+ * it is asked. The page uses the full width it is given.
+ */
+function AgentsPage({ ask }) {
+  const [agents, setAgents] = useState(null);
+  const [connections, setConnections] = useState([]);
+  const [down, setDown] = useState(false);
+  useEffect(() => {
+    let live = true;
+    Promise.all([read("/agents/custom"), read("/connections")])
+      .then(([mine, all]) => { if (live) { setAgents(mine.filter((a) => a.enabled !== false)); setConnections(all); } })
+      .catch(() => { if (live) setDown(true); });
+    return () => { live = false; };
+  }, []);
+  const named = (id) => connections.find((c) => c.id === id)?.name || id || "";
+  const page = { height: "100%", overflow: "auto", boxSizing: "border-box", padding: "28px 32px", fontSize: 13.5,
+                 color: "var(--dsw-alias-label-primary)", background: "var(--dsw-alias-bg-base)" };
+  return h("div", { style: page },
+    h("h1", { style: { margin: 0, fontSize: 20, fontWeight: 600 } }, "Agents"),
+    h("p", { style: { ...quiet, margin: "4px 0 20px" } }, "Your agents answer as Pramanyx set them up. They are made and changed in Pramanyx."),
+    down ? h("p", { style: quiet }, "Pramanyx is not answering, so the agents cannot be listed.")
+      : agents === null ? h("p", { style: quiet }, "Reading your agents…")
+        : !agents.length ? h("p", { style: quiet }, "There are no agents yet.")
+          : h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12 } },
+              agents.map((agent) => h("section", {
+                key: agent.id,
+                style: { display: "flex", flexDirection: "column", gap: 8, border: `1px solid ${line}`, borderRadius: 6, padding: 14, background: faint },
+              },
+                h("div", { style: { fontSize: 15, fontWeight: 600 } }, agent.name),
+                agent.connection_id ? h("div", { style: { ...quiet, fontSize: 12 } }, `Answers on ${named(agent.connection_id)}`) : null,
+                h("div", { style: { flex: "1 1 auto", lineHeight: 1.5 } }, purpose(agent) || "No description."),
+                h("div", null, h("button", {
+                  type: "button", onClick: () => ask(agent),
+                  style: { font: "inherit", fontSize: 12.5, color: "inherit", cursor: "pointer", padding: "5px 12px", background: "transparent", border: `1px solid ${line}`, borderRadius: 4 },
+                }, "Ask this agent"))))));
+}
+
+export const inject = ["slots", "uiWorkspace"];
 
 export function apply(ctx) {
   ctx.slots.inject("conversation.hero.options", () =>
     ctx.slots.register({ name: "conversation.hero.options", id: "pramanyx-coworker-home" }, Home));
+
+  // A sidebar entry and the page it opens share one id: the shell's sidebar owns the button and its label.
+  ctx.slots.inject("sidebar.panellist", () =>
+    ctx.slots.register({ name: "sidebar.panellist", id: AGENTS, order: 5, label: () => "Agents" }, AgentsIcon));
+  ctx.slots.inject("main", () =>
+    ctx.slots.register({
+      name: "main", key: AGENTS,
+      inject: () => ({
+        // A new conversation with the question begun. Nothing is asked until a person finishes and sends it.
+        ask: (agent) => ctx.uiWorkspace.startSession(void 0, { prompt: `Ask the ${agent.name} agent: `, whenDraftExists: "append" }),
+      }),
+    }, AgentsPage));
 }
