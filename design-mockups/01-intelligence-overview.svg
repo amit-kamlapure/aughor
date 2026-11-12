@@ -12,7 +12,7 @@
   <line x1="244" y1="0" x2="244" y2="900" class="line"/>
   <line x1="244" y1="56" x2="1440" y2="56" class="line"/>
 
-  <text x="30" y="39" class="text h2">Aughor</text>
+  <text x="30" y="39" class="text h2">Pramanyx</text>
   <text x="30" y="58" class="faint small">Data intelligence platform</text>
   <rect x="20" y="94" width="204" height="34" rx="6" fill="#152238" stroke="#29415e"/>
   <text x="42" y="116" class="blue body">Overview</text>
@@ -57,7 +57,7 @@
 
   <rect x="286" y="342" width="690" height="330" rx="10" class="panel"/>
   <text x="310" y="380" class="text h2">What changed overnight</text>
-  <text x="310" y="406" class="muted body">Aughor found three business-significant movements and ranked them by evidence strength.</text>
+  <text x="310" y="406" class="muted body">Pramanyx found three business-significant movements and ranked them by evidence strength.</text>
   <line x1="310" y1="430" x2="952" y2="430" class="line"/>
   <circle cx="326" cy="470" r="6" class="red"/><text x="346" y="475" class="text h3">Payment failure rate rose in Brazil</text><text x="346" y="498" class="muted body">+4.1 pp, concentrated in card payments, 0.91 confidence</text>
   <rect x="824" y="455" width="108" height="28" rx="5" fill="#271218" stroke="#64323b"/><text x="848" y="474" class="red small">Investigate</text>

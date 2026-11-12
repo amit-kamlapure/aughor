@@ -7,7 +7,7 @@ be configured to notify Slack; nothing read the field. This module is the read.
 **Why an Action Hub trigger id and not a channel name.** The field used to be
 described as ``'in_app' | 'slack' | 'email'``, which names a *kind* of destination
 but never a destination: "slack" does not say which workspace, which webhook, or with
-what credential. Aughor already models configured destinations — ``ActionTrigger``,
+what credential. Pramanyx already models configured destinations — ``ActionTrigger``,
 with a URL, encrypted at rest, an SSRF guard at send time, retry, an audit log, and
 delivery-key idempotency. So the channel holds a trigger id, and delivery is
 ``fire_action``. Nothing here re-implements dispatch.

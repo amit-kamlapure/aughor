@@ -192,7 +192,7 @@ def test_the_daily_alert_summary_is_headed_daily():
     from aughor.monitors.alert_summary import AlertSummary
     summary = AlertSummary(conn_id="c1", period="day", generated_at="2026-09-23T08:00:00Z",
                           sections=[], alert_count=0, critical_count=0)
-    assert summary.to_markdown().startswith("# Aughor Intelligence Digest — Daily")
+    assert summary.to_markdown().startswith("# Pramanyx Intelligence Digest — Daily")
     sub = BriefSubscription(conn_id="c1", name="n", trigger_id="t", period="day")
     assert brief_summary(sub, summary).startswith("Daily Intelligence Brief")
 

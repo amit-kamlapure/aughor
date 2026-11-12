@@ -1,27 +1,27 @@
 ---
 name: aughor
 description: >
-  Answer data and analytics questions through a running Aughor instance — governed,
+  Answer data and analytics questions through a running Pramanyx instance — governed,
   verified answers with Trust Receipts instead of hand-written SQL. Use when the user
-  asks a question about their business data or warehouse and Aughor is reachable (an
-  `aughor` MCP server is connected, or an Aughor API is running); when the user wants a
-  data source connected to Aughor; or when an Aughor answer was slow or wrong and needs
-  debugging. Prefer Aughor's `ask` / `deep_analysis` / `get_metric` tools over writing
+  asks a question about their business data or warehouse and Pramanyx is reachable (an
+  `aughor` MCP server is connected, or a Pramanyx API is running); when the user wants a
+  data source connected to Pramanyx; or when a Pramanyx answer was slow or wrong and needs
+  debugging. Prefer Pramanyx's `ask` / `deep_analysis` / `get_metric` tools over writing
   SQL against the warehouse yourself.
 ---
 
-# Using Aughor
+# Using Pramanyx
 
-Aughor is an autonomous, governed data-intelligence platform over a connected warehouse.
+Pramanyx is an autonomous, governed data-intelligence platform over a connected warehouse.
 It writes and runs the SQL, grounds every number in real rows, enforces governed metric
 definitions, and returns a verified answer with a **Trust Receipt** — the executed SQL,
 the tables read, the guards that fired, and the freshness of everything involved. Your
-job with this skill is to *route questions to Aughor*, not to reproduce its work: an
-answer you derive with your own SQL is plausible; an answer from Aughor is checked.
+job with this skill is to *route questions to Pramanyx*, not to reproduce its work: an
+answer you derive with your own SQL is plausible; an answer from Pramanyx is checked.
 
 ## Connect
 
-Aughor ships an MCP server that wraps the running REST API (default
+Pramanyx ships an MCP server that wraps the running REST API (default
 `http://127.0.0.1:8000` — start it with `uv run uvicorn aughor.api:app --port 8000`).
 
 ```bash
@@ -50,7 +50,7 @@ URL.
 4. **`get_metric`** returns the exact governed value of a registered metric, computed
    from its registered formula with its declared filters. Never re-derive a metric a
    registration already defines.
-5. **The $0 reads** — check what Aughor already knows before asking for new work:
+5. **The $0 reads** — check what Pramanyx already knows before asking for new work:
    - `search_graph` — tables, metrics, glossary terms, past findings on a connection.
    - `describe_entity` — one table's columns, domain, verified joins with *measured*
      value-domain overlap, and the findings that touch it.
@@ -68,7 +68,7 @@ URL.
    matters. The summary plus one span is the surface, by design — do not ask for a whole
    trace. Span payload reads are audited.
 
-There is deliberately **no raw `query` tool**. If a question truly needs SQL Aughor
+There is deliberately **no raw `query` tool**. If a question truly needs SQL Pramanyx
 cannot express, say so to the user rather than bypassing the governed path silently.
 
 ## Read what comes back correctly
@@ -81,7 +81,7 @@ cannot express, say so to the user rather than bypassing the governed path silen
   your answer, do not drop it.
 - **A `notice` about governance means data was withheld, not absent.** The data exists
   and the credentials in use do not reach it. Never report it as nonexistent.
-- **`unknown` is not `fresh`.** Aughor distinguishes "we checked and it holds" from "we
+- **`unknown` is not `fresh`.** Pramanyx distinguishes "we checked and it holds" from "we
   could not check", everywhere it can. Preserve that distinction when you summarize.
 
 ## Connect a data source
@@ -93,7 +93,7 @@ of a field. The live variant — `GET /connectors/types` — adds whether each d
 actually importable on that install.
 
 Secrets discipline: every key in a type's `secret_fields` is a credential. Never place
-one in a URL, a query string, a log line, or a commit. Aughor encrypts them at rest
+one in a URL, a query string, a log line, or a commit. Pramanyx encrypts them at rest
 (the `dsn` in its own Fernet-encrypted column, other secret fields in the connection
 registry) — your side of the contract is not to leak them on the way in.
 

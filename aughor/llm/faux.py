@@ -1,6 +1,6 @@
 """The faux LLM backend — scripted completions for tests (unified plan Layer 0.1).
 
-Every structured completion in Aughor funnels through ``LLMProvider._complete_on``,
+Every structured completion in Pramanyx funnels through ``LLMProvider._complete_on``,
 which only ever touches ``client.chat.completions.create_with_completion(**kwargs)``
 on the OpenAI-compatible path. This module supplies that client: a process-global
 queue of *scripted* responses served in order, so a test exercises the REAL provider

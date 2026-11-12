@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Execution-accuracy scorer for Aughor SQL generation.
+"""Execution-accuracy scorer for Pramanyx SQL generation.
 
 Usage:
     .venv/bin/python evals/sql_accuracy.py --dataset evals/golden_sql_expanded.jsonl --connection samples

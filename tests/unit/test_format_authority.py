@@ -1,6 +1,6 @@
 """The platform number-format authority — `aughor.util.format`.
 
-Aughor quotes its own grounded numbers verbatim, so one raw float64 entering an LLM prompt
+Pramanyx quotes its own grounded numbers verbatim, so one raw float64 entering an LLM prompt
 surfaces unchanged in a headline ("…is 43.959061407888164%"). The policy is therefore applied
 at BOTH ends: `rows_for_prompt` rounds on the way IN (the model never sees the long form) and
 `round_long_decimals` rounds prose on the way OUT (anything already persisted is still fixed).

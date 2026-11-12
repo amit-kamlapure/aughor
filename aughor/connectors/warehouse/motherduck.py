@@ -1,4 +1,4 @@
-"""MotherDuck connector for Aughor — DuckDB in the cloud.
+"""MotherDuck connector for Pramanyx — DuckDB in the cloud.
 
 DSN format:  md:<database>            (token supplied via meta or env)
 Meta fields: {"token": "<motherduck_token>", "database": "my_db"}
@@ -8,7 +8,7 @@ client with an `md:` attachment. A MotherDuck service token authenticates the
 session — pass it in the form or set the MOTHERDUCK_TOKEN env var.
 
 Optional dep:
-  uv pip install 'duckdb>=0.10.0'   (already a core Aughor dependency)
+  uv pip install 'duckdb>=0.10.0'   (already a core Pramanyx dependency)
 """
 from __future__ import annotations
 

@@ -159,7 +159,7 @@ def test_the_providers_own_address_is_refused_as_a_callback(client):
     assert refused.status_code == 422
     detail = refused.json()["detail"]
     assert "own address" in detail
-    assert "BACK to Aughor" in detail        # it says WHOSE address it should be
+    assert "BACK to Pramanyx" in detail        # it says WHOSE address it should be
 
 
 def test_a_tunnel_to_this_api_is_accepted(client):

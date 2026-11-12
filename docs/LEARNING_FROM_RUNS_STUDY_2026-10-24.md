@@ -19,9 +19,9 @@ hosted service fed by AG-UI streams.
 self-hosted platform cannot ship its traces to a third party), the AG-UI stream format, and anything that changes
 weights (killed in the 2027 study, ROADMAP §6 item 39, kill 1).
 
-## 2 · What Aughor already has — measured
+## 2 · What Pramanyx already has — measured
 
-Aughor learns **one answer at a time** in five places; none reads **many runs** for a pattern.
+Pramanyx learns **one answer at a time** in five places; none reads **many runs** for a pattern.
 
 | Store | Learns from | Live count | Gate |
 |---|---|---|---|

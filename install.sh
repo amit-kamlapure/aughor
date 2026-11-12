@@ -1,13 +1,13 @@
 #!/bin/sh
-# Aughor installer for macOS and Linux.
+# Pramanyx installer for macOS and Linux.
 #
-# On a computer without Aughor, one line does everything: downloads Aughor into ~/aughor,
+# On a computer without Pramanyx, one line does everything: downloads Pramanyx into ~/aughor,
 # installs what it needs, starts it and opens it in the browser. Nothing has to be installed
 # first, not even Git:
-#   curl -LsSf https://raw.githubusercontent.com/amit-kamlapure/aughor/main/install.sh | sh
+#   curl -LsSf https://raw.githubusercontent.com/amit-kamlapure/pramanyx/main/install.sh | sh
 #
 # Inside a checkout:
-#   ./install.sh               install everything Aughor needs, start it, open it in a browser
+#   ./install.sh               install everything Pramanyx needs, start it, open it in a browser
 #   ./install.sh --no-start    install only
 #   ./install.sh --help        every option
 #
@@ -23,8 +23,8 @@ set -eu
 
 main() {
   # AUGHOR_REPO_URL and AUGHOR_ARCHIVE_URL install from a fork (or a local copy) instead.
-  REPO_URL="${AUGHOR_REPO_URL:-https://github.com/amit-kamlapure/aughor.git}"
-  ARCHIVE_URL="${AUGHOR_ARCHIVE_URL:-https://github.com/amit-kamlapure/aughor/archive/refs/heads/main.tar.gz}"
+  REPO_URL="${AUGHOR_REPO_URL:-https://github.com/amit-kamlapure/pramanyx.git}"
+  ARCHIVE_URL="${AUGHOR_ARCHIVE_URL:-https://github.com/amit-kamlapure/pramanyx/archive/refs/heads/main.tar.gz}"
   PYTHON_VERSION="3.11" # aughor/installer.py PYTHON_VERSION
 
   setup_output
@@ -101,19 +101,19 @@ find_checkout() {
       # Never write into a folder that holds anything else: a failed download is cleaned up
       # with `rm -rf`, and that must only ever meet what the download itself put there.
       if [ -e "$ROOT" ] && [ -n "$(ls -A "$ROOT" 2>/dev/null)" ]; then
-        fail "$ROOT already exists, and it isn't Aughor." \
+        fail "$ROOT already exists, and it isn't Pramanyx." \
           "Move it out of the way, or pick another folder with AUGHOR_DIR=/some/folder, then run this again."
       fi
-      say "Downloading Aughor into $ROOT..."
+      say "Downloading Pramanyx into $ROOT..."
       DOWNLOAD_LOG="${TMPDIR:-/tmp}"
       DOWNLOAD_LOG="${DOWNLOAD_LOG%/}/aughor-download.log" # macOS's TMPDIR ends in a slash
       : >"$DOWNLOAD_LOG"
       download_aughor "$ROOT" ||
         {
           proxy_hint_if_certificate "$DOWNLOAD_LOG"
-          fail "Could not download Aughor." "Check your internet connection, then run this again. Log: $DOWNLOAD_LOG"
+          fail "Could not download Pramanyx." "Check your internet connection, then run this again. Log: $DOWNLOAD_LOG"
         }
-      ok "Aughor downloaded"
+      ok "Pramanyx downloaded"
     fi
     ROOT=$(CDPATH='' cd -- "$ROOT" && pwd -P)
   fi
@@ -145,7 +145,7 @@ download_aughor() {
         mv "${unpacked%/}" "$1" && rm -rf "$staging" && return 0
       fi
     done
-    echo "the downloaded archive holds no Aughor checkout" >>"$DOWNLOAD_LOG"
+    echo "the downloaded archive holds no Pramanyx checkout" >>"$DOWNLOAD_LOG"
   fi
   rm -rf "$staging"
   return 1
@@ -242,7 +242,7 @@ ensure_uv() {
   if UV=$(find_uv); then
     return 0
   fi
-  say "Installing uv, the Python package manager Aughor uses..."
+  say "Installing uv, the Python package manager Pramanyx uses..."
   if command -v curl >/dev/null 2>&1; then
     curl -LsSf https://astral.sh/uv/install.sh 2>>"$LOGS/uv-install.log" | sh >>"$LOGS/uv-install.log" 2>&1 || true
   elif command -v wget >/dev/null 2>&1; then
@@ -263,7 +263,7 @@ check_uv_version() {
   uv_version=${uv_version%% *}
   case "$uv_version" in
     0.[0-7] | 0.[0-7].*)
-      fail "uv $uv_version is too old for Aughor." "Update it (uv self update, or your package manager), then run this again."
+      fail "uv $uv_version is too old for Pramanyx." "Update it (uv self update, or your package manager), then run this again."
       ;;
   esac
 }

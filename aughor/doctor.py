@@ -87,14 +87,14 @@ def _node(repo: Path) -> Check:
 def _port(label: str, port: int, flag: str) -> Check:
     from aughor.netprobe import port_in_use, port_owner
     if not port_in_use(port):
-        return Check(label, OK, found="free", wanted="free, or held by Aughor")
+        return Check(label, OK, found="free", wanted="free, or held by Pramanyx")
     owner = port_owner(port)
     if not owner:
         # `port_owner` shells out to `lsof`, which is POSIX-only. No answer is not "nobody".
-        return Check(label, UNKNOWN, found="in use, owner unknown", wanted="free, or held by Aughor",
+        return Check(label, UNKNOWN, found="in use, owner unknown", wanted="free, or held by Pramanyx",
                      reason="something is listening; lsof did not say what",
                      fix=f"find it yourself: lsof -nP -iTCP:{port} -sTCP:LISTEN")
-    return Check(label, WARN, found=f"in use by {owner}", wanted="free, or held by Aughor",
+    return Check(label, WARN, found=f"in use by {owner}", wanted="free, or held by Pramanyx",
                  reason="a restart will refuse rather than take a port from its owner",
                  fix=f"stop it, or run on another port (aughor up {flag} <n>)")
 

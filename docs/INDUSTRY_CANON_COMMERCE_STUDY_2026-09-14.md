@@ -1,6 +1,6 @@
 # Research canon — commerce, consumer & services industries
 
-*For Aughor industry packages. Compiled 2026-09-14. Web research only.*
+*For Pramanyx industry packages. Compiled 2026-09-14. Web research only.*
 
 **Scope.** Fourteen new industries in depth (§1–§14), a gap check for the six existing packages (§15), and a cross-industry note (§16). §17 lists the claims I could not verify in this pass.
 

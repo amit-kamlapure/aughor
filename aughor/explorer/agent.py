@@ -1,7 +1,7 @@
 """
 SchemaExplorer — proactive, curiosity-driven background schema cartography.
 
-Aughor connects to a database and immediately begins a background exploration:
+Pramanyx connects to a database and immediately begins a background exploration:
 one small SQL query at a time, rate-limited to avoid overloading the database,
 pausing entirely whenever a user investigation is running.
 
@@ -1344,7 +1344,7 @@ class SchemaExplorer:
             # Arc BG-1 — the Briefing guide, drafted from what this run learned: the Briefer's job,
             # keyed on the schema fingerprint. Never for a structure-only run (no model call may
             # follow it) or a canvas; a re-run nobody started drafts only when the organisation
-            # lets Aughor make model calls nobody pressed for.
+            # lets Pramanyx make model calls nobody pressed for.
             if not self._structure_only and not self.canvas_id:
                 try:
                     from aughor.orgsettings.allows import allows

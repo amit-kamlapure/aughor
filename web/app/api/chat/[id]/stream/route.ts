@@ -6,7 +6,7 @@
  * the conversation id (our `session_id`). The backend half is
  * `GET /ask/stream/{session_id}` — the frame hub's snapshot-then-tail replay of
  * a K1 job-streamed deep run, in the run's own SSE dialect. This route is the
- * same translator the POST route is: Aughor frames in, UIMessage chunks out,
+ * same translator the POST route is: Pramanyx frames in, UIMessage chunks out,
  * through the SAME adapter, so resume can never drift from first delivery.
  *
  * `204` (flag off · no run for this conversation · run already finished) maps

@@ -1,5 +1,5 @@
 """
-Smoke tests for the Aughor API.
+Smoke tests for the Pramanyx API.
 
 These tests hit the real FastAPI app via TestClient (no live server, no LLM calls).
 They guard against import errors, startup failures, and obvious endpoint regressions.

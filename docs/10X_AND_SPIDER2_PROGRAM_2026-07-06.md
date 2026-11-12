@@ -196,7 +196,7 @@ compiler, **only compiler-verified identifiers may appear in executed SQL**, ≤
 terminal execution, NO ensemble/voting); (3) frontier *thinking* model worth ~8 pts on an identical
 harness (QUVI: Gemini-3-pro 94.15 vs Opus-4.6 86.28); (4) compounding loops (Genloop
 83.4→88.5→96.7 across versions). Goodhart caveat (QUVI admits in print): hand-curated per-DB
-descriptions can encode expected answers — Aughor competes with an AUTO-derived substrate instead
+descriptions can encode expected answers — Pramanyx competes with an AUTO-derived substrate instead
 (AT&T proved auto-profiling ≥ SME descriptions; their KG entry = 86.3 on open models).
 
 **Lite top-3 formula:** frontier reasoner (~half the gap at equal method) + agentic schema
@@ -207,7 +207,7 @@ knowledge assets. SOMA repairs only assumptions traceable to probe outputs; Data
 found single-trajectory discipline beats ensembles — both independently confirm the repo's
 deterministic-first thesis.
 
-### 5.3 Aughor position
+### 5.3 Pramanyx position
 
 **Assets (verified in code):** the auto-built semantic substrate (ontology w/ value-verified join
 edges · metric contracts · glossary · profiling · YAML overrides · query-log miner) = the winners'
@@ -242,11 +242,11 @@ clone stale (last pull 2026-01-30 — `git pull /Users/amitkamlapure/dev/Spider2
    WS2's runner design.
 4. **Self-host the Snow data via Secure Data Share** (us-west-2) → kills the shared-warehouse
    queue that limited June to ~2.5h sessions. Request EARLY in Phase 0.
-5. **Traces are a submission requirement — Aughor's receipts already are that.** Run the harness
+5. **Traces are a submission requirement — Pramanyx's receipts already are that.** Run the harness
    THROUGH the receipt path; the submission package falls out of the product.
-6. **DivSkill's "residual skill optimization" ≈ Aughor's dormant `aughor/memory` skills +
+6. **DivSkill's "residual skill optimization" ≈ Pramanyx's dormant `aughor/memory` skills +
    playbook subsystem**: a small set of learned prompt policies optimized only on residual
-   failures, selected by execution-equivalence + pairwise judge. Adapt using Aughor's OWN golden
+   failures, selected by execution-equivalence + pairwise judge. Adapt using Pramanyx's OWN golden
    set + mined logs (NOT Spider gold — stays clean of the fine-tuning rule).
 
 ### 5.5 Phased plan (gates before spend)
@@ -260,7 +260,7 @@ clone stale (last pull 2026-01-30 — `git pull /Users/amitkamlapure/dev/Spider2
   a 10–20 instance closed-loop smoke. **GATE:** hard-subset (50) A/B on glm-5.2 — baseline vs
   substrate-grounded vs substrate+probing. If grounding doesn't move the hard subset materially,
   stop and reassess (model swap or descope to "respectable listing").
-- **Phase 1 — The substrate play (wks 2–4).** Run Aughor's explorer/profiler/ontology over the
+- **Phase 1 — The substrate play (wks 2–4).** Run Pramanyx's explorer/profiler/ontology over the
   benchmark DBs (this is also a product stress-test on 150+ real schemas); ingest per-instance
   external-knowledge docs via the document-context layer; ground generation in the resulting
   SemanticContext. Iterate ONLY on the hard/failing subset (memory `spider2-test-hard-only`) with
@@ -315,7 +315,7 @@ Each session, before working:
   - **WS5-P0 — harness + full run done (scoring, NOT submission):** `evals/spider2.py` (product prompt + guards + closed-loop + external-knowledge docs + timestamped traces). Full 135 local SQLite: **135/135 exec-success; official evaluate.py 72/135 = 53.3%** (same model as June — **glm-5.2:cloud**; June ref 56.3% = glm-5.2 + a tuned ANSWER_SHAPE config, this run = the product prompt, so the ~3pt gap is prompt-config not model). Data-Share request DRAFTED (a locally drafted request (not in the repo)), NOT sent.
   - Suite 2588 green throughout; ruff 0; ratchets only-down.
 - **2026-07-06 (cont.) — PR #111 opened (WS4/WS3/WS2/WS1); WS5 Phase-0 CLOSED with a negative result.**
-  - PR [#111](https://github.com/amit-kamlapure/aughor/pull/111) opened on the branch (the 4 improvement WS).
+  - PR [#111](https://github.com/amit-kamlapure/pramanyx/pull/111) opened on the branch (the 4 improvement WS).
   - **WS5 Phase-0 (fail-analysis + first lever) — done, see `docs/SPIDER2_PHASE0_FAIL_ANALYSIS_2026-07-06.md`.**
     Offline fail-analysis of the 72/135 run: misses = wrong_values 49 (78%) / wrong_shape 8 / empty 6 /
     0 exec-errors; only 7 misses carry an EK doc. The one cheap lever tried (containment-aware

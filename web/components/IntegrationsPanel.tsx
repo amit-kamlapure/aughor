@@ -528,7 +528,7 @@ export function IntegrationsPanel() {
                 // A product is a scope on ONE grant, and Google revokes a grant whole — so disconnecting is the
                 // provider's, and says that it is every product.
                 <Button variant="ghost" size="xs" disabled={busy === p.id}
-                  title={products.length ? `${p.name} removes Aughor's access to every ${p.name} product at once` : undefined}
+                  title={products.length ? `${p.name} removes Pramanyx's access to every ${p.name} product at once` : undefined}
                   onClick={() => revoke(p)}>{products.length ? "Disconnect all" : "Revoke"}</Button>
               ) : p.configured && !products.length ? (
                 <Button variant="default" size="xs" disabled={busy === p.id} onClick={() => connect(p.id)}>
@@ -635,11 +635,11 @@ export function IntegrationsPanel() {
             </div>
             <AgentSlackDoor
               agentId={doorAgent}
-              agentName={agents.find(a => a.id === doorAgent)?.name || "Aughor"}
+              agentName={agents.find(a => a.id === doorAgent)?.name || "Pramanyx"}
               connectionId={doorConnection}
               heading="Add a Slack app"
               intro={"No callback, no tunnel, no HTTPS: a Slack app opens an **outbound** socket to Slack, which is why "
-                + "it works from a laptop when OAuth cannot. Aughor renders the manifest; you create the app in Slack "
+                + "it works from a laptop when OAuth cannot. Pramanyx renders the manifest; you create the app in Slack "
                 + "and paste three values back."}
               skipLabel="Close"
               onDone={() => {
@@ -663,7 +663,7 @@ export function IntegrationsPanel() {
                 for "the redirect URI" beside a console link, a reasonable person pastes the provider's address.
                 Saving it unchanged stores no override at all. */}
             <div className="aug-fs-xs" style={MUTED}>
-              Redirect URI — where {p.name} sends the browser <strong>back to Aughor</strong>; it must reach this API
+              Redirect URI — where {p.name} sends the browser <strong>back to Pramanyx</strong>; it must reach this API
               {p.https_only ? " over HTTPS (a tunnel is enough)" : ""} and match the console exactly.
             </div>
             <Input style={inputStyle}
@@ -981,7 +981,7 @@ export function IntegrationsPanel() {
 
       {tab === "providers" && (
         <Card label="Providers" testId="integration-providers"
-          right={<Chip title="Aughor holds every token itself — encrypted at rest, refreshed before expiry, never shown to a model">
+          right={<Chip title="Pramanyx holds every token itself — encrypted at rest, refreshed before expiry, never shown to a model">
             tokens held encrypted · never shown
           </Chip>}>
           {providers.length === 0 ? <Empty>No provider is offered on this deployment.</Empty> : providers.map(providerRow)}

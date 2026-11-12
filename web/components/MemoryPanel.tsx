@@ -246,7 +246,7 @@ export function MemoryPanel() {
   return (
     <Page testId="memory-page">
       <p className="aug-fs-ui" style={{ margin: 0, color: "var(--t2)" }}>
-        What Aughor has learned across every connection: how it reads ambiguous terms, the queries it trusts, and what
+        What Pramanyx has learned across every connection: how it reads ambiguous terms, the queries it trusts, and what
         reviewers said.
       </p>
 

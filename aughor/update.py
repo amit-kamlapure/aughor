@@ -106,7 +106,7 @@ def update(root: Path, *, ref: str | None = None) -> Result:
         return Result("refused",
                       "this install came from a snapshot, not a clone, so there is no remote "
                       "to fast-forward from. Re-run the installer to take the newest code: "
-                      "curl -LsSf https://raw.githubusercontent.com/amit-kamlapure/aughor/main/install.sh | sh "
+                      "curl -LsSf https://raw.githubusercontent.com/amit-kamlapure/pramanyx/main/install.sh | sh "
                       "— your state is not touched by it.")
 
     before = _git(root, "rev-parse", "HEAD").stdout.strip()

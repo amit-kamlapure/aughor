@@ -62,7 +62,7 @@ def test_no_agent_means_the_converse_prompt_is_unchanged():
     assert current_agent() is None
     prompt = converse_system_prompt("conn-1")
     assert BRIEF_HEAD not in prompt
-    assert prompt.startswith("You are Aughor's analyst")
+    assert prompt.startswith("You are Pramanyx's analyst")
 
 
 def test_an_agent_with_blank_instructions_adds_nothing():

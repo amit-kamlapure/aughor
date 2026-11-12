@@ -1,4 +1,4 @@
-"""The sheets, as one connection — *Sheets* — that the rest of Aughor reads as it reads any table (Arc SH).
+"""The sheets, as one connection — *Sheets* — that the rest of Pramanyx reads as it reads any table (Arc SH).
 
 A DuckDB connection over the organisation's projection: a cursor of the one database the API process writes
 (``projection.py``), so a chat answer, a Catalog browse or a dashboard reads exactly what the grid shows. The engine is

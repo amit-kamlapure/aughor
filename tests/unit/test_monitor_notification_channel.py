@@ -190,7 +190,7 @@ def test_dispatch_alert_is_a_noop_for_an_unresolvable_monitor(isolated, sent):
 
 def test_slack_renders_an_alert_as_an_alert(isolated):
     """Reusing the recommendation template would headline a critical alert with
-    'Aughor recommendation:' and bury the severity."""
+    'Pramanyx recommendation:' and bury the severity."""
     from aughor.notifications.executor import _build_slack_payload
     trigger = ActionTrigger(id="t1", name="slack", type="slack",
                             url="https://hooks.slack.com/x", channel="#ops")
@@ -219,5 +219,5 @@ def test_slack_recommendation_rendering_is_unchanged():
                             metric_name="revenue", headline="Revenue fell",
                             trigger_id="t1", triggered_at="2026-08-14T00:00:00Z")
     body = _build_slack_payload(trigger, payload)
-    assert body["text"] == "*Aughor recommendation*: Raise the floor price"
+    assert body["text"] == "*Pramanyx recommendation*: Raise the floor price"
     assert body["attachments"][0]["color"] == "#2D72D2"

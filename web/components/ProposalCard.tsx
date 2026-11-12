@@ -356,7 +356,7 @@ export function ProposalCard({ proposal, actor, onResolved, onOpenInEditor, inbo
   onOpenInEditor?: (p: StagedProposal) => void;
   /** Where this proposal lives — rendered as a link on surfaces away from the inbox. */
   inboxHref?: () => void;
-  /** Resolves an integration grant id to the account's own words ("slack · Aughor HQ"). */
+  /** Resolves an integration grant id to the account's own words ("slack · Pramanyx HQ"). */
   accountLabel?: (grantId: string) => string;
 }) {
   const p = proposal;

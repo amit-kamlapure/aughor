@@ -114,7 +114,7 @@ Wednesday 7 October · since your last visit on 3 Oct
 └────────────────────────────────────┘ └───────────────────────────────────┘
 Your standing questions · answered each morning
 [ July revenue $338,523 ] [ Aug completed $113,573 ] [ Repeat 6.2→13.1% ] [ 1.5 + 2.5 days ]
-┌ The week ahead ────────────────────┐ ┌ Between you and Aughor ───────────┐
+┌ The week ahead ────────────────────┐ ┌ Between you and Pramanyx ───────────┐
 │ Thu 8 Oct · September readable     │ │ told it 0 · agreed 0 · forecasts 0│
 └────────────────────────────────────┘ └───────────────────────────────────┘
 ```
@@ -216,7 +216,7 @@ What is due today stays on Now (*Waiting on you*).
   for theLook) and the Briefing's ranges (`briefing/ranges`). The week ahead must use the one the Briefing uses for
   the same number, or say which one it used.
 
-### 3.7 · Between you and Aughor
+### 3.7 · Between you and Pramanyx
 
 Four counts for the person looking at the page:
 - what they told it;
@@ -247,7 +247,7 @@ that exists. The first-run steps stay, shown only before the first analysis.
 ## 4 · Order, if adopted
 
 1. **Drop the copies; add 3.1 Ask with memory** (one read route), **3.4 Worth another look** (doors exist) and
-   **3.7 Between you and Aughor** (a read).
+   **3.7 Between you and Pramanyx** (a read).
 2. **3.2 The one thing to know** reads the daily runs; its warning is the one piece of new code. **3.6 The week
    ahead** is all reads.
 3. **3.5 Your standing questions** needs the standing mark, the morning job, and who "you" is.

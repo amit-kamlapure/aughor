@@ -6,7 +6,7 @@
  * `task_update` chunk, which Slack renders as a live progress card and updates
  * in place when the same `id` comes back with a new status.
  *
- * So this maps Aughor's own progress vocabulary onto that id space, and the
+ * So this maps Pramanyx's own progress vocabulary onto that id space, and the
  * mapping is the whole file. The rules that matter:
  *
  * - `phase_progress` and `phase_complete` SHARE a key space (`phase_id`), which

@@ -5,13 +5,13 @@ execution-signature selection. It already computes the free disagreement signal
 (`n_signatures`, `agreed`) — and then ships the plurality winner and stops. SOMA's own ablation
 puts most of the gain in the *back half* (probing + evidence-gated repair; +30.6 EX on instances
 where no candidate was correct). This module is that back half, leaned out along three
-Aughor-specific improvisations (design: docs/SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md):
+Pramanyx-specific improvisations (design: docs/SOMA_LEVERAGE_AND_AMBIGUITY_LEDGER_2026-07-06.md):
 
   * **I2 — deterministic AST-diff disagreement extraction.** The paper spends an LLM call to
     diff candidates; we own sqlglot, so pairwise normalized-AST feature diff classifies each
     delta into the paper's taxonomy (AmbiValue / AmbiIntent{grain,aggregation,window} /
     AmbiSchema) with no model call. Cheaper, reproducible, receipt-ready.
-  * **I3 — deterministic-first probe battery.** For each taxonomy class Aughor already owns the
+  * **I3 — deterministic-first probe battery.** For each taxonomy class Pramanyx already owns the
     probe the paper plans with an LLM (filter-literal binding for AmbiValue, the grain check for
     AmbiIntent-grain, …). The harness supplies those as callables; only the AmbiIntent residue
     the guards can't resolve keeps an (optional, capped) LLM probe.

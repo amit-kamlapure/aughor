@@ -1,7 +1,7 @@
 """Per-dialect SQL-writer rules — dialect knowledge as DATA, selected by how a
 connection executes the LLM's SQL.
 
-Aughor has TWO execution modes (this was inconsistent + under-documented before):
+Pramanyx has TWO execution modes (this was inconsistent + under-documented before):
 
   * transpile-from-DuckDB — the connection's execute() runs translate()
     (sqlglot read=duckdb → dialect). DuckDB itself and Postgres take this path.

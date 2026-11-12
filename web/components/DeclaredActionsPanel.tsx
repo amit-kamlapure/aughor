@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Actions — what Aughor may do on a connection (the Intelligence workspace's Actions tab), laid out to CLARITY
+ * Actions — what Pramanyx may do on a connection (the Intelligence workspace's Actions tab), laid out to CLARITY
  * (`aughor-v2/CLARITY.md`) as the ledger it is. The declared actions come first, read like a document: each one's name
  * and what it does in a line, what it changes as one muted line of facts, and its gate as a chip whose title is the rule.
  * Beside them, in amber, what waits for a person: the approvals, and an outbox call no retry will deliver. Then the edit
@@ -239,7 +239,7 @@ export function DeclaredActionsPanel({ connectionId }: { connectionId: string })
   const nameOf = useCallback((id: string) => names.get(id) ?? humanName(id), [names]);
 
   if (!connectionId) {
-    return <Page testId="actions-page"><section style={CARD}><Empty>Choose a connection to see what Aughor may do on it.</Empty></section></Page>;
+    return <Page testId="actions-page"><section style={CARD}><Empty>Choose a connection to see what Pramanyx may do on it.</Empty></section></Page>;
   }
 
   // The page's two doors. Inside the app they sit with the page's actions in the title row (2026-11-10, ROADMAP §6 item
@@ -292,7 +292,7 @@ export function DeclaredActionsPanel({ connectionId }: { connectionId: string })
         <Label right={inShell ? undefined : doors}>
           Declared actions{actions.data && <span style={{ ...NUM, color: "var(--t2)" }}>{formatCount(actions.data.length)}</span>}
         </Label>
-        <div className="aug-fs-sm" style={SUB}>What Aughor may do on this connection, and which runs a person approves first.</div>
+        <div className="aug-fs-sm" style={SUB}>What Pramanyx may do on this connection, and which runs a person approves first.</div>
         <Ledger read={actions} nameOf={nameOf} />
         {proposing && <ProposeForm connectionId={connectionId} nameOf={nameOf} onClose={() => setProposing(false)} onStaged={pending.reload} />}
         {designing && (

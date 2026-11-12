@@ -1,4 +1,4 @@
-# Roadmap: Un-restricting the model, Elements-grade chat, and the Aughor chatbot shell
+# Roadmap: Un-restricting the model, Elements-grade chat, and the Pramanyx chatbot shell
 
 Date: 2026-08-01 · Status: PROPOSED (no code changed yet)
 Inputs: full-repo inventory of every mechanism that constrains what the LLM sees or says;
@@ -210,7 +210,7 @@ separate decision).
 
 ---
 
-## Track C — The Aughor chatbot (vercel/chatbot shell)
+## Track C — The Pramanyx chatbot (vercel/chatbot shell)
 
 `vercel/ai-chatbot` → renamed **`vercel/chatbot`**: Apache-2.0, Next 16, React 19,
 AI SDK v7 (`ai@7`, `@ai-sdk/react@4`), next-auth v5 beta, Drizzle/Neon Postgres,
@@ -219,16 +219,16 @@ AI Gateway model layer.
 **The architecture decision (C0): the template is a shell; the brain stays in
 Python.** "Deploy with our logics/guards" must NOT mean porting guards to TS —
 it means the template's route handler stops calling `streamText` and instead
-proxies Aughor's `/ask`. Every guard, flag, receipt, and retrieval behavior is
+proxies Pramanyx's `/ask`. Every guard, flag, receipt, and retrieval behavior is
 inherited automatically because there is exactly one answer path. (This also
 respects the platform's one-brain history: dual paths always rotted — cf. the
 `ada_report` frozen-alias scar tissue.)
 
 ### C1. Protocol adapter — the only load-bearing artifact
 A TS module inside the fork's `app/(chat)/api/chat/route.ts`:
-Aughor SSE frames → AI SDK UIMessage stream parts.
+Pramanyx SSE frames → AI SDK UIMessage stream parts.
 - `headline_delta`/`narrative_delta`/`report_delta` → text parts. **Semantics
-  mismatch is the trap:** Aughor deltas are *replace* (full text so far,
+  mismatch is the trap:** Pramanyx deltas are *replace* (full text so far,
   `investigationStream.ts:348,394,397`); AI SDK is *append* — the adapter diffs
   consecutive frames and emits only the suffix.
 - `route`/`phase_progress`/`start`/status → reasoning parts (renders in the
@@ -252,23 +252,23 @@ to `POST /investigations/{id}/feedback` — wire the plan gate minimally (approv
 reject), defer full ClarifyCard parity.
 
 ### C3. Auth & persistence reconciliation (decide here, not before)
-Template brings next-auth + Postgres chat history; Aughor brings RBAC +
+Template brings next-auth + Postgres chat history; Pramanyx brings RBAC +
 `/chat-sessions` ledger. Default recommendation: keep next-auth for login,
-**drop the template's chat-history tables** and read/write Aughor's
+**drop the template's chat-history tables** and read/write Pramanyx's
 `/chat-sessions` so history is one store with the main app. Fallback if the
-template's DB coupling is too deep: template DB as display cache, Aughor ledger
+template's DB coupling is too deep: template DB as display cache, Pramanyx ledger
 as authority.
 
 ### C4. Deploy
-Vercel (shell) + hosted Aughor API; CORS allowlist for the shell's origin; a
-server-side API key from the shell's route handler to Aughor (never in the
+Vercel (shell) + hosted Pramanyx API; CORS allowlist for the shell's origin; a
+server-side API key from the shell's route handler to Pramanyx (never in the
 browser). Pin the fork — the template tracks AI SDK majors aggressively; treat
 upstream merges as scheduled maintenance, not continuous.
 
 **Non-goals:** no second answer path, no TS re-implementation of any guard, no
-AI Gateway/model selection in the shell (Aughor's `data/llm_config.json` remains
+AI Gateway/model selection in the shell (Pramanyx's `data/llm_config.json` remains
 the single model authority; the template's model picker is removed or repurposed
-to Aughor's picker API).
+to Pramanyx's picker API).
 
 ---
 

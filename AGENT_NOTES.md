@@ -9,7 +9,7 @@ ROADMAP §0 (top block) + §3 ("The 10x + Spider 2.0 program") mirror it at-a-gl
 User-confirmed 2026-07-06: glm-5.2 via Ollama Cloud is THE campaign model; Snowflake access ready.
 
 ## Compounding-substrate map (2026-07-07, for the paradigm-shift study)
-Aughor has FOUR partially-connected compounding stores, none executable/composable:
+Pramanyx has FOUR partially-connected compounding stores, none executable/composable:
 - `playbook/models.py::PlaybookEntry` — trigger→recommendation TEXT + `historical_success_rate`
   (updated by `outcomes.py::update_playbook_success_rates`) — a proto-skill, advisory only.
 - `semantic/trusted_queries.py::TrustedQuery` — flat trusted-SQL strings, token-overlap retrieval top-k 2.
@@ -23,10 +23,10 @@ procedures that accumulate per warehouse — today's stores hold text + SQL stri
 User redirected mid-session: read the research on LLM-powered data processing (arXiv 2410.12189 on
 agentic query rewriting, the CIDR 2025 paper on declarative AI-analytics query processing, DataAgentBench
 2603.20576) plus the published patterns for connector contracts and plan-as-program agents, and extract
-iterable features to improve Aughor.
-**The sources CONVERGE on Aughor's own thesis** — a declarative plan separated from
+iterable features to improve Pramanyx.
+**The sources CONVERGE on Pramanyx's own thesis** — a declarative plan separated from
 deterministic execution, LLM non-determinism confined to small bounded *validated* ops. So they
-validate the direction and hand Aughor specific unbuilt mechanisms. Full briefs captured in the
+validate the direction and hand Pramanyx specific unbuilt mechanisms. Full briefs captured in the
 session; key transfers, ranked:
 - **Gleaning** (arXiv 2410.12189: validate→refine loop, `num_rounds`, append-validator-to-thread) → the text
   semops, which today do single-call fail-open with ZERO validation. ✅ SHIPPED (below).
@@ -42,8 +42,8 @@ session; key transfers, ranked:
 - **DAB** (the frontier bench, Gemini-3-Pro 38% pass@1): 4 hard axes by query count — multi-DB 54/54 ·
   **unstructured-text extraction 47/54 (0% on patents, the wedge)** · domain-knowledge 30/54 ·
   ill-formatted join keys 26/54. Failures: plan+impl = 85% (FM2 40 + FM4 45), data-selection only 15%.
-  Aughor already owns axis-4 (ontology/metrics) + has the right shape for axis-3 (overlap-probe join
-  guards, single-DB today). Aughor already has a THIN `connectors/federated.py` (DuckDB ATTACH/Arrow).
+  Pramanyx already owns axis-4 (ontology/metrics) + has the right shape for axis-3 (overlap-probe join
+  guards, single-DB today). Pramanyx already has a THIN `connectors/federated.py` (DuckDB ATTACH/Arrow).
 Decision (mine, pending user scope pick on the bigger bets): ship the no-regret wedge first
 (guarded extraction = DAB GAP-2), then present the ranked roadmap for the big directional bets
 (cross-DBMS federated planner / plan-as-program+artifacts / cross-source key reconciliation).

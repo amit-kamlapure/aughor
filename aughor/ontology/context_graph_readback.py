@@ -4,7 +4,7 @@ This is the mechanic Wave C exists for: before generating SQL, match the committ
 per-connection graph against the question, pull the 1-hop subgraph, and inject it as a
 plan-time prior. The subgraph now includes the two node types that were *write-only*
 before — ``finding`` (dossiers/exploration insights) and the ``resolves`` readings —
-so a question about a table Aughor already investigated finally inherits what it
+so a question about a table Pramanyx already investigated finally inherits what it
 learned. Every line is cited by its node/edge id, so the block the context receipt
 shows names exactly what grounded the plan.
 

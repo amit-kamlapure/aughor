@@ -151,7 +151,7 @@ def auth_for(server: McpServer, *, redirect_uri: str = "", handlers: Optional[Ha
     metadata = OAuthClientMetadata(
         redirect_uris=[redirect_uri or "http://localhost:8000" + CALLBACK_PATH],
         grant_types=["authorization_code", "refresh_token"], response_types=["code"],
-        scope=server.oauth_scopes or None, client_name="Aughor",
+        scope=server.oauth_scopes or None, client_name="Pramanyx",
         token_endpoint_auth_method=server.oauth_token_endpoint_auth if server.oauth_client_secret else "none")
     return OAuthClientProvider(server_url=server.url, client_metadata=metadata, storage=storage,
                                redirect_handler=redirect_handler, callback_handler=callback_handler,

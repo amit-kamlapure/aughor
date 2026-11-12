@@ -181,7 +181,7 @@ def test_every_figure_links_back_to_its_receipt(monkeypatch):
     inv["report"]["envelope"] = {"headline": "AOV rose 2% MoM", "provenance": {"receipt_id": "r123abc"}}
     monkeypatch.delenv("AUGHOR_WEB_URL", raising=False)
     doc = build_export_doc(inv)
-    assert (doc.source_text(), doc.source_url) == ("Source: Aughor receipt r123abc", "")
+    assert (doc.source_text(), doc.source_url) == ("Source: Pramanyx receipt r123abc", "")
 
     monkeypatch.setenv("AUGHOR_WEB_URL", "https://aughor.example.com/")
     pdf, _, _ = export_report(inv, "pdf")

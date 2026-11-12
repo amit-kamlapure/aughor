@@ -792,7 +792,7 @@ def _project_briefs(cg: ContextGraph, briefs: list) -> list[str]:
 
     ``brief`` was a declared node kind with no projector: the type existed, the header
     documented it, and nothing ever emitted one. A synthesized narrative is the most
-    read artifact Aughor produces and it was absent from the graph that is supposed to
+    read artifact Pramanyx produces and it was absent from the graph that is supposed to
     hold what the connection knows.
 
     Provenance is ``briefing`` — a synthesis of cited findings. The edge is

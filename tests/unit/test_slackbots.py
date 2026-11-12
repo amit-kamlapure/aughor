@@ -130,7 +130,7 @@ def test_manifest_grants_what_the_transport_actually_calls():
 
 
 def test_manifest_is_socket_mode_with_no_public_url():
-    """Socket Mode connects OUT, which is what lets a self-hosted Aughor run bots."""
+    """Socket Mode connects OUT, which is what lets a self-hosted Pramanyx run bots."""
     m = render_manifest(name="b")
     assert m["settings"]["socket_mode_enabled"] is True
     assert "request_url" not in str(m), "socket mode needs no public endpoint"
@@ -215,6 +215,20 @@ def test_manifest_route_carries_the_paste_steps(client):
     assert any("JSON" in s for s in body["instructions"]), "the YAML tab is the known trap"
 
 
+@pytest.mark.parametrize("sent", [None, "Pramanyx", "Aughor"])
+def test_a_default_name_gives_way_to_the_agents_own(client, sent):
+    """A name nobody typed — absent, today's default, or the earlier product name an older
+    client still sends as its fallback — becomes the bound agent's name; a typed one stays."""
+    from aughor.custom_agents.store import create_agent
+    agent = create_agent("Churn Analyst", instructions="x", purpose="Churn questions")
+    params = {"agent_id": agent.id, **({"name": sent} if sent else {})}
+    r = client.get("/slack-bots/manifest", params=params)
+    assert r.status_code == 200, r.text
+    assert r.json()["manifest"]["display_information"]["name"] == "Churn Analyst"
+    typed = client.get("/slack-bots/manifest", params={"agent_id": agent.id, "name": "salesbot"})
+    assert typed.json()["manifest"]["display_information"]["name"] == "salesbot"
+
+
 def test_unknown_bot_is_404(client):
     assert client.get("/slack-bots/sb_nope").status_code == 404
 
@@ -249,7 +263,7 @@ def test_a_cron_posts_as_the_bot_and_the_thread_is_repliable(monkeypatch):
     `notify` fires an incoming webhook, which arrives under the WEBHOOK's identity with
     no thread anyone can reply into. This asserts the bot's OWN token is used, so the
     message arrives as the bot — and that the returned `ts` (the thread root a reply
-    lands in, and the id the transport already uses as the Aughor session_id) is carried
+    lands in, and the id the transport already uses as the Pramanyx session_id) is carried
     back rather than dropped.
     """
     from aughor.automations.engine import _dispatch_slack_post

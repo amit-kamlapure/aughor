@@ -1,5 +1,5 @@
 /**
- * Aughor's `data-*` part vocabulary, as an AI SDK `UIDataTypes` map — CI-1d.
+ * Pramanyx's `data-*` part vocabulary, as an AI SDK `UIDataTypes` map — CI-1d.
  *
  * The SDK's streaming union carries structured payloads through
  * `DataUIMessageChunk<DATA_TYPES>`, which is a MAPPED type:

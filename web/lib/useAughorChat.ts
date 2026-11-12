@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The AI SDK chat hook, bound to Aughor's stream — CI-1d, promoted in CA-1.
+ * The AI SDK chat hook, bound to Pramanyx's stream — CI-1d, promoted in CA-1.
  *
  * This is the client half of the seam whose server half is `app/api/chat/route.ts`.
  * `DefaultChatTransport` already defaults its `api` to `/api/chat`, so the two ends

@@ -31,7 +31,7 @@ async function collect(chunks: string[]) {
 
 describe("parseRecord", () => {
   it("takes the frame name from the PAYLOAD — the real wire format", () => {
-    // Aughor's backend emits bare `data:` records with the name inside, and
+    // Pramanyx's backend emits bare `data:` records with the name inside, and
     // never sets the SSE event field. Captured from a live /ask run.
     const f = parseRecord('data: {"type":"route","depth":"quick","mode":"direct"}');
     expect(f?.event).toBe("route");

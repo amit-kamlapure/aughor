@@ -1,12 +1,12 @@
 """Agent context manifest — make the working context an explicit, inspectable object (P2).
 
-Aughor already scopes the schema it shows the agent (schema-linking → FK/temporal
+Pramanyx already scopes the schema it shows the agent (schema-linking → FK/temporal
 expansion → a 10-table cap). But that scope is invisible: the user can't see which
 tables the agent looked at, how big the context is, or trim it. This module turns
 the assembled schema string into a structured manifest (tables · token budget · join
 hints) that the stream surfaces as a ``context_assembled`` event, and provides
 :func:`rescope_schema` so the user can drop or add tables and see the token delta —
-a "resource ribbon + chat outline", grounded in Aughor's own schema helpers.
+a "resource ribbon + chat outline", grounded in Pramanyx's own schema helpers.
 
 Token counts are ESTIMATES (chars/4) for a live budget bar — deliberately cheap and
 dependency-free; the ledger's :mod:`aughor.kernel.metering` remains the source of

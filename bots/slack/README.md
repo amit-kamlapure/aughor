@@ -1,4 +1,4 @@
-# Aughor in Slack
+# Pramanyx in Slack
 
 A deliberately thin TypeScript transport that puts `@aughor` in a Slack thread.
 The loop, the guards, tenancy and metering all stay in the Python API; this
@@ -16,13 +16,13 @@ progress, its chart and its table — back out.
 
 ## What it needs from your Slack app
 
-**Since RC-5 the app is made from the manifest Aughor renders** (`GET
+**Since RC-5 the app is made from the manifest Pramanyx renders** (`GET
 /slack-bots/manifest`, or the Slack door on an agent's Create flow / Integrations
 → Slack), and since AO-2c that manifest is complete: agent mode (Slack's Agents &
 AI Apps — the legacy assistant view closed to new apps on 2026-08-20 and retires
 in February 2027), every scope below, Socket Mode, and the agent-mode events. An
 app made from it needs none of the hand steps that used to follow. With one
-configuration token (AO-2d) Aughor creates the app in Slack itself; what stays
+configuration token (AO-2d) Pramanyx creates the app in Slack itself; what stays
 by hand is the install (a button on an HTTPS deployment) and the app-level
 token, which Slack offers no API for.
 
@@ -43,7 +43,7 @@ The surfaces, and what each needs — all of it in the rendered manifest:
 
 1. **OAuth & Permissions → Bot Token Scopes** — add `assistant:write` and
    `files:write` to what is already there.
-2. **Agents & AI Apps** — enable it. This is one-way: Aughor's record follows
+2. **Agents & AI Apps** — enable it. This is one-way: Pramanyx's record follows
    (`agent_view`), and refuses to be switched back, because Slack will not.
 3. **Event Subscriptions → Subscribe to bot events** — add `app_home_opened`,
    `app_context_changed`, `agent_session_stopped`, `agent_session_title_changed`
@@ -51,7 +51,7 @@ The surfaces, and what each needs — all of it in the rendered manifest:
 4. **Reinstall the app to the workspace.** Scope changes do not take effect
    until you do, and this is the step that is easy to skip.
 5. Single-bot mode only (the three `SLACK_*` vars): set `SLACK_AGENT_VIEW=1` in
-   `.env.local`. A bot read from Aughor's registry carries the mode on its record.
+   `.env.local`. A bot read from Pramanyx's registry carries the mode on its record.
 
 To check what the installed token actually has:
 
@@ -75,7 +75,7 @@ Copy `.env.local.example` to `.env.local` and fill it in.
 | `AUGHOR_RUNTIME_KEY` | **required for the multi-bot supervisor.** `GET /slack-bots/runtime` is the one route that returns raw `xoxb-`/`xapp-` tokens, so it refuses an unauthenticated caller. Generate the key in the app — **Integrations → Slack → Supervisor key** — and paste the line it gives you here. Single-bot mode (the three `SLACK_*` vars above) does not read that route and needs no key. |
 | `AUGHOR_API_KEY` | when the API requires one org-wide. It also satisfies the runtime route, so a deployment that already sets it needs no separate runtime key. |
 | `AUGHOR_CONNECTION_ID` | which connection to answer from; defaults to `workspace` |
-| `AUGHOR_WEB_URL` | where "Open in Aughor →" points. Unset, answers simply carry no link — a wrong host is worse than none. |
+| `AUGHOR_WEB_URL` | where "Open in Pramanyx →" points. Unset, answers simply carry no link — a wrong host is worse than none. |
 | `LOG_LEVEL` | `debug` shows every incoming envelope, and the adapter's own streaming decisions ("using fallback stream — …"). The difference between "Slack never sent the event" and "it arrived and nothing matched" is invisible at `info`. |
 
 ## Running
@@ -102,7 +102,7 @@ URL, tunnel, or webhook endpoint to expose.
 npm test
 ```
 
-Hermetic — no Slack workspace, no Aughor API. The seam test drives the real
+Hermetic — no Slack workspace, no Pramanyx API. The seam test drives the real
 Chat pipeline (mention detection, threading, post streaming) against a mock
 adapter, so it fails if the handler is unplugged rather than only if the
 transport misparses. The chart test rasterizes an actual SVG in-process:
@@ -115,7 +115,7 @@ exactly as healthy as one that draws nothing.
 | File | What it owns |
 |---|---|
 | `src/aughor.ts` | one `/ask` turn → an `AsyncIterable` of prose and cards; artifacts out; cancel on abandon |
-| `src/progress.ts` | Aughor's progress frames → Slack `task_update` cards |
+| `src/progress.ts` | Pramanyx's progress frames → Slack `task_update` cards |
 | `src/artifacts.ts` | the grid → an inline table, a CSV, or both; the deep link |
 | `src/chart.ts` | `/charts/svg` → PNG |
 | `src/bot.ts` | mention in, answer out, exhibits after |
@@ -123,7 +123,7 @@ exactly as healthy as one that draws nothing.
 
 ## Two things worth knowing before changing it
 
-**Aughor partials are REPLACE-semantic** — every `*_delta` frame carries the
+**Pramanyx partials are REPLACE-semantic** — every `*_delta` frame carries the
 full text so far — while a posted stream **appends** each yield. `src/aughor.ts`
 tracks what it has already emitted per channel and yields suffixes only. Undo
 that and every answer stutters its own prefix.

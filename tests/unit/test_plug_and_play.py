@@ -2,7 +2,7 @@
 
 The separation's promise is that the Data Intelligence Platform is a self-contained
 *home*: it renders schemas, executes queries, and tears down connections on its own
-authority, and the Aughor Agent plugs *in* through the registries. These tests prove
+authority, and the Pramanyx Agent plugs *in* through the registries. These tests prove
 both halves: the agent's contribution is registered and legible (the manifest), and
 with that contribution removed the platform degrades to correct raw behaviour rather
 than breaking.

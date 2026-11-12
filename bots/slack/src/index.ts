@@ -5,7 +5,7 @@
  * webhook endpoint exists; the adapter's `initialize()` opens the socket when
  * `mode: "socket"` is set. Run with `npm run dev` (loads `.env.local`).
  *
- * REGISTRY FIRST, ENV FALLBACK. Where Aughor holds bot records this process runs all of
+ * REGISTRY FIRST, ENV FALLBACK. Where Pramanyx holds bot records this process runs all of
  * them, reconciling on a timer so a bot created in the UI comes up without a restart.
  * Where it holds none and `.env.local` has credentials, it runs that single bot exactly
  * as RC-1 did — so an existing laptop deployment keeps working through the change
@@ -15,7 +15,7 @@
  * rather than at module scope. That is the merge of the two waves, and it is the better
  * shape: `agent_view` in particular now comes from the RECORD, so two bots in one
  * workspace can differ on it — which they must, because it has to match each app's own
- * manifest, and Aughor writes the manifest and the record in the same act.
+ * manifest, and Pramanyx writes the manifest and the record in the same act.
  */
 import { createSlackAdapter } from "@chat-adapter/slack";
 import { createMemoryState } from "@chat-adapter/state-memory";
@@ -31,7 +31,7 @@ import { hostname } from "node:os";
 import { createHeartbeat, createRegistry, type BotRecord } from "./registry.js";
 import { createSupervisor } from "./supervisor.js";
 
-/** How often to ask Aughor what should be running. */
+/** How often to ask Pramanyx what should be running. */
 const RECONCILE_MS = Number(process.env.AUGHOR_RECONCILE_MS ?? 30_000);
 
 const apiUrl = process.env.AUGHOR_API_URL ?? "http://127.0.0.1:8000";
@@ -95,7 +95,7 @@ async function makeBot(record: BotRecord) {
         mode: "socket",
         // Slack's Agent messaging: session lifecycle, and the native stop button whose
         // abort reaches `thread.signal`. It requires the app's manifest to be in
-        // `agent_view` mode, so it comes from the RECORD — Aughor renders the manifest
+        // `agent_view` mode, so it comes from the RECORD — Pramanyx renders the manifest
         // and stores the flag in one act, which is the only way the two cannot disagree.
         // Turning it on against an assistant_view app makes `stopStream` send a
         // parameter that app cannot accept, costing the final message of every answer.
@@ -146,7 +146,7 @@ const supervisor = createSupervisor({
   },
 });
 
-// AO-2a — after every reconcile, tell Aughor what is listening. The id names THIS
+// AO-2a — after every reconcile, tell Pramanyx what is listening. The id names THIS
 // process; the API keeps the last beat and the bot card reads liveness from it.
 const postHeartbeat = createHeartbeat();
 const supervisorId = `${hostname()}:${process.pid}:${new Date().toISOString()}`;
@@ -160,8 +160,8 @@ async function beat(failed: { id: string; error: string }[]): Promise<void> {
   // bury the bot's own log, and the API's card already says "not listening".
   if (ok !== heartbeatLanded) {
     console[ok ? "log" : "warn"](ok
-      ? "heartbeat: Aughor knows this supervisor is listening"
-      : "heartbeat: Aughor could not be told this supervisor is listening (the bot card "
+      ? "heartbeat: Pramanyx knows this supervisor is listening"
+      : "heartbeat: Pramanyx could not be told this supervisor is listening (the bot card "
         + "will read 'not listening' until it can) — check AUGHOR_API_URL / AUGHOR_RUNTIME_KEY");
     heartbeatLanded = ok;
   }
@@ -178,9 +178,9 @@ const managedByApi = process.env.AUGHOR_MANAGED_BY_API === "1";
 const first = await supervisor.reconcile();
 if (first.running === 0) {
   console.error(managedByApi
-    ? "No bots to run yet — waiting; the first bot created in Aughor (Integrations → Slack) " +
+    ? "No bots to run yet — waiting; the first bot created in Pramanyx (Integrations → Slack) " +
       `is picked up within ${Math.round(RECONCILE_MS / 1000)}s.`
-    : "No bots to run. Create one in Aughor (Slack bots → New), or fill in " +
+    : "No bots to run. Create one in Pramanyx (Slack bots → New), or fill in " +
       ".env.local with SLACK_BOT_TOKEN / SLACK_APP_TOKEN / SLACK_SIGNING_SECRET.",
   );
 } else {

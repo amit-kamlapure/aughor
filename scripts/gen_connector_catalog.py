@@ -110,7 +110,7 @@ def build(engines: tuple[EngineDeclaration, ...] = ENGINES) -> dict:
         "notes": {
             "secrets": (
                 "Treat every key in `secret_fields` as a credential: never place it in "
-                "a URL, a query string, or a log line. Aughor stores the `dsn` in its "
+                "a URL, a query string, or a log line. Pramanyx stores the `dsn` in its "
                 "own Fernet-encrypted column and encrypts the other secret-flagged "
                 "values in the connection registry."
             ),

@@ -191,7 +191,7 @@ class ContentDrift:
     terms while its sources held 100 and 255. Nothing had lied: no column had changed, so
     "fresh" was true in the only sense the classifier claims. A user reading a **Fresh** badge
     does not hear "the schema still matches"; they hear "this is up to date", and the graph
-    they were looking at contained none of what Aughor had learned from 793 answers.
+    they were looking at contained none of what Pramanyx had learned from 793 answers.
 
     The cause is structural rather than a bug: the live path writes INCREMENTALLY (L1's
     `note_finding`), so fixes to the projection — and every source that grew since the last

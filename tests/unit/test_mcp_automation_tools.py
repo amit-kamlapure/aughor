@@ -1,6 +1,6 @@
 """DS-14 — an enabled automation, exposed as a tool on our MCP server.
 
-The eighteen tools this server ships are what this VERSION of Aughor can do; an
+The eighteen tools this server ships are what this VERSION of Pramanyx can do; an
 automation is what THIS deployment's people built. It appears at runtime, it is named by
 whoever made it, and no decorator can know about it — so these are registered dynamically
 at server start from the one route that says which chains their owners opted in.

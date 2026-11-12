@@ -1,10 +1,10 @@
-# SOMA-SQL, leveraged — and the Ambiguity Ledger: Aughor's compounding answer
+# SOMA-SQL, leveraged — and the Ambiguity Ledger: Pramanyx's compounding answer
 
 *2026-07-06. A deep re-read of arXiv 2606.11424 ("Soma-SQL: Resolving Multi-Source Ambiguity
-in NL-to-SQL via Synthetic Log and Execution Probing", Oracle AI) against Aughor's assets,
+in NL-to-SQL via Synthetic Log and Execution Probing", Oracle AI) against Pramanyx's assets,
 plus this session's own controlled measurements. This document is the design spec for the
 next accuracy phase: what to adopt from the paper, and — the larger half — seven
-improvisations where Aughor's architecture goes structurally beyond it.*
+improvisations where Pramanyx's architecture goes structurally beyond it.*
 
 *Companions: `SPIDER2_PHASE0_FAIL_ANALYSIS_2026-07-06.md` (absorbed into `ROADMAP.md`; recoverable from git history)
 (the measured evidence this builds on) · [`10X_AND_SPIDER2_PROGRAM_2026-07-06.md`](10X_AND_SPIDER2_PROGRAM_2026-07-06.md)
@@ -135,12 +135,12 @@ still get caught by machinery that doesn't depend on disagreement.
 
 ---
 
-## 3 · The improvisations — where Aughor goes beyond the paper
+## 3 · The improvisations — where Pramanyx goes beyond the paper
 
 ### I1 · The Ambiguity Ledger — resolution that COMPOUNDS (the headline bet)
 
 **The structural difference:** SOMA re-pays its full pipeline every time any user asks an
-ambiguous question; the resolution evaporates after the answer. Aughor has what a paper
+ambiguous question; the resolution evaporates after the answer. Pramanyx has what a paper
 harness cannot: a **persistent per-connection substrate** — `SemanticContract`
 (`aughor/semantic/contracts.py`), ontology overrides, `trusted_queries`, the verdicts
 store, the evidence ledger.
@@ -169,7 +169,7 @@ resolved dimension (embedding + lexical overlap, the `trusted_queries` matching 
 injects the resolution as an authoritative prior and **skips candidates + probes
 entirely**.
 
-**The consequence:** SOMA's cost curve is flat per question; Aughor's **burns down
+**The consequence:** SOMA's cost curve is flat per question; Pramanyx's **burns down
 monotonically per connection** — the ambiguity space of a deployed schema shrinks with use.
 This is the honest, mechanical version of the "living context graph that compounds"
 (memory: `context-graph-closed-loop-gap`) — built from SOMA mechanics on stores we already
@@ -187,9 +187,9 @@ itself is receipt-ready evidence. *Novel vs the paper; publishable as an ablatio
 
 ### I3 · The deterministic-first probe battery
 
-Per taxonomy class, Aughor already OWNS the probe the paper plans with an LLM:
+Per taxonomy class, Pramanyx already OWNS the probe the paper plans with an LLM:
 
-| Dimension | The paper | Aughor, already shipped |
+| Dimension | The paper | Pramanyx, already shipped |
 |---|---|---|
 | AmbiValue (filter literal) | LLM-planned probe | `join_guard.bind_filter_literals` + CHESS `value_index` (probe-confirmed, dry-run-gated) |
 | AmbiSchema / grain | LLM-planned probe | `grain_intent.check_result_grain` (COUNT DISTINCT probe) + `grain_guard` uniqueness probes |
@@ -203,7 +203,7 @@ deterministic probes + ≤3 planned ones, and every probe result is journal-read
 ### I4 · Ask-once-remember-forever (the fusion the paper formalizes but cannot do)
 
 Their Proposition 1 formalizes human clarification as the **ceiling** probing
-approximates. Aughor already shipped the surface the ceiling needs: the clarify gate
+approximates. Pramanyx already shipped the surface the ceiling needs: the clarify gate
 (`agent/clarify.py`), the SOMA candidate-disagreement seam (`agent/soma.py`,
 `AUGHOR_SOMA_CLARIFY`, currently dark), and grounded option chips in `/ask` (PR #89).
 
@@ -274,7 +274,7 @@ deterministic guards and the user's eye — I6 is what keeps us honest with the 
 machinery can't be.
 
 **The one-line thesis:** SOMA proves execution-grounded disagreement resolution lifts past
-the sampling ceiling at high per-question cost; Aughor's improvisation is to make each
+the sampling ceiling at high per-question cost; Pramanyx's improvisation is to make each
 resolution **permanent, deterministic where possible, human-confirmed where it matters, and
 visible on the receipt** — ambiguity burn-down as a compounding, inspectable asset instead
 of a recurring inference tax.

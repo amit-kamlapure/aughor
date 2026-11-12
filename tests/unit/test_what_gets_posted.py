@@ -149,7 +149,7 @@ def _post(monkeypatch, config: dict) -> list[dict]:
     monkeypatch.setattr(post, "upload_file", lambda *a, **k: calls.append({"upload": k}) or (True, {}))
     eff = Effect(kind="slack_post", config={"bot_id": "b", "channel": "#c", "message": "m",
                                             engine.CHART_GRID_KEY: _source(), **config})
-    bot = N(bot_token="t", name="Aughor", enabled=True)
+    bot = N(bot_token="t", name="Pramanyx", enabled=True)
     engine._attach_chart(eff, N(id="a", name="The Look - Daily Briefing", conn_id=""), bot,
                          {"channel": "C1", "ts": "1.1"}, "#c")
     return calls

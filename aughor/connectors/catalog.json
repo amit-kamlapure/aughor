@@ -3,7 +3,7 @@
   "generated_by": "scripts/gen_connector_catalog.py",
   "source": "aughor/connectors/declarations.py",
   "notes": {
-    "secrets": "Treat every key in `secret_fields` as a credential: never place it in a URL, a query string, or a log line. Aughor stores the `dsn` in its own Fernet-encrypted column and encrypts the other secret-flagged values in the connection registry.",
+    "secrets": "Treat every key in `secret_fields` as a credential: never place it in a URL, a query string, or a log line. Pramanyx stores the `dsn` in its own Fernet-encrypted column and encrypts the other secret-flagged values in the connection registry.",
     "install": "`base` means the standard install already carries the driver; any other value is a pip extra — e.g. `pip install 'aughor[warehouse]'`.",
     "env": "`env` lists environment variables honoured in place of a form field; `fallback_for` names that field.",
     "knowledge": "`knowledge` connectors index documents for synthesis context; they are not SQL connectors and take no queries (`connector` and `dialect` are null).",

@@ -8,7 +8,7 @@ Two records, because there are two credentials and they rot differently:
 * :class:`Connection` — one USER's grant against that app: the tokens, the scopes
   they actually consented to, and when the access token dies. This is the record
   ``govern.audit`` attributes against, and the record warehouse connections adopt
-  later — the decision behind it (ROADMAP §6.1) is that **Aughor owns the vault**:
+  later — the decision behind it (ROADMAP §6.1) is that **Pramanyx owns the vault**:
   the token may never live with a third-party custodian, so it lives here, Fernet
   under ``AUGHOR_SECRET_KEY`` like every other secret this platform holds.
 

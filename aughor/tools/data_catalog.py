@@ -1,4 +1,4 @@
-"""Structured Data Catalog builder for Aughor.
+"""Structured Data Catalog builder for Pramanyx.
 
 Builds a compact, markdown-formatted catalog from a database connection
 for a given set of tables. Caches results by (connection_id, table_hash)

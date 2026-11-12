@@ -1,7 +1,7 @@
 """Hermetic tests for the AG-UI translator (aughor/routers/agui.py, CK-1.1).
 
 `translate_ask_stream` is PURE over the input SSE stream — no LLM, no DB — so we feed recorded
-Aughor `/ask` event sequences and assert the AG-UI event order + shapes (the mapping in
+Pramanyx `/ask` event sequences and assert the AG-UI event order + shapes (the mapping in
 `aughor/routers/agui.py`). No live server needed.
 """
 import asyncio
@@ -134,7 +134,7 @@ def test_clarify_pending_becomes_interrupt_plus_custom():
 
 
 def test_unknown_event_is_lossless_custom():
-    # the risk-register guarantee: an unmapped Aughor event survives as aughor.<type> Custom.
+    # the risk-register guarantee: an unmapped Pramanyx event survives as aughor.<type> Custom.
     ev = _run([{"type": "start"}, {"type": "playbook_refs", "refs": ["p1"]}, {"type": "done"}])
     custom = [e for e in ev if e["type"] == "CUSTOM" and e["name"] == "aughor.playbook_refs"]
     assert len(custom) == 1 and custom[0]["value"]["refs"] == ["p1"]

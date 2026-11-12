@@ -87,7 +87,7 @@ class ChainProposal:
 
 
 _SYS = """\
-You design AUTOMATION CHAINS for Aughor. A chain has TRIGGERS (when it runs) and STEPS
+You design AUTOMATION CHAINS for Pramanyx. A chain has TRIGGERS (when it runs) and STEPS
 (what it does, in order). You will be given exactly what this deployment can do; propose a
 chain using ONLY that.
 

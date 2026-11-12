@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Golden dataset SQL-generation evaluator for Aughor.
+"""Golden dataset SQL-generation evaluator for Pramanyx.
 
 Runs the full Question → SQL → Execution → Score pipeline against a
 reference dataset and reports accuracy breakdowns by difficulty / category.

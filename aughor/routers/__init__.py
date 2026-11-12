@@ -1,4 +1,4 @@
-"""Aughor API routers — each module exposes a `router` APIRouter instance."""
+"""Pramanyx API routers — each module exposes a `router` APIRouter instance."""
 from aughor.routers import (  # noqa: F401
     components,
     system,

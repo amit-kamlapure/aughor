@@ -1,7 +1,7 @@
-# Which industry packages to build next: an evidence-based vertical ranking for Aughor
+# Which industry packages to build next: an evidence-based vertical ranking for Pramanyx
 
 Research date: 2026-09-14. Scope: web research only (market-research summaries, public industry-solution catalogues, standards bodies, public datasets).
-Already shipped by Aughor: e-commerce/retail, airline, food delivery, logistics, manufacturing, SaaS.
+Already shipped by Pramanyx: e-commerce/retail, airline, food delivery, logistics, manufacturing, SaaS.
 
 Citation convention: bracketed tags such as [M4], [T3], [D26] and [X2] refer to numbered URLs in the Sources section (M = market research, T = standards, D = datasets, X = metric definitions). The vendor-catalogue count (V) is reported as a number only; its catalogues are not listed. A claim marked "(snippet)" comes from a search-index summary of a page that could not be fetched directly; such claims were not used for scoring.
 
@@ -124,7 +124,7 @@ All entries come from publisher summary pages or press releases for paywalled re
 
 ## 2. Ranked verticals
 
-Score = 3×D + 2×V + 2×K + S + P (max 27; see §0.1). **[SHIPPED]** marks verticals Aughor already packages. They are ranked for completeness, and the tiers in §5 cover only unbuilt verticals. Ranks 1–25 are the main table; 26–29 form the long tail (§2.2).
+Score = 3×D + 2×V + 2×K + S + P (max 27; see §0.1). **[SHIPPED]** marks verticals Pramanyx already packages. They are ranked for completeness, and the tiers in §5 cover only unbuilt verticals. Ranks 1–25 are the main table; 26–29 form the long tail (§2.2).
 
 ### 2.1 Main table (ranks 1–25)
 
@@ -216,7 +216,7 @@ page, as a preview or deprecated offering, or as source-shaped packages. **Count
 - **Universal verticals (≥ 9 of 10 catalogs):** healthcare (10), retail (9.5), banking (9), manufacturing (9). **Next band (6–7.5):** pharma, telecom and CPG (7.5 each), media (7), public sector (6.5), insurance and energy (6 each).
 - **The BI tools are thin on verticals.** The BI catalogues list few industries or none; the package index is source-shaped (commerce, ad platforms, billing, accounting and HR tools), and its only true vertical data models are healthcare (the Tuva Project [T44] and FHIR packages).
 - **Industry agents are arriving.** One BI vendor launched industry agents in March 2026 for healthcare & life sciences, retail & CPG, financial services, technology & software, supply chain, media & telecom, insurance, travel & hospitality and manufacturing. Its choice of insurance and travel & hospitality as separate agents independently supports Tier 1 (insurance) and Tier 2 (travel & hospitality) below.
-- **Long-tail verticals are covered by generation, not curation.** A published data-model repository generates schemas for 40 industries, including restaurants, airlines, grocery, legal, staffing, water utilities and waste management, none of which a BI catalog names. Aughor could do the same: a curated package for Tiers 1–2 plus an LLM-drafted "starter pack" for the long tail.
+- **Long-tail verticals are covered by generation, not curation.** A published data-model repository generates schemas for 40 industries, including restaurants, airlines, grocery, legal, staffing, water utilities and waste management, none of which a BI catalog names. Pramanyx could do the same: a curated package for Tiers 1–2 plus an LLM-drafted "starter pack" for the long tail.
 
 ---
 

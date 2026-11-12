@@ -202,7 +202,7 @@ export interface OrgSettings {
   /** Arc MC — how many approved headline metrics a Briefing measures; 0 = the platform's default (24 while the
    *  Briefing reads by area, 12 while it does not). */
   briefing_metric_cap?: number;
-  /** What Aughor may do (ROADMAP §3.65) — the organisation's four choices, each off by default; null = never set,
+  /** What Pramanyx may do (ROADMAP §3.65) — the organisation's four choices, each off by default; null = never set,
    *  when the server's former flag variable answers (`getOrgAllows` says which). */
   share_aggregates?: boolean | null;
   outside_row_model?: boolean | null;
@@ -214,7 +214,7 @@ export interface OrgSettings {
   copy_rows_across_sources?: boolean | null;
 }
 
-/** The choices an organisation makes about what Aughor may do (ROADMAP §3.65; §3.68 added `read_query_history`). */
+/** The choices an organisation makes about what Pramanyx may do (ROADMAP §3.65; §3.68 added `read_query_history`). */
 export type OrgAllowSetting = "share_aggregates" | "outside_row_model" | "reason_to_read_runs" | "scheduled_model_work"
   | "read_query_history" | "copy_rows_across_sources";
 
@@ -5692,7 +5692,7 @@ export type ConditionKind =
   | "objects_admitted"
   // DS-17. Named for what it is from the chain's side: something outside calls it. The
   // OUTBOUND `webhook` in the notifications and declared-action kind sets is a different
-  // idea entirely (a URL Aughor posts TO); the two never meet because every lookup in
+  // idea entirely (a URL Pramanyx posts TO); the two never meet because every lookup in
   // this plane is family-scoped.
   | "webhook";
 /** The effect kinds a PERSON may author.
@@ -5763,7 +5763,7 @@ export interface SlackBotSummary {
   listening: { supervisor_id: string; since: string; last_seen_at: string } | null;
   /** Why nothing is listening, with the command to start it; "" while listening. */
   liveness_hint: string;
-  /** AO-2d — set when Aughor created the app itself: the OAuth client that installs it. */
+  /** AO-2d — set when Pramanyx created the app itself: the OAuth client that installs it. */
   client_id?: string;
   slack_app_id?: string;
   /** AO-2f — optional home channel (`C…` or `#name`); "" means none. */
@@ -5791,7 +5791,7 @@ export interface SlackBotPatch {
   agent_id: string;
   connection_id: string;
   agent_view: boolean;
-  /** AO-2d — a token pasted to finish an app Aughor created; absent means "keep stored". */
+  /** AO-2d — a token pasted to finish an app Pramanyx created; absent means "keep stored". */
   bot_token?: string;
   app_token?: string;
   signing_secret?: string;
@@ -6407,7 +6407,7 @@ export async function updateSlackBot(id: string, body: SlackBotPatch): Promise<S
 /** Delete a record. Its tokens go with it and the supervisor closes the socket on its
  *  next reconcile; automations that post as it report "unknown Slack bot" until they
  *  are re-pointed — the caller says so before asking. */
-/** AO-2d — Aughor creates the Slack app itself from ONE configuration token (used once,
+/** AO-2d — Pramanyx creates the Slack app itself from ONE configuration token (used once,
  *  never stored). The response says what is still by hand (`needs`), the install URL when
  *  the deployment has a public HTTPS origin, and the steps in a person's words. */
 export interface SlackAppCreated {
@@ -7823,7 +7823,7 @@ export interface BriefingOff {
   said: string;
 }
 
-/** PENDING item 9 — the company-brain map: every store behind what Aughor knows, as a box with a
+/** PENDING item 9 — the company-brain map: every store behind what Pramanyx knows, as a box with a
  *  live count and its door; `count: null` means the store could not be read or is not built,
  *  and `line` says which — never a zero that means "unknown". */
 export interface BrainBox {

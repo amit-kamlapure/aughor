@@ -9,7 +9,7 @@ each PR carries a flag (default off), a test estimate, and a **pre-registered de
 
 ## 0. What this is, and what it is NOT
 
-The product is the **loop** (data → semantics → decision → write-back → data). Aughor already has the
+The product is the **loop** (data → semantics → decision → write-back → data). Pramanyx already has the
 read half, with a deterministic guard plane. Wave K adds the **governed kinetic half** —
 without surrendering the property that makes the read half trustworthy.
 

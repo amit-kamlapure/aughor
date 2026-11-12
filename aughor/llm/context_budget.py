@@ -1,6 +1,6 @@
 """Capability-aware context budgeting — Layer A (PLATFORM_ARCHITECTURE.md §5b.3).
 
-Aughor's prompts are already curated (schema-linking picks ~4 tables, results cap at 12
+Pramanyx's prompts are already curated (schema-linking picks ~4 tables, results cap at 12
 rows, schema/scan have char caps), so the headroom-style "massive compression" has a low
 ceiling here — the relevance selection *is* the compression. The Layer-A win that actually
 matters across heterogeneous BYO-model backends is **adaptation, not compression**: a payload

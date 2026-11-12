@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """R4 — Semantic-layer ablation eval.
 
-Measures the SAFETY value of Aughor's governed layer, not just its accuracy, on a real
+Measures the SAFETY value of Pramanyx's governed layer, not just its accuracy, on a real
 warehouse. The thesis, made measurable: *a governed-layer failure is an error
 message; a text-to-SQL failure is a plausible wrong answer.* So we don't just ask "is it
 right?" — we ask "when it's wrong, is it SILENTLY wrong (a plausible un-flagged number) or
@@ -12,7 +12,7 @@ Three arms run on the SAME question against the SAME warehouse:
   * **raw**       — schema-only NL→SQL (`generate_sql_chat`): an LLM + the schema + the engine's dialect
                     rules (as the quick path sends them), no guards.
                     This is what a thin text-to-SQL agent produces.
-  * **guarded**   — the raw SQL run through Aughor's DETERMINISTIC guard battery (the
+  * **guarded**   — the raw SQL run through Pramanyx's DETERMINISTIC guard battery (the
                     Verifier): fan-out de-fan (a rewrite) + id-arithmetic, ratio-of-sums,
                     and value-domain detectors (which flag → the product repairs/caveats).
                     This isolates the durable moat — pure, reproducible, no LLM drift.
@@ -109,7 +109,7 @@ def _quiet(fn, default):
 
 
 def apply_guards(raw_sql: str, db, tcols: dict) -> tuple[str, list[str]]:
-    """Aughor's DETERMINISTIC guard battery (the Verifier) over an arbitrary SQL — the
+    """Pramanyx's DETERMINISTIC guard battery (the Verifier) over an arbitrary SQL — the
     same guards `_stream_chat` runs. Fan-out is a deterministic de-fan REWRITE; the others
     are detectors whose firing means the product flags/repairs the query (never a silent
     wrong answer). Returns (sql_after_rewrites, fired_guards)."""

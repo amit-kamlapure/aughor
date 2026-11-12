@@ -305,7 +305,7 @@ def _coverage_entries(connection_id: str, schema_name: Optional[str]) -> list[Ca
         if p.get("source") == CP.SOURCE_RECIPE:
             continue
         if p.get("source") == CP.SOURCE_QUERY_HISTORY:
-            came = (f"the warehouse's own query history — computed in {p.get('runs')} runs by someone other than Aughor "
+            came = (f"the warehouse's own query history — computed in {p.get('runs')} runs by someone other than Pramanyx "
                     "(Arc NV-7)")
         else:
             came = (f"the knowledge base's {p.get('pattern_title') or p.get('pattern')}" if p.get("pattern")

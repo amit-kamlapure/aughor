@@ -1,6 +1,6 @@
 """The one governed-metric contract (REC-U10).
 
-Aughor carries a governed metric as *two* pydantic shapes that are the same concept
+Pramanyx carries a governed metric as *two* pydantic shapes that are the same concept
 built twice: `semantic.metrics.MetricDefinition` (the human-curated catalog — the
 approve/version governance surface) and `ontology.models.OntologyMetric` (the metric the
 ontology builder derives + self-verifies from the data). They overlap almost entirely —

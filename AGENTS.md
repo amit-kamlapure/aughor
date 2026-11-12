@@ -1,4 +1,4 @@
-# Working on Aughor
+# Working on Pramanyx
 
 Conventions an agent needs before changing this repo. Short on purpose — the long-form
 reasoning lives in the wave arc docs under `docs/`.

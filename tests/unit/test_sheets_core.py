@@ -1,4 +1,4 @@
-"""Arc SH, SH-1 and SH-2 — sheets kept by Aughor, and the grid that edits them (ROADMAP §3.64).
+"""Arc SH, SH-1 and SH-2 — sheets kept by Pramanyx, and the grid that edits them (ROADMAP §3.64).
 
 Run against the real stores — the ledger, the edit layer and the projection — each pointed at a temporary path, so
 what is proven is the path a person's typing takes. The two falsifiers are tests here:

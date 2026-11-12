@@ -116,7 +116,7 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
     # ── Slack bots (RC-5) ──
     # A bot record holds three Slack credentials and binds an agent to a workspace, so
     # creating one is an admin act, not the write floor: anyone who can mint a bot can
-    # make Aughor speak in a channel under a name of their choosing.
+    # make Pramanyx speak in a channel under a name of their choosing.
     # The supervisor's door — the ONE route that returns raw Slack credentials, so it is
     # gated like an admin write even though it is a GET. Reading it is equivalent to
     # holding every bot token in the org.

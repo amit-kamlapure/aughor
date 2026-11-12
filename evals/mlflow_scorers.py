@@ -1,4 +1,4 @@
-"""Deterministic MLflow scorers for Aughor evals — no LLM judges.
+"""Deterministic MLflow scorers for Pramanyx evals — no LLM judges.
 
 The house guards expressed inside ``mlflow.genai.evaluate``'s harness (A1-P2):
 

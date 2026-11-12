@@ -116,7 +116,7 @@ def main():
 
     body, ctype = multipart(
         {"connection_id": CONN}, "flows_test.txt",
-        b"Aughor bakehouse notes. Total revenue is SUM(totalPrice) across sales_transactions.",
+        b"Pramanyx bakehouse notes. Total revenue is SUM(totalPrice) across sales_transactions.",
     )
     st, _ = _req("POST", BASE + "/documents/upload", raw=body,
                  headers={"Content-Type": ctype}, timeout=120)

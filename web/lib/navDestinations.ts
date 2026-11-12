@@ -49,7 +49,7 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
     { id: "canvases", label: "Data Canvas", icon: "canvas" },
     { id: "recents",  label: "Agent runs",  icon: "run" },
   ] },
-  // Documents left "what Aughor knows" for Data on 2026-11-10. The corpus is still global — `index_file`
+  // Documents left "what Pramanyx knows" for Data on 2026-11-10. The corpus is still global — `index_file`
   // takes no connection — and the Data destination claims no connection scope of its own.
   { id: "data", icon: "db", label: "Data", sections: [
     { id: "catalog",   label: "Catalog",   icon: "catalog" },
@@ -84,7 +84,7 @@ export const NAV_DESTINATIONS: readonly NavDestination[] = [
     { id: "spend",       label: "Spend",            icon: "spend" },
     { id: "security",    label: "Security & Audit", icon: "shield" },
     { id: "evals",       label: "Evals",            icon: "flask" },
-    { id: "brain",       label: "Brain map",        icon: "brain", blurb: "Every store behind what Aughor knows, with live counts" },
+    { id: "brain",       label: "Brain map",        icon: "brain", blurb: "Every store behind what Pramanyx knows, with live counts" },
   ] },
 ];
 

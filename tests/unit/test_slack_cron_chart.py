@@ -30,7 +30,7 @@ from aughor.automations.models import Effect
 
 class _Bot:
     bot_token = "xoxb-test"
-    name = "Aughor"
+    name = "Pramanyx"
     enabled = True
 
 

@@ -61,7 +61,7 @@ beforeEach(() => {
     run("sd", 1, "2026-07-27T10:00:00Z"),
   ]);
   api.getEvaluators.mockResolvedValue({ evaluators: [], deterministic_count: 0 });
-  api.getConnections.mockResolvedValue([{ id: "c-ops", name: "Aughor Ops" }]);
+  api.getConnections.mockResolvedValue([{ id: "c-ops", name: "Pramanyx Ops" }]);
   api.runEvalSuite.mockResolvedValue({ pass_rate: 1, stable_pass: 2, total: 2 });
 });
 
@@ -93,7 +93,7 @@ it("lists each suite on one line, naming its connection and saying when the app 
   const rows = await screen.findAllByTestId("suite-row");
   expect(rows).toHaveLength(4);
   const ops = rows.find(r => r.textContent?.includes("Golden revenue"))!;
-  expect(ops).toHaveTextContent("Aughor Ops");
+  expect(ops).toHaveTextContent("Pramanyx Ops");
   expect(ops).not.toHaveTextContent("c-ops");
   const eq = rows.find(r => r.textContent?.includes("Monitor equivalence"))!;
   expect(eq).toHaveTextContent("runs outside the app");

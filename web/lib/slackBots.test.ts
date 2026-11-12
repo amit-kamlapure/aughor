@@ -3,7 +3,7 @@ import type { SlackBotSummary, UserAgent } from "@/lib/api";
 import { bindingProblem, patchBodyFor, slackStepBotNote } from "./slackBots";
 
 const bot: SlackBotSummary = {
-  id: "sb_1", name: "Aughor", enabled: true, disabled_reason: "", listening: null,
+  id: "sb_1", name: "Pramanyx", enabled: true, disabled_reason: "", listening: null,
   liveness_hint: "", team_id: "T1", bot_user_id: "U1", agent_id: "ua_1", connection_id: "",
   agent_view: false,
 };
@@ -18,7 +18,7 @@ describe("patchBodyFor", () => {
   it("carries every plain field, because the server replaces what it is not sent", () => {
     const body = patchBodyFor(bot, { connection_id: "8233e4fd" });
     expect(body).toEqual({
-      name: "Aughor", enabled: true, agent_id: "ua_1", connection_id: "8233e4fd", agent_view: false,
+      name: "Pramanyx", enabled: true, agent_id: "ua_1", connection_id: "8233e4fd", agent_view: false,
       channel_id: "",   // AO-2f — a plain field like the rest, carried even when unset
       rehearse: false,  // AO-6 — likewise
     });
@@ -60,7 +60,7 @@ describe("bindingProblem", () => {
 });
 
 describe("slackStepBotNote", () => {
-  const live = { ...bot, id: "sb_live", name: "Aughor", enabled: true };
+  const live = { ...bot, id: "sb_live", name: "Pramanyx", enabled: true };
   it("is silent for a bot that is there and running, and for an unset step", () => {
     expect(slackStepBotNote("sb_live", [live])).toBe("");
     expect(slackStepBotNote("", [live])).toBe("");
@@ -70,7 +70,7 @@ describe("slackStepBotNote", () => {
     expect(slackStepBotNote("sb_gone", [live])).toContain("no longer in the registry");
   });
   it("says so when the step names a paused bot, by name", () => {
-    expect(slackStepBotNote("sb_live", [{ ...live, enabled: false }])).toContain("Aughor is paused");
+    expect(slackStepBotNote("sb_live", [{ ...live, enabled: false }])).toContain("Pramanyx is paused");
   });
   it("leaves a bound value alone — a binding is not an id", () => {
     expect(slackStepBotNote({ $from: "item.bot" }, [live])).toBe("");

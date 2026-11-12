@@ -1,7 +1,7 @@
 """The answer trace — every answer as a walkable subgraph (Wave P1).
 
 The question this closes: *how was this answer generated, and can I check each piece?*
-Aughor already recorded the parts — the SQL it ran, the tables that SQL read, the governed
+Pramanyx already recorded the parts — the SQL it ran, the tables that SQL read, the governed
 metrics it used, the readings it applied, and (when the read-back fires) the graph nodes it
 was shown. What it never did was **name them together as nodes of the graph the user can
 open**, so a receipt listed bare table strings while a rich, provenance-carrying node for

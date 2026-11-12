@@ -6,7 +6,7 @@ because it pattern-matches phrasings and would fall apart if a user typed the sa
 slightly differently. Those are very different products and the same number.
 
 Asking a model to judge whether two answers agree would import the judge's own noise into the
-measurement. Aughor does not need to: an eval answer is
+measurement. Pramanyx does not need to: an eval answer is
 **executed SQL**, so two answers can be compared by their result sets, deterministically, with
 the comparator this repo already trusts (`user_agents.quality.results_match` —
 order-insensitive, float-normalised, tolerant of extra columns). Same result set ⇒ zero

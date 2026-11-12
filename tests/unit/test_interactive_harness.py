@@ -5,7 +5,7 @@ SUBMITTED SQL against gold under a clarification budget — so the harness REWAR
 and PENALIZES blind guessing (the property static-transcript benchmarks lack), and never leaks gold.
 
 Phase-2 additions (the unified-answer-path arc): the ask-vs-guess ``clarifying_system`` and the
-``complexity_should_ask`` predicate backed by Aughor's real deterministic ambiguity signal — the seam
+``complexity_should_ask`` predicate backed by Pramanyx's real deterministic ambiguity signal — the seam
 the Phase-3 clarification feature is measured against.
 """
 from __future__ import annotations

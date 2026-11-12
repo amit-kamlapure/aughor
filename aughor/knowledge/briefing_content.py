@@ -1,4 +1,4 @@
-"""Wave S4 — the weekly digest over Aughor's own exhaust.
+"""Wave S4 — the weekly digest over Pramanyx's own exhaust.
 
 Briefs dogfooded: the platform reports on itself using the same delivery path a customer
 brief uses, rather than a parallel reporting surface.

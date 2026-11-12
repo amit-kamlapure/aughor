@@ -1,6 +1,6 @@
 """Org / workspace settings — identity, localization, and appearance.
 
-Aughor is single-tenant with a multi-Workspace model. These settings follow a
+Pramanyx is single-tenant with a multi-Workspace model. These settings follow a
 HYBRID scope: an app-wide ``OrgSettings`` singleton holds the defaults, and any
 Workspace may override a subset (workspace override > app default > model default).
 The same model shape is used for the singleton AND for the resolved *effective*
@@ -104,7 +104,7 @@ class OrgSettings(BaseModel):
         ),
     )
 
-    # ── What Aughor may do (ROADMAP §3.65, 2026-10-28) ──
+    # ── What Pramanyx may do (ROADMAP §3.65, 2026-10-28) ──
     # The choices an organisation rightly makes differently — data leaving the install, model work nobody asked for, a
     # governance posture. They were flags; an admin sets them here. Unset (None) reads the environment variable of the
     # flag each replaced (`aughor.orgsettings.allows`), so an install that ran one that way keeps it until an admin
@@ -126,7 +126,7 @@ class OrgSettings(BaseModel):
     )
     scheduled_model_work: Optional[bool] = Field(
         default=None,
-        description="Let Aughor make model calls nobody pressed for: nightly runs of each custom agent's checked test "
+        description="Let Pramanyx make model calls nobody pressed for: nightly runs of each custom agent's checked test "
                     "questions, re-tests after reviews, and a Briefing guide redrafted after an exploration that "
                     "ran on its own. Off by default.",
     )

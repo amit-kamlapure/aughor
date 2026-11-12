@@ -1,6 +1,6 @@
 """Measure the install footprint the README quotes — reproducibly.
 
-Three different figure-sets for "how big is Aughor" had accumulated across the README,
+Three different figure-sets for "how big is Pramanyx" had accumulated across the README,
 `pyproject.toml` and `tests/unit/test_serving_footprint.py`, disagreeing by up to 2x
 because none of them said WHICH size they meant. They are not the same measurement:
 

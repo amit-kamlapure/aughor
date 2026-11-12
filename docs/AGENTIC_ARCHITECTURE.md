@@ -1,13 +1,13 @@
 # Agentic architecture — ideation
 
-> Status: **ideation / no code change yet** (2026-06-21). A plan for evolving Aughor from
+> Status: **ideation / no code change yet** (2026-06-21). A plan for evolving Pramanyx from
 > "several autonomous processes" into a legible, supervised **agent fleet**. Grounded in the
 > current code (`aughor/kernel`, `aughor/explorer`, `aughor/agent`, `aughor/monitors`,
 > `aughor/knowledge`), not generic advice.
 
 ## TL;DR
 
-We are **already ~80% agentic in plumbing, 0% formalized as a fleet.** Aughor runs several
+We are **already ~80% agentic in plumbing, 0% formalized as a fleet.** Pramanyx runs several
 autonomous/active processes on a real job-orchestration substrate (`JobKernel`) with an event
 spine + per-run Trust Receipts. What's missing is naming the agents, giving them a supervisor,
 letting them collaborate and act proactively, and a fleet view. The highest-leverage first move
@@ -116,7 +116,7 @@ A review of the plan against the "AI + SQL + analytics" field (2026-06-21) found
 surfaces to build. Backlog in [`../ROADMAP.md`](../ROADMAP.md) §3.
 
 - **The moat holds.** Domain knowledge belongs in a **governed semantic layer** over raw tables, and every
-  answer shows its SQL — Aughor's Trust Receipts. Aughor already has the layer + guards + provenance this
+  answer shows its SQL — Pramanyx's Trust Receipts. Pramanyx already has the layer + guards + provenance this
   fleet is built around. **The `Verifier` and the governed-metric grounding are the point, not an add-on.**
   (Prove it with a semantic-layer *ablation* eval — R4, [`R4_ABLATION_EVAL_2026-06-21.md`](R4_ABLATION_EVAL_2026-06-21.md).)
 
@@ -129,7 +129,7 @@ surfaces to build. Backlog in [`../ROADMAP.md`](../ROADMAP.md) §3.
      (R5; enriches the deferred MCP item in ROADMAP §3).
 
 - **What it confirms we should NOT do:** become a warehouse, or move the intelligence into a columnar
-  `prompt()`. Aughor's edge is warehouse-agnostic intelligence + trust; a hosted DuckDB backend is an optional
+  `prompt()`. Pramanyx's edge is warehouse-agnostic intelligence + trust; a hosted DuckDB backend is an optional
   serving tier (R6), and AI-as-a-SQL-operator a governed +1 (R8), never the foundation.
 
 **Revised first move (unchanged in spirit, sharpened):** Phase 0 + 1 — registry + fleet view — but fold in

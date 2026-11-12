@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The trust system as primitives (INSTRUMENT.md §7) — Aughor's signature: readable at 11px,
+ * The trust system as primitives (INSTRUMENT.md §7) — Pramanyx's signature: readable at 11px,
  * never shouting, and instantly told apart from ordinary chrome. One drawing of each, so a
  * guard verdict or a receipt looks the same on every surface that shows one.
  *
@@ -54,7 +54,7 @@ function linkColor(l: ReceiptLink): "green" | "amber" | "red" | "gray" | undefin
   return "gray";
 }
 
-/** The shape of Aughor's whole claim, drawn identically wherever it appears. */
+/** The shape of Pramanyx's whole claim, drawn identically wherever it appears. */
 export function ReceiptChain({ links, className = "" }: { links: ReceiptLink[]; className?: string }) {
   return (
     <span className={`aug-receipt-chain ${className}`} role="list" aria-label="Receipt chain">
@@ -75,7 +75,7 @@ export function ReceiptChain({ links, className = "" }: { links: ReceiptLink[]; 
 }
 
 /** The tier a confidence falls in, shared so a surface that needs only the colour agrees with
- *  the bar. Below 0.5 Aughor does not lead with the figure. */
+ *  the bar. Below 0.5 Pramanyx does not lead with the figure. */
 export function confidenceTier(value: number): "high" | "mid" | "low" {
   return value >= 0.86 ? "high" : value >= 0.5 ? "mid" : "low";
 }

@@ -1924,7 +1924,7 @@ def analyst_system_prompt(connection_id: str, intake: dict, budget: int,
     analyst was told neither, wrote `DATEADD` and `DATE_TRUNC('month', …)` for BigQuery,
     and with no spec anchored on `CURRENT_DATE` into a month still filling."""
     lines = [
-        f"You are Aughor's analyst, investigating one question against the connected "
+        f"You are Pramanyx's analyst, investigating one question against the connected "
         f"warehouse '{connection_id}'. You work the way a good analyst works: slice, "
         "LOOK at the result, and choose the next slice because of what you saw — "
         "change the dimension, the grain or the window whenever a result argues for it.",

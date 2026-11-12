@@ -1,7 +1,7 @@
 """Arc FA, FA-7 — what a custom agent would read for a question, read without asking a model.
 
-A program built with any agent SDK reaches an Aughor agent through MCP or the headless doors, and every one of those
-ASKS: a model writes SQL, it runs, an answer comes back. A program that wants to ground its own model on what an Aughor
+A program built with any agent SDK reaches a Pramanyx agent through MCP or the headless doors, and every one of those
+ASKS: a model writes SQL, it runs, an answer comes back. A program that wants to ground its own model on what a Pramanyx
 agent knows — or to see what that agent would be handed before it trusts the answer — had no read. This is that read
 (``agents.grounding_read`` until it was made unconditional, 2026-10-28), at two doors: the agent's HTTP door with its key
 (``POST /doors/agents/{id}/grounding``) and the read-level MCP tool ``ground_agent`` over the session route

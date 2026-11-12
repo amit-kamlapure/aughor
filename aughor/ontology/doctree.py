@@ -1,7 +1,7 @@
 """Ontology docs as a build artifact (R8) — the autodoc architecture on existing stores.
 
 *Understanding is a build artifact.* Project the already-built :class:`OntologyGraph`
-(the deterministic column→table rollup Aughor computes from profiles + grain + joins) into a
+(the deterministic column→table rollup Pramanyx computes from profiles + grain + joins) into a
 persisted, **Merkle-checksummed** doc tree — column → table → schema → connection — where every
 parent summarizes its children's *summaries*, never their raw content. That bottom-up rollup makes
 DB-info compression — the largest context-reduction lever on wide schemas (arXiv 2502.00675) —

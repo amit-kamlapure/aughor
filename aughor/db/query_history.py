@@ -1,8 +1,8 @@
 """Arc NV-3 — a warehouse's OWN query history, read as statement text, or withheld and said.
 
 Snowflake, ClickHouse, BigQuery and the lakehouse engine's system tables each keep what people ran there, and that
-history can be mined into reusable SQL attributes; Aughor's miner (`aughor.sql.query_log_miner`) could already do the mining
-but read only Aughor's own executed SQL. This module
+history can be mined into reusable SQL attributes; Pramanyx's miner (`aughor.sql.query_log_miner`) could already do the mining
+but read only Pramanyx's own executed SQL. This module
 is the SOURCE it lacked: one shape for a history read, so the candidate door (`aughor.ontology.candidates`) mines
 every engine the same way, and an engine with no readable history says so instead of returning an empty list a
 reader would take for "nobody queries this warehouse".

@@ -52,7 +52,7 @@ import { synthesizeResumedUserMessage } from "./uiMessageAdapter";
 
 export type { InvestigationPhase as InvPhase };
 
-/** A message whose data parts are Aughor's declared vocabulary. */
+/** A message whose data parts are Pramanyx's declared vocabulary. */
 export type AughorUIMessage = UIMessage<unknown, AughorUIDataTypes>;
 
 // ── The turn shape (moved verbatim from the retired reducer) ──────────────────

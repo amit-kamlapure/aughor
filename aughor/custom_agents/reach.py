@@ -113,7 +113,7 @@ def doors_for(agent, *, public_api: str = "", public_web: str = "") -> dict[str,
     key_hint = ("issue a key on the agent's Doors tab" if not issued else "")
     doors: dict[str, Any] = {
         "mcp": {"state": "open" if agent.enabled else "paused", "tool": mcp_tool_name(agent),
-                "how": "the Aughor MCP server registers one tool per enabled custom agent at "
+                "how": "the Pramanyx MCP server registers one tool per enabled custom agent at "
                        "start (`python -m aughor.mcp`); its caller is a principal the "
                        "verdict and spend records attribute"},
         "http": {"state": "open" if issued and agent.enabled else ("no key" if not issued else "paused"),
@@ -137,11 +137,11 @@ def doors_for(agent, *, public_api: str = "", public_web: str = "") -> dict[str,
 
 
 def a2a_card(agents: list, *, public_api: str = "") -> dict[str, Any]:
-    """An Agent Card (A2A): Aughor as one agent whose SKILLS are the enabled custom agents,
+    """An Agent Card (A2A): Pramanyx as one agent whose SKILLS are the enabled custom agents,
     each reachable at its own endpoint with the same bearer key as the HTTP door."""
     api = (public_api or "").rstrip("/")
     return {
-        "name": "Aughor",
+        "name": "Pramanyx",
         "description": "Governed answers over connected data — each skill is a custom agent "
                        "with its own scope and stance; every answer carries its SQL and a receipt.",
         "url": f"{api}/doors/a2a" if api else "/doors/a2a",

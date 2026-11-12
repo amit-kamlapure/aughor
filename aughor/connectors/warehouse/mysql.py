@@ -1,4 +1,4 @@
-"""MySQL / MariaDB connector for Aughor.
+"""MySQL / MariaDB connector for Pramanyx.
 
 DSN format:  mysql://user:password@host:3306/database
 Meta fields: {"ssl_ca": "/path/to/ca.pem"}  (optional)

@@ -5,7 +5,7 @@ compute by difficulty — a cheap/fast model + single shot for easy questions, t
 frontier model (+ the heavier candidate/verify depth) for hard ones (see
 ``docs/NL2SQL_WINNING_FORMULA_2026.md``).
 
-Aughor's prior conclusion is that **deterministic guards beat added LLM machinery on a
+Pramanyx's prior conclusion is that **deterministic guards beat added LLM machinery on a
 strong model**, so the assessor here is **deterministic** — explainable keyword / shape
 signals over the question (and, when available, the schema-link breadth), not another
 model call. It is a pure function, so it is cheap (~µs), reproducible, and unit-testable.

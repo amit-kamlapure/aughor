@@ -33,7 +33,7 @@ const EvidencePanel    = dynamic(() => import("@/components/EvidencePanel").then
 const DeclaredActionsPanel = dynamic(() => import("@/components/DeclaredActionsPanel").then(m => ({ default: m.DeclaredActionsPanel })), { ssr: false, loading });
 const ConnectionGraphPanel = dynamic(() => import("@/components/ConnectionGraphPanel").then(m => ({ default: m.ConnectionGraphPanel })), { ssr: false, loading });
 // Relocated from the former Agents workspace (Agentic Ops merge): the closed
-// loop's accumulation is org-wide learning — "what Aughor knows", which is this
+// loop's accumulation is org-wide learning — "what Pramanyx knows", which is this
 // section's job — not agent operations.
 const MemoryPanel      = dynamic(() => import("@/components/MemoryPanel").then(m => ({ default: m.MemoryPanel })), { ssr: false, loading });
 // Arc CT-7 — a person's own dashboards, a tab of their own beside the Briefing.
@@ -75,7 +75,7 @@ const LAYERS: WorkspaceLayer<IntelLayer>[] = [
   { id: "memory",   icon: "memory",  label: "Memory",   blurb: "What the closed loop has learned" },
   { id: "kinetic",  icon: "spark",   label: "Actions",  blurb: "Declared actions & overlay edits" },
   { id: "org",      icon: "spark",   label: "Org",      blurb: "Organizational knowledge" },
-  { id: "brain",    icon: "compass", label: "Brain map", blurb: "Every store behind what Aughor knows, with live counts" },
+  { id: "brain",    icon: "compass", label: "Brain map", blurb: "Every store behind what Pramanyx knows, with live counts" },
 ];
 
 // Wave C4 — the connection knowledge graph layer, inserted after Ontology (which it

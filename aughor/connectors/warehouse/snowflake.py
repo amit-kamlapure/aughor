@@ -1,4 +1,4 @@
-"""Snowflake connector for Aughor.
+"""Snowflake connector for Pramanyx.
 
 DSN format:  snowflake://account.region
 Meta fields: {"user": "...", "password": "...", "database": "...",

@@ -1,6 +1,6 @@
-# Aughor — web
+# Pramanyx — web
 
-The Next.js frontend for [Aughor](../README.md). It talks to the FastAPI backend
+The Next.js frontend for [Pramanyx](../README.md). It talks to the FastAPI backend
 on `:8000` and streams investigations over Server-Sent Events.
 
 ## Running

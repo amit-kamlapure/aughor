@@ -1,4 +1,4 @@
-"""The Slack app manifest Aughor renders for a new bot (RC-5).
+"""The Slack app manifest Pramanyx renders for a new bot (RC-5).
 
 Rendered from code rather than kept as a document, because every value in it has to
 match what the running bot does: the scopes are what the transport calls, and
@@ -75,7 +75,7 @@ def render_manifest(*, name: str, description: str = "", agent_view: bool = True
     OAuth callback, when the deployment has a public HTTPS origin — it is what lets the
     install be a button rather than a paste.
     """
-    display_name = (name or "Aughor").strip()[:35]
+    display_name = (name or "Pramanyx").strip()[:35]
     manifest = {
         "display_information": {
             "name": display_name,
@@ -90,7 +90,7 @@ def render_manifest(*, name: str, description: str = "", agent_view: bool = True
         "settings": {
             "event_subscriptions": {"bot_events": list(BOT_EVENTS)},
             # Socket Mode connects OUT over a WebSocket, so a user's bot needs no public
-            # URL, tunnel or webhook endpoint. This is what lets a self-hosted Aughor run
+            # URL, tunnel or webhook endpoint. This is what lets a self-hosted Pramanyx run
             # bots at all, and it is why there is no request_url anywhere in here.
             "socket_mode_enabled": True,
             "org_deploy_enabled": False,

@@ -28,7 +28,7 @@ def _slack_stub(monkeypatch):
     posts: list = []
 
     class _Bot:
-        name, enabled, bot_token = "Aughor", True, "xoxb-x"
+        name, enabled, bot_token = "Pramanyx", True, "xoxb-x"
 
     def _post(token, channel, message, thread_ts=None, delivery_key="", departure_id=""):
         posts.append({"channel": channel, "message": message, "thread_ts": thread_ts})

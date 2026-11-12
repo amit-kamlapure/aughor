@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * AugTable — Ant Design Table wired to Aughor's dark design tokens.
+ * AugTable — Ant Design Table wired to Pramanyx's dark design tokens.
  *
  * Usage (raw SQL results):
  *   <SqlResultTable columns={["id","name","revenue"]} rows={rows} />
@@ -36,7 +36,7 @@ import { ColumnFilterButton, ColumnFilterMenu } from "@/components/query/ColumnF
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 
-// ── Aughor tokens for Ant Design — READ from the live token sheet ────────────
+// ── Pramanyx tokens for Ant Design — READ from the live token sheet ────────────
 // Ant's theme tokens must be real colours (it derives shades in script), so it cannot be
 // handed `var(--bg-0)`. Both skins are built from the page's own tokens instead, read through
 // `lib/tokenColor.ts` — which also turns a Radix step into sRGB, since on a wide-gamut screen

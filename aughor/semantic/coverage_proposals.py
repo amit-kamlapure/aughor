@@ -556,7 +556,7 @@ def history_proposals(connection_id: str, schema_name: Optional[str], mmap, metr
     """Each formula that other people compute in the warehouse's own query history (`HISTORY_MIN_RUNS` runs or more),
     that no defined metric computes — proposed as the metric it would be, with the FROM of the statement it was seen
     in, through the same gates as every other proposal. The platform's own statements are signed and left out, so what
-    arrives here is how the business queries its warehouse, not how Aughor does (Arc NV-7). A formula that aggregates
+    arrives here is how the business queries its warehouse, not how Pramanyx does (Arc NV-7). A formula that aggregates
     nothing, reads through an alias no table resolves, or was computed over a CTE is not proposed; one whose statement
     had a value where the history keeps a hole is proposed as `needs_formula`, the hole said, not gated."""
     from aughor.db.query_history import not_platform_statement, read_query_history
@@ -601,7 +601,7 @@ def history_proposals(connection_id: str, schema_name: Optional[str], mmap, metr
             "name": name, "label": str(alias).replace("_", " ").strip().capitalize(), "source": SOURCE_QUERY_HISTORY,
             "area": placed[0].area if placed else OTHER, "pattern": "", "pack_id": "",
             "definition": (f"computed as `{alias}` in {runs} runs of the warehouse's own query history, by someone other "
-                           f"than Aughor; no defined metric computes it — its source statement's filters are not carried"),
+                           f"than Pramanyx; no defined metric computes it — its source statement's filters are not carried"),
             "sql": f"SELECT {expr} AS {name} {from_clause}", "tables": tables,
             "time_column": f"{lead}.{table_facts.date_column}" if table_facts and table_facts.date_column else "",
             "time_kind": "flow", "runs": runs, "made_at": now(),

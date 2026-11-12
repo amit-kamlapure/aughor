@@ -21,7 +21,7 @@ from aughor.metastore import Catalog, Schema, get_catalog, list_catalogs, list_s
 
 router = APIRouter(prefix="/api/2.1/unity-catalog", tags=["unity-catalog"])
 
-# A second router for Aughor-native access control (not part of the UC read surface).
+# A second router for Pramanyx-native access control (not part of the UC read surface).
 grants_router = APIRouter(prefix="/metastore", tags=["metastore"])
 
 

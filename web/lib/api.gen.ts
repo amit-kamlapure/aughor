@@ -13,7 +13,7 @@ export interface paths {
         };
         /**
          * A2A Agent Card
-         * @description The Agent Card: Aughor's enabled custom agents as skills, each at its own endpoint.
+         * @description The Agent Card: Pramanyx's enabled custom agents as skills, each at its own endpoint.
          */
         get: operations["a2a_agent_card__well_known_agent_json_get"];
         put?: never;
@@ -11048,7 +11048,7 @@ export interface paths {
          * @description Compute a governed metric's CURRENT value by running its registered SQL
          *     against a connection — the exact governed number, not an LLM re-derivation.
          *     This is what the MCP `get_metric` tool returns so an external agent binds to
-         *     the same definition the rest of Aughor enforces (vs improvising a formula).
+         *     the same definition the rest of Pramanyx enforces (vs improvising a formula).
          *
          *     🔴 Resolved SCOPED. Until 2026-09-20 this read `get_metric(name)` with no connection, and
          *     the resolver's no-connection branch returns the FIRST row matching the name, whatever
@@ -14227,7 +14227,7 @@ export interface paths {
         };
         /**
          * Get Org Allows
-         * @description What the organisation allows Aughor to do (ROADMAP §3.65): each of the four settings' answer, and whether an
+         * @description What the organisation allows Pramanyx to do (ROADMAP §3.65): each of the four settings' answer, and whether an
          *     admin set it — one never set answers from the variable of the flag it replaced, and the screen says so.
          */
         get: operations["get_org_allows_org_settings_allows_get"];
@@ -17924,7 +17924,7 @@ export interface paths {
         put?: never;
         /**
          * Create Slack App
-         * @description Create the Slack app from the manifest Aughor renders, with Slack's own API.
+         * @description Create the Slack app from the manifest Pramanyx renders, with Slack's own API.
          *
          *     Measured 2026-10-03: twenty manual steps across four surfaces and five pasted
          *     secrets. After this call the app exists, its signing secret is stored, and an
@@ -19945,7 +19945,7 @@ export interface components {
          *
          *     ⚠️ ``webhook`` is a trigger kind and also, unrelatedly, a declared-action kind
          *     (``ontology/models.py``) and a notification-destination kind (``notifications/models.py``).
-         *     Those two are OUTBOUND — a URL Aughor posts to; this one is INBOUND — a URL Aughor is
+         *     Those two are OUTBOUND — a URL Pramanyx posts to; this one is INBOUND — a URL Pramanyx is
          *     posted to. The three never meet because every lookup in this plane is family-scoped
          *     (``required_keys(kind, family=…)``); a flat kind→handler map added anywhere would start
          *     answering confidently and wrongly.
@@ -22231,7 +22231,7 @@ export interface components {
             reason_to_read_runs?: boolean | null;
             /**
              * Scheduled Model Work
-             * @description Let Aughor make model calls nobody pressed for: nightly runs of each custom agent's checked test questions, re-tests after reviews, and a Briefing guide redrafted after an exploration that ran on its own. Off by default.
+             * @description Let Pramanyx make model calls nobody pressed for: nightly runs of each custom agent's checked test questions, re-tests after reviews, and a Briefing guide redrafted after an exploration that ran on its own. Off by default.
              */
             scheduled_model_work?: boolean | null;
             /**
@@ -23461,7 +23461,7 @@ export interface components {
             description: string;
             /**
              * Name
-             * @default Aughor
+             * @default Pramanyx
              */
             name: string;
         };

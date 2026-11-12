@@ -79,7 +79,7 @@ These use a native browser dialog:
 
 ## Silent or misleading states found while reading
 
-- **Home.** A failed `/investigations` read shows the first-run "Welcome to Aughor" funnel, so the failure reads as a first visit.
+- **Home.** A failed `/investigations` read shows the first-run "Welcome to Pramanyx" funnel, so the failure reads as a first visit.
 - **Chat.** After a run, "Submit feedback" posts to `/investigations/{id}/feedback`, which accepts only paused runs. Feedback on a finished run is dropped with no message.
 - **Data Canvas.** "Created by me" only hides auto-generated canvases; it does not filter by owner. The Artifacts tab can only list and remove; nothing in the web app creates an artifact. Configure ▸ Metrics mounts `MetricsPanel` without a connection.
 - **Catalog.** The comment says the screen reads the search index status once, but the Docs tab reads it again on every open.
@@ -140,9 +140,9 @@ Entry: `HomeScreen` (web/app/page.tsx:467) → `HomeDesk` (web/components/home/H
 - [ ] Finding card "Needs you · a finding to act on" (amber edge) with the finding's age at right (web/components/home/HomeDesk.tsx:397)
 - [ ] Finding result lines: "Booked as a decision · review <day>[ · nothing expected, so it cannot be scored]", "Set aside · booked as a decision not to act · it can be restored", "Checked again · the numbers still hold" / "· a number moved — open the finding to see which" (web/components/home/HomeDesk.tsx:376-392)
 - [ ] The week ahead — reviews and forecasts landing in the next 7 days; day one lists up to 4 forecasts with ranges ("+N more"), later days as chips (up to 5, "+N"); label right "<day> · for <span>" (web/components/home/HomeDesk.tsx:425-465)
-- [ ] Between you and Aughor — "you told it", "your forecasts", "landed in range" (N of M or "—") (web/components/home/HomeDesk.tsx:467-488)
+- [ ] Between you and Pramanyx — "you told it", "your forecasts", "landed in range" (N of M or "—") (web/components/home/HomeDesk.tsx:467-488)
 - [ ] Standing questions — latest headline, the question, "N×", label right "asked 3+ times · latest answer" (web/components/home/HomeDesk.tsx:153-173)
-- [ ] First-run funnel "Welcome to Aughor" with three numbered steps (web/app/page.tsx:546-571)
+- [ ] First-run funnel "Welcome to Pramanyx" with three numbered steps (web/app/page.tsx:546-571)
 
 ### 4. Keyboard shortcuts
 - [ ] Enter in the Ask box sends; Shift+Enter makes a new line (web/app/page.tsx:527)
@@ -154,7 +154,7 @@ Entry: `HomeScreen` (web/app/page.tsx:467) → `HomeDesk` (web/components/home/H
 
 ### 6. Empty / error / loading / withheld states that say something
 - [ ] No connection: the Ask box is hidden and only the funnel shows (web/app/page.tsx:519)
-- [ ] No runs yet: "Welcome to Aughor … Get started in three steps" — NOTE: a FAILED `/investigations` read also lands here (the catch leaves the list empty), so a read failure reads as a first run (web/app/page.tsx:504-507, :546)
+- [ ] No runs yet: "Welcome to Pramanyx … Get started in three steps" — NOTE: a FAILED `/investigations` read also lands here (the catch leaves the list empty), so a read failure reads as a first run (web/app/page.tsx:504-507, :546)
 - [ ] "Choose a connection to see what is on your desk." (web/components/home/HomeDesk.tsx:122-124)
 - [ ] "No daily run has reported a move here yet." (web/components/home/HomeDesk.tsx:215-221)
 - [ ] "The line behind this figure could not be read · <why>" (web/components/home/HomeDesk.tsx:267-268)
@@ -168,7 +168,7 @@ Entry: `HomeScreen` (web/app/page.tsx:467) → `HomeDesk` (web/components/home/H
 - [ ] `GET /investigations?workspace_id=` — the recent runs Home picks its lead, question and standing questions from (default limit 50) (web/app/page.tsx:501-508; aughor/routers/investigations.py:6384)
 - [ ] `GET /record/claims?kind=said` and `?kind=prediction`, `GET /record/decisions` (connection-scoped) (web/components/home/HomeDesk.tsx:100-106)
 - [ ] `GET /exploration/{conn}/domains` — findings for "a finding to act on"; opens a warehouse connection to read the cached schema for triage (introspects on a cold schema cache) (web/lib/home.ts:418-421; aughor/routers/exploration.py:639-670, :582-599)
-- [ ] `GET /record/you` — the "Between you and Aughor" counts (web/lib/home.ts:452-453)
+- [ ] `GET /record/you` — the "Between you and Pramanyx" counts (web/lib/home.ts:452-453)
 - [ ] `GET /investigations/{lead id}` — the lead run's report for its figure (web/lib/home.ts:388-389)
 - [ ] `GET /metrics?connection_id=` then **`POST /exploration/{conn}/briefing/metric/{metric}?count=60` — SPENDS (warehouse): one statement, no model call**, on every Home open whose lead names an approved metric (web/components/home/HomeDesk.tsx:194-214; aughor/routers/exploration.py:1010-1027)
 - [ ] `GET /ask/prior` — debounced 350 ms while typing ≥12 characters; a read (web/components/home/AskRecall.tsx:28-36; aughor/routers/investigations.py:6056-6067)
@@ -1085,7 +1085,7 @@ Add data page (replaces the whole Catalog while open)
 
 ### 2. Dialogs, drawers, popovers, panels
 - [ ] Tools ▾ dropdown (scope and table variants) (web/components/catalog/CatalogTools.tsx:79-102)
-- [ ] Shell "Remove connection" modal — "This removes <name> from Aughor. The database is not affected.", type the name to confirm (Enter confirms), "Cancel" / "Remove" — **WRITES** `DELETE /connections/{id}` (web/app/page.tsx:814-875, :1816-1824, :2410-2416)
+- [ ] Shell "Remove connection" modal — "This removes <name> from Pramanyx. The database is not affected.", type the name to confirm (Enter confirms), "Cancel" / "Remove" — **WRITES** `DELETE /connections/{id}` (web/app/page.tsx:814-875, :1816-1824, :2410-2416)
 - [ ] Native `confirm()` for Remove schema and Remove table; native `alert()` for their failures and for a display-only type change (web/components/catalog/CatalogScope.tsx:122-124; web/components/catalog/CatalogTable.tsx:167, :176-178)
 - [ ] Add data full page (replaces the Catalog) — gallery → connector form, or the file uploader (web/components/AddDataPanel.tsx; web/components/CatalogScreen.tsx:485-500)
 - [ ] Profile / Volumes / Permissions open as extra tabs, not dialogs (web/components/catalog/CatalogScope.tsx:131-133)
@@ -1206,7 +1206,7 @@ screen, so the canvas branches (canvas domains and patterns, the "connection-wid
 - [ ] Retry buttons on each failed read: domains, patterns, patterns again, and org (ProfileLayer.tsx:247, 264, 282, 445; web/components/ui/states.tsx:84-98)
 
 **Overview (web/components/ProfilePanel.tsx)**
-- [ ] `Why Aughor thinks so` fold — shows the profile's evidence (ProfilePanel.tsx:207-215)
+- [ ] `Why Pramanyx thinks so` fold — shows the profile's evidence (ProfilePanel.tsx:207-215)
 - [ ] Currency fact: `Confirm {inferred}` — **WRITES** the confirmed currency for this dataset (ProfilePanel.tsx:484-486, 453-466)
 - [ ] Currency fact: `Change` / `Another currency` — opens a 3-letter "Currency code" input with `Save` (enabled only for 3 letters), `Clear` (only when confirmed) and `Cancel`. **WRITES** (ProfilePanel.tsx:491-504)
 - [ ] Tables card `Copy` / `CSV` — the table profile: table, key, key verified, rows, latest record, average null rate, profiled (ProfilePanel.tsx:260-264)

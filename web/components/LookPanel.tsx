@@ -31,7 +31,7 @@ const RADIUS_WORD: Record<Radius, string> = { none: "Square", small: "Small", me
 const EDGES_WORD: Record<Edges, string> = { off: "Off", on: "On" };
 const TYPEFACE_WORD: Record<Typeface, string> = { inter: "Inter", "source-sans": "Source Sans" };
 const ROWS_WORD: Record<Rows, string> = { compact: "Compact", default: "Default", comfortable: "Comfortable" };
-const PRESET_WORD: Record<Preset, string> = { aughor: "Aughor", workbench: "Workbench" };
+const PRESET_WORD: Record<Preset, string> = { aughor: "Pramanyx", workbench: "Workbench" };
 /** What a preset sets, said once on hover — the knobs below show it anyway. */
 const PRESET_SAID: Record<Preset, string> = {
   aughor: "Blue · slate · small corners · 100% · Inter · 36px rows — the default",

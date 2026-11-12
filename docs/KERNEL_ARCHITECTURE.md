@@ -1,4 +1,4 @@
-# The Aughor Kernel — North-Star Architecture & Reliability Base
+# The Pramanyx Kernel — North-Star Architecture & Reliability Base
 
 **Directive (user, 2026-06-10):** we lack world-class architectural design, componentization, and the
 thing that makes a data platform *really* good — reliability as a platform
@@ -58,7 +58,7 @@ Strip away the features and it rests on a few substrate decisions:
 - **Long-running work is a job with a formal state machine** (submitted → running →
   succeeded/failed, heartbeats, retries, resume). Nothing important runs as a fire-and-forget task.
 
-The 50-year frame: Aughor's destination is an **autonomous data organism** — fleets of agents
+The 50-year frame: Pramanyx's destination is an **autonomous data organism** — fleets of agents
 continuously exploring, validating, repairing, and briefing over an enterprise's data; humans set
 intent and consume proven claims. Models will change; agent counts will go 1 → 10,000; features will
 churn. What CANNOT churn is the substrate that makes autonomy safe:
@@ -67,7 +67,7 @@ That substrate is what we build now. It is deliberately boring — that's the po
 
 ---
 
-## 2. The Aughor Kernel — three pillars + a contract layer
+## 2. The Pramanyx Kernel — three pillars + a contract layer
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
@@ -218,7 +218,7 @@ mechanisms, each mapped to a substrate we already have:
    is governed, the SQL path must use that exact formula; when a requested metric
    is *not* governed, the agent says "this metric isn't defined yet — define it?"
    instead of free-handing a formula. Structural, not advisory — the generator
-   is gated, the way the kernel gates a silent swallow. (Aughor already has the
+   is gated, the way the kernel gates a silent swallow. (Pramanyx already has the
    pieces: the canonical-metrics injection, the fan-out/grain guards, the
    semantic-drift guard. SOTA = compose them into a hard *use-only-registered*
    rule with a measured enforcement rate.)

@@ -10,7 +10,7 @@ executed SQL and the tables it read. This module turns those into cases the same
 E6's "add this run as a test case" does one at a time, in bulk and deterministically —
 no LLM, no network.
 
-**What these cases measure, and what they do not.** A receipt records what Aughor
+**What these cases measure, and what they do not.** A receipt records what Pramanyx
 *produced*, not what was *true*. A suite built from receipts therefore measures
 CONSISTENCY — does a configuration still reach the answer this connection reached
 before — and never correctness. That distinction is load-bearing for L2: it is a valid
@@ -162,7 +162,7 @@ def seed_suite(connection_id: str, *, name: str = "", limit: int = 60,
         description=(
             "Cases captured from this connection's answer receipts. These measure "
             "CONSISTENCY (does a configuration still reach the answer reached before), "
-            "NOT correctness: a receipt records what Aughor produced, not what is true. "
+            "NOT correctness: a receipt records what Pramanyx produced, not what is true. "
             "Do not report a pass rate from this suite as an accuracy number."
         ),
         connection_id=connection_id,

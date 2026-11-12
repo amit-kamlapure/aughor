@@ -1,4 +1,4 @@
-# Aughor as the centre piece of an organisation's decision intelligence — the framework, and a run (2026-10-25/26)
+# Pramanyx as the centre piece of an organisation's decision intelligence — the framework, and a run (2026-10-25/26)
 
 The user opened this as a conversation, not a build: *"how making Aughor truly a center piece of an organisation's
 decision intelligence"*, then *"Scan the web for more advanced decision intelligence platform[s] and what are they doing
@@ -19,7 +19,7 @@ or from source on the dates given.
   and on *decision memory* as the asset. **None of the vendors scanned shows how an outcome is attributed**: against what
   baseline, with what guard against crediting a decision with the business's own growth. The only vendors that do the
   counterfactual honestly are the experimentation platforms, with program holdouts.
-- **Aughor already holds the record the loop needs, nearly field for field** (`record/decisions.py`, the 2027 study §K)
+- **Pramanyx already holds the record the loop needs, nearly field for field** (`record/decisions.py`, the 2027 study §K)
   and the one piece nobody else shows — the comparison-group review with the Record's own calibration as a drift guard
   (PENDING 57, D-3). What it lacked on 2026-10-25 was **use**: 2 decisions ever, 0 missions, 0 recommendation outcomes.
 - **The user's calls:** the three readings of "centre piece" are taken as **B + C + A** — the place a decision is

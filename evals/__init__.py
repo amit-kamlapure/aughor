@@ -1,1 +1,1 @@
-"""Aughor LLM Evals — Braintrust-based evaluation framework."""
+"""Pramanyx LLM Evals — Braintrust-based evaluation framework."""

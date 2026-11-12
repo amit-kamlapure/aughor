@@ -198,7 +198,7 @@ def _max_output_tokens(role: str = "coder", model: str = "") -> int:
 # How many attempts instructor may spend inside ONE logical structured call.
 #
 # Instructor's own default is 3, and we had never overridden it — so every structured
-# failure in Aughor silently cost THREE full-prompt requests before our code saw the
+# failure in Pramanyx silently cost THREE full-prompt requests before our code saw the
 # error, and a fourth against another provider when the fallback chain took over.
 # Measured on the real transport stack (a real socket, real openai client, real
 # instructor): a response with a trailing comma cost 3 requests. On an ADA synthesis
@@ -558,7 +558,7 @@ def _pinned_model(role: Role, model: Optional[str]) -> str:
     (:func:`set_run_model`, set by the kernel from the agent's governance) deliberately
     does **not** reach the ``fast`` tier.
 
-    Why ``fast`` is exempt: it is Aughor's cheap-by-declaration role — the call site chose
+    Why ``fast`` is exempt: it is Pramanyx's cheap-by-declaration role — the call site chose
     it because the work is a throwaway (a phase interpret, a question classify, the
     evidence digest). A per-agent pin means "run *this agent's* reasoning on a stronger
     model" (Analyst → 550B for 1M-ctx root-causing; Briefer → 550B for user-visible
@@ -1406,7 +1406,7 @@ def _extract_cached_tokens(raw) -> Optional[int]:
 # ── Resilience: per-endpoint concurrency cap + transient-error retry/backoff ──
 # Cloud inference endpoints throttle and intermittently 429/5xx/timeout under sustained load
 # (observed: a benchmark run hung after ~2.5h of unbounded parallel calls). This is a platform
-# concern, not a benchmark one — every Aughor LLM call goes through here. We (a) cap concurrent
+# concern, not a benchmark one — every Pramanyx LLM call goes through here. We (a) cap concurrent
 # in-flight calls per base_url with a shared semaphore so bursts don't trip throttling, and
 # (b) retry transient failures with exponential backoff + jitter under an overall deadline.
 # All knobs are env-tunable; defaults are conservative and behaviour-preserving on the happy path.

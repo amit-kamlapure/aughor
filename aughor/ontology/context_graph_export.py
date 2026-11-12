@@ -1,7 +1,7 @@
 """Distribution — the committed artifact + the skills pack (Wave C6).
 
 The mechanic that converts a single user into a team: the graph is *just a file*, so a
-teammate consumes it with **no LLM, no API key, and no Aughor running**. Generation is
+teammate consumes it with **no LLM, no API key, and no Pramanyx running**. Generation is
 paid once (C1's deterministic projection); consumption is free. An agent sitting in a
 dbt repo can answer "what does ``net_revenue`` mean and which tables feed it" from an
 exported pack with this process not running at all.
@@ -19,7 +19,7 @@ What ships in a pack:
 * ``install.sh`` — symlinks the skills into agent platforms. No MCP server, no daemon.
 
 **No coercive hook injection.** The anti-pattern table forbids the "You MUST … do not
-ask" auto-update hook that the studied tool used: a pack Aughor writes *surfaces*
+ask" auto-update hook that the studied tool used: a pack Pramanyx writes *surfaces*
 staleness and lets the reader act on it. ``install.sh`` therefore only ever links files
 into place — it never registers a hook, and no skill instructs an agent to refuse the
 user or to hide the freshness state.
@@ -94,7 +94,7 @@ def _freshness_prose(state: str, reason: str) -> str:
         )
     return (
         "UNKNOWN — the freshness of this pack could not be determined at export time "
-        "(Aughor could not read the live ontology). Treat it as possibly out of date and "
+        "(Pramanyx could not read the live ontology). Treat it as possibly out of date and "
         "say so when it matters."
     )
 
@@ -149,7 +149,7 @@ def _preamble(state: str, reason: str) -> str:
         "trusting this sentence, because the pack may have been re-exported since.\n"
         "If the state is anything other than `fresh`, include that caveat in your answer "
         "— the reader decides what to do about it. Re-export with "
-        "`aughor graph-export <connection-id> --out <dir>` where Aughor runs.\n"
+        "`aughor graph-export <connection-id> --out <dir>` where Pramanyx runs.\n"
     )
 
 
@@ -175,21 +175,21 @@ def _skill_answer_from_graph_text(state: str, reason: str) -> str:
     return f"""---
 name: answer-from-aughor-graph
 description: Answer a question about this warehouse's tables, joins, metrics or
-  established findings from the exported Aughor connection graph — offline, with no
-  database access and no Aughor running. Use when asked what a column or metric means,
+  established findings from the exported Pramanyx connection graph — offline, with no
+  database access and no Pramanyx running. Use when asked what a column or metric means,
   which tables relate, how two tables join, or what has already been established about
   an entity.
 ---
 
-# Answer from the Aughor connection graph
+# Answer from the Pramanyx connection graph
 
 This directory holds `graph.json` — a typed, provenance-carrying graph of one database
-connection, exported by [Aughor](https://github.com/amit-kamlapure/aughor). It is the
+connection, exported by [Pramanyx](https://github.com/amit-kamlapure/pramanyx). It is the
 product of a deterministic projection over the warehouse's schema, its profiler output,
 its governed metric definitions, its glossary and the findings of past investigations.
 Every edge carries the evidence that produced it.
 
-You can answer from it **without a database connection, an API key, or Aughor running**.
+You can answer from it **without a database connection, an API key, or Pramanyx running**.
 
 {_preamble(state, reason)}
 
@@ -246,14 +246,14 @@ def _skill_trace_lineage(state: str, reason: str) -> str:
 name: trace-aughor-metric-lineage
 description: Trace what feeds a metric or column — which tables a governed metric's
   formula reads, and which definitions and findings attach to it — from the exported
-  Aughor connection graph, offline. Use for "what feeds X", "where does X come from",
+  Pramanyx connection graph, offline. Use for "what feeds X", "where does X come from",
   "what is X built on", or metric-definition questions.
 ---
 
-# Trace lineage from the Aughor connection graph
+# Trace lineage from the Pramanyx connection graph
 
 Answers "what feeds `<metric>`?" from `graph.json` alone — no warehouse access, no
-Aughor running.
+Pramanyx running.
 
 {_preamble(state, reason)}
 
@@ -288,13 +288,13 @@ what you did find (the formula, the domain) rather than guessing a table.
 
 
 _INSTALL_SH = """#!/bin/sh
-# Install this Aughor graph pack's skills into the agent platforms on this machine.
+# Install this Pramanyx graph pack's skills into the agent platforms on this machine.
 #
 # Symlinks (never copies) so a re-export is picked up without re-installing, and
 # removing the pack removes the skills. Idempotent: re-running relinks.
 #
 # Deliberately NOT done here: registering any hook, prompt injection, or
-# auto-update daemon. Aughor surfaces the graph's freshness state and lets you act
+# auto-update daemon. Pramanyx surfaces the graph's freshness state and lets you act
 # on it — a pack does not install something that speaks for you.
 set -eu
 
@@ -327,20 +327,20 @@ if [ "$installed" -eq 0 ]; then
   exit 0
 fi
 
-echo "Done. The skills read $PACK_DIR/graph.json — no Aughor process required."
+echo "Done. The skills read $PACK_DIR/graph.json — no Pramanyx process required."
 """
 
 
 def _readme(graph: ContextGraph, state: str, reason: str, counts: dict) -> str:
     shape = ", ".join(f"{k}: {v}" for k, v in sorted(counts.items()))
     schema = graph.schema_name or "(default)"
-    return f"""# Aughor graph pack — `{graph.connection_id}` / `{schema}`
+    return f"""# Pramanyx graph pack — `{graph.connection_id}` / `{schema}`
 
 A self-contained export of one database connection's **knowledge graph**: tables,
 governed metrics, glossary definitions, business domains, and the findings past
 investigations established — with the evidence behind every edge.
 
-Consume it with **no LLM, no API key, and no Aughor running**. Generation was paid
+Consume it with **no LLM, no API key, and no Pramanyx running**. Generation was paid
 once; reading is free.
 
 - **Graph:** `graph.json` (format {PACK_FORMAT}, graph version {graph.version})
@@ -367,7 +367,7 @@ grep -n -B2 -A6 'derived_from' graph.json        # metric lineage
 
 ## Re-export
 
-This pack is a snapshot. Where Aughor runs:
+This pack is a snapshot. Where Pramanyx runs:
 
 ```sh
 aughor graph-export {graph.connection_id} --out <dir>

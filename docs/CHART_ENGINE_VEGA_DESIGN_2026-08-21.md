@@ -24,7 +24,7 @@ Migrate — but as a **spec-first** migration, not a renderer swap, and to **Veg
 
 ## 1. Two facts that reframe the request
 
-### 1.1 Aughor has already run Vega-Lite, and removed it
+### 1.1 Pramanyx has already run Vega-Lite, and removed it
 
 The engine history is **Observable Plot → Vega-Lite → ECharts**
 (`docs/archive/FEATURES_full_2026-06-29.md:720`). The move off Vega-Lite happened on
@@ -110,7 +110,7 @@ ordinary bar chart pays tier-3 verbosity forever.
 
 ### 2.3 Where "perfect" is actually gated today
 
-The renderer's expressive ceiling is not the binding constraint. **99% of what Aughor draws is
+The renderer's expressive ceiling is not the binding constraint. **99% of what Pramanyx draws is
 bars and lines**, and ECharts, Vega-Lite and D3 all draw those perfectly. What limits how well a
 chart *delivers its message* sits one layer up — and all three are findings from §4:
 
@@ -149,7 +149,7 @@ look at them. If the difference is theme, buy the theme.
 
 Measured read-only against `data/system.db` on 2026-08-21. **32,721 artifacts** total.
 
-### 4.1 What Aughor actually charts
+### 4.1 What Pramanyx actually charts
 
 703 artifacts carry a `chart_type`. Every one is a `chat_answer`.
 
@@ -248,7 +248,7 @@ exactly the chart the user was just looking at". **Keep that. Change only what i
 
 ### 5.3 What must NOT change
 
-Vega-Lite makes dual-axis charts easy via `resolve.scale.independent`. Aughor's own exhibit
+Vega-Lite makes dual-axis charts easy via `resolve.scale.independent`. Pramanyx's own exhibit
 grammar already retired combo charts ("one measure per exhibit" —
 `aughor/agent/prompts.py:245`). **Do not let the new grammar's convenience reopen a decision
 the product already made correctly.**

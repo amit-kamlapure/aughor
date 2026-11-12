@@ -1,4 +1,4 @@
-# Instrument — the Aughor design system
+# Instrument — the Pramanyx design system
 
 The design system the web app runs on, adopted 2026-09-13 from the design file
 **"Aughor Design System"** (`Aughor Design System.dc.html`, ten artboards: tokens dark and
@@ -21,7 +21,7 @@ plus what adopting it decided. Where it says MUST, a reviewer rejects the diff.
 
 ## 0. The thesis
 
-Aughor's product is a claim about a number, and the interface's whole job is to make that
+Pramanyx's product is a claim about a number, and the interface's whole job is to make that
 claim checkable at a glance. Everything structural is monochrome on its skin's ground —
 navy in dark, a white grid on grey chrome in light; the ink and the encoding carry no brand. There is **one plane, not a stack of cards** *(superseded 2026-10-10 by `CLARITY.md` §7: content sits in cards on the ground)*:
 hierarchy comes from hairlines and the honest weight of type. **Colour is a data type.**

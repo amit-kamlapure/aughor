@@ -1,4 +1,4 @@
-"""What an organisation allows Aughor to do — the four choices that were flags (ROADMAP §3.65, 2026-10-28), and the
+"""What an organisation allows Pramanyx to do — the four choices that were flags (ROADMAP §3.65, 2026-10-28), and the
 ones added since (`read_query_history`, Arc NV-3, 2026-11-04 — born a setting, never a flag).
 
 Each is an admin's setting in the organisation settings, off by default. While a setting has never been set, the
@@ -23,7 +23,7 @@ FORMER_ENV: dict[str, tuple[str, ...]] = {
 }
 
 #: Where a person changes them, for the sentences that say a thing is off.
-WHERE = "Settings ▸ Organization ▸ What Aughor may do"
+WHERE = "Settings ▸ Organization ▸ What Pramanyx may do"
 
 
 def allows(setting: str) -> bool:

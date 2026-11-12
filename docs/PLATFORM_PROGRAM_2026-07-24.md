@@ -1,4 +1,4 @@
-# Aughor Platform Program — the unified wave roadmap (2026-07-24)
+# Pramanyx Platform Program — the unified wave roadmap (2026-07-24)
 
 **This is the forward plan of record.** It merges the six-wave platform roadmap of 2026-07-22 with the
 five-repo study's adoption tiers (`FIVE_REPO_STUDY_2026-07-23.md` (absorbed into `ROADMAP.md`; recoverable from git history)
@@ -14,9 +14,9 @@ ways rather than adding a parallel list:
 1. **The trust plane must extend into the LLM transport itself.** Request-level reliability,
    provider-plane guards, and binding-fidelity evals are guard-battery work — same philosophy, new
    plane. All five repos converged on determinism-as-authority; the competitive question is no
-   longer *whether* guards, but *which planes* have them. Aughor's transport plane is currently the
+   longer *whether* guards, but *which planes* have them. Pramanyx's transport plane is currently the
    least guarded (the #197–#202 arc fixed incidents; this makes the fixes structural).
-2. **The context plane needs its read-back artifact.** Aughor captures context (glossary, ledger,
+2. **The context plane needs its read-back artifact.** Pramanyx captures context (glossary, ledger,
    dossiers, profiles) but nothing reads it back as one authority at question time — the open
    feedback-loop finding. A committed, versioned, deterministically-refreshed graph *artifact* every
    question passes through first is a product mechanic, not plumbing.
@@ -30,8 +30,8 @@ So two waves are added (**R** — Reliability, **C** — Context graph), three t
 
 | Wave | State | Evidence |
 |---|---|---|
-| **K — Kinetic plane** | ✅ **COMPLETE** ([#201](https://github.com/amit-kamlapure/aughor/pull/201)) | K1–K5 merged; follow-ons dispositioned in §5 below |
-| **A — Automations** | ✅ **BUILT (A1–A6)** — A1+A2 [#204](https://github.com/amit-kamlapure/aughor/pull/204), A3 [#206](https://github.com/amit-kamlapure/aughor/pull/206), A4 [#207](https://github.com/amit-kamlapure/aughor/pull/207) merged; **A5 [#208](https://github.com/amit-kamlapure/aughor/pull/208) and A6 await merge authorization** | Arc: [`WAVE_A_AUTOMATIONS_ARC.md`](WAVE_A_AUTOMATIONS_ARC.md) |
+| **K — Kinetic plane** | ✅ **COMPLETE** ([#201](https://github.com/amit-kamlapure/pramanyx/pull/201)) | K1–K5 merged; follow-ons dispositioned in §5 below |
+| **A — Automations** | ✅ **BUILT (A1–A6)** — A1+A2 [#204](https://github.com/amit-kamlapure/pramanyx/pull/204), A3 [#206](https://github.com/amit-kamlapure/pramanyx/pull/206), A4 [#207](https://github.com/amit-kamlapure/pramanyx/pull/207) merged; **A5 [#208](https://github.com/amit-kamlapure/pramanyx/pull/208) and A6 await merge authorization** | Arc: [`WAVE_A_AUTOMATIONS_ARC.md`](WAVE_A_AUTOMATIONS_ARC.md) |
 | **E — Sessions + Evals** | ◐ **HALF DONE** — E1–E3 merged (#196); E4–E6 remain | Arc: [`WAVE_E_SESSIONS_EVALS_ARC.md`](WAVE_E_SESSIONS_EVALS_ARC.md) |
 | **R — Reliability (transport)** | ✅ **BUILT (R1–R5)** — local commits `ff76b08` · `18ebb52` · `79106dc` · `9fa2c4d` · `1d78cd6` · `ba524be` · `60b9fb0`, **none pushed** | Scope: five-repo study §3 T1.1–T1.3 (+T2.3/T2.4/T2.5); status in `ROADMAP.md` §0 |
 | **C — Context graph** | ⭕ not started — *new wave, from five-repo T3.1* | Needs its own scoping doc before code |
@@ -39,8 +39,8 @@ So two waves are added (**R** — Reliability, **C** — Context graph), three t
 | **G — Governance uplift** | ⭕ not started | Platform roadmap, now ⊕ K's 9 unenforced `_RISK` actions ⊕ grant surfacing |
 | **S — Surface & composition** | ⭕ not started | Platform roadmap, now cheaper by one wave (entity pages render C's graph) |
 
-Open PRs to land first: [#203](https://github.com/amit-kamlapure/aughor/pull/203) (reduce.py retirement
-+ ROADMAP §0) and [#204](https://github.com/amit-kamlapure/aughor/pull/204) (Wave A1+A2).
+Open PRs to land first: [#203](https://github.com/amit-kamlapure/pramanyx/pull/203) (reduce.py retirement
++ ROADMAP §0) and [#204](https://github.com/amit-kamlapure/pramanyx/pull/204) (Wave A1+A2).
 
 ---
 
@@ -215,7 +215,7 @@ pipeline-as-prompt.
   same binding disagrees with itself beyond threshold, deltas are refused (mechanizing "replicate
   before trusting deltas at small n"). Repeatability stdev per axis; harmonic-mean composite (one
   broken axis fails loudly) + plain-English diagnosis; a perturbation-brittleness axis with
-  Aughor's *deterministic* comparators (same result set ⇒ zero drift);
+  Pramanyx's *deterministic* comparators (same result set ⇒ zero drift);
   fixture fingerprints (#198) stamped into every report; a one-time proxy-inversion audit of
   existing metrics. Runs as a **scheduled batch inside the free 1,000 req/day**, never inline.
 - **J4 — C's edges carry real provenance or don't exist.** Join edges annotated with the join

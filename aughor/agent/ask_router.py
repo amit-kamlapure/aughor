@@ -6,7 +6,7 @@ a mode up front; here a **deterministic-first** router makes that call instead, 
 two existing streaming bodies (``_stream_chat`` and ``_stream_investigation``) can be
 dispatched behind one endpoint without changing either.
 
-Design invariants (from Aughor's prior conclusions — see the design doc §2/§9):
+Design invariants (from Pramanyx's prior conclusions — see the design doc §2/§9):
 
 * **The shape decides, by code first.** A question's SHAPE — describe, check, diagnose,
   survey (`agent/question_shape.py`, the one vocabulary for a question's kind) — is read

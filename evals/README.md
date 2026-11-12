@@ -1,6 +1,6 @@
-# Aughor LLM Evals
+# Pramanyx LLM Evals
 
-Braintrust-based evaluation framework for Aughor investigation quality.
+Braintrust-based evaluation framework for Pramanyx investigation quality.
 Separate from `tests/` — requires a live LLM and (optionally) a Braintrust account.
 
 ## What it measures

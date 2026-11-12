@@ -4,7 +4,7 @@
 sub-questions now run as dependency-respecting parallel *waves*. P-B/P-C/P-D still open.
 **Trigger:** the womenswear-returns investigation took **~8.4 min**. This doc pins *why*,
 what we already have, what we're missing from LangGraph's parallel/multi-agent toolkit,
-and a prioritized plan that stays true to Aughor's deterministic-first thesis.
+and a prioritized plan that stays true to Pramanyx's deterministic-first thesis.
 
 ---
 
@@ -15,7 +15,7 @@ drove the engine choice (the "SOTA call"):
 
 1. A LangGraph `Send` branch sees **only its payload**, not channel state — a Send worker would have to
    be handed a fully self-contained payload.
-2. **LangGraph does NOT propagate contextvars into its branch threads** (verified empirically). Aughor's
+2. **LangGraph does NOT propagate contextvars into its branch threads** (verified empirically). Pramanyx's
    metering accumulator, the P6 token budget, and `current_job_id` all ride on contextvars — so a naive
    `Send` fan-out would **silently drop cost attribution and defeat budget enforcement** (guardrail #1).
 
@@ -189,9 +189,9 @@ its parallel machinery. That is the miss.
 
 ## 4. The plan (prioritized) — deterministic fan-out first
 
-Aughor's thesis is **deterministic control > LLM machinery** (proven repeatedly). That directly informs the
+Pramanyx's thesis is **deterministic control > LLM machinery** (proven repeatedly). That directly informs the
 choice: prefer **deterministic map-reduce fan-out** over an **LLM supervisor/swarm**. Current cost data backs
-this — subagent-with-parallel ≈ 5 calls / 9k tokens vs handoff-swarm 7+ calls / 14k tokens. Aughor's routing
+this — subagent-with-parallel ≈ 5 calls / 9k tokens vs handoff-swarm 7+ calls / 14k tokens. Pramanyx's routing
 is already deterministic, so an LLM supervisor would add latency + cost for a decision we don't need an LLM to make.
 
 - **P-A ✅ SHIPPED (2026-07-02): parallel *waves* over the explore sub-question chain.** Independent

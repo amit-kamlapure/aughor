@@ -130,7 +130,7 @@ Their rank against 1–37 is the user's; the survey is in §3.48 (BR-0), and the
 
 57. [~] **Make the decision loop turn honestly** (the user, 2026-10-24, on an analysis of an analytics platform as a
     decision company) — **studied 2026-10-24**, nothing built: `docs/DECISION_LOOP_STUDY_2026-10-24.md`.
-    Aughor already has the decision record (`aughor/record/decisions.py`, the 2027 study §K); live it holds 2
+    Pramanyx already has the decision record (`aughor/record/decisions.py`, the 2027 study §K); live it holds 2
     decisions, none with an expectation or an outcome, no recommendation was ever accepted, and the outcome score
     credits a trend (the history band is missed above for revenue 5 of 8, units sold 7 of 8). Plan: D-1 book
     decisions in full where they are made (Home's Decide cites the finding and asks an expectation; "Not worth it"
@@ -144,7 +144,7 @@ Their rank against 1–37 is the user's; the survey is in §3.48 (BR-0), and the
     on 2026-12-05 (five decisions on live data reaching a verdict); D-4 and D-5 not built.*
 
 58. [x] **Arcs ED, TC and FA — a rule at every door, every change says what made it, an ontology people find** (ROADMAP
-    §3.58–§3.60, ✅ ADOPTED 2026-10-24 as §6 item 52). Measured 2026-10-24: Aughor already has the platform's shape; what
+    §3.58–§3.60, ✅ ADOPTED 2026-10-24 as §6 item 52). Measured 2026-10-24: Pramanyx already has the platform's shape; what
     is left is three properties of what it built. In plain words: **ED** fixes what does not hold today (a row
     policy only one door applies, edit history that ignores the reader, table health nothing measures, a search that hides
     its failures, outside programs that all look like one caller); **TC** makes every answer, edit, alert and run say what
@@ -317,7 +317,7 @@ Just outside the list: the next industry package (insurance has public data to t
 - [ ] Hygiene, when touched: "door" carries three meanings in code (a way to reach an agent, an automation deploy door, a SQL gate) — name them apart; ~~`AgenticOpsWorkspace.tsx:61-64` lists five layers of seven~~ (measured 2026-10-04: it lists all seven); ~~the delegate test stub (`test_delegate_task.py:26`) returns a key the real path does not~~ (fixed with AO-1b, 2026-10-03); ~~opening any Agent Ops layer fires the whole workspace's fetch set — 26–29 API calls per layer load on the production build (AO-0.2) — one fetch set per layer~~ (measured 2026-10-04: a fresh load fires only its own layer's set — what fired was every kept-mounted layer's polling, 33 calls in 30 s on the Roster, 2 since #565); `FleetOverviewPanel` → `OverviewPanel` and `getFleetOverview`/`FleetOverview` → `getOverview`/`Overview` (the glossary's word; today the `fleet` ratchet exempts three files to hold them), with the `/control-room/fleet` route left frozen until P4's rename.
 
 ### The database edge — Arc DE (§3.51; drafted and adopted 2026-10-02, §6 item 37, every clause as recommended; DE-1 to DE-5f built and merged 2026-10-03 · #564; theLook's live receipts taken 2026-10-04, three engines owed)
-- [x] The survey — Aughor on `main` at `f02c8f22`, four areas plus the result grid (ROADMAP §3.51). Every claim a wave rests on re-checked by hand.
+- [x] The survey — Pramanyx on `main` at `f02c8f22`, four areas plus the result grid (ROADMAP §3.51). Every claim a wave rests on re-checked by hand.
 - [x] §6 item 37 — decided 2026-10-02, the seven open clauses together as recommended (*"adopt all as recommended and commit locally"*); (e) withdrawn with DE-6. The clauses: adopt; DE-1 without a flag; where the agent policy lives and its default; the engine that proves DE-3b; ~~tool results~~ (withdrawn with DE-6); where lineage lives; four refusals into §4; ideas, not code.
 - [x] Four refusals recorded as ROADMAP §4.7 (§6 item 37(g)) — 2026-10-02: writing to a customer's warehouse; raw-SQL MCP tools and a read/write default; a tokenless localhost bridge; importing other tools' saved passwords.
 - [x] DE-1 the read-only promise holds at every door — the parse step at the shared door step in each connection's dialect; executable comments, locking clauses and side-effect functions refused; MySQL's session read-only; Postgres's backstop kept on; the census asserts it. Pre-check first: what the parse step would refuse in theLook's audit. **BUILT 2026-10-03** on `claude/focused-hamilton-8w0q1f`, **merged 2026-10-03 · #564** — see top item 49 and ROADMAP §3.51. The pre-check ran on the golden set (0 of 53 refused, five dialects); theLook's audit was not reachable from the build machine and is owed before merge: `uv run python scripts/de1_parse_step_precheck.py --connection 8233e4fd --limit 2000`. A live MySQL run with the executable comment refused is owed for the same reason; the unit receipt is the session opened `READ ONLY` by `init_command` and the comment refused at every door. *theLook's audit taken 2026-10-04, after the merge: the parse step would refuse 4 of 22,263 audited statements, none of them valid (`docs/DE_LIVE_RECEIPT_2026-10-04.md`, merged 2026-10-04 · #565); the MySQL run is still owed.*
@@ -696,7 +696,7 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     pair's demo ontology.* *Night: the last two closed — the dense table's row 36 → 30 px (one variable, measured; nav rows
     and buttons were already under 30), and the entity-uses door proven live on the scratch's demo ontology (one audited
     read counted in October 2026; no dependents, said).* Nothing owed from the look study.
-61. [~] **Aughor as the centre piece of an organisation's decision intelligence — the framework, and a run** (the
+61. [~] **Pramanyx as the centre piece of an organisation's decision intelligence — the framework, and a run** (the
     user, 2026-10-25: *"how making Aughor truly a center piece of an organisation's decision intelligence"*, then
     *"let's not haste into building something.. a framework that.. will take care of.. all of the points"*, then *"run
     several scenarios from arising to learned loops.. run it for me"*) — `docs/DECISION_FRAMEWORK_STUDY_2026-10-26.md`.
@@ -790,7 +790,7 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     took its place; "Back to the default" (added after driving it) returned it to `{}`. No model call to open it.*
 
 64. [~] **Arc SV, the platform's own state survives** (the user, 2026-10-26: *"We have to get the most out of
-    this"*) — **studied 2026-10-26**, nothing built. Aughor reads data it does not own, so a spreadsheet engine's half
+    this"*) — **studied 2026-10-26**, nothing built. Pramanyx reads data it does not own, so a spreadsheet engine's half
     (Python formulas, a sandboxed engine, forms that write rows, full-access widgets) is refused (§6); the substrate —
     backups, retention, restore — is taken. Measured: 46 SQLite stores (1,109 MB) and no scheduled backup — the recovery recipe is
     `.recover` from the damaged file; 17 stores migrate as they open inside the API and none copies itself first
@@ -847,10 +847,10 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     spreadsheet: *"all we need to do is push our chat experience there.. framework already exists!"*) — **studied
     2026-10-26**, nothing built or run. The premise did not hold: that tool's chat, app builder and agent are not in its
     open code (its one open AI route is a single prompt → text; chat ships only as closed runtime images), and its open
-    half is AGPL. Options weighed: run it unmodified beside Aughor as a read-only Postgres connection; build our own
+    half is AGPL. Options weighed: run it unmodified beside Pramanyx as a read-only Postgres connection; build our own
     sheet section (reversing the §4.7 refusal of row editing for the workspace's own tables); fork it; have it call us.
     *Decided 2026-10-27: the outside tool DROPPED* (the user: "chuck it.. within our platform users should be able to work with
-    spreadsheets the way screenshots suggest"). Direction: spreadsheets built INSIDE Aughor, Aughor writing its own sheets,
+    spreadsheets the way screenshots suggest"). Direction: spreadsheets built INSIDE Pramanyx, Pramanyx writing its own sheets,
     never a warehouse. Next: the arc written down and the Spreadsheets page mocked on real data, before any build.
     *Closed 2026-10-27: recorded as dropped (ROADMAP §4.12); the spreadsheet work continues as item 66.*
 
@@ -947,7 +947,7 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     ✅ **Stage 2 BUILT 2026-10-28** (ROADMAP §3.65): every flag deleted — the 63 area by area, the ten off live each
     checked on live data first with what the checks found fixed, the set-up four saying what is missing; the registry
     holds none. **LIVE 2026-10-28** at `9b5e22da` (the API restarted, :3000 hot-reloaded — no CSS, package, data or
-    migration moved): `/system/flags` answers `{}`, Settings shows no flag section and Organization shows *What Aughor
+    migration moved): `/system/flags` answers `{}`, Settings shows no flag section and Organization shows *What Pramanyx
     may do* (the hosted judge on through the environment, said so), the object and SQL doors read 124,669 orders, and the alert
     summary — serving for the first time — names theLook's one declared impact, "not measured to hold". Open: the
     named gaps in §3.65.
@@ -1099,7 +1099,7 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
     another sheet through `query_table()` or list them through `duckdb_tables()`: `queries.reads_beyond` now refuses anything but this table.
     Proven with a real model on the 99,441-row Olist orders file through the UI on a scratch API: three runs, about 22 model calls, 22 to 29 s
     to explore, 36 to 53 s to draft, 77 s to explore and draw in one press; every figure and all 870 chart points equal DuckDB on the raw CSV, read
-    by a script sharing no code with Aughor.
+    by a script sharing no code with Pramanyx.
     The real runs found what scripted ones could not, all fixed: 10 of 14 cards had no plain-words definition (date differences, `strftime`, shares;
     a share now says "out of rows where", since late AND delivered is another number); months ranked by size on a bar; a month filter that
     silently stopped at its 13th value, so 2018 could not be chosen; a count still written as the percent it replaced (9944100.0%); a note
@@ -1162,7 +1162,7 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
       546 calls read; 25 mined, **19 bound and offerable** (`gmv_eur`, `aov_eur`, `contribution_margin_eur`,
       `gross_margin_pct`, `gross_profit_per_order`, `rev`, `refund`, the return and conversion rates, …), 6 refused with
       the engine's words (a CTE's alias, a CASE over parameters planned as `sum(text)`, a CTE column); **0 join
-      candidates — every join in the history is in the graph**, and the history is Aughor's own SQL so far: the
+      candidates — every join in the history is in the graph**, and the history is Pramanyx's own SQL so far: the
       falsifier (no join the map lacked, on two connections) is not decided until the ETL's nightly statements are in.
       *2026-11-05 07:10 UTC, after the ETL's 02:47 load (the user: "Yes, tomorrow"):* 1,247 statements and 28,286 calls
       on record, 424 of them the ETL's writes; the door read 823 SELECTs (21,067 calls), mined 25, bound 19 — and
@@ -1196,13 +1196,13 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
       door's refusal is the outcome; reject kept; the ProposalCard says what is proposed, how often seen, what an accept
       declares. *Live on Lux, 2026-11-04 08:34 UTC:* 19 bound → **16 staged** (all computed properties: `gmv_eur`,
       `aov_eur`, `contribution_margin_eur`, …), 3 not staged — formulas over several tables, "declare it by hand" —
-      and 0 joins, as the history still holds only Aughor's own SQL. **⚑ Owed, the user's click:** accept one (the
+      and 0 joins, as the history still holds only Pramanyx's own SQL. **⚑ Owed, the user's click:** accept one (the
       `gmv_eur` property on Order, proposal `f95aa24a`) — the builder's accept was refused by the session's classifier
       as a change to the user's ontology, which it is.
     - [~] NV-7 one door per kind (§6 item 61, the user 2026-11-05: *"Yes, adopt it"*): `db/signing.py` signs every
       statement at the driver call (Postgres, the DB-API family, Snowflake, BigQuery, Trino, MySQL, Exasol; a result's
       statement stays as written); the history reader leaves signed statements out and counts them (`ours`); the coverage
-      run gains `history_proposals` — recurring formulas by someone other than Aughor, known ones skipped through
+      run gains `history_proposals` — recurring formulas by someone other than Pramanyx, known ones skipped through
       `formula_key` (literals and parameters as holes, both sides through the miner), platform aliases skipped, the rest
       proposed with the source statement's FROM and JOINs de-aliased, through the gates, adopted in the Semantic Layer
       once; the catalogue says "the warehouse's own query history — N runs"; Attention stages no formula and says where
@@ -1214,7 +1214,7 @@ Radix's own density · the antd result grid stays, re-skinned). Branch `claude/r
       alias no table resolves, formulas over CTEs, and `$1` holes that cannot run; each is now refused before the gates
       or, for a hole, proposed as `needs_formula` with the hole said. The second run: 24 history formulas — 3 proposed
       (`m_dutyeur`, `m_refundeur`, `eur`), 7 `needs_formula`, 14 failing honest gates (no date on `financial_summary`,
-      a MIN that returns no figure); every one of the 24 is still Aughor's own pre-signing SQL, which is why the number
+      a MIN that returns no figure); every one of the 24 is still Pramanyx's own pre-signing SQL, which is why the number
       is not yet the receipt. *The receipt, 2026-11-05 11:46–11:50 UTC:* the user reset the statistics
       (`luxexperience.pg_stat_statements_reset()` — the function lives in the extension's schema; the classifier refused
       the call from the builder as irreversible, twice) and the coverage run read a clean history: **0 formulas proposed

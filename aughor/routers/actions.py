@@ -187,7 +187,7 @@ def test_action_trigger(trigger_id: str):
         raise HTTPException(status_code=404, detail="Trigger not found")
     test_payload = ActionPayload(
         investigation_id="test_inv", rec_index=0,
-        recommendation="[TEST] This is a test action from Aughor",
+        recommendation="[TEST] This is a test action from Pramanyx",
         metric_name="test_metric", headline="Test fire from Action Hub",
         trigger_id=trigger_id,
         triggered_at=datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),

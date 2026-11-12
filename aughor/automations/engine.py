@@ -1003,7 +1003,7 @@ def _attach_chart(effect: Effect, automation: Automation, bot, info: dict,
     picture simply stays the message it already was.
 
     Threaded rather than merged into the message because `post_as_bot` owns the `ts`
-    that becomes the Aughor session id, the departure link's ref and the root a reply
+    that becomes the Pramanyx session id, the departure link's ref and the root a reply
     composes on. Uploading with `initial_comment` instead would move the text onto a
     file message and take that `ts` with it.
     """
@@ -1116,7 +1116,7 @@ def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcom
     arrives under the WEBHOOK's identity with no thread anyone can reply into, so a
     scheduled run dead-ends on arrival. Posting with the bot's own token arrives as the
     bot: mentionable, threaded, and — because the transport already uses a thread's id as
-    the Aughor `session_id` — a reply composes on the same conversation, with the same
+    the Pramanyx `session_id` — a reply composes on the same conversation, with the same
     agent, over the same connection.
     """
     from aughor.slackbots.post import post_as_bot

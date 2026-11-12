@@ -174,7 +174,7 @@ def _deliver(url: str, answer: dict) -> dict[str, Any]:
 
 @router.get("/.well-known/agent.json")
 def a2a_agent_card():
-    """The Agent Card: Aughor's enabled custom agents as skills, each at its own endpoint."""
+    """The Agent Card: Pramanyx's enabled custom agents as skills, each at its own endpoint."""
     from aughor.custom_agents import list_agents
     from aughor.custom_agents.reach import a2a_card
     return a2a_card(list_agents(), public_api=_public_api())

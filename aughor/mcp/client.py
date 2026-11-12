@@ -1,4 +1,4 @@
-"""Thin async HTTP client over the running Aughor REST API — the substrate the MCP
+"""Thin async HTTP client over the running Pramanyx REST API — the substrate the MCP
 server's governed tools call.
 
 Keeping the MCP layer a *client* (not an in-process import of the FastAPI app) is a
@@ -9,7 +9,7 @@ and light (httpx only), so it starts fast under a stdio launcher and never spins
 second JobKernel.
 
 Two of the surfaces are SSE streams (``/chat`` and ``/investigate``); the rest are
-plain JSON. ``_stream_sse`` parses Aughor's framing (one ``data: {"type": …}`` line
+plain JSON. ``_stream_sse`` parses Pramanyx's framing (one ``data: {"type": …}`` line
 per event) and the high-level ``ask``/``deep_analysis`` helpers fold the stream into a
 single result an MCP tool can return.
 """
@@ -56,13 +56,13 @@ CURRENT_CALLER: ContextVar[Optional[tuple[str, str]]] = ContextVar("aughor_mcp_c
 
 
 class AughorError(RuntimeError):
-    """An Aughor API call failed (a non-2xx response or a transport error). The
+    """A Pramanyx API call failed (a non-2xx response or a transport error). The
     message is shaped for an LLM client — capability-locked (402) and not-found
     (404) read cleanly rather than as raw stack traces."""
 
 
 class AughorClient:
-    """An async client over the Aughor REST API.
+    """An async client over the Pramanyx REST API.
 
     Config comes from the environment so a stdio launcher (Claude Desktop/Code/Cursor)
     can set it once: ``AUGHOR_API_URL`` (default ``http://127.0.0.1:8000``),
@@ -160,7 +160,7 @@ class AughorClient:
             try:
                 r = await c.get(path, params=_clean(params))
             except httpx.HTTPError as e:
-                raise AughorError(f"GET {path} failed — is the Aughor API running at {self.base_url}? ({e})") from e
+                raise AughorError(f"GET {path} failed — is the Pramanyx API running at {self.base_url}? ({e})") from e
         return self._unwrap(r, path)
 
     async def _post(self, path: str, json_body: Optional[dict] = None, params: Optional[dict] = None) -> Any:
@@ -168,13 +168,13 @@ class AughorClient:
             try:
                 r = await c.post(path, json=json_body, params=_clean(params))
             except httpx.HTTPError as e:
-                raise AughorError(f"POST {path} failed — is the Aughor API running at {self.base_url}? ({e})") from e
+                raise AughorError(f"POST {path} failed — is the Pramanyx API running at {self.base_url}? ({e})") from e
         return self._unwrap(r, path)
 
     async def _stream_sse(
         self, method: str, path: str, json_body: Optional[dict] = None, *, timeout: Optional[float] = None
     ) -> AsyncIterator[dict]:
-        """Yield each Aughor SSE event as a dict. Aughor frames every event as a
+        """Yield each Pramanyx SSE event as a dict. Pramanyx frames every event as a
         single ``data: {"type": …, …}`` line (see investigations._sse)."""
         async with self._mk_client(timeout=timeout if timeout is not None else self.deep_timeout) as c:
             async with c.stream(method, path, json=json_body) as r:

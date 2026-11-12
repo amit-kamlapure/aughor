@@ -1,5 +1,5 @@
 """
-Aughor CLI — start the platform and run autonomous deep analyses from the terminal.
+Pramanyx CLI — start the platform and run autonomous deep analyses from the terminal.
 
 Usage:
   aughor up          # install what's missing, start API (:8000) + web app (:3000), open it
@@ -50,7 +50,7 @@ LLM_BACKENDS: tuple[str, ...] = ("ollama", "lmstudio", "groq", "together", "anth
 
 @click.group()
 def cli():
-    """Aughor — Autonomous Intelligence Platform"""
+    """Pramanyx — Autonomous Intelligence Platform"""
     # Before any output. Redirected on Windows, a stream encodes as the ANSI code page, which has
     # no "→": one in `aughor up`'s summary crashed it the moment its servers were up.
     from aughor.installer import tolerate_narrow_output
@@ -119,7 +119,7 @@ def seed(db: str):
 def _repo_root() -> Path:
     """Locate the repo root for `aughor up`.
 
-    Rule: prefer the current working directory when it looks like an Aughor
+    Rule: prefer the current working directory when it looks like a Pramanyx
     checkout (has both pyproject.toml and web/) — that keeps `uv run aughor up`
     working from any clone; otherwise fall back to the parent of this package
     (the checkout the `aughor` package was imported from, same anchor DEFAULT_DB
@@ -138,15 +138,15 @@ _port_owner = _netprobe.port_owner
 
 
 def _aughor_answers(port: int) -> bool:
-    """Whether the listener on `port` is an Aughor API — so a second `aughor up` can say that
-    Aughor is already running, instead of reading like a clash with some unknown program."""
+    """Whether the listener on `port` is a Pramanyx API — so a second `aughor up` can say that
+    Pramanyx is already running, instead of reading like a clash with some unknown program."""
     import httpx
 
     try:
         response = httpx.get(f"http://127.0.0.1:{port}/health", timeout=1.0)
         body = response.json() if response.status_code == 200 else None
     except Exception:
-        return False  # not answering, not HTTP, or not JSON: not an Aughor API
+        return False  # not answering, not HTTP, or not JSON: not a Pramanyx API
     return isinstance(body, dict) and "status" in body and "llm" in body
 
 
@@ -159,7 +159,7 @@ def _check_port_free(port: int, what: str, flag: str, *, web_port: Optional[int]
     held_by = f" (held by [bold]{escape(owner)}[/bold])" if owner else ""
     console.print()
     if flag == "--api-port" and _aughor_answers(port):
-        console.print(f"  [yellow]Aughor is already running[/yellow]: its API is on port {port}{held_by}.",
+        console.print(f"  [yellow]Pramanyx is already running[/yellow]: its API is on port {port}{held_by}.",
                       soft_wrap=True)
         if web_port is not None:
             console.print(f"  Open [bold]http://localhost:{web_port}[/bold], or stop it first "
@@ -169,7 +169,7 @@ def _check_port_free(port: int, what: str, flag: str, *, web_port: Optional[int]
     else:
         console.print(f"  [red]Port {port} is already in use[/red]{held_by}, and {what} needs it.",
                       soft_wrap=True)
-        console.print("  Aughor won't kill another program. Stop it yourself, or pick another "
+        console.print("  Pramanyx won't kill another program. Stop it yourself, or pick another "
                       f"port with [bold]{flag}[/bold].", soft_wrap=True)
     console.print()
     sys.exit(1)
@@ -288,11 +288,11 @@ def _display_path(path: Path) -> str:
 def _print_boot_summary(health: Optional[dict], api_port: int, web_port: Optional[int], *,
                         logs: Optional[Path] = None, browser_opened: bool = False,
                         next_time: str = "") -> None:
-    """Where Aughor is, and what is still missing before the first question."""
+    """Where Pramanyx is, and what is still missing before the first question."""
     console.print()
     if web_port is not None:
         opened = "  [dim](opened in your browser)[/dim]" if browser_opened else ""
-        console.print(f"  [bold]Aughor is ready:[/bold] [bold cyan]http://localhost:{web_port}[/bold cyan]{opened}",
+        console.print(f"  [bold]Pramanyx is ready:[/bold] [bold cyan]http://localhost:{web_port}[/bold cyan]{opened}",
                       soft_wrap=True)
         console.print(f"  [dim]API http://localhost:{api_port} · API docs http://localhost:{api_port}/docs[/dim]",
                       soft_wrap=True)
@@ -331,7 +331,7 @@ def _print_boot_summary(health: Optional[dict], api_port: int, web_port: Optiona
         console.print(f"  [dim]Server logs are in {escape(_display_path(logs))}[/dim]", soft_wrap=True)
     if next_time:
         console.print(f"  [dim]{escape(next_time)}[/dim]", soft_wrap=True)
-    console.print("  Press [bold]Ctrl+C[/bold] to stop Aughor.")
+    console.print("  Press [bold]Ctrl+C[/bold] to stop Pramanyx.")
     console.print()
 
 
@@ -668,7 +668,7 @@ def restore_cmd(name: str, yes: bool) -> None:
 @click.option("--verbose", "-v", is_flag=True, help="Show install, build and server output in this terminal")
 def up(api_port: int, web_port: int, dev: bool, api_only: bool, web_only: bool,
        no_browser: bool, verbose: bool):
-    """Start Aughor — the API and the web app — with one command.
+    """Start Pramanyx — the API and the web app — with one command.
 
     Installs whatever the web app is missing first (its packages, a fresh production build),
     refuses to touch a port another program owns, waits until both servers answer, opens the
@@ -685,7 +685,7 @@ def up(api_port: int, web_port: int, dev: bool, api_only: bool, web_only: bool,
     run_api, run_web = not web_only, not api_only
     steps = installer.Steps(verbose=verbose, show_up_to_date=False)
     if not os.environ.get("AUGHOR_INSTALLER"):  # started by the installer, its list continues
-        steps.header("Aughor")
+        steps.header("Pramanyx")
 
     if run_api:
         # The API refuses to start while a move into the data home is owed; said here, where the person is,
@@ -696,7 +696,7 @@ def up(api_port: int, web_port: int, dev: bool, api_only: bool, web_only: bool,
             console.print("[red]The API will not start yet.[/red] " + "; ".join(owing) + ".")
             console.print("[cyan]Run `aughor migrate-state --yes`, then `aughor up` again.[/cyan]")
             sys.exit(1)
-        _check_port_free(api_port, "the Aughor API", "--api-port", web_port=web_port if run_web else None)
+        _check_port_free(api_port, "the Pramanyx API", "--api-port", web_port=web_port if run_web else None)
     if run_web:
         _check_port_free(web_port, "the web app", "--web-port")
 
@@ -717,7 +717,7 @@ def up(api_port: int, web_port: int, dev: bool, api_only: bool, web_only: bool,
     steps.verbose = logs is None
     api_log = logs / "api.log" if logs is not None else None
     web_log = logs / "web.log" if logs is not None else None
-    label, done = {(True, True): ("Starting Aughor", "Aughor started"),
+    label, done = {(True, True): ("Starting Pramanyx", "Pramanyx started"),
                    (True, False): ("Starting the API", "API started"),
                    (False, True): ("Starting the web app", "Web app started")}[(run_api, run_web)]
 
@@ -787,12 +787,12 @@ def up(api_port: int, web_port: int, dev: bool, api_only: bool, web_only: bool,
         stopped = _supervise(procs)
         name, log = ("The API", api_log) if stopped is api_proc else ("The web app", web_log)
         steps.failure(installer.InstallError(
-            f"{name} stopped unexpectedly (exit code {stopped.returncode}), so Aughor is stopping too.",
+            f"{name} stopped unexpectedly (exit code {stopped.returncode}), so Pramanyx is stopping too.",
             log=log))
         sys.exit(stopped.returncode or 1)
     except KeyboardInterrupt:
         steps.line()
-        with steps.working("Stopping Aughor", "Aughor stopped"):
+        with steps.working("Stopping Pramanyx", "Pramanyx stopped"):
             _terminate(procs, grace=10.0)
         sys.exit(0)
     finally:
@@ -835,7 +835,7 @@ def investigate(question: str, db: str, model: Optional[str], backend: str):
     console.print()
     console.print(Panel(
         f"[bold white]{question}[/bold white]",
-        title="[bold cyan]Aughor Investigation[/bold cyan]",
+        title="[bold cyan]Pramanyx Investigation[/bold cyan]",
         border_style="cyan",
         padding=(1, 2),
     ))
@@ -1222,7 +1222,7 @@ def ontology_docs(connection_id: str, schema: str, confirm: bool, full: bool, en
 def graph_export(connection_id: str, out_dir: str, schema: str):
     """Export a connection's knowledge graph as a self-contained skills pack (C6).
 
-    The pack is consumed with NO LLM, no API key, and no Aughor running — graph.json plus
+    The pack is consumed with NO LLM, no API key, and no Pramanyx running — graph.json plus
     two markdown skills that run the read-back protocol offline. The graph's typed
     freshness state travels with it, so a consumer is warned rather than misled when the
     pack lags the warehouse.
@@ -1466,7 +1466,7 @@ def packs_demote(pack_id: str, packs_dir: Path, status: str, actor: str):
 @cli.command()
 @click.argument("choice", nargs=-1)
 def industries(choice: tuple):
-    """Which industry packages Aughor reads (IP-2) — the question the installer asked.
+    """Which industry packages Pramanyx reads (IP-2) — the question the installer asked.
 
     With no argument, lists the shipped industries and the current choice. `aughor industries retail saas`
     keeps only those (numbers from the list and package names work too), `aughor industries all` keeps

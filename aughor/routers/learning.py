@@ -1,6 +1,6 @@
 """Learning / Memory-layer read API (Wave 1 · E4) — make the closed loop's accumulation visible.
 
-Aughor's closed loop (ambiguity ledger → priors → verdicts → trusted queries/programs) is captured and
+Pramanyx's closed loop (ambiguity ledger → priors → verdicts → trusted queries/programs) is captured and
 read back into prompts, but its *accumulation* was invisible: ``ledger_stats`` had no HTTP endpoint at all,
 ``/verify/verdicts/stats`` had zero consumers, and trusted assets were injected authoritatively into prompts
 yet never displayed. These additive, read-only endpoints expose the "moat metric" as one coherent surface —

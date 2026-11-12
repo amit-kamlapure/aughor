@@ -108,7 +108,7 @@ class TestInlineDialectReachesEveryParser:
 
     def test_the_two_dialects_infer_the_same_joins(self):
         # The point of the fix: which dialect the connector happens to emit must
-        # not change what Aughor believes about the schema.
+        # not change what Pramanyx believes about the schema.
         def shape(s):
             return sorted(
                 (j["t1"], j["c1"], j["t2"], j["c2"], j["match"])

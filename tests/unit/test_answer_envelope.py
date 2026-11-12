@@ -523,7 +523,7 @@ def test_a_bound_envelope_posts_its_slack_selection_and_the_gate_judges_that_tex
     posted: list[str] = []
 
     class _Bot:
-        bot_token, name, enabled = "xoxb", "Aughor", True
+        bot_token, name, enabled = "xoxb", "Pramanyx", True
 
     class _Automation:
         id, name, conn_id = "auto-1", "Top sellers", ""

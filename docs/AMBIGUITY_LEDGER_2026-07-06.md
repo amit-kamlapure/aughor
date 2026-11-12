@@ -12,9 +12,9 @@ what the ledger makes permanent.*
 ## 1 · The idea
 
 SOMA re-pays its full probe pipeline every time any user asks an ambiguous question; the
-resolution evaporates after the answer. Aughor has what a paper harness cannot — a persistent
+resolution evaporates after the answer. Pramanyx has what a paper harness cannot — a persistent
 per-connection substrate — so a resolved ambiguity can be **crystallized once and reused
-forever**. SOMA's cost curve is flat per question; Aughor's **burns down monotonically per
+forever**. SOMA's cost curve is flat per question; Pramanyx's **burns down monotonically per
 connection** — the ambiguity space of a deployed schema shrinks with use. This is the mechanical
 version of the "living context graph that compounds" (memory: `context-graph-closed-loop-gap`).
 

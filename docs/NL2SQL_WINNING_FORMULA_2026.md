@@ -1,8 +1,8 @@
-# NL2SQL winning formula — 2025/2026 SOTA, synthesized for Aughor
+# NL2SQL winning formula — 2025/2026 SOTA, synthesized for Pramanyx
 
 > **Status:** research synthesis + implementation direction (2026-06-30). Distils the
-> 2025/2026 text-to-SQL literature into the few moves that durably help **Aughor**,
-> given Aughor's hard-won prior conclusions. The companion implementation is the
+> 2025/2026 text-to-SQL literature into the few moves that durably help **Pramanyx**,
+> given Pramanyx's hard-won prior conclusions. The companion implementation is the
 > deterministic complexity-aware router (§5).
 
 ## 1. Sources mined
@@ -48,23 +48,23 @@ Five themes recur across every source:
 5. **Grounding wins**: business glossary, metadata, curated examples, governed read-only
    execution, "bring AI to the data" (SQLBot, Oracle).
 
-## 3. Cross-reference with Aughor (have vs gap)
+## 3. Cross-reference with Pramanyx (have vs gap)
 
-**Aughor already embodies the grounding consensus** (this is its moat, and the research
+**Pramanyx already embodies the grounding consensus** (this is its moat, and the research
 validates it): ontology + metrics + glossary grounding, trust receipts, a governed
 read-only security/audit gate, CHESS value-index + filter-literal binding, schema
 linking, the MCP surface of *governed intelligence* tools, the inference plane
 (per-Org/Workspace/Agent model binding), and deterministic correctness **guards**
-(grain / fan-out / value-domain). Aughor's candidate-disagreement + execution-grounded
+(grain / fan-out / value-domain). Pramanyx's candidate-disagreement + execution-grounded
 probing (SOMA-SQL) and confidence-tiered repair (ReForce) are already noted as wins.
 
-**Aughor's durable prior conclusions** (do not violate): on a *strong* model,
+**Pramanyx's durable prior conclusions** (do not violate): on a *strong* model,
 **deterministic guards beat added LLM machinery** (proven repeatedly); the **frontier
 model is the accuracy ceiling**; the offline single-shot accuracy arc is *concluded*
 (100% is impossible — gold itself is ~53–66% wrong on some benches); **reject bench-only
 shims**; **don't rebuild removed machinery**.
 
-**The gap that is high-value, durable, and conclusion-respecting:** Aughor allocates the
+**The gap that is high-value, durable, and conclusion-respecting:** Pramanyx allocates the
 **same** model + pipeline depth to every question. The strongest 2025 production lever —
 **complexity-aware / cost-tiered routing (test-time scaling)** — is *absent*. It is:
 deterministic (a difficulty assessor, not LLM machinery — respects "guards win"); a
@@ -72,7 +72,7 @@ deterministic (a difficulty assessor, not LLM machinery — respects "guards win
 bench shim); and it composes perfectly with the existing inference plane (per-agent model
 binding). Routing is exactly what EllieSQL/SquRL/ReForce/Oracle's per-tool-LLM all do.
 
-## 4. The winning formula (Aughor-specific)
+## 4. The winning formula (Pramanyx-specific)
 
 > **ASSESS → ROUTE → (CLARIFY | GENERATE) → VERIFY**, where **ASSESS is deterministic.**
 
@@ -84,7 +84,7 @@ A deterministic **difficulty + ambiguity assessment** of (question × linked sch
 
 This fuses the two strongest 2025 signals, both **gated by a deterministic assessor**
 (so it honours "guards > LLM machinery"), and it pays in **cost + intent-grounding**
-rather than chasing accuracy past the model ceiling. The grounding substrate Aughor
+rather than chasing accuracy past the model ceiling. The grounding substrate Pramanyx
 already has is the antidote BIRD-INTERACT calls for; routing + clarification are the
 missing orchestration around it.
 
@@ -104,10 +104,10 @@ arc; this lays its foundation — the same assessment gates it later). Files:
   inference plane's *role* (not a hardcoded model), so the operator decides how cheap
   "fast" is. It **never downgrades a hard question**.
 
-**The key refinement (and why it is *more* aligned with Aughor's conclusions):** apply the
+**The key refinement (and why it is *more* aligned with Pramanyx's conclusions):** apply the
 cost tier to the **robust routing decision** (`classify_question` picks the classifier model
 by tier), but keep the **user-facing SQL answer on the frontier model**. A deceptively
-"simple" question can be grain-tricky ("items per order"), and Aughor's *proven* combination
+"simple" question can be grain-tricky ("items per order"), and Pramanyx's *proven* combination
 is **frontier model + deterministic guards** — routing the answer to a cheaper model would
 just shift work onto the guards (exactly the "machinery doesn't beat guards" lesson). So the
 chat answer path stays on `"coder"` and instead **surfaces the assessed tier + ambiguity on

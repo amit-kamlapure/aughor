@@ -20,7 +20,7 @@ memory files and deleted branches:
 - and "it ran" ≠ "the model acted on it" → **prove the output changed in the intended way**
 - post-hoc rationalisation is easy → **pre-registered decision gates**
 
-Wave E makes that discipline a product feature that runs over Aughor's own paths, on the customer's
+Wave E makes that discipline a product feature that runs over Pramanyx's own paths, on the customer's
 own data. That is the thing a bench harness can never be.
 
 **Honest ceiling, stated up front:** we cannot make LLM output deterministic. There is no seed in any

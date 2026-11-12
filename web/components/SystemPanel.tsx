@@ -107,7 +107,7 @@ function Backend() {
       const res = await fetch(`${clean}/health`, { signal: AbortSignal.timeout(5000) });
       if (!res.ok) { setProbe({ ok: false, text: `Reached it, but it answered ${res.status}` }); return false; }
       const body = await res.json().catch(() => null);
-      setProbe({ ok: true, text: body?.status === "ok" ? "Connected" : "Reached it, but it is not an Aughor backend" });
+      setProbe({ ok: true, text: body?.status === "ok" ? "Connected" : "Reached it, but it is not a Pramanyx backend" });
       return body?.status === "ok";
     } catch {
       // Most often: nothing listening, or the browser blocked it. Say both — a user on

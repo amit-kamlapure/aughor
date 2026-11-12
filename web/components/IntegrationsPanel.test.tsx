@@ -44,7 +44,7 @@ const MICROSOFT = {
   connection: null,
 };
 const BOT = {
-  id: "sb_1", name: "Aughor", enabled: true, disabled_reason: "", liveness_hint: "", team_id: "T", bot_user_id: "U1",
+  id: "sb_1", name: "Pramanyx", enabled: true, disabled_reason: "", liveness_hint: "", team_id: "T", bot_user_id: "U1",
   agent_id: "ua_1", connection_id: "c1", agent_view: false, channel_id: "", rehearse: false,
   listening: { supervisor_id: "s", since: "2026-10-12T22:49:18Z", last_seen_at: new Date().toISOString() },
 };

@@ -1727,7 +1727,7 @@ function VerdictHero({
           )}
 
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" as const }}>
-            {/* Aughor's differentiator, made explicit: every number is evidence-backed. */}
+            {/* Pramanyx's differentiator, made explicit: every number is evidence-backed. */}
             <span title="Every number is grounded in the data and cleared the trust guards"
               className="aug-tag aug-tag-green">
               ✓ Grounded &amp; guarded

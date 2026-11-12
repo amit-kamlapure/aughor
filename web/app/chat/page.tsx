@@ -109,7 +109,7 @@ export default function ChatHome() {
                     padding: "10px 16px", borderBottom: "1px solid var(--b1)",
                     flexShrink: 0 }}>
         <span className="aug-fs-md" style={{ color: "var(--t1)", fontWeight: 600 }}>
-          Aughor
+          Pramanyx
         </span>
         {connections.length > 1 ? (
           <SelectField

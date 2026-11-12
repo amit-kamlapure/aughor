@@ -155,7 +155,7 @@ def review_queue(graph, *, drift: Optional[dict] = None, limit: int = _DEFAULT_L
                 id=f"contested:{n.id}", type="contested_finding",
                 question=f"Which reading is right: “{(n.summary or n.label)[:120]}”?",
                 why=f"Two analyses of the same subject reported different numbers "
-                    f"({len(variants) + 1} readings). Aughor refuses to settle that by "
+                    f"({len(variants) + 1} readings). Pramanyx refuses to settle that by "
                     f"recency — whether, say, a cancelled order counts as revenue is a "
                     f"business decision, not a timestamp.",
                 subject_id=n.id, subject_label=(n.summary or n.label)[:80],

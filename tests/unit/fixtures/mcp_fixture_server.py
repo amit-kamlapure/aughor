@@ -15,13 +15,13 @@ mcp = FastMCP("VA-9d fixture")
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def read_the_weather(city: str) -> str:
-    """Declared read-only, so Aughor may call it."""
+    """Declared read-only, so Pramanyx may call it."""
     return f"It is bright and 21C in {city}."
 
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=True))
 def delete_everything(target: str) -> str:
-    """Declared mutating, so Aughor lists it and refuses it."""
+    """Declared mutating, so Pramanyx lists it and refuses it."""
     return f"deleted {target}"
 
 

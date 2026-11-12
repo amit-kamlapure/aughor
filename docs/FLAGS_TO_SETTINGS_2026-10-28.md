@@ -39,7 +39,7 @@ A switch earns its place only when two organisations would rightly choose differ
 happens for three reasons and no others:
 
 1. **Data leaves the install** — to another install, or to an outside model provider.
-2. **Model work nobody asked for** — calls Aughor makes on its own schedule, not because a person pressed something.
+2. **Model work nobody asked for** — calls Pramanyx makes on its own schedule, not because a person pressed something.
    (Work a person asks for, with its cost said first, is not a switch: asking is the consent.)
 3. **A governance posture** — a rule about people, such as needing a reason to read a run's details.
 
@@ -55,14 +55,14 @@ Everything else is either the product, or a piece of the product that waits for 
 | **Organisation setting** | 5 → 4 settings | Admin-only, in the organisation settings that already exist (`aughor/orgsettings`, the same place as currency and the model policy), each with its default stated. |
 | **Decided once** | 5 | Experiments that change prompts or routing. Each is kept (always on) or deleted, on a measurement or on your word — never a switch. |
 
-**The four organisation settings** (Settings ▸ Organization ▸ *What Aughor may do*):
+**The four organisation settings** (Settings ▸ Organization ▸ *What Pramanyx may do*):
 
 | Setting | Default | From |
 |---|---|---|
 | Share summary statistics with other installs | Off | `aggregates.share` |
 | Send row text to an outside, cheaper model for row-by-row work | Off (on here today) | `semops.jev_cheap_tier` |
 | Ask for a reason before anyone reads a run's details | Off | `govern.justifications` |
-| Let Aughor run model work on its own schedule (nightly agent tests, re-tests after reviews) — within the Spend budget | Off | `agents.testing_centre`, `agents.learning_loop` |
+| Let Pramanyx run model work on its own schedule (nightly agent tests, re-tests after reviews) — within the Spend budget | Off | `agents.testing_centre`, `agents.learning_loop` |
 
 **The five decided once:** `grounding.full_schema_first` has its own record in its favour (two test runs, never
 worse, twice answered where the shorter schema could not) — keep it. `judgment.shadow_treatment` makes one extra model
@@ -83,7 +83,7 @@ questions in the test set) — delete them; nothing anyone sees changes.
 ## 5. What changes for this install
 
 - The twelve-setting restart becomes one setting (model prices).
-- Settings ▸ System ▸ *Feature flags* goes; Settings ▸ Organization gains *What Aughor may do* (four rows).
+- Settings ▸ System ▸ *Feature flags* goes; Settings ▸ Organization gains *What Pramanyx may do* (four rows).
 - About 120 flag reads and the off-path tests go; the disposition ratchet is replaced by the settings ratchet; the
   persisted override rows are cleared by a migration that records what each said (supersede, do not delete).
 - `AGENTS.md`'s flag invariant and `docs/GLOSSARY.md`'s *flag* entry are rewritten to §4.
@@ -165,7 +165,7 @@ The switch goes and the feature stays. Each one is on now, and none sends data o
 - `ontology.builder_doors` — Outside programs can read your objects and their types, and propose an action for a person to approve. *Why always on:* Nothing runs from outside, and a program needs its own key.
 - `ontology.set_segments` — Keep a dashboard's set as a segment of the ontology, in the draft. *Why always on:* Only when someone keeps one, and it is published like any change.
 - `ontology.keyed_metrics` — An approved metric linked to its entity is used for any segment of it. *Why always on:* Figures stay true to the approved definition; on live already.
-- `ontology.explore_on_connect` — When a connection is added, Aughor proposes its entities, links, processes and rules for a person to confirm. *Why always on:* One model call per new connection, skipped if already explored — part of what connecting means.
+- `ontology.explore_on_connect` — When a connection is added, Pramanyx proposes its entities, links, processes and rules for a person to confirm. *Why always on:* One model call per new connection, skipped if already explored — part of what connecting means.
 - `graph.declarations` — Search finds what the ontology publishes: segments, processes, rules, actions, links. *Why always on:* Free, and it withholds what you may not see.
 - `objects.find` — The command bar finds an object by its name. *Why always on:* Row policies apply; it reads only what you may see.
 
@@ -200,7 +200,7 @@ The switch goes and the feature stays. Each one is on now, and none sends data o
 - `obs.log_search` — Search the log lines of every run over 30 days. *Why always on:* Free; who may use it is a permission, not a switch.
 - `canvas.ask_about_chosen` — Ask the Data Canvas about the objects you ticked on a dashboard. *Why always on:* No extra calls, and your row policy holds.
 - `packs.installed_versions` — Binding a pack records its version; a newer one shows what changed. *Why always on:* Free, and it never re-offers what you declined.
-- `state.backups` — Hourly checked copies of Aughor's own state, thinned over eight weeks. *Why always on:* The safety net for everything else; it says so when the disk is too full.
+- `state.backups` — Hourly checked copies of Pramanyx's own state, thinned over eight weeks. *Why always on:* The safety net for everything else; it says so when the disk is too full.
 
 ### Always on, after its check — 10, off today
 
@@ -223,17 +223,17 @@ No switch: each works once its setup exists, and says what is missing where it w
 
 - `arrivals.email` — Each decision gets an email address; mail to it is kept as evidence, an approval or a dissent. *Needs:* a mail domain and its secret. *Why no switch:* setting it up is the choice.
 - `arrivals.google_comments` — Comments on a named Google file are read onto a decision. *Needs:* your Google OAuth client. *Why no switch:* setting it up is the choice.
-- `slack.managed_supervisor` — Aughor starts the Slack bot itself and restarts it if it stops. *Needs:* Slack configured, and Node.js. *Why no switch:* setting it up is the choice.
+- `slack.managed_supervisor` — Pramanyx starts the Slack bot itself and restarts it if it stops. *Needs:* Slack configured, and Node.js. *Why no switch:* setting it up is the choice.
 - `knowledge.hybrid_documents` — When the embedding model is down, document search matches words instead, and says so. *Needs:* the vector store running. *Why no switch:* setting it up is the choice.
 
 ### Organisation settings — 4, from 5 flags
 
-Admin-only, in Settings ▸ Organization ▸ *What Aughor may do*.
+Admin-only, in Settings ▸ Organization ▸ *What Pramanyx may do*.
 
 - **Share summary statistics with other installs** (`aggregates.share`) — Exports how often packs' claims held here, never names, ids or values. *Default:* Off. *Why a setting:* data leaves your install — the organisation's call.
 - **Send row text to an outside, cheaper model** (`semops.jev_cheap_tier`) — a hosted typed-judgment model judges text rows before your own strong model. *Default:* Off (on here today). *Why a setting:* row text leaves your install to another company — the organisation's call.
 - **Ask for a reason before anyone reads a run's details** (`govern.justifications`) — Reading a run's full payload or exporting the ledger asks why, and records it. *Default:* Off. *Why a setting:* a governance posture: a regulated organisation wants it, a small team does not.
-- **Let Aughor run model work on its own schedule** (`agents.testing_centre`, `agents.learning_loop`) — Nightly runs of each custom agent's checked test questions, and re-tests after reviews. *Default:* Off. *Why a setting:* model calls every night that nobody pressed — the organisation decides whether to spend on that, within its Spend budget.
+- **Let Pramanyx run model work on its own schedule** (`agents.testing_centre`, `agents.learning_loop`) — Nightly runs of each custom agent's checked test questions, and re-tests after reviews. *Default:* Off. *Why a setting:* model calls every night that nobody pressed — the organisation decides whether to spend on that, within its Spend budget.
 
 ### Decided once — 5
 
@@ -241,6 +241,6 @@ Each changes prompts or routing. None stays a switch.
 
 - `grounding.full_schema_first` — For a small schema, the SQL writer sees every table, not only the ones picked for the question. *Today:* off. *Recommended:* Keep — always on — its own record: in two test runs it never wrote a worse query, and twice it answered where the shorter schema could not.
 - `grounding.data_profiles` — Added a short data profile — row counts, ranges, common values — to the SQL writer's prompt. ✅ **Decided 2026-10-28: deleted with its block.** The one clean run (the two before it never built the block: the golden harness's table link had failed silently since June) read 0.661 → 0.651 over 65 questions × 3 runs on claude-haiku-5-5 (paired t −1.01; 11 better, 17 worse), so its own rule fired — `evals/data_profiles_ab_2026-10-28.json`.
-- `explore.route_wide` — When Aughor chooses the route itself, a broad question ("how do sales vary across the business") goes to the survey engine — many cuts at once — instead of one deep analysis. *Today:* off. *Recommended:* Delete — it changes nothing anyone sees today; the shape table already sends a broad question asked for in depth to the survey engine; never measured, because none of the 102 test questions is broad.
+- `explore.route_wide` — When Pramanyx chooses the route itself, a broad question ("how do sales vary across the business") goes to the survey engine — many cuts at once — instead of one deep analysis. *Today:* off. *Recommended:* Delete — it changes nothing anyone sees today; the shape table already sends a broad question asked for in depth to the survey engine; never measured, because none of the 102 test questions is broad.
 - `federation.planner` — A question needing two connections: a model plans one query for each and how to join them. *Today:* off. *Recommended:* Delete — no screen calls it, only automatic routing would, and the test questions are all single-source; it returns from history, measured, when a sheet beside the warehouse makes such questions common.
 - `judgment.shadow_treatment` — After every question, a model notes the smallest answer that would have done. *Today:* on. *Recommended:* Stop it — one extra model call on every question, for a record nobody reads yet; it can run as a one-off measurement when PENDING 4 is taken up.

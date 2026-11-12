@@ -86,7 +86,7 @@ export function createSupervisor({ fetchBots, makeBot, log = () => {} }: Supervi
         if (!current) result.started.push(record.id);
       } catch (err) {
         // One bad credential must never take down the fleet. The bot is left out of the
-        // running set, so the next reconcile retries it — a token fixed in Aughor
+        // running set, so the next reconcile retries it — a token fixed in Pramanyx
         // recovers on its own without anyone restarting this process.
         running.delete(record.id);
         result.failed.push({ id: record.id, error: String(err) });

@@ -97,7 +97,7 @@ reachable from a name with no quoting at all, as long as it has no slash in it.
     SELECT ?         -- binds, positional
     SELECT :who      -- Parser Error: syntax error at or near ":"
 
-Aughor's SQL editor accepts `:name` and rewrites it before execution, so `:name` is the
+Pramanyx's SQL editor accepts `:name` and rewrites it before execution, so `:name` is the
 right thing to type *there*. Anywhere you hand SQL to the driver yourself, it must be
 `$name`.
 

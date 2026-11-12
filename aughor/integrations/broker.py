@@ -1,6 +1,6 @@
 """VA-11 — the OAuth broker: a module, not a service.
 
-The decision this implements (ROADMAP §6.1): **Aughor owns the vault.** The dance is
+The decision this implements (ROADMAP §6.1): **Pramanyx owns the vault.** The dance is
 therefore small and ours — authorize redirect out, callback in, token exchange,
 refresh-before-expiry, revoke — with the tokens landing in our own encrypted store
 and every call that leaves the platform going through ``govern.outbound.external_call``,

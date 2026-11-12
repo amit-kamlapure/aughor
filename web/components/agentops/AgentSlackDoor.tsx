@@ -81,9 +81,9 @@ export function AgentSlackDoor({
   intro?: string;
   skipLabel?: string;
 }) {
-  const [appName, setAppName] = useState(agentName || "Aughor");
+  const [appName, setAppName] = useState(agentName || "Pramanyx");
   // AO-2d — the one-token path: a configuration token creates the app from the manifest
-  // Aughor renders; what remains is an install (a button on HTTPS, a paste elsewhere) and
+  // Pramanyx renders; what remains is an install (a button on HTTPS, a paste elsewhere) and
   // the app-level token, which Slack offers no API for.
   const [configToken, setConfigToken] = useState("");
   const [creating, setCreating] = useState(false);
@@ -110,8 +110,8 @@ export function AgentSlackDoor({
     setError("");
     try {
       setManifest(await getSlackBotManifest({
-        name: appName.trim() || "Aughor",
-        description: `Aughor — ${agentName || "agent"}`,
+        name: appName.trim() || "Pramanyx",
+        description: `Pramanyx — ${agentName || "agent"}`,
         agentId,
       }));
     } catch (e) {
@@ -175,7 +175,7 @@ export function AgentSlackDoor({
     setError("");
     try {
       const made = await createSlackApp({
-        config_token: configToken.trim(), name: appName.trim() || agentName || "Aughor",
+        config_token: configToken.trim(), name: appName.trim() || agentName || "Pramanyx",
         agent_id: agentId, connection_id: connectionId, agent_view: true,
       });
       // The token was used once; nothing on this screen keeps it.
@@ -218,7 +218,7 @@ export function AgentSlackDoor({
           {intro ? emphasise(intro) : (<>
             Optional. A Slack app lets people @mention <strong>{agentName || "this agent"}</strong> in
             a channel, and lets a scheduled automation post as it — the “post the daily numbers”
-            step. One configuration token lets Aughor create the app itself; then an install
+            step. One configuration token lets Pramanyx create the app itself; then an install
             and one more token, and it listens.
           </>)}
         </div>
@@ -228,20 +228,20 @@ export function AgentSlackDoor({
       {!byHand && (
         <div style={{ border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: 14 }}>
           <div className="aug-fs-sm" style={{ fontWeight: 500, marginBottom: 8 }}>
-            1 · Let Aughor create the app
+            1 · Let Pramanyx create the app
           </div>
           {!app ? (
             <>
               <div className="aug-fs-xs" style={{ color: "var(--t3)", marginBottom: 8 }}>
                 At api.slack.com/apps → <strong>Your App Configuration Tokens</strong> → Generate,
                 copy the token and paste it here. It is used once to create the app from the
-                manifest Aughor renders (agent mode, Socket Mode, every scope) and is never stored.
+                manifest Pramanyx renders (agent mode, Socket Mode, every scope) and is never stored.
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
                 <div style={{ flex: "1 1 220px", minWidth: 0 }}>
                   <label className="aug-fs-xs" style={labelStyle}>App name — what Slack will show</label>
                   <Input style={inputStyle} value={appName}
-                    onChange={e => setAppName(e.target.value)} placeholder="Aughor" />
+                    onChange={e => setAppName(e.target.value)} placeholder="Pramanyx" />
                 </div>
                 <div style={{ flex: "2 1 320px", minWidth: 0 }}>
                   <label className="aug-fs-xs" style={labelStyle}>Configuration token</label>
@@ -313,7 +313,7 @@ export function AgentSlackDoor({
 
       {byHand && (
         <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-          The manual path: Aughor renders the manifest, you create the app in Slack and paste
+          The manual path: Pramanyx renders the manifest, you create the app in Slack and paste
           three values back.{" "}
           <Button variant="ghost" size="xs" onClick={() => setByHand(false)}>Use one token instead</Button>
         </div>
@@ -329,7 +329,7 @@ export function AgentSlackDoor({
           <div style={{ flex: 1, minWidth: 0 }}>
             <label className="aug-fs-xs" style={labelStyle}>App name — what Slack will show</label>
             <Input style={inputStyle} value={appName}
-              onChange={e => setAppName(e.target.value)} placeholder="Aughor" />
+              onChange={e => setAppName(e.target.value)} placeholder="Pramanyx" />
           </div>
           <Button variant="secondary" size="sm" onClick={render} disabled={rendering}>
             {rendering ? "Rendering…" : manifest ? "Re-render" : "Generate JSON"}
@@ -396,7 +396,7 @@ export function AgentSlackDoor({
               </div>
             </div>
             <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 8 }}>
-              Sent once to Aughor, checked against Slack before anything is stored, and held
+              Sent once to Pramanyx, checked against Slack before anything is stored, and held
               encrypted. They are cleared from this form as soon as the server has them.
             </div>
             <Button variant="default" size="sm" style={{ marginTop: 10 }}

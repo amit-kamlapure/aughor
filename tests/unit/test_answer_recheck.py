@@ -137,7 +137,7 @@ def test_a_slack_answer_is_told_in_its_own_thread_through_the_gate(con, lag, mon
 
     import aughor.slackbots.post as post
     import aughor.slackbots.store as bots
-    bot = SimpleNamespace(id="b1", enabled=True, bot_token="xoxb-test", name="Aughor")
+    bot = SimpleNamespace(id="b1", enabled=True, bot_token="xoxb-test", name="Pramanyx")
     monkeypatch.setattr(bots, "bots_for_agent", lambda agent_id: [])
     monkeypatch.setattr(bots, "list_bots", lambda include_disabled=True: [bot])
     monkeypatch.setattr(bots, "get_bot_decrypted", lambda bot_id: bot)

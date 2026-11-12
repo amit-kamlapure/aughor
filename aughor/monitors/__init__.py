@@ -1,6 +1,6 @@
 """Proactive Monitors — M20.
 
-Aughor volunteers problems before users ask questions by running metric
+Pramanyx volunteers problems before users ask questions by running metric
 checks, anomaly detection and data-freshness validation on a schedule and
 surfacing alerts in the UI.
 

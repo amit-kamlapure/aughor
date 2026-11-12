@@ -1,6 +1,6 @@
 """The agent registry + governance — Phase 0 of the agent fleet.
 
-Every background/active process Aughor runs is a named **agent** with a charter
+Every background/active process Pramanyx runs is a named **agent** with a charter
 (role · goal · lane · the job kinds it owns · default budget). The Org governs the
 fleet: enable/disable an agent and cap its per-run budget. Governance resolves
 **override-wins** (workspace > app > charter default), mirroring org settings — v1

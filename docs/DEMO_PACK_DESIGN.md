@@ -23,7 +23,7 @@ The demo is a showroom of completed reasoning, not a live agent.
 
 Two of four layers already have export machinery, and one of them (`context_graph_export`)
 was written for exactly this consumer: *"a teammate consumes it with no LLM, no API key, and
-no Aughor running. Generation is paid once; consumption is free."* That is the demo's thesis,
+no Pramanyx running. Generation is paid once; consumption is free."* That is the demo's thesis,
 already stated in the codebase.
 
 The gap is investigations + briefing. Everything else is assembly.

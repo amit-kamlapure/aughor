@@ -107,7 +107,7 @@ single `POST /ask`:
 
 ### Why an LLM mega-orchestrator is explicitly *out*
 
-Aughor's durable conclusion — *deterministic guards beat added LLM machinery on a strong model* —
+Pramanyx's durable conclusion — *deterministic guards beat added LLM machinery on a strong model* —
 and the R4 ablation ([`R4_ABLATION_EVAL_2026-06-21.md`](R4_ABLATION_EVAL_2026-06-21.md)) say
 **injecting an LLM into the decision path regresses**. So:
 
@@ -150,7 +150,7 @@ router already writes.
 ## 4. Capability #1 (priority) — budget-aware clarification, harness-first
 
 BIRD-INTERACT's central result: **ambiguity is the #1 unsolved skill**, and frontier models default
-to **trial-and-error** (`submit`-and-see) rather than asking. Aughor *detects* candidate-disagreement
+to **trial-and-error** (`submit`-and-see) rather than asking. Pramanyx *detects* candidate-disagreement
 ambiguity (SOMA-SQL) but **does not ask the user today** — confirmed gap (`tools/ambiguity.py` is
 SQL-column-level only). The `ambiguous` flag on `ComplexityVerdict` is the documented seam
 ([ROADMAP.md:246](../ROADMAP.md)).
@@ -270,7 +270,7 @@ router. The merged front door works *before* any of the hard parts (memory, clar
   function-driven user simulator (`AMB`/`LOC`/**`UNA`** anti-leak + gold-SQL scrub) + an episode runner
   that scores *submitted* SQL against executable gold under a clarification budget — rewarding good
   clarification, penalizing blind guessing. Adds the Phase-3 seam: `clarifying_system(generate_fn,
-  should_ask_fn)` + `complexity_should_ask` (backed by Aughor's real `assess_complexity(...).ambiguous`)
+  should_ask_fn)` + `complexity_should_ask` (backed by Pramanyx's real `assess_complexity(...).ambiguous`)
   alongside the `single_shot_system` baseline. 14 tests; ruff clean. **Baseline measured (offline,
   sqlite): never-asks 0% vs always-asks 100% on a value-ambiguity task — and the key finding: the
   deterministic `ambiguous` flag catches *under-specification* (vague pronoun, missing metric/time) but
@@ -300,7 +300,7 @@ router. The merged front door works *before* any of the hard parts (memory, clar
     qualifier), and exactly what SOMA candidate-disagreement is built for. So 3b's SOMA half is **no
     longer speculative — it's evidence-justified** for the structural class.
   - *ITS-outcome run (`evals/its_structural.py`, logic locked by `tests/unit/test_its_structural.py`):*
-    the final gate. Against Aughor's **real** SQL model, over structural questions seeded so the intended
+    the final gate. Against Pramanyx's **real** SQL model, over structural questions seeded so the intended
     reading diverges from the default — **default (no ask) 0/3, asked (clarified) 3/3.** When intent
     diverges from the model's default reading, asking recovers correctness completely.
   - **⇒ 3b SOMA candidate-disagreement is GREENLIT.** The full measure-before-trust chain is satisfied:

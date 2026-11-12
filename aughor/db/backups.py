@@ -205,7 +205,7 @@ class Backup:
     def manifest(self) -> dict:
         data = json.loads((self.folder / MANIFEST).read_text(encoding="utf-8"))
         if not isinstance(data, dict) or int(data.get("format") or 0) > MANIFEST_FORMAT:
-            raise ValueError(f"the manifest of {self.name} is a format newer than this version of Aughor reads "
+            raise ValueError(f"the manifest of {self.name} is a format newer than this version of Pramanyx reads "
                              f"({data.get('format') if isinstance(data, dict) else '?'} > {MANIFEST_FORMAT})")
         return data
 

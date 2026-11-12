@@ -75,7 +75,7 @@ describe("ProfileLayer", () => {
     expect(screen.getByRole("heading", { name: "DTC Apparel" })).toBeTruthy();
     await waitFor(() => expect(screen.getByTestId("profile-tables").textContent).toContain("125,080"));
     expect(screen.queryByLabelText("Needs you")).toBeNull();
-    // Why Aughor thinks so is one click away, not a paragraph on the page.
+    // Why Pramanyx thinks so is one click away, not a paragraph on the page.
     expect(screen.queryByText("Orders and order items.")).toBeNull();
     fireEvent.click(screen.getByTestId("profile-why"));
     expect(screen.getByText("Orders and order items.")).toBeTruthy();

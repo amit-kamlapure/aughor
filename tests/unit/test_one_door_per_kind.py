@@ -215,7 +215,7 @@ def test_the_catalogue_says_where_a_history_proposal_came_from(monkeypatch):
         "sql": "SELECT 1", "tables": ["order_items"], "state": CP.STATE_PROPOSED}])
     [entry] = MCat._coverage_entries("c1", "main")
     assert entry.origin == "query_history" and entry.state == MCat.STATE_PROPOSED
-    assert entry.why_it_matters == "the warehouse's own query history — computed in 3 runs by someone other than Aughor (Arc NV-7)"
+    assert entry.why_it_matters == "the warehouse's own query history — computed in 3 runs by someone other than Pramanyx (Arc NV-7)"
 
 
 # ── Attention takes no formula ────────────────────────────────────────────────────────────

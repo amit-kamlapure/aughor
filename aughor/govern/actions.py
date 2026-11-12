@@ -4,7 +4,7 @@ Governance here is a runtime autonomy dial, not a license tier: read-only
 actions run automatically, low-risk actions run on a safe scope, and high-risk
 mutations require explicit approval — and every action is written to the audit
 ledger attributed to the tenant, exactly as a manual action would be. This module
-is that gate for Aughor's mutating endpoints:
+is that gate for Pramanyx's mutating endpoints:
 
 - ``classify`` maps an action to a risk (an unregistered mutation is HIGH by
   default — fail-safe, so a new destructive endpoint is gated until someone lowers

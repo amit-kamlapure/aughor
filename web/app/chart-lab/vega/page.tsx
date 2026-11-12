@@ -4,7 +4,7 @@
  * /chart-lab/vega — the Phase 1 gate: the same six charts, the same data, two engines,
  * side by side, in whichever theme the app is in.
  *
- * These six types are ~99% of everything Aughor has ever charted (703 persisted charts,
+ * These six types are ~99% of everything Pramanyx has ever charted (703 persisted charts,
  * measured 2026-08-21). The question this page exists to answer is the one from §03 of
  * docs/CHART_ENGINE_VEGA_DESIGN_2026-08-21.md: how much of the look is the ENGINE, and how
  * much is the theme? Both columns read the same design tokens, so what is left is the engine.

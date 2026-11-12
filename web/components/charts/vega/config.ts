@@ -1,5 +1,5 @@
 /**
- * config.ts — the Aughor Vega-Lite config, built LIVE from the same design tokens
+ * config.ts — the Pramanyx Vega-Lite config, built LIVE from the same design tokens
  * the ECharts theme reads (Phase 1 spike, docs/CHART_ENGINE_VEGA_DESIGN_2026-08-21).
  *
  * This is the file that has to be right, because it is the file that failed last time:

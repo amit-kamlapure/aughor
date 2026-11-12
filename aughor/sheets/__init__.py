@@ -13,7 +13,7 @@
 per organisation, written only by the API process and rebuilt from source plus changes whenever it is missing or in
 doubt. Its oracle — the table as changed equals a fresh rebuild — is the falsifier of SH-1.
 
-To the rest of Aughor the sheets are one connection, *Sheets* (``connection.py``): the Catalog, the chat, dashboards
+To the rest of Pramanyx the sheets are one connection, *Sheets* (``connection.py``): the Catalog, the chat, dashboards
 and the Briefing read them as they read any table.
 
 The waves are part of the platform (ROADMAP §3.65): SH-1 (the sheets and their home), SH-2 (editing), SH-3 (groups

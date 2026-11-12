@@ -49,7 +49,7 @@ describe("the rail's seven destinations", () => {
       ontology: "Object model & relationships",
       graph: "Connection knowledge graph",
       evidence: "Claim ledger & feedback",
-      brain: "Every store behind what Aughor knows, with live counts",
+      brain: "Every store behind what Pramanyx knows, with live counts",
     });
   });
 

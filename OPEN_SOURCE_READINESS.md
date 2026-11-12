@@ -216,7 +216,7 @@ from the shell. Full transcript, final run against `chore/oss-readiness@a4c455a`
 $ uv --version && python3 --version && node --version
 uv 0.11.14 · Python 3.14.3 · v24.14.1
 
-$ git clone https://github.com/amit-kamlapure/aughor.git && cd aughor
+$ git clone https://github.com/amit-kamlapure/pramanyx.git && cd aughor
   HEAD: a4c455a  ·  LICENSE present: yes
 
 $ uv sync                                # README step 1

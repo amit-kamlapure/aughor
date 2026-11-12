@@ -2,7 +2,7 @@
 
 A node is scored by the outcomes of the answers that cited it: signed, time-decayed, and
 promoted to "preferred" only on corroboration by several distinct results, because one
-save must not mint a trusted lesson. This is that shape, over Aughor's stores — with one
+save must not mint a trusted lesson. This is that shape, over Pramanyx's stores — with one
 correction that changed the design.
 
 **The premise check that moved the scope.** P3 was scoped to aggregate human verdicts and

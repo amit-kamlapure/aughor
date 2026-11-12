@@ -101,7 +101,7 @@ CATEGORIES: dict[str, str] = _TABLES["CATEGORIES"]
 #: code-verified entries belong on a declaration: `motherduck.py` reads MOTHERDUCK_TOKEN when
 #: the token field is empty; BigQuery's client library resolves Application Default
 #: Credentials (GOOGLE_APPLICATION_CREDENTIALS among them) when the credentials field is
-#: blank — that resolution happens in google-auth, not in Aughor.
+#: blank — that resolution happens in google-auth, not in Pramanyx.
 ENV_VARS: dict[str, list[dict]] = _TABLES["ENV_VARS"]
 
 

@@ -26,7 +26,7 @@ _TOKEN_HELP = (
 
 def main() -> None:
     ap = argparse.ArgumentParser(
-        prog="aughor.mcp", description="Aughor governed-intelligence MCP server"
+        prog="aughor.mcp", description="Pramanyx governed-intelligence MCP server"
     )
     ap.add_argument(
         "--http", action="store_true",

@@ -168,7 +168,7 @@ def _build_slack_payload(trigger: ActionTrigger, payload: ActionPayload) -> dict
     ctx = payload.context or {}
     if ctx.get("kind") == "monitor_alert":
         # OA·N8-0 — a monitor alert is not a recommendation, and rendering it as one
-        # ("Aughor recommendation: Revenue [critical]: …") buries the two things the
+        # ("Pramanyx recommendation: Revenue [critical]: …") buries the two things the
         # reader needs first: which monitor, and how bad.
         sev = str(ctx.get("severity") or "info")
         fields = [
@@ -199,7 +199,7 @@ def _build_slack_payload(trigger: ActionTrigger, payload: ActionPayload) -> dict
             "attachments": [{
                 "color": _SEVERITY_COLOR.get(sev, "#2D72D2"),
                 "fields": fields,
-                "footer": "Aughor Intelligence Platform",
+                "footer": "Pramanyx Intelligence Platform",
                 "ts": int(time.time()),
             }],
         }
@@ -211,11 +211,11 @@ def _build_slack_payload(trigger: ActionTrigger, payload: ActionPayload) -> dict
     # HB-2 law 8, amended 2026-09-22 (the user): no Receipt field on Slack (see above).
     return {
         "channel": trigger.channel or "#general",
-        "text": _trim(f"*Aughor recommendation*: {payload.recommendation}"),
+        "text": _trim(f"*Pramanyx recommendation*: {payload.recommendation}"),
         "attachments": [{
             "color": "#2D72D2",
             "fields": fields,
-            "footer": "Aughor Intelligence Platform",
+            "footer": "Pramanyx Intelligence Platform",
             "ts": int(time.time()),
         }],
     }
@@ -233,7 +233,7 @@ def _build_jira_payload(trigger: ActionTrigger, payload: ActionPayload) -> dict:
                 "content": [{
                     "type": "paragraph",
                     "content": [{"type": "text", "text": (
-                        f"Aughor recommendation from investigation {payload.investigation_id}.\n\n"
+                        f"Pramanyx recommendation from investigation {payload.investigation_id}.\n\n"
                         f"Recommendation: {payload.recommendation}\n\n"
                         f"Metric: {payload.metric_name or '—'}\n"
                         f"Headline: {payload.headline or '—'}"

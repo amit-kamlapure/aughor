@@ -744,7 +744,7 @@ describe("EntityTypePanel — the name, four figures and six tabs", () => {
     unmount();
     shown.detail = { ...detail, platform: true };
     panel();
-    expect(await screen.findByTestId("entity-figure-objects")).toHaveTextContent("in Aughorkept by actions");
+    expect(await screen.findByTestId("entity-figure-objects")).toHaveTextContent("in Pramanyxkept by actions");
   });
 
   it("holds every section under its tab — none dropped, each where it belongs", async () => {

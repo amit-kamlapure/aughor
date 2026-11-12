@@ -258,7 +258,7 @@ function Topbar({
   onThemeChange: (t: Theme) => void;
 }) {
   // The rail's toggle, left of the wordmark (the user, 2026-11-10: "Place the collapse icon right at the top, left of
-  // Aughor logo/text.. this will reduce the overall length of the rail"). It owns ⌘\ too.
+  // Pramanyx logo/text.. this will reduce the overall length of the rail"). It owns ⌘\ too.
   const [navCollapsed, toggleNav] = useNavCollapsed();
   return (
     <div className="aug-topbar">
@@ -271,7 +271,7 @@ function Topbar({
       </Tooltip>
       {/* The wordmark, then the scope it applies to — the workspace switcher sits beside
           the name because everything below the topbar is read through it. */}
-      <span className="aug-wordmark">Aughor</span>
+      <span className="aug-wordmark">Pramanyx</span>
       <WorkspaceSwitcher
         workspaces={workspaces}
         selectedWorkspace={selectedWorkspace}
@@ -517,7 +517,7 @@ function HomeScreen({
         {/* First-run funnel — shown until the user runs their first investigation */}
         {recentInvs.length === 0 && (
           <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "22px 24px" }}>
-            <div style={{ fontSize: 15, fontWeight: 650, color: "var(--t1)", marginBottom: 4 }}>Welcome to Aughor</div>
+            <div style={{ fontSize: 15, fontWeight: 650, color: "var(--t1)", marginBottom: 4 }}>Welcome to Pramanyx</div>
             <div style={{ fontSize: 12, color: "var(--t3)", marginBottom: 18, lineHeight: 1.5 }}>
               Autonomous analysis of your data — ask in plain English, get investigated answers. Get started in three steps:
             </div>
@@ -525,7 +525,7 @@ function HomeScreen({
               {[
                 { n: 1, icon: "db",      title: "Connect your data", desc: "Add a database, or upload a CSV / Parquet / Excel file.",                 cta: "Add a connection", accent: "var(--cyn3)", action: onAddConnection },
                 { n: 2, icon: "brief",   title: "Explore the demo",  desc: "No data handy? Load a synthetic dataset — 90 days of SaaS revenue with a real outage to find.", cta: demoLoading ? "Loading…" : "Load the demo", accent: "var(--vio3)", action: onTryDemo, busy: demoLoading },
-                { n: 3, icon: "home",    title: "Ask a question",    desc: "Ask anything — Aughor writes the SQL and runs the Agent for you.", cta: "Ask now",          accent: "var(--grn3)", action: () => onGoToChat() },
+                { n: 3, icon: "home",    title: "Ask a question",    desc: "Ask anything — Pramanyx writes the SQL and runs the Agent for you.", cta: "Ask now",          accent: "var(--grn3)", action: () => onGoToChat() },
               ].map(s => (
                 <div key={s.n} style={{ border: "1px solid var(--b1)", borderRadius: "var(--r2)", padding: 14, background: "var(--bg-3)", display: "flex", flexDirection: "column" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
@@ -812,7 +812,7 @@ function DeleteConnModal({
           <div>
             <div style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Remove connection</div>
             <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 3, lineHeight: 1.5 }}>
-              This removes <span style={{ color: "var(--t2)" }}>{conn.name}</span> from Aughor. The database is not affected.
+              This removes <span style={{ color: "var(--t2)" }}>{conn.name}</span> from Pramanyx. The database is not affected.
             </div>
           </div>
         </div>
@@ -1409,7 +1409,7 @@ export default function Home() {
         const pick = [fromUrl, saved].find(id => id && conns.find(c => c.id === id));
         setSelectedConn(pick || (conns[0]?.id ?? ""));
       })
-      .catch(err => console.error("[Aughor] failed to load connections:", err))
+      .catch(err => console.error("[Pramanyx] failed to load connections:", err))
       .finally(() => setConnsLoaded(true));
   }, []);
 
@@ -1429,7 +1429,7 @@ export default function Home() {
         const valid = saved && ws.find(w => w.id === saved);
         setSelectedWorkspace(valid ? saved : (ws[0]?.id ?? ""));
       })
-      .catch(err => console.error("[Aughor] failed to load workspaces:", err))
+      .catch(err => console.error("[Pramanyx] failed to load workspaces:", err))
       .finally(() => setWsLoaded(true));
   }, []);
 
@@ -1843,7 +1843,7 @@ export default function Home() {
       return { place: [{ label: "Ask", id: "canvases" }, { label: "Data Canvas", id: "canvases" }, { label: name }], title: name };
     }
     if (tab === "playbook") return { place: [{ label: "Settings", id: "settings" }, { label: "Playbook" }], title: "Playbook" };
-    return { place: [{ label: "Home", id: "home" }], title: "Aughor" };
+    return { place: [{ label: "Home", id: "home" }], title: "Pramanyx" };
   })();
   const chosenConn = wsConnections.find(c => c.id === selectedConn);
   const statusConn = chosenConn

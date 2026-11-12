@@ -1,4 +1,4 @@
-# Aughor in 2027 — the architecture, drawn
+# Pramanyx in 2027 — the architecture, drawn
 
 *Drawn 2026-10-04 from the platform study of the same day
 ([`PLATFORM_2027_STUDY_2026-10-04.md`](PLATFORM_2027_STUDY_2026-10-04.md), sections F to O), adopted the same
@@ -16,7 +16,7 @@ copy of record.*
 
 ## Figure 1 · The platform as a place
 
-![Aughor in 2027: people and outside agents enter through one governance layer; agent duties, the action gateway and evaluation sit above a compiled intelligence layer; one append-only ledger with two clocks is the only state; data is queried in place and rows never move. Model vendors, systems of action, sources and packs sit outside the install.](assets/platform-2027/architecture.svg)
+![Pramanyx in 2027: people and outside agents enter through one governance layer; agent duties, the action gateway and evaluation sit above a compiled intelligence layer; one append-only ledger with two clocks is the only state; data is queried in place and rows never move. Model vendors, systems of action, sources and packs sit outside the install.](assets/platform-2027/architecture.svg)
 
 **The install is the tenant: one ledger, one gate map, one write path.** Centralise what must be *consistent* —
 what is true, what is allowed, what happened, who was interrupted — and decentralise what must be *abundant* —
